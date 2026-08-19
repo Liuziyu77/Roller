@@ -7,11 +7,11 @@
       "api": "openai-responses",
       "models": [
         {
-          "id": "my-model",
-          "name": "My model"
+          "id": "my-multimodal-model",
+          "name": "My Multimodal Model",
+          "input": ["text", "image"]
         }
       ]
     }
   }
 }
-
