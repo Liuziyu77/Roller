@@ -99,7 +99,7 @@ def _build_parser() -> argparse.ArgumentParser:
         action="append",
         default=[],
         metavar="CONTAINER_PATH",
-        help="legacy: copy an extra container path into artifacts/legacy",
+        help="legacy: copy an extra container path into results/legacy",
     )
     openclaw.add_argument(
         "--set-image-model",
@@ -158,6 +158,7 @@ def _dry_run_payload(args: argparse.Namespace, requests: list) -> dict:
                 "inputs": len(request.task.inputs),
                 "context_files": len(request.task.context_files),
                 "outputs": len(request.task.outputs),
+                "output_dir": request.task.output_dir,
                 "legacy_workspace": request.task.legacy_workspace,
             }
             for request in requests
@@ -236,71 +237,66 @@ def _collect(args: argparse.Namespace) -> int:
         raise FileExistsError(f"run directory already exists; use --resume or another --run-name: {run_dir}")
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    run_config = {
+    run_info = {
+        "schema_version": "roller.run/v1",
         "roller_version": __version__,
-        "harness": args.harness,
-        "tasks": str(tasks_path),
-        "prompt_key": args.prompt_key,
-        "id_key": args.id_key,
-        "models": args.model,
-        "trajectory_count": len(requests),
-        "workspace": str(workspace) if workspace else None,
-        "timeout_seconds": args.timeout,
-        "parallel": args.parallel,
-        "retries": args.retries,
-        "start_index": args.start_index,
-        "limit": args.limit,
-        "resume": args.resume,
-        "task_schema": "roller.task/v1",
-        "bundle_policy": {
-            "max_input_file_bytes": args.max_input_file_bytes,
-            "max_task_input_bytes": args.max_task_input_bytes,
-        },
-        "openclaw": {
-            "docker_image": args.docker_image,
-            "model_config_path": str(model_config_path) if model_config_path else None,
-            "gateway_port_start": args.gateway_port,
-            "gateway_port_step": args.gateway_port_step,
-            "network": args.network,
-            "session_id": args.session_id,
-            "search_provider": args.search_provider,
-            "thinking": args.thinking,
-            "pass_env_names": list(openclaw_config.pass_env),
-            "collect_paths": args.collect_path,
+        "configuration": {
+            "harness": args.harness,
+            "tasks": str(tasks_path),
+            "models": args.model,
+            "trajectory_count": len(requests),
+            "workspace": str(workspace) if workspace else None,
+            "timeout_seconds": args.timeout,
+            "parallel": args.parallel,
+            "retries": args.retries,
+            "start_index": args.start_index,
+            "limit": args.limit,
+            "resume": args.resume,
+            "task_schema": "roller.task/v1",
+            "bundle_policy": {
+                "max_input_file_bytes": args.max_input_file_bytes,
+                "max_task_input_bytes": args.max_task_input_bytes,
+            },
+            "openclaw": {
+                "docker_image": args.docker_image,
+                "model_config_path": str(model_config_path) if model_config_path else None,
+                "gateway_port_start": args.gateway_port,
+                "gateway_port_step": args.gateway_port_step,
+                "network": args.network,
+                "session_id": args.session_id,
+                "search_provider": args.search_provider,
+                "thinking": args.thinking,
+                "pass_env_names": list(openclaw_config.pass_env),
+                "collect_paths": args.collect_path,
+            },
         },
         "started_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
-    atomic_write_json(run_dir / "run.json", run_config)
+    atomic_write_json(run_dir / "info.json", run_info)
 
-    bundle_store = TaskBundleStore(run_dir, bundle_policy)
     results: list[dict] | None = None
-    try:
-        bundles = bundle_store.prepare_all(tasks)
-        requests = bundle_store.attach(requests, bundles)
-        collector = Collector(
-            CollectionConfig(
-                run_dir=run_dir,
-                parallel=args.parallel,
-                retries=args.retries,
-                resume=args.resume,
-            ),
-            harness_factory=lambda slot: OpenClawHarness(openclaw_config, slot),
-        )
-        results = collector.collect(requests)
-    finally:
-        keep_runtime = bool(
-            args.keep_container_on_error
-            and results
-            and any(result.get("status") in {"error", "timeout"} for result in results)
-        )
-        if not keep_runtime:
+    with tempfile.TemporaryDirectory(prefix=".roller-bundle-", dir=output_root) as temporary:
+        bundle_store = TaskBundleStore(Path(temporary), bundle_policy)
+        try:
+            bundles = bundle_store.prepare_all(tasks)
+            requests = bundle_store.attach(requests, bundles)
+            collector = Collector(
+                CollectionConfig(
+                    run_dir=run_dir,
+                    parallel=args.parallel,
+                    retries=args.retries,
+                    resume=args.resume,
+                ),
+                harness_factory=lambda slot: OpenClawHarness(openclaw_config, slot),
+            )
+            results = collector.collect(requests)
+        finally:
             bundle_store.cleanup_runtime()
     assert results is not None
     failed = sum(result.get("status") in {"error", "timeout"} for result in results)
-    summary_path = run_dir / "summary.json"
     print(f"Collected {len(results)} trajectories ({failed} failed).")
     print(f"Run directory: {run_dir}")
-    print(f"Summary: {summary_path}")
+    print(f"Info: {run_dir / 'info.json'}")
     return 1 if failed else 0
 
 

@@ -108,6 +108,42 @@ class TaskLoadingTests(unittest.TestCase):
             with self.assertRaisesRegex(TaskFormatError, "duplicate task id"):
                 load_tasks(task_file)
 
+    def test_accepts_custom_output_directory_and_rejects_reserved_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            task_file = Path(temporary) / "tasks.json"
+            task_file.write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "custom",
+                            "prompt": "write a file",
+                            "files": {
+                                "output_dir": "deliverables/final",
+                                "outputs": ["answer.md"],
+                            },
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            task = load_tasks(task_file)[0]
+            self.assertEqual(task.output_dir, "deliverables/final")
+
+            task_file.write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "bad",
+                            "prompt": "write a file",
+                            "files": {"output_dir": "inputs/generated"},
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(TaskFormatError, "reserved"):
+                load_tasks(task_file)
+
 
 if __name__ == "__main__":
     unittest.main()

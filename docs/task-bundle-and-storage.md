@@ -1,66 +1,69 @@
-# Task Bundle 与文件存储设计
+# Task 文件与存储设计
 
-本文档说明 Roller 如何处理任务消息、输入依赖、系统上下文、Agent 输出和 rollout 归档。快速使用请先阅读项目根目录的 [README](../README.md)，机器可读约束见 [Task JSON Schema](../schemas/task.schema.json)。
+本文档描述 Roller 如何解析 task 的消息、输入文件、系统文件和输出文件，以及最终 run 的存储格式。快速使用见项目根目录 [README](../README.md)，机器可读约束见 [Task JSON Schema](../schemas/task.schema.json)。
 
-## 1. 数据生命周期
+## 1. 两类输出路径
 
-一个任务会先被规范化并生成不可变 Task Bundle，再与模型列表展开为多个 rollout：
+Roller 区分宿主机归档路径和 Agent 工作区路径：
 
-```text
-task JSON/JSONL
-  ├─ messages                     -> 同一 session 中的多轮 user 消息
-  ├─ files.inputs                 -> hash/blob -> 只读输入树
-  ├─ files.context                -> 运行期快照 -> Harness 语义注入
-  └─ files.outputs                -> 输出契约
-                                      │
-                         task × model × harness
-                                      │
-                          trace + logs + artifacts
+- `roller collect --output <dir> --run-name <name>`：run 保存到宿主机 `<dir>/<name>/`。
+- task 的 `files.output_dir`：Agent 在 `/tmp_workspace/<output_dir>/` 写输出，默认值是 `outputs`。
+- `files.outputs[].path`：相对于 `files.output_dir`，用于指定哪些 Agent 输出需要校验并归档。
+
+例如：
+
+```json
+"files": {
+  "output_dir": "deliverables/final",
+  "outputs": [
+    {"path": "report.md", "type": "file", "required": true}
+  ]
+}
 ```
 
-同一个 task 的所有模型共享相同的 input tree 和本次运行的 context 快照。每个 task/model pair 使用独立容器和 sample 目录，避免输出相互污染。
+Agent 写 `/tmp_workspace/deliverables/final/report.md`；Roller 最终保存到 sample 的 `results/report.md`。`/roller/task/outputs` 始终是当前 task 输出目录的稳定别名。
 
-## 2. Task Bundle v1
+## 2. Task 格式与路径解析
 
-顶层格式：
+常用字段：
 
 ```json
 {
   "schema_version": "roller.task/v1",
-  "id": "task_000001",
+  "id": "task_001",
   "file_root": "..",
   "messages": [
-    {"role": "user", "content": "第一轮任务"},
-    {"role": "user", "content": "第二轮补充要求"}
+    {"role": "user", "content": "第一轮"},
+    {"role": "user", "content": "第二轮"}
   ],
-  "model": "optional-provider/model",
   "files": {
+    "output_dir": "outputs",
     "inputs": [],
     "context": [],
     "outputs": []
   },
   "runtime": {
-    "env": ["API_KEY_NAME"],
-    "setup": ["command run inside the workspace"],
+    "env": ["OPTIONAL_ENV_NAME"],
+    "setup": ["command run inside /tmp_workspace"],
     "thinking": "high"
   }
 }
 ```
 
-默认情况下，`source` 路径相对于任务清单文件所在目录解析，也可以使用绝对宿主机路径。任务声明 `file_root` 后，相对 `source` 改为以该目录为基准；`file_root` 自身仍相对于任务清单目录解析。这样位于 `examples/tasks.jsonl` 的任务可以用 `"file_root":".."` 将基准设为 Roller 根目录，再引用 `examples/task_files/...`。
+宿主机 `source` 默认相对于 task 清单所在目录。提供 `file_root` 后，`source` 改为相对于 `file_root`；`file_root` 自身仍相对于 task 清单。
 
-`target` 和 output `path` 是运行时逻辑相对路径，不受 `file_root` 影响；绝对路径、`..` 逃逸和不允许位置的 glob 会在启动容器前被拒绝。
+`target`、`output_dir` 和 output `path` 都是 POSIX 风格逻辑相对路径。绝对路径、`..` 逃逸、保留路径冲突会在启动容器前被拒绝。
 
-任务消息有两种写法：
+### 单轮和多轮
 
-- `messages`：正式的多轮表示。目前每条消息必须是 `user` role；Harness 会在同一 session 中按顺序发送。
-- `prompt`：单轮简写。兼容字段 `question` 也会规范化为单轮 prompt。
+- `prompt`：一轮 user message；兼容字段 `question` 行为相同。
+- `messages`：每个数组元素是一轮 user message，在同一个 OpenClaw session 中顺序发送。
 
-当命令行同时传入多个 `--model` 时，任务与模型组成笛卡尔积。任务自身的 `model` 仅在命令行没有提供 model 时使用。
+Roller 不使用正则表达式拆分 prompt。即使一条 message 中包含 `## Round 1`、`---` 等文本，它仍然只是一轮。
 
-## 3. 输入文件
+## 3. 输入依赖
 
-`files.inputs` 接受文件或目录：
+`files.inputs` 支持文件和目录：
 
 ```json
 "inputs": [
@@ -75,48 +78,24 @@ task JSON/JSONL
 ]
 ```
 
-字符串写法等价于 `source` 指向该文件、`target` 使用文件名、`required=true`。目录会递归展开到 target 下；可选输入不存在时记录 `present=false`，required 输入不存在则任务准备失败。
-
-### 快照与去重
-
-Roller 在执行前完成以下操作：
-
-1. 拒绝输入根本身或目录内部的符号链接、特殊文件和路径冲突。
-2. 以流式方式计算每个普通文件的 SHA-256、大小和 mode。
-3. 将内容保存为 `blobs/sha256/<digest>`。
-4. 根据逻辑目录和文件记录计算 input tree digest，并构建 `trees/sha256/<digest>`。
-5. 将相同内容和相同输入树在 run 内复用。
-
-为防止源文件在扫描与复制之间被替换，blob 写入后会再次校验 digest 和大小。文件的显式 `sha256` 对比文件 digest；目录的显式 `sha256` 对比由其目录、相对路径、文件 digest、大小和 mode 共同计算的 source digest。
-
-默认单文件上限为 10 GiB，单任务输入总量上限为 50 GiB：
-
-```bash
-roller collect ... \
-  --max-input-file-bytes 1073741824 \
-  --max-task-input-bytes 5368709120
-```
-
-### OpenClaw 中的路径
-
-新版 Task Bundle 输入在容器内始终只读：
+运行前，Roller 会拒绝符号链接和特殊文件，计算 SHA-256，检查可选的预期 hash，并为同一 run 内的模型构建一致的只读输入快照。OpenClaw 中可通过以下位置读取：
 
 ```text
-/roller/task/inputs
-/tmp_workspace/inputs
+/tmp_workspace/inputs/<target>
+/roller/task/inputs/<target>
 ```
 
-OpenClaw agent 的工作目录是 `/tmp_workspace`，提示词可以统一使用相对路径 `inputs/<target>`；需要稳定绝对路径时也可以使用 `/roller/task/inputs/<target>`。
+Task Bundle 只作为运行期材料存在，任务结束后删除；最终 sample 的 `info.json` 保存 bundle、input manifest 等 digest，而不会复制整套输入依赖，从而保持 run 精简。重新执行 `--resume` 时会从 task 清单重新构建并比较 digest。
 
-## 4. Context 与系统文件
+## 4. USER.md、MEMORY.md 与系统文件
 
-`files.context` 用于 Harness 需要语义注入的文件，不应与普通只读资料混在 inputs 中：
+`files.context` 表示需要由 Harness 语义注入的文件：
 
 ```json
 "context": [
   {"role": "system", "source": "./SYSTEM.md", "capture": "full"},
   {"role": "user", "source": "./USER.md", "capture": "hash"},
-  {"role": "memory", "source": "./MEMORY.md", "capture": "none"},
+  {"role": "memory", "source": "./MEMORY.md", "capture": "hash"},
   {
     "role": "skill",
     "source": "./skills/web-research",
@@ -126,7 +105,7 @@ OpenClaw agent 的工作目录是 `/tmp_workspace`，提示词可以统一使用
 ]
 ```
 
-role 决定省略 `target` 时的默认路径：
+省略 `target` 时的默认映射：
 
 | role | 默认 target |
 | --- | --- |
@@ -136,80 +115,41 @@ role 决定省略 `target` 时的默认路径：
 | `soul` | `SOUL.md` |
 | `agents` | `AGENTS.md` |
 | `skill` / `skills` | `skills/<source-name>` |
-| 其他 role | `<source-name>` |
 
-OpenClaw adapter 先把运行期 context 只读挂载到 `/roller/task/context`，再将同一份内容复制到 `/root/<target>` 和 `/tmp_workspace/<target>`。因此 `USER.md`、`MEMORY.md`、`SYSTEM.md` 以及 skill 目录都能出现在 OpenClaw 常用发现位置。role 负责选择默认 target；显式 target 可以覆盖它。
+OpenClaw adapter 将 context 注入 `/root/<target>` 和 `/tmp_workspace/<target>`，因此 OpenClaw 能按常用位置发现这些文件。
 
-### capture 隐私策略
+`capture` 控制运行期 manifest 的内容识别方式：
 
-`capture` 只控制永久归档方式，不影响本次执行是否注入：
+- `full`：内容寻址快照并记录 hash。
+- `hash`：记录 hash，但不进入内容寻址 blob。
+- `none`：不记录内容 hash，并将 task 标为不可安全 resume。
 
-| capture | 永久保存内容 | manifest 保存 SHA-256 | 适用场景 |
-| --- | --- | --- | --- |
-| `full` | 是，进入 blob store | 是 | 可公开、需完全复现的系统文件 |
-| `hash` | 否 | 是 | 不想归档原文，但需要变化检测 |
-| `none` | 否 | 否 | 高敏感且不能留下内容指纹 |
+三种方式都会为当前执行复制内容，但紧凑 run 不永久保存 context 原文。`user` 和 `memory` 默认是 `hash`，其他 role 默认是 `full`。
 
-`user` 和 `memory` 的默认策略是 `hash`，其他 role 默认 `full`。所有 context 都会为当前 run 创建权限受限的 `.runtime/context` 快照，正常结束后删除。使用 `--keep-container-on-error` 时，失败现场和运行期 context 会保留以便排查。
-
-`capture=none` 无法证明两次运行使用了相同内容，所以只要存在这类文件，任务就会标记为 `resume_safe=false`，`--resume` 不会复用其旧成功结果。
-
-## 5. 输出契约
-
-Agent 应将新输出写到以下任一路径；两者指向同一个目录：
-
-```text
-/tmp_workspace/outputs
-/roller/task/outputs
-```
-
-OpenClaw prompt 中推荐使用相对路径 `outputs/<path>`。`files.outputs[].path` 已经以 outputs 为根，因此声明中只写 `<path>`，不添加 `outputs/` 前缀。
+## 5. Agent 输出和 results
 
 声明示例：
 
 ```json
-"outputs": [
-  {"path": "answer.md", "type": "file", "required": true, "max_bytes": 1048576},
-  {"path": "assets", "type": "directory", "required": false},
-  {"path": "references/**", "type": "glob", "required": false}
-]
+"files": {
+  "output_dir": "generated",
+  "outputs": [
+    {"path": "answer.md", "type": "file", "required": true, "max_bytes": 1048576},
+    {"path": "assets", "type": "directory", "required": false},
+    {"path": "references/**", "type": "glob", "required": false}
+  ]
+}
 ```
 
-支持三种类型：
+支持 `file`、`directory` 和 `glob`。Roller 检查 required、类型、单文件 `max_bytes`、符号链接和普通文件类型，并把文件 hash、大小、MIME、匹配关系写进 sample 的 `info.json`。
 
-- `file`：路径必须是普通文件。
-- `directory`：路径必须是目录；空目录也满足存在性要求。
-- `glob`：相对于 outputs 根目录匹配一个或多个路径。
+只有匹配声明的文件会复制到 `results/`；未声明文件会被忽略。如果 task 没有 `files.outputs`，不会回收工作区输出，也不会创建 `results/`。输出契约失败时 raw trace 仍保留，但 sample 状态为 `error`，可进入重试。
 
-容器退出前，OpenClaw adapter 会回收整个 outputs 目录。统一 artifact collector 会检查 required、类型、每个匹配文件的 `max_bytes`、符号链接和非普通文件，并为普通文件记录 SHA-256、size 和 MIME type。
+兼容选项 `--collect-path` 会把指定容器路径放在 `results/legacy/`，新 task 应优先使用输出契约。
 
-匹配输出契约的文件复制到 `artifacts/declared`，其他文件复制到 `artifacts/undeclared`。未声明文件不会被静默丢弃；但任何安全或契约错误都会写入 `artifact_validation.json`，并把 rollout 状态改为 error，使其可以进入重试流程。即使校验失败，已取得的 trace、日志和安全的普通输出仍保留。
+## 6. 自定义 API
 
-## 6. 多轮消息
-
-多轮边界只由 `messages` 数组决定，Roller 和 Harness 都不会解析消息正文。以下两种写法等价：
-
-```json
-"messages": [
-  "第一轮任务",
-  "第二轮补充要求"
-]
-```
-
-```json
-"messages": [
-  {"role": "user", "content": "第一轮任务"},
-  {"role": "user", "content": "第二轮补充要求"}
-]
-```
-
-每个元素会在同一个 OpenClaw session 中顺序发送一次。即使 message 正文包含 `## 第 1 轮`、`---` 或其他 Markdown，它仍然只是一个完整 message。
-
-`prompt` 和兼容字段 `question` 始终转换为单个 message。若旧数据把多个轮次编码在一个字符串中，应在进入 Roller 前转换成 `messages` 数组；运行时不会猜测或拆分文本。
-
-## 7. 自定义 API 与运行环境
-
-`--model-config` 接收 OpenClaw models JSON，并原样合并到 OpenClaw 配置。字符串中的 `${ENV_NAME}` 在宿主机运行期展开：
+`--model-config` 接收 OpenClaw models JSON。任何字符串都可以引用 `${ENV_NAME}`：
 
 ```json
 {
@@ -225,80 +165,50 @@ OpenClaw prompt 中推荐使用相对路径 `outputs/<path>`。`files.outputs[].
 }
 ```
 
-展开后的配置只用于容器配置，不写入 `run.json`。`provenance.json` 仅记录脱敏后的 API base URL：移除 URL 中的认证信息、query 和 fragment。环境变量只记录名称，不记录值。
+环境变量只在运行时展开和传入容器。Roller 不把 API key 或环境变量值写进 run；`info.json` 仅记录环境变量名称和移除认证信息、query、fragment 后的 API base URL。
 
-OpenClaw 兼容环境变量包括 `OPENROUTER_API_KEY`、`OPENROUTER_BASE_URL`，以及代理和搜索 provider 的常用变量。`OPENROUTER_BASE_URL_OPENCLAW` 会兼容映射为容器内的 `OPENROUTER_BASE_URL`。其他变量可通过以下两种方式声明：
+常用 OpenRouter、代理和搜索变量会自动转发。其他变量可用 `--pass-env NAME`；task 的 `runtime.env` 表示强制依赖，缺失时该 task 直接失败。
 
-- 命令行 `--pass-env NAME`：如果宿主机存在则传入。
-- task `runtime.env`：该任务强制依赖；变量缺失时直接失败。
-
-`runtime.setup` 中的命令会在 context 注入完成后、Agent 启动前，以 `/tmp_workspace` 为工作目录逐条执行。
-
-## 8. Run 存储结构
+## 7. Run 存储格式
 
 ```text
-runs/<run-name>/
-├── run.json                         # 本次命令的非敏感配置
-├── manifest.jsonl                   # 所有 sample 结果索引
-├── summary.json                     # 状态和 usage 汇总
-├── blobs/sha256/<digest>            # inputs 与 full context 内容
-├── trees/sha256/<tree-digest>/      # 可复用输入树
-├── tasks/<index>_<task-id>/
-│   ├── task.json                    # 规范化任务与 bundle digest
-│   ├── inputs.manifest.json
-│   └── context.manifest.json
-└── samples/<model>/<index>_<task-id>/
-    ├── request.json                 # 此 task/model 的规范化请求
-    ├── result.json                  # 最终状态、错误、usage、attempts
-    ├── provenance.json              # 版本、镜像、模型、bundle/API 来源
-    ├── outputs.manifest.json        # 输出声明、匹配关系、文件 hash
-    ├── artifact_validation.json     # 输出契约检查结果
-    ├── rollout/
-    │   ├── trace.jsonl              # 最后一次 attempt 的原始 OpenClaw trace
-    │   ├── trace.attempt-N.jsonl     # 各次 retry 的原始 trace
-    │   ├── usage.json
-    │   ├── agent.attempt-N.log
-    │   └── gateway.attempt-N.log
-    └── artifacts/
-        ├── declared/
-        ├── undeclared/
-        └── legacy/                  # 仅 --collect-path
+<output>/<run-name>/
+├── info.json                         # 配置、汇总 usage、sample 索引
+└── samples/<model>/<index>_<task>/
+    ├── trace.jsonl                   # 原始 OpenClaw session JSONL
+    ├── trace_ACTF.json               # ACTF_v1.0 trajectory object
+    ├── info.json                     # 状态、usage、attempt、版本、digest、输出契约
+    └── results/                      # 可选；仅用户声明保留的输出
 ```
 
-`trace.jsonl` 不做消息重写或清洗。`usage.json` 从原始 trace 的 assistant usage 字段聚合 token、cache token、request count 和可用的 cost。编号 trace 和日志用于分析重试；canonical `trace.jsonl` 始终指向最后一次 attempt。
+运行期日志、retry trace、请求副本、Task Bundle 和临时输出不会留在最终 run 中。失败时，如果 OpenClaw 已生成原始 trace，`trace.jsonl` 和可转换的 `trace_ACTF.json` 仍会保留。
 
-### Resume 判定
+### `trace_ACTF.json`
 
-`--resume` 只有在以下条件同时满足时才跳过 sample：
+ACTF 文件直接保存 trajectory object，而不是额外套 benchmark result envelope：
 
-1. 旧 `result.json` 状态为 `ok`。
-2. canonical trace 文件仍存在。
-3. 旧 provenance 中的 Task Bundle digest 与当前任务一致。
-4. 当前 bundle 的 `resume_safe=true`。
-
-消息、输入 manifest、context manifest、output contract 或 runtime 声明发生变化，都会改变 bundle digest，从而触发重新采集。
-
-## 9. Legacy 兼容边界
-
-为迁移现有数据，Roller 还保留：
-
-- `question` 作为 `prompt` 的别名。
-- `workspace` / `workspace_path`：未声明 `files.inputs` 时，将整个目录作为 legacy input bundle，并复制成可写的 `/tmp_workspace`。
-- `persona`：从 legacy workspace persona 目录寻找 `USER.md` 和 `MEMORY.md`。
-- `warmup` 作为 `runtime.setup` 的别名。
-- `--collect-path CONTAINER_PATH`：额外复制旧任务写到任意容器路径的结果。
-
-`question` 只提供字段名兼容，不提供文本内多轮解析。现有 `Interns2_data` 中使用 Markdown 标题拼接多轮的任务，需要先转换成 Task Bundle `messages`。
-
-Legacy workspace 是整体快照。如果它混入私密 persona 或无关大文件，这些内容也会进入 input blob store。需要隐私控制和精确复现时，应迁移为显式 `files.inputs`、`files.context` 和 `files.outputs`。
-
-转换后的数据可先执行不启动 Docker 的验证：
-
-```bash
-roller collect \
-  --tasks converted_tasks.jsonl \
-  --model my-provider/model \
-  --start-index 0 \
-  --limit 2 \
-  --dry-run
+```json
+{
+  "schema_version": "ACTF_v1.0",
+  "steps": [],
+  "started_at": "2026-08-19 10:00:00.000000",
+  "finished_at": "2026-08-19 10:00:01.000000"
+}
 ```
+
+每个 assistant message 对应一个 step；紧随其后的 tool results 放入该 step 的 `observation`。后续 user message 写到下一个 step 的 `user_content`。字段布局与 `model_trace/open/pinchbench/.../details` 中的 ACTF_v1.0 保持一致。
+
+## 8. Resume
+
+`--resume` 复用 sample 需要同时满足：
+
+1. `info.json` 中旧状态为 `ok`。
+2. `trace.jsonl` 与 `trace_ACTF.json` 都存在。
+3. 当前重新构建的 Task Bundle digest 与旧 `info.json` 一致。
+4. context 没有导致 `resume_safe=false` 的 `capture=none` 文件。
+
+消息、输入、context、output_dir、输出契约或 runtime 声明变化都会改变 digest并重新运行。
+
+## 9. Legacy 输入
+
+Roller 仍兼容 `question`、`workspace/workspace_path`、`persona` 和 `warmup`。legacy workspace 会整体进入运行期输入快照；新任务建议显式声明 `files.inputs`、`files.context`、`files.output_dir` 和 `files.outputs`。

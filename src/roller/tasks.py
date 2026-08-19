@@ -278,6 +278,36 @@ def _parse_outputs(value: Any, index: int) -> tuple[OutputFile, ...]:
     return tuple(outputs)
 
 
+def _parse_output_dir(value: Any, index: int) -> str:
+    output_dir = normalize_relative_path(
+        "outputs" if value is None else value,
+        f"task {index}, files.output_dir",
+    )
+    first_part = PurePosixPath(output_dir).parts[0]
+    if first_part in {"inputs", "context"}:
+        raise TaskFormatError(
+            f"task {index}, files.output_dir: top-level inputs and context are reserved"
+        )
+    return output_dir
+
+
+def _validate_output_context_paths(
+    output_dir: str, context_files: tuple[ContextFile, ...], index: int
+) -> None:
+    output_prefix = f"{output_dir}/"
+    for context in context_files:
+        context_prefix = f"{context.target}/"
+        if (
+            context.target == output_dir
+            or context.target.startswith(output_prefix)
+            or output_dir.startswith(context_prefix)
+        ):
+            raise TaskFormatError(
+                f"task {index}: files.output_dir {output_dir!r} overlaps context target "
+                f"{context.target!r}"
+            )
+
+
 def _legacy_persona_context(
     row: dict[str, Any], workspace: Path | None, index: int
 ) -> tuple[ContextFile, ...]:
@@ -353,12 +383,14 @@ def load_tasks(
         files = row.get("files", {})
         if not isinstance(files, dict):
             raise TaskFormatError(f"task {index}: files must be an object")
+        output_dir = _parse_output_dir(files.get("output_dir"), index)
         inputs = _parse_inputs(files.get("inputs"), file_root, index)
         legacy_workspace = workspace is not None and not inputs
         if legacy_workspace:
             inputs = (InputFile(workspace, ".", True, None),)
         context_files = _parse_context(files.get("context"), file_root, index)
         context_files += _legacy_persona_context(row, workspace, index)
+        _validate_output_context_paths(output_dir, context_files, index)
         outputs = _parse_outputs(files.get("outputs"), index)
 
         model = row.get("model")
@@ -381,6 +413,7 @@ def load_tasks(
                 inputs=inputs,
                 context_files=context_files,
                 outputs=outputs,
+                output_dir=output_dir,
                 legacy_workspace=legacy_workspace,
                 workspace=workspace,
                 model=model.strip() if isinstance(model, str) else None,

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -10,7 +9,7 @@ from roller.models import OutputFile
 
 
 class ArtifactCollectionTests(unittest.TestCase):
-    def test_partitions_declared_and_undeclared_outputs(self) -> None:
+    def test_saves_only_declared_outputs_in_results(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             staging = root / "staging"
@@ -32,14 +31,28 @@ class ArtifactCollectionTests(unittest.TestCase):
             )
 
             self.assertTrue(result.passed)
-            self.assertTrue((sample / "artifacts" / "declared" / "report.md").is_file())
+            self.assertTrue((sample / "results" / "report.md").is_file())
             self.assertTrue(
-                (sample / "artifacts" / "declared" / "assets" / "chart.json").is_file()
+                (sample / "results" / "assets" / "chart.json").is_file()
             )
-            self.assertTrue((sample / "artifacts" / "undeclared" / "debug.tmp").is_file())
-            self.assertTrue((sample / "artifacts" / "declared" / "empty").is_dir())
-            manifest = json.loads(result.manifest_path.read_text())
-            self.assertEqual(len(manifest["files"]), 3)
+            self.assertFalse((sample / "results" / "debug.tmp").exists())
+            self.assertTrue((sample / "results" / "empty").is_dir())
+            self.assertEqual(result.declared_files, 2)
+            self.assertEqual(result.ignored_files, 1)
+            self.assertEqual(len(result.files), 2)
+
+    def test_without_declarations_does_not_create_results(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            staging = root / "staging"
+            staging.mkdir()
+            (staging / "debug.txt").write_text("ignored", encoding="utf-8")
+
+            result = collect_output_artifacts(staging, root / "sample", ())
+
+            self.assertTrue(result.passed)
+            self.assertIsNone(result.results_path)
+            self.assertFalse((root / "sample" / "results").exists())
 
     def test_reports_missing_oversized_and_unsafe_outputs(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

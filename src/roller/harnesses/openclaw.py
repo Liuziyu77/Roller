@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -18,7 +19,7 @@ from urllib.parse import urlsplit, urlunsplit
 from roller.artifacts import ArtifactCollectionResult, collect_output_artifacts
 from roller.harnesses.base import Harness
 from roller.models import HarnessResult, RunRequest
-from roller.storage import atomic_write_json, safe_component
+from roller.storage import safe_component
 from roller.usage import ZERO_USAGE, extract_openclaw_usage
 from roller.version import __version__
 
@@ -320,6 +321,7 @@ print(files[0] if files else '')
 
     def _prepare_workspace(self, container: str, request: RunRequest) -> None:
         workspace = self.config.workspace_container_path
+        output_root = f"{workspace}/{request.task.output_dir}"
         if request.bundle is not None:
             if request.bundle.legacy_workspace:
                 setup = (
@@ -336,10 +338,11 @@ print(files[0] if files else '')
             )
         else:
             setup = f"mkdir -p {workspace}"
+        quoted_output_root = shlex.quote(output_root)
         script = (
-            f"{setup} && rm -rf {workspace}/outputs && mkdir -p {workspace}/outputs && "
+            f"{setup} && rm -rf {quoted_output_root} && mkdir -p {quoted_output_root} && "
             f"mkdir -p /roller/task && rm -rf {OUTPUTS_CONTAINER_PATH} && "
-            f"ln -s {workspace}/outputs {OUTPUTS_CONTAINER_PATH}"
+            f"ln -s {quoted_output_root} {OUTPUTS_CONTAINER_PATH}"
         )
         self._checked(["exec", container, "/bin/bash", "-c", script], "workspace setup")
         link_script = (
@@ -380,6 +383,18 @@ print(files[0] if files else '')
         self._checked(
             ["exec", container, "openclaw", "config", "set", "gateway.port", str(self.gateway_port)],
             "gateway port setup",
+        )
+        self._checked(
+            [
+                "exec",
+                container,
+                "openclaw",
+                "config",
+                "set",
+                "agents.defaults.workspace",
+                self.config.workspace_container_path,
+            ],
+            "OpenClaw workspace setup",
         )
         thinking = request.task.thinking or self.config.thinking
         if thinking:
@@ -576,7 +591,7 @@ print(files[0] if files else '')
 
     def _collect_legacy_artifacts(self, container: str, output_dir: Path) -> list[dict[str, Any]]:
         records: list[dict[str, Any]] = []
-        artifact_root = output_dir / "artifacts" / "legacy"
+        artifact_root = output_dir / "results" / "legacy"
         for index, container_path in enumerate(self.config.collect_paths):
             destination = artifact_root / f"{index:02d}_{safe_component(Path(container_path).name or 'root')}"
             destination.parent.mkdir(parents=True, exist_ok=True)
@@ -597,10 +612,16 @@ print(files[0] if files else '')
         if staging_root.exists():
             shutil.rmtree(staging_root)
         staging_root.mkdir(parents=True, exist_ok=True)
+        if not request.task.outputs:
+            try:
+                return collect_output_artifacts(staging_root, output_dir, ()), None
+            finally:
+                shutil.rmtree(staging_root, ignore_errors=True)
         result = self.runtime.run(
             [
                 "cp",
-                f"{container}:{self.config.workspace_container_path}/outputs/.",
+                f"{container}:{self.config.workspace_container_path}/"
+                f"{request.task.output_dir}/.",
                 str(staging_root),
             ]
         )
@@ -735,9 +756,6 @@ print(files[0] if files else '')
             extract_openclaw_usage(trace_path) if trace_path is not None else dict(ZERO_USAGE)
         )
         usage["elapsed_seconds"] = round(elapsed, 3)
-        rollout_dir = output_dir / "rollout"
-        rollout_dir.mkdir(parents=True, exist_ok=True)
-        atomic_write_json(rollout_dir / "usage.json", usage)
         api_base_urls = _model_base_urls(self.config.model_config or {})
         if environment.get("OPENROUTER_BASE_URL"):
             api_base_urls.append(_redact_url(environment["OPENROUTER_BASE_URL"]))
@@ -765,14 +783,20 @@ print(files[0] if files else '')
             "started_at": started_at,
             "finished_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         }
-        atomic_write_json(output_dir / "provenance.json", provenance)
         output_contract_metadata = (
             {
+                "requested": bool(request.task.outputs),
+                "agent_output_dir": request.task.output_dir,
                 "passed": artifact_result.passed,
-                "manifest": artifact_result.manifest_path.relative_to(output_dir).as_posix(),
-                "validation": artifact_result.validation_path.relative_to(output_dir).as_posix(),
+                "path": (
+                    artifact_result.results_path.relative_to(output_dir).as_posix()
+                    if artifact_result.results_path is not None
+                    else None
+                ),
                 "declared_files": artifact_result.declared_files,
-                "undeclared_files": artifact_result.undeclared_files,
+                "ignored_files": artifact_result.ignored_files,
+                "declarations": list(artifact_result.declarations),
+                "files": list(artifact_result.files),
                 "errors": list(artifact_result.errors),
             }
             if artifact_result is not None
@@ -798,5 +822,6 @@ print(files[0] if files else '')
                 "output_copy_error": output_copy_error,
                 "legacy_artifacts": legacy_artifact_records,
                 "attempt": attempt,
+                "provenance": provenance,
             },
         )
