@@ -1,7 +1,7 @@
 <div align="center">
   <img src="assets/roller-logo.png" alt="Roller logo" width="132">
   <h1>Roller</h1>
-  <p><strong>批量采集、整理和保存 Agentic 轨迹</strong></p>
+  <p><strong>面向多模型与多 Harness 的 Agent 轨迹采集框架</strong></p>
   <p>
     <img alt="Python 3.10+" src="https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white">
     <img alt="OpenClaw Harness" src="https://img.shields.io/badge/Harness-OpenClaw-6F42C1">
@@ -10,22 +10,22 @@
   </p>
 </div>
 
-Roller 把 task 清单和模型列表组合成执行任务，并行运行 Agent Harness。每次 rollout 都会保存原始轨迹、ACTF 轨迹和必要的运行信息；如果 task 要求保留文件，结果会单独放进 `results/`。
+Roller 是一个开源的 Agent 轨迹采集框架。提供任务和模型配置后，Roller 可以批量、并行地启动Docker和运行 Agent，并把完整轨迹整理成结构统一、便于分析和复用的轨迹数据。
 
-目前支持 **OpenClaw**。任务格式、文件管理和结果目录不依赖 OpenClaw，后续可以继续接入其他 Harness。
+项目目前支持 **OpenClaw** Harness，并用统一的任务格式管理多轮对话、本地输入、系统文件、模型配置和文件输出。Harness 接口与数据格式彼此独立，后续可以在不改变任务数据的情况下接入更多 Agent Harness。
 
 ## ✨ 能做什么
 
-| | 能力 | 说明 |
-| --- | --- | --- |
-| 🧮 | 批量执行 | 一份 task 清单可以跑多个模型，支持并行和失败重试 |
-| 📁 | 本地文件 | 每个 task 可以带自己的文件或目录，Agent 通过统一路径读取 |
-| 🧠 | Context 注入 | 支持 `USER.md`、`MEMORY.md`、`SYSTEM.md`、`SOUL.md` 和 skills |
-| 💬 | 多轮输入 | 使用 `messages` 明确每一轮，不从 prompt 文本中猜测分隔位置 |
-| 📤 | 输出管理 | 每个 task 可以指定输出目录，只保存声明过的文件 |
-| 🧾 | 两种轨迹 | 同时保留 OpenClaw 原始 JSONL 和 `ACTF_v1.0` |
-| 🔌 | 自定义 API | 支持自定义 provider、API base、文本模型和多模态模型 |
-| 🔁 | 断点续跑 | 对 task 与文件计算 digest，未发生变化的成功任务可以跳过 |
+| 能力 | 说明 |
+| --- | --- |
+| 批量执行 | 一份 task 清单可以跑多个模型，支持并行和失败重试 |
+| 本地文件 | 每个 task 可以带自己的文件或目录，Agent 通过统一路径读取 |
+| Context 注入 | 支持 `USER.md`、`MEMORY.md`、`SYSTEM.md`、`SOUL.md` 和 skills |
+| 多轮输入 | 使用 `messages` 明确每一轮，不从 prompt 文本中猜测分隔位置 |
+| 输出管理 | 每个 task 可以指定输出目录，只保存声明过的文件 |
+| 两种轨迹 | 同时保留 OpenClaw 原始 JSONL 和 `ACTF_v1.0` |
+| 自定义 API | 支持自定义 provider、API base、文本模型和多模态模型 |
+| 断点续跑 | 对 task 与文件计算 digest，未发生变化的成功任务可以跳过 |
 
 Roller 适合做模型对比、轨迹数据集采集、Harness 回归测试，以及需要保留 Agent 文件输出的批量任务。
 
@@ -68,10 +68,10 @@ examples/
 
 四个内置 task 分别演示：
 
-1. 📝 纯文本输入
-2. 📄 本地 Markdown 输入与文件输出
-3. 👤 `USER.md`、`MEMORY.md` 注入
-4. 💬 两轮连续对话
+1. 纯文本输入
+2. 本地 Markdown 输入与文件输出
+3. `USER.md`、`MEMORY.md` 注入
+4. 两轮连续对话
 
 完整说明见 [examples/README.md](examples/README.md)。
 
@@ -120,26 +120,80 @@ roller collect \
 
 ## 📝 Task 格式
 
-task 清单可以是 `.json` 或 `.jsonl`。最小 task 只需要 `id` 和 `prompt`：
+task 清单可以使用 `.jsonl` 或 `.json`：JSONL 每行是一条 task，JSON 则使用 task 数组或 `{"tasks": [...]}`。每条 task 描述一次 rollout 需要的对话、文件、Context、输出要求和运行参数。
+
+### 1. 完整 Task 示例
+
+下面是一条包含常用配置的 task。为了便于阅读，这里将 JSONL 中的一行展开显示：
 
 ```json
-{"schema_version":"roller.task/v1","id":"hello","prompt":"计算 2+3，只回复数字。"}
+{
+  "schema_version": "roller.task/v1",
+  "id": "product_review",
+  "file_root": "files/product_review",
+  "model": "my-openai-proxy/my-model",
+  "messages": [
+    {
+      "role": "user",
+      "content": "阅读 inputs/product-brief.md，结合已注入的用户信息撰写产品摘要，并保存到 deliverables/report.md。"
+    },
+    {
+      "role": "user",
+      "content": "检查报告是否包含产品名称和三条核心特点；如果缺失，请补充后覆盖原文件。"
+    }
+  ],
+  "files": {
+    "inputs": [
+      {
+        "source": "product-brief.md",
+        "target": "product-brief.md",
+        "required": true
+      }
+    ],
+    "context": [
+      {"role": "system", "source": "SYSTEM.md", "capture": "full"},
+      {"role": "user", "source": "USER.md", "capture": "hash"},
+      {"role": "memory", "source": "MEMORY.md", "capture": "hash"}
+    ],
+    "output_dir": "deliverables",
+    "outputs": [
+      {
+        "path": "report.md",
+        "type": "file",
+        "required": true,
+        "max_bytes": 1048576
+      }
+    ]
+  },
+  "runtime": {
+    "thinking": "high"
+  }
+}
 ```
 
-### 常用顶层字段
+在这个例子中，`file_root` 指向 task 所属的文件包；`inputs` 提供 Agent 可读取的资料；`context` 注入系统与用户信息；`messages` 定义两轮连续对话；`outputs` 声明需要带回宿主机的文件。下面逐项说明这些配置。
+
+### 2. 常用顶层字段
 
 | 字段 | 是否必需 | 说明 |
 | --- | --- | --- |
-| `schema_version` | 推荐 | 当前为 `roller.task/v1` |
+| `schema_version` | 是 | 当前为 `roller.task/v1` |
 | `id` | 是 | task 的唯一标识 |
-| `prompt` | 二选一 | 单轮 user 输入 |
-| `messages` | 二选一 | 多轮 user 输入列表 |
+| `prompt` | 三选一 | 单轮 user 输入 |
+| `question` | 三选一 | 兼容已有数据集的单轮输入字段 |
+| `messages` | 三选一 | 多轮 user 输入列表 |
 | `file_root` | 否 | 本地 `source` 相对路径的基准目录 |
 | `model` | 否 | task 自己指定模型；命令行 `--model` 优先 |
 | `files` | 否 | 输入、context、输出目录和输出契约 |
 | `runtime` | 否 | 环境变量、setup 命令和 thinking 配置 |
 
-### 💬 多轮输入
+不需要文件或特殊运行设置时，可以只写一个最小 task：
+
+```json
+{"schema_version":"roller.task/v1","id":"hello","prompt":"计算 2+3，只回复数字。"}
+```
+
+### 3. 多轮输入
 
 多轮任务直接提供多个 user message：
 
@@ -156,7 +210,7 @@ task 清单可以是 `.json` 或 `.jsonl`。最小 task 只需要 `id` 和 `prom
 
 所有 message 会进入同一个 OpenClaw session。Markdown 标题、`---` 或“第 1 轮”之类的文本不会被自动拆分。
 
-### 📁 输入文件
+### 4. 输入文件
 
 ```json
 "inputs": [
@@ -176,7 +230,7 @@ task 清单可以是 `.json` 或 `.jsonl`。最小 task 只需要 `id` 和 `prom
 - Agent 可以通过 `inputs/<target>` 或 `/roller/task/inputs/<target>` 读取。
 - 输入在容器中只读；目录会递归复制并检查符号链接。
 
-### 🧠 USER.md、MEMORY.md 与系统文件
+### 5. USER.md、MEMORY.md 与系统文件
 
 ```json
 "context": [
@@ -198,7 +252,7 @@ task 清单可以是 `.json` 或 `.jsonl`。最小 task 只需要 `id` 和 `prom
 
 OpenClaw adapter 会把 context 放到 `/root/<target>` 和 `/tmp_workspace/<target>`。`capture` 可选 `full`、`hash` 或 `none`；详细差别见 [Task 文件与存储设计](docs/task-bundle-and-storage.md)。
 
-### 📤 输出目录与输出契约
+### 6. 输出目录与输出契约
 
 ```json
 "files": {
@@ -221,7 +275,7 @@ OpenClaw adapter 会把 context 放到 `/root/<target>` 和 `/tmp_workspace/<tar
 
 Agent 写入 `/tmp_workspace/<output_dir>/`；`/roller/task/outputs` 是同一目录的稳定别名。只有匹配 `files.outputs` 的内容会保存到 sample 的 `results/`。
 
-### ⚙️ 运行时设置
+### 7. 运行时设置
 
 ```json
 "runtime": {
@@ -329,10 +383,10 @@ roller collect \
 
 ### 文件说明
 
-- 🧾 `trace.jsonl`：原始事实来源，不做消息清洗或改写。
-- 🔄 `trace_ACTF.json`：按 assistant step 组织 tool call、observation 和多轮 user message。
-- ℹ️ `info.json`：保存状态、错误、token/cost usage、attempt、版本和文件 digest。
-- 📂 `results/`：只有声明 `files.outputs` 时才存在。
+- `trace.jsonl`：原始事实来源，不做消息清洗或改写。
+- `trace_ACTF.json`：按 assistant step 组织 tool call、observation 和多轮 user message。
+- `info.json`：保存状态、错误、token/cost usage、attempt、版本和文件 digest。
+- `results/`：只有声明 `files.outputs` 时才存在。
 
 运行期日志、Task Bundle、retry 中间 trace 和未声明输出不会留在最终 run 中。
 
