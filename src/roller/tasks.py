@@ -99,6 +99,21 @@ def _resolve_source(value: Any, base_dir: Path, label: str) -> Path:
     return Path(os.path.abspath(source))
 
 
+def _resolve_file_root(row: dict[str, Any], task_list: Path, index: int) -> Path:
+    value = row.get("file_root")
+    if value is None:
+        return task_list.parent
+    if not isinstance(value, str) or not value.strip():
+        raise TaskFormatError(f"task {index}: file_root must be a non-empty path string")
+    root = Path(value).expanduser()
+    if not root.is_absolute():
+        root = task_list.parent / root
+    root = Path(os.path.abspath(root))
+    if not root.is_dir():
+        raise TaskFormatError(f"task {index}: file_root is not a directory: {root}")
+    return root
+
+
 def normalize_relative_path(
     value: Any,
     label: str,
@@ -334,14 +349,15 @@ def load_tasks(
         elif workspace is not None:
             workspace = workspace.expanduser().resolve()
 
+        file_root = _resolve_file_root(row, path, index)
         files = row.get("files", {})
         if not isinstance(files, dict):
             raise TaskFormatError(f"task {index}: files must be an object")
-        inputs = _parse_inputs(files.get("inputs"), path.parent, index)
+        inputs = _parse_inputs(files.get("inputs"), file_root, index)
         legacy_workspace = workspace is not None and not inputs
         if legacy_workspace:
             inputs = (InputFile(workspace, ".", True, None),)
-        context_files = _parse_context(files.get("context"), path.parent, index)
+        context_files = _parse_context(files.get("context"), file_root, index)
         context_files += _legacy_persona_context(row, workspace, index)
         outputs = _parse_outputs(files.get("outputs"), index)
 

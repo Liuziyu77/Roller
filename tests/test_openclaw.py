@@ -12,7 +12,6 @@ from roller.harnesses.openclaw import (
     OpenClawHarness,
     expand_env_placeholders,
     load_model_config,
-    split_legacy_rounds,
 )
 from roller.models import RunRequest, Task
 from roller.tasks import load_tasks
@@ -81,20 +80,6 @@ class FakeDockerRuntime:
 
 
 class OpenClawHelpersTests(unittest.TestCase):
-    def test_splits_interns_multi_turn_prompt(self) -> None:
-        prompt = """## 第 1 轮
-First request
----
-## 第 2 轮
-Second request
-with details
----
-"""
-        self.assertEqual(
-            split_legacy_rounds(prompt),
-            ("First request", "Second request\nwith details"),
-        )
-
     def test_expands_model_config_environment(self) -> None:
         value = {"providers": {"proxy": {"apiKey": "${API_KEY}", "other": 1}}}
         expanded = expand_env_placeholders(value, {"API_KEY": "secret"})
@@ -148,9 +133,12 @@ with details
         self.assertEqual(usage["request_count"], 2)
         self.assertEqual(usage["cost_usd"], 0.15)
 
-    def test_harness_collects_raw_trace_and_sends_rounds_without_shell_quoting(self) -> None:
-        prompt = "## 第 1 轮\nUse $HOME and 'quotes' literally\n---\n## 第 2 轮\nFinish\n"
-        task = Task(id="task", prompts=(prompt,), source_index=0)
+    def test_harness_collects_raw_trace_and_sends_messages_without_shell_quoting(self) -> None:
+        task = Task(
+            id="task",
+            prompts=("Use $HOME and 'quotes' literally", "Finish"),
+            source_index=0,
+        )
         request = RunRequest(
             index=0,
             task=task,
@@ -175,6 +163,18 @@ with details
         self.assertEqual(runtime.agent_messages, ["Use $HOME and 'quotes' literally", "Finish"])
         self.assertIn('"assistant"', canonical_trace)
         self.assertEqual(result.usage["total_tokens"], 5)
+
+    def test_markdown_inside_one_message_remains_one_turn(self) -> None:
+        prompt = "## Round 1\nKeep this whole message.\n## Round 2\nStill the same message."
+        task = Task(id="task", prompts=(prompt,), source_index=0)
+        request = RunRequest(0, task, "provider/model", 30)
+        harness = OpenClawHarness(
+            OpenClawConfig(docker_image="test-image"),
+            worker_slot=0,
+            runtime=FakeDockerRuntime(),
+        )
+
+        self.assertEqual(harness._prompts(request), (prompt,))
 
     def test_harness_mounts_bundle_injects_context_and_validates_outputs(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

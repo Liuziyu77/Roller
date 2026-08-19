@@ -28,8 +28,6 @@ INPUTS_CONTAINER_PATH = "/roller/task/inputs"
 CONTEXT_CONTAINER_PATH = "/roller/task/context"
 OUTPUTS_CONTAINER_PATH = "/roller/task/outputs"
 
-ROUND_HEADER_RE = re.compile(r"^\s*#{1,6}\s*第\s*[\d一二三四五六七八九十百千万]+\s*轮\s*$")
-ROUND_SEPARATOR_RE = re.compile(r"^\s*---+\s*$")
 ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 COMMON_ENV_NAMES = (
@@ -44,38 +42,6 @@ COMMON_ENV_NAMES = (
     "https_proxy",
     "no_proxy",
 )
-
-
-def split_legacy_rounds(prompt: str) -> tuple[str, ...]:
-    """Parse the round-marked multi-turn format used in Interns2_data."""
-
-    rounds: list[str] = []
-    current: list[str] = []
-    in_round = False
-
-    def flush() -> None:
-        value = "\n".join(current).strip()
-        current.clear()
-        if value:
-            rounds.append(value)
-
-    for line in prompt.splitlines():
-        if ROUND_HEADER_RE.match(line):
-            if in_round:
-                flush()
-            else:
-                current.clear()
-            in_round = True
-            continue
-        if in_round and ROUND_SEPARATOR_RE.match(line):
-            flush()
-            in_round = False
-            continue
-        if in_round:
-            current.append(line)
-    if in_round:
-        flush()
-    return tuple(rounds) if rounds else (prompt,)
 
 
 def expand_env_placeholders(value: Any, environ: Mapping[str, str] | None = None) -> Any:
@@ -188,7 +154,6 @@ class OpenClawConfig:
     pass_env: tuple[str, ...] = COMMON_ENV_NAMES
     search_provider: str | None = None
     thinking: str | None = None
-    split_rounds: bool = True
     collect_paths: tuple[str, ...] = ()
     keep_container_on_error: bool = False
     set_image_model: bool = True
@@ -536,8 +501,6 @@ print(files[0] if files else '')
         )
 
     def _prompts(self, request: RunRequest) -> tuple[str, ...]:
-        if self.config.split_rounds and len(request.task.prompts) == 1:
-            return split_legacy_rounds(request.task.prompts[0])
         return request.task.prompts
 
     def _run_agent_turns(

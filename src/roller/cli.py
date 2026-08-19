@@ -18,7 +18,6 @@ from roller.harnesses.openclaw import (
     OpenClawConfig,
     OpenClawHarness,
     load_model_config,
-    split_legacy_rounds,
 )
 from roller.storage import atomic_write_json, safe_component
 from roller.tasks import TaskFormatError, build_requests, load_tasks
@@ -103,12 +102,6 @@ def _build_parser() -> argparse.ArgumentParser:
         help="legacy: copy an extra container path into artifacts/legacy",
     )
     openclaw.add_argument(
-        "--split-legacy-rounds",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help="split Interns2_data prompts marked with '第 N 轮'",
-    )
-    openclaw.add_argument(
         "--set-image-model",
         action=argparse.BooleanOptionalAction,
         default=True,
@@ -146,11 +139,6 @@ def _run_name(value: str | None) -> str:
 
 
 def _dry_run_payload(args: argparse.Namespace, requests: list) -> dict:
-    def turn_count(request) -> int:
-        if args.split_legacy_rounds and len(request.task.prompts) == 1:
-            return len(split_legacy_rounds(request.task.prompts[0]))
-        return len(request.task.prompts)
-
     return {
         "dry_run": True,
         "harness": args.harness,
@@ -165,7 +153,7 @@ def _dry_run_payload(args: argparse.Namespace, requests: list) -> dict:
                 "request_index": request.index,
                 "task_id": request.task.id,
                 "model": request.model,
-                "turns": turn_count(request),
+                "turns": len(request.task.prompts),
                 "workspace": str(request.task.workspace) if request.task.workspace else None,
                 "inputs": len(request.task.inputs),
                 "context_files": len(request.task.context_files),
@@ -228,7 +216,6 @@ def _collect(args: argparse.Namespace) -> int:
         pass_env=_deduplicate((*COMMON_ENV_NAMES, *args.pass_env)),
         search_provider=args.search_provider,
         thinking=args.thinking,
-        split_rounds=args.split_legacy_rounds,
         collect_paths=tuple(args.collect_path),
         keep_container_on_error=args.keep_container_on_error,
         set_image_model=args.set_image_model,
@@ -280,7 +267,6 @@ def _collect(args: argparse.Namespace) -> int:
             "thinking": args.thinking,
             "pass_env_names": list(openclaw_config.pass_env),
             "collect_paths": args.collect_path,
-            "split_legacy_rounds": args.split_legacy_rounds,
         },
         "started_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
