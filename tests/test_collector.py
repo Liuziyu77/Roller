@@ -30,12 +30,22 @@ class FakeHarness(Harness):
             if self.state.get("fail_first") and attempt == 1:
                 return HarnessResult.error_result("transient")
             trace = output_dir / "trace.jsonl"
-            trace.write_text("{}\n", encoding="utf-8")
-            if request.bundle is not None:
-                (output_dir / "provenance.json").write_text(
-                    json.dumps({"task_bundle_digest": request.bundle.manifest_digest}),
-                    encoding="utf-8",
+            trace.write_text(
+                json.dumps(
+                    {
+                        "type": "message",
+                        "message": {
+                            "role": "assistant",
+                            "content": [{"type": "text", "text": "done"}],
+                            "usage": {"input": 1, "output": 2},
+                            "stopReason": "stop",
+                            "timestamp": 1000,
+                        },
+                    }
                 )
+                + "\n",
+                encoding="utf-8",
+            )
             usage = {
                 "input_tokens": 1,
                 "output_tokens": 2,
@@ -77,7 +87,7 @@ class CollectorTests(unittest.TestCase):
             "fail_first": fail_first,
         }
 
-    def test_collects_in_parallel_and_writes_manifests(self) -> None:
+    def test_collects_in_parallel_and_writes_compact_samples(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             run_dir = Path(temporary) / "run"
             state = self._state()
@@ -89,10 +99,17 @@ class CollectorTests(unittest.TestCase):
 
             self.assertEqual([result["status"] for result in results], ["ok"] * 4)
             self.assertEqual(state["max_active"], 2)
-            self.assertEqual(len((run_dir / "manifest.jsonl").read_text().splitlines()), 4)
-            summary = json.loads((run_dir / "summary.json").read_text())
+            info = json.loads((run_dir / "info.json").read_text())
+            summary = info["summary"]
             self.assertEqual(summary["ok"], 4)
             self.assertEqual(summary["usage"]["total_tokens"], 12)
+            sample = next((run_dir / "samples").glob("*/00000000_task-0"))
+            self.assertEqual(
+                {path.name for path in sample.iterdir()},
+                {"trace.jsonl", "trace_ACTF.json", "info.json"},
+            )
+            actf = json.loads((sample / "trace_ACTF.json").read_text())
+            self.assertEqual(actf["schema_version"], "ACTF_v1.0")
 
     def test_retries_then_resumes_completed_samples(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

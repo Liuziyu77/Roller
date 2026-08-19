@@ -27,7 +27,7 @@ class ExampleFilesTests(unittest.TestCase):
                 "04_multi_turn",
             ],
         )
-        self.assertEqual([len(task.prompts) for task in tasks], [1, 1, 1, 3])
+        self.assertEqual([len(task.prompts) for task in tasks], [1, 1, 1, 2])
         self.assertTrue(all(task.raw["file_root"] == ".." for task in tasks))
         self.assertEqual(len(tasks[0].inputs), 0)
         self.assertEqual(tasks[1].inputs[0].target, "product-brief.md")
@@ -38,7 +38,8 @@ class ExampleFilesTests(unittest.TestCase):
         self.assertEqual(
             [item.role for item in tasks[2].context_files], ["user", "memory"]
         )
-        self.assertTrue(all(len(task.outputs) == 1 for task in tasks))
+        self.assertEqual([len(task.outputs) for task in tasks], [0, 1, 0, 0])
+        self.assertEqual(tasks[1].output_dir, "quick_results")
 
         with tempfile.TemporaryDirectory() as temporary:
             bundles = TaskBundleStore(Path(temporary)).prepare_all(tasks)

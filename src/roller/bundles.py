@@ -462,6 +462,7 @@ class TaskBundleStore:
                 "inputs_manifest_digest": input_manifest_digest,
                 "context_manifest": context_manifest_path.name,
                 "context_manifest_digest": context_manifest_digest,
+                "output_dir": task.output_dir,
                 "outputs": output_contract,
             },
             "runtime": {

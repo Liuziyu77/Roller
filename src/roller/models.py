@@ -28,7 +28,7 @@ class ContextFile:
 
 @dataclass(frozen=True)
 class OutputFile:
-    """A declared output contract relative to the Roller outputs directory."""
+    """A declared output contract relative to the task's output directory."""
 
     path: str
     type: str = "file"
@@ -66,6 +66,7 @@ class Task:
     inputs: tuple[InputFile, ...] = ()
     context_files: tuple[ContextFile, ...] = ()
     outputs: tuple[OutputFile, ...] = ()
+    output_dir: str = "outputs"
     legacy_workspace: bool = False
     workspace: Path | None = None
     model: str | None = None

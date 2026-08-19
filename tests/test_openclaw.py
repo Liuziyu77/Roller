@@ -61,7 +61,7 @@ class FakeDockerRuntime:
                 },
             }
             destination.write_text(json.dumps(event) + "\n", encoding="utf-8")
-        if args and args[0] == "cp" and ":/tmp_workspace/outputs/." in args[1]:
+        if args and args[0] == "cp" and ":/tmp_workspace/deliverables/." in args[1]:
             destination = Path(args[2])
             destination.mkdir(parents=True, exist_ok=True)
             (destination / "report.md").write_text("generated", encoding="utf-8")
@@ -189,6 +189,7 @@ class OpenClawHelpersTests(unittest.TestCase):
                             "id": "bundle",
                             "prompt": "write outputs/report.md",
                             "files": {
+                                "output_dir": "deliverables",
                                 "inputs": ["input.txt"],
                                 "context": [{"role": "system", "source": "SYSTEM.md"}],
                                 "outputs": [{"path": "report.md", "required": True}],
@@ -211,18 +212,29 @@ class OpenClawHelpersTests(unittest.TestCase):
             output_dir = root / "sample"
             result = harness.run(request, output_dir, attempt=1)
 
-            provenance = json.loads((output_dir / "provenance.json").read_text())
-            validation = json.loads((output_dir / "artifact_validation.json").read_text())
             flattened_commands = [" ".join(command) for command in runtime.commands]
 
             self.assertEqual(result.status, "ok")
-            self.assertEqual(provenance["task_bundle_digest"], bundle.manifest_digest)
-            self.assertTrue(validation["passed"])
+            self.assertEqual(
+                result.metadata["provenance"]["task_bundle_digest"],
+                bundle.manifest_digest,
+            )
+            self.assertTrue(result.metadata["output_contract"]["passed"])
+            self.assertEqual(
+                result.metadata["output_contract"]["agent_output_dir"],
+                "deliverables",
+            )
             self.assertTrue(
-                (output_dir / "artifacts" / "declared" / "report.md").is_file()
+                (output_dir / "results" / "report.md").is_file()
             )
             self.assertTrue(any("/roller/task/inputs:ro" in command for command in flattened_commands))
             self.assertTrue(any("/roller/task/context/. /root/" in command for command in flattened_commands))
+            self.assertTrue(
+                any(
+                    "openclaw config set agents.defaults.workspace /tmp_workspace" in command
+                    for command in flattened_commands
+                )
+            )
 
 
 if __name__ == "__main__":

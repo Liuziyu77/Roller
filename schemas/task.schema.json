@@ -36,6 +36,11 @@
     "files": {
       "type": "object",
       "properties": {
+        "output_dir": {
+          "$ref": "#/$defs/relativePath",
+          "default": "outputs",
+          "description": "Writable directory in the agent workspace; outputs paths are relative to it"
+        },
         "inputs": {
           "type": "array",
           "items": {

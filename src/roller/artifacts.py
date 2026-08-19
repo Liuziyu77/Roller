@@ -9,25 +9,26 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from roller.models import OutputFile
-from roller.storage import atomic_write_json
 
 
 @dataclass(frozen=True)
 class ArtifactCollectionResult:
     passed: bool
-    manifest_path: Path
-    validation_path: Path
+    results_path: Path | None
     declared_files: int
-    undeclared_files: int
+    ignored_files: int
+    declarations: tuple[dict[str, Any], ...]
+    files: tuple[dict[str, Any], ...]
     errors: tuple[dict[str, Any], ...]
 
     def as_dict(self) -> dict[str, Any]:
         return {
             "passed": self.passed,
-            "manifest_path": str(self.manifest_path),
-            "validation_path": str(self.validation_path),
+            "path": str(self.results_path) if self.results_path is not None else None,
             "declared_files": self.declared_files,
-            "undeclared_files": self.undeclared_files,
+            "ignored_files": self.ignored_files,
+            "declarations": list(self.declarations),
+            "files": list(self.files),
             "errors": list(self.errors),
         }
 
@@ -88,23 +89,32 @@ def collect_output_artifacts(
     sample_dir: Path,
     output_specs: Iterable[OutputFile],
 ) -> ArtifactCollectionResult:
-    """Validate and partition generated outputs into declared and undeclared artifacts."""
+    """Validate declared outputs and copy only requested files into ``results/``."""
 
-    artifact_root = sample_dir / "artifacts"
-    declared_root = artifact_root / "declared"
-    undeclared_root = artifact_root / "undeclared"
-    if artifact_root.exists():
-        shutil.rmtree(artifact_root)
-    declared_root.mkdir(parents=True, exist_ok=True)
-    undeclared_root.mkdir(parents=True, exist_ok=True)
+    specs = tuple(output_specs)
+    results_root = sample_dir / "results"
+    if results_root.exists():
+        shutil.rmtree(results_root)
     staging_root.mkdir(parents=True, exist_ok=True)
 
     known_files, errors = _walk_outputs(staging_root)
+    if not specs:
+        return ArtifactCollectionResult(
+            passed=True,
+            results_path=None,
+            declared_files=0,
+            ignored_files=len(known_files),
+            declarations=(),
+            files=(),
+            errors=(),
+        )
+
+    results_root.mkdir(parents=True, exist_ok=True)
     declared_by: dict[str, list[str]] = {}
     declared_directories: set[str] = set()
     declaration_rows: list[dict[str, Any]] = []
 
-    for index, spec in enumerate(output_specs):
+    for index, spec in enumerate(specs):
         declaration_id = f"output-{index}"
         matched_files: set[str] = set()
         present = False
@@ -168,48 +178,32 @@ def collect_output_artifacts(
         )
 
     for directory in sorted(declared_directories):
-        (declared_root / directory).mkdir(parents=True, exist_ok=True)
+        (results_root / directory).mkdir(parents=True, exist_ok=True)
 
     file_rows: list[dict[str, Any]] = []
     for relative, source in sorted(known_files.items()):
-        declared = relative in declared_by
-        destination_root = declared_root if declared else undeclared_root
-        destination = destination_root / relative
+        if relative not in declared_by:
+            continue
+        destination = results_root / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, destination)
         mime_type, _ = mimetypes.guess_type(relative)
         file_rows.append(
             {
                 "path": relative,
-                "classification": "declared" if declared else "undeclared",
-                "declared_by": declared_by.get(relative, []),
+                "declared_by": declared_by[relative],
                 "sha256": _sha256(source),
                 "size": source.stat().st_size,
                 "mime_type": mime_type or "application/octet-stream",
             }
         )
 
-    manifest_path = sample_dir / "outputs.manifest.json"
-    validation_path = sample_dir / "artifact_validation.json"
-    manifest = {
-        "schema_version": "roller.outputs/v1",
-        "declarations": declaration_rows,
-        "declared_directories": sorted(declared_directories),
-        "files": file_rows,
-    }
-    validation = {
-        "passed": not errors,
-        "declared_files": sum(row["classification"] == "declared" for row in file_rows),
-        "undeclared_files": sum(row["classification"] == "undeclared" for row in file_rows),
-        "errors": errors,
-    }
-    atomic_write_json(manifest_path, manifest)
-    atomic_write_json(validation_path, validation)
     return ArtifactCollectionResult(
-        passed=validation["passed"],
-        manifest_path=manifest_path,
-        validation_path=validation_path,
-        declared_files=validation["declared_files"],
-        undeclared_files=validation["undeclared_files"],
+        passed=not errors,
+        results_path=results_root,
+        declared_files=len(file_rows),
+        ignored_files=len(known_files) - len(file_rows),
+        declarations=tuple(declaration_rows),
+        files=tuple(file_rows),
         errors=tuple(errors),
     )
