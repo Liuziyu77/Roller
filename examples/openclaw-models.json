@@ -1,0 +1,17 @@
+{
+  "mode": "merge",
+  "providers": {
+    "my-openai-proxy": {
+      "baseUrl": "${MY_PROXY_BASE_URL}",
+      "apiKey": "${MY_PROXY_API_KEY}",
+      "api": "openai-responses",
+      "models": [
+        {
+          "id": "my-model",
+          "name": "My model"
+        }
+      ]
+    }
+  }
+}
+
