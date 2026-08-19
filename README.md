@@ -132,30 +132,21 @@ task 清单可以使用 `.jsonl` 或 `.json`：JSONL 每行是一条 task，JSON
   "id": "product_review",
   "file_root": "files/product_review",
   "model": "my-openai-proxy/my-model",
-  "messages": [
-    {
-      "role": "user",
-      "content": "阅读 inputs/product-brief.md，结合已注入的用户信息撰写产品摘要，并保存到 deliverables/report.md。"
-    },
-    {
-      "role": "user",
-      "content": "检查报告是否包含产品名称和三条核心特点；如果缺失，请补充后覆盖原文件。"
-    }
-  ],
+  "prompt": "阅读 inputs/product-brief.md，结合已注入的用户信息撰写产品摘要，并保存到 outputs/report.md。报告需要包含产品名称和三条核心特点。",
   "files": {
     "inputs": [
       {
-        "source": "product-brief.md",
+        "source": "inputs/product-brief.md",
         "target": "product-brief.md",
         "required": true
       }
     ],
     "context": [
-      {"role": "system", "source": "SYSTEM.md", "capture": "full"},
-      {"role": "user", "source": "USER.md", "capture": "hash"},
-      {"role": "memory", "source": "MEMORY.md", "capture": "hash"}
+      {"role": "system", "source": "context/SYSTEM.md", "capture": "full"},
+      {"role": "user", "source": "context/USER.md", "capture": "hash"},
+      {"role": "memory", "source": "context/MEMORY.md", "capture": "hash"}
     ],
-    "output_dir": "deliverables",
+    "output_dir": "outputs",
     "outputs": [
       {
         "path": "report.md",
@@ -171,7 +162,15 @@ task 清单可以使用 `.jsonl` 或 `.json`：JSONL 每行是一条 task，JSON
 }
 ```
 
-在这个例子中，`file_root` 指向 task 所属的文件包；`inputs` 提供 Agent 可读取的资料；`context` 注入系统与用户信息；`messages` 定义两轮连续对话；`outputs` 声明需要带回宿主机的文件。下面逐项说明这些配置。
+在这个例子中，`file_root` 指向 task 所属的文件包，宿主机输入放在其中的 `inputs/`，系统文件放在 `context/`。运行时，Agent 看到的输入与输出分属两个目录：
+
+```text
+/tmp_workspace/
+├── inputs/product-brief.md     # 只读输入
+└── outputs/report.md           # Agent 生成的输出
+```
+
+`outputs/` 不需要提前创建；Roller 会准备可写目录，并按 `files.outputs` 的声明把结果带回宿主机。下面逐项说明这些配置。
 
 ### 2. 常用顶层字段
 
@@ -179,9 +178,7 @@ task 清单可以使用 `.jsonl` 或 `.json`：JSONL 每行是一条 task，JSON
 | --- | --- | --- |
 | `schema_version` | 是 | 当前为 `roller.task/v1` |
 | `id` | 是 | task 的唯一标识 |
-| `prompt` | 三选一 | 单轮 user 输入 |
-| `question` | 三选一 | 兼容已有数据集的单轮输入字段 |
-| `messages` | 三选一 | 多轮 user 输入列表 |
+| `prompt` / `question` / `messages` | 三选一 | `prompt` 用于单轮输入，`question` 是兼容字段，`messages` 用于多轮输入 |
 | `file_root` | 否 | 本地 `source` 相对路径的基准目录 |
 | `model` | 否 | task 自己指定模型；命令行 `--model` 优先 |
 | `files` | 否 | 输入、context、输出目录和输出契约 |
@@ -193,31 +190,16 @@ task 清单可以使用 `.jsonl` 或 `.json`：JSONL 每行是一条 task，JSON
 {"schema_version":"roller.task/v1","id":"hello","prompt":"计算 2+3，只回复数字。"}
 ```
 
-### 3. 多轮输入
+多轮任务使用 `messages`，所有 message 会进入同一个 Agent session。完整示例和执行语义见 [单轮和多轮任务](docs/task-bundle-and-storage.md#单轮和多轮)。
 
-多轮任务直接提供多个 user message：
-
-```json
-{
-  "schema_version": "roller.task/v1",
-  "id": "remember_word",
-  "messages": [
-    {"role": "user", "content": "请记住校验词 ROLLER。"},
-    {"role": "user", "content": "刚才的校验词是什么？"}
-  ]
-}
-```
-
-所有 message 会进入同一个 OpenClaw session。Markdown 标题、`---` 或“第 1 轮”之类的文本不会被自动拆分。
-
-### 4. 输入文件
+### 3. 输入文件
 
 ```json
 "inputs": [
-  "brief.md",
-  {"source": "./documents", "target": "documents"},
+  "inputs/brief.md",
+  {"source": "inputs/documents", "target": "documents"},
   {
-    "source": "dataset.csv",
+    "source": "inputs/dataset.csv",
     "target": "data/dataset.csv",
     "required": true,
     "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -230,14 +212,14 @@ task 清单可以使用 `.jsonl` 或 `.json`：JSONL 每行是一条 task，JSON
 - Agent 可以通过 `inputs/<target>` 或 `/roller/task/inputs/<target>` 读取。
 - 输入在容器中只读；目录会递归复制并检查符号链接。
 
-### 5. USER.md、MEMORY.md 与系统文件
+### 4. USER.md、MEMORY.md 与系统文件
 
 ```json
 "context": [
-  {"role": "system", "source": "./SYSTEM.md", "capture": "full"},
-  {"role": "user", "source": "./USER.md", "capture": "hash"},
-  {"role": "memory", "source": "./MEMORY.md", "capture": "hash"},
-  {"role": "skill", "source": "./skills/research"}
+  {"role": "system", "source": "context/SYSTEM.md", "capture": "full"},
+  {"role": "user", "source": "context/USER.md", "capture": "hash"},
+  {"role": "memory", "source": "context/MEMORY.md", "capture": "hash"},
+  {"role": "skill", "source": "context/skills/research"}
 ]
 ```
 
@@ -252,11 +234,11 @@ task 清单可以使用 `.jsonl` 或 `.json`：JSONL 每行是一条 task，JSON
 
 OpenClaw adapter 会把 context 放到 `/root/<target>` 和 `/tmp_workspace/<target>`。`capture` 可选 `full`、`hash` 或 `none`；详细差别见 [Task 文件与存储设计](docs/task-bundle-and-storage.md)。
 
-### 6. 输出目录与输出契约
+### 5. 输出目录与输出契约
 
 ```json
 "files": {
-  "output_dir": "deliverables",
+  "output_dir": "outputs",
   "outputs": [
     {"path": "report.md", "type": "file", "required": true},
     {"path": "assets", "type": "directory", "required": false},
@@ -275,7 +257,7 @@ OpenClaw adapter 会把 context 放到 `/root/<target>` 和 `/tmp_workspace/<tar
 
 Agent 写入 `/tmp_workspace/<output_dir>/`；`/roller/task/outputs` 是同一目录的稳定别名。只有匹配 `files.outputs` 的内容会保存到 sample 的 `results/`。
 
-### 7. 运行时设置
+### 6. 运行时设置
 
 ```json
 "runtime": {
