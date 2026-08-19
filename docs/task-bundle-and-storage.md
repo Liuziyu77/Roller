@@ -25,31 +25,6 @@ Agent 写 `/tmp_workspace/deliverables/final/report.md`；Roller 最终保存到
 
 ## 2. Task 格式与路径解析
 
-常用字段：
-
-```json
-{
-  "schema_version": "roller.task/v1",
-  "id": "task_001",
-  "file_root": "..",
-  "messages": [
-    {"role": "user", "content": "第一轮"},
-    {"role": "user", "content": "第二轮"}
-  ],
-  "files": {
-    "output_dir": "outputs",
-    "inputs": [],
-    "context": [],
-    "outputs": []
-  },
-  "runtime": {
-    "env": ["OPTIONAL_ENV_NAME"],
-    "setup": ["command run inside /tmp_workspace"],
-    "thinking": "high"
-  }
-}
-```
-
 宿主机 `source` 默认相对于 task 清单所在目录。提供 `file_root` 后，`source` 改为相对于 `file_root`；`file_root` 自身仍相对于 task 清单。
 
 `target`、`output_dir` 和 output `path` 都是 POSIX 风格逻辑相对路径。绝对路径、`..` 逃逸、保留路径冲突会在启动容器前被拒绝。
@@ -59,6 +34,52 @@ Agent 写 `/tmp_workspace/deliverables/final/report.md`；Roller 最终保存到
 - `prompt`：一轮 user message；兼容字段 `question` 行为相同。
 - `messages`：每个数组元素是一轮 user message，在同一个 OpenClaw session 中顺序发送。
 
+下面是一条包含两轮对话、输入文件、Context 和文件输出的完整 task：
+
+```json
+{
+  "schema_version": "roller.task/v1",
+  "id": "multi_turn_review",
+  "file_root": "files/multi_turn_review",
+  "model": "my-openai-proxy/my-model",
+  "messages": [
+    {
+      "role": "user",
+      "content": "阅读 inputs/product-brief.md，先概括产品名称和核心特点。"
+    },
+    {
+      "role": "user",
+      "content": "根据刚才的分析生成最终报告，并保存到 outputs/report.md。"
+    }
+  ],
+  "files": {
+    "output_dir": "outputs",
+    "inputs": [
+      {
+        "source": "inputs/product-brief.md",
+        "target": "product-brief.md",
+        "required": true
+      }
+    ],
+    "context": [
+      {"role": "user", "source": "context/USER.md", "capture": "hash"},
+      {"role": "memory", "source": "context/MEMORY.md", "capture": "hash"}
+    ],
+    "outputs": [
+      {
+        "path": "report.md",
+        "type": "file",
+        "required": true,
+        "max_bytes": 1048576
+      }
+    ]
+  },
+  "runtime": {
+    "thinking": "high"
+  }
+}
+```
+
 Roller 不使用正则表达式拆分 prompt。即使一条 message 中包含 `## Round 1`、`---` 等文本，它仍然只是一轮。
 
 ## 3. 输入依赖
@@ -67,13 +88,13 @@ Roller 不使用正则表达式拆分 prompt。即使一条 message 中包含 `#
 
 ```json
 "inputs": [
-  "brief.md",
-  {"source": "./documents", "target": "documents"},
+  "inputs/brief.md",
+  {"source": "inputs/documents", "target": "documents"},
   {
-    "source": "dataset.csv",
+    "source": "inputs/dataset.csv",
     "target": "data/dataset.csv",
     "required": true,
-    "sha256": "64-character-expected-digest"
+    "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
   }
 ]
 ```
@@ -93,12 +114,12 @@ Task Bundle 只作为运行期材料存在，任务结束后删除；最终 samp
 
 ```json
 "context": [
-  {"role": "system", "source": "./SYSTEM.md", "capture": "full"},
-  {"role": "user", "source": "./USER.md", "capture": "hash"},
-  {"role": "memory", "source": "./MEMORY.md", "capture": "hash"},
+  {"role": "system", "source": "context/SYSTEM.md", "capture": "full"},
+  {"role": "user", "source": "context/USER.md", "capture": "hash"},
+  {"role": "memory", "source": "context/MEMORY.md", "capture": "hash"},
   {
     "role": "skill",
-    "source": "./skills/web-research",
+    "source": "context/skills/web-research",
     "target": "skills/web-research",
     "capture": "full"
   }
