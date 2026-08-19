@@ -66,6 +66,33 @@ class TaskLoadingTests(unittest.TestCase):
                 ],
             )
 
+    def test_resolves_sources_against_task_file_root(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary) / "project"
+            manifests = project / "manifests"
+            files = project / "files"
+            manifests.mkdir(parents=True)
+            files.mkdir()
+            source = files / "input.md"
+            source.write_text("input", encoding="utf-8")
+            task_file = manifests / "tasks.jsonl"
+            task_file.write_text(
+                json.dumps(
+                    {
+                        "id": "rooted",
+                        "file_root": "..",
+                        "prompt": "read input",
+                        "files": {"inputs": [{"source": "files/input.md"}]},
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            task = load_tasks(task_file)[0]
+
+            self.assertEqual(task.inputs[0].source, source)
+
     def test_rejects_duplicate_ids(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             task_file = Path(temporary) / "tasks.json"
@@ -84,4 +111,3 @@ class TaskLoadingTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

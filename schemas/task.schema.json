@@ -7,6 +7,11 @@
   "properties": {
     "schema_version": {"const": "roller.task/v1"},
     "id": {"type": ["string", "integer"]},
+    "file_root": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Base directory for relative files.*.source paths; itself relative to the task-list directory"
+    },
     "prompt": {"type": "string", "minLength": 1},
     "question": {"type": "string", "minLength": 1},
     "messages": {
