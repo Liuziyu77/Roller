@@ -16,7 +16,7 @@ class ExampleFilesTests(unittest.TestCase):
         cls.examples_root = cls.project_root / "examples"
 
     def test_four_example_tasks_and_their_input_bundle_are_valid(self) -> None:
-        tasks = load_tasks(self.examples_root / "tasks.jsonl")
+        tasks = load_tasks(self.examples_root / "tasks" / "tasks.jsonl")
 
         self.assertEqual(
             [task.id for task in tasks],
@@ -28,12 +28,12 @@ class ExampleFilesTests(unittest.TestCase):
             ],
         )
         self.assertEqual([len(task.prompts) for task in tasks], [1, 1, 1, 2])
-        self.assertTrue(all(task.raw["file_root"] == ".." for task in tasks))
+        self.assertTrue(all(task.raw["file_root"] == "../.." for task in tasks))
         self.assertEqual(len(tasks[0].inputs), 0)
         self.assertEqual(tasks[1].inputs[0].target, "product-brief.md")
         self.assertEqual(
             tasks[1].inputs[0].source,
-            self.examples_root / "task_files/02_local_markdown/product-brief.md",
+            self.examples_root / "tasks/files/02_local_markdown/product-brief.md",
         )
         self.assertEqual(
             [item.role for item in tasks[2].context_files], ["user", "memory"]
@@ -51,7 +51,7 @@ class ExampleFilesTests(unittest.TestCase):
 
     def test_custom_api_example_expands_environment_placeholders(self) -> None:
         config = load_model_config(
-            self.examples_root / "openclaw-models.json",
+            self.examples_root / "json" / "openclaw-models.json",
             {
                 "MY_PROXY_BASE_URL": "https://proxy.example/v1",
                 "MY_PROXY_API_KEY": "secret",
@@ -62,6 +62,27 @@ class ExampleFilesTests(unittest.TestCase):
         self.assertEqual(provider["baseUrl"], "https://proxy.example/v1")
         self.assertEqual(provider["apiKey"], "secret")
         self.assertEqual(provider["api"], "openai-responses")
+        self.assertEqual(
+            provider["models"],
+            [{"id": "my-model", "name": "My model"}],
+        )
+
+        multimodal = load_model_config(
+            self.examples_root / "json" / "openclaw-models-multimodal.json",
+            {
+                "MY_PROXY_BASE_URL": "https://proxy.example/v1",
+                "MY_PROXY_API_KEY": "secret",
+            },
+        )
+        multimodal_model = multimodal["providers"]["my-openai-proxy"]["models"][0]
+        self.assertEqual(multimodal_model["id"], "my-multimodal-model")
+        self.assertEqual(multimodal_model["input"], ["text", "image"])
+
+    def test_environment_example_includes_model_and_search_variables(self) -> None:
+        content = (self.examples_root / "env" / "api.env.example").read_text()
+        self.assertIn("MY_PROXY_BASE_URL=https://api.example.com/v1", content)
+        self.assertIn("MY_PROXY_API_KEY=replace-with-your-api-key", content)
+        self.assertIn("BRAVE_API_KEY=replace-with-your-brave-api-key", content)
 
 
 if __name__ == "__main__":
