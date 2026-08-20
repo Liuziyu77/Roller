@@ -10,7 +10,7 @@
   </p>
 </div>
 
-Roller 把 task 清单与模型列表展开成独立 rollout，在隔离的 Docker 环境中并行运行 Agent Harness，并把每次执行整理成可复用的轨迹样本。每个样本保留 Harness 原始轨迹、`ACTF_v1.0`、运行信息，以及 Agent 明确写入输出目录的文件。
+Roller 把 task 清单与模型列表展开成独立 rollout，在隔离的 Docker 环境中并行运行 Agent Harness，并把每次执行整理成可复用的轨迹样本。每个样本保留 Harness raw、`ACTF_v1.0`、标准化 SFT、运行信息，以及 Agent 明确写入输出目录的文件。
 
 当前支持 **OpenClaw**。Task、文件管理、Conversation Manager 与结果格式不依赖具体 benchmark，后续可以继续接入其他 Agent Harness。
 
@@ -23,7 +23,7 @@ Roller 把 task 清单与模型列表展开成独立 rollout，在隔离的 Dock
 | 独立文件包 | 每个 task 可以携带自己的输入文件、目录和 Context |
 | 系统文件注入 | 支持 `USER.md`、`MEMORY.md`、`SYSTEM.md`、`SOUL.md`、`AGENTS.md` 和 skills |
 | 自动回收结果 | Agent 写入 `output_dir` 的全部安全文件会按原目录结构保存 |
-| 双轨迹格式 | 同时保存 OpenClaw 原始 JSONL 和便于训练、分析的 `ACTF_v1.0` |
+| 三层轨迹格式 | 同时保存 OpenClaw raw、便于分析的 `ACTF_v1.0` 和最小 SFT 数据 |
 | 自定义模型服务 | 支持自定义 provider、API base、文本模型和多模态模型 |
 
 Roller 适合构建训练轨迹数据集、比较不同模型的 Agent 行为、回归测试 Harness，以及批量收集带文件产物的长程任务。
@@ -201,21 +201,28 @@ files/product_summary/
 ```text
 <output>/<run-name>/
 ├── info.json
+├── sft.jsonl                    # 全部成功 task Agent 的训练记录
 └── samples/<model>/<index>_<task>/
     ├── trace.jsonl
     ├── trace_ACTF.json
+    ├── trace_SFT.json
     ├── info.json
     └── results/                 # 可选
 ```
 
 - `trace.jsonl`：Harness 原始轨迹，不清洗、不改写。
 - `trace_ACTF.json`：转换后的 `ACTF_v1.0` 轨迹，顶层包含实际 system prompt 和完整 tools schema，并按 step 保存 reasoning。
+- `trace_SFT.json`：只包含 `messages` 和 `tools` 的标准化训练样本；assistant 固定包含 `reasoning_content`、`content` 和 `tool_calls`。
+- `sft.jsonl`：按 request 顺序汇总所有成功 task Agent 的 `trace_SFT.json`，每行一个样本。
 - `info.json`：状态、错误、usage、版本、耗时和输入 digest。
 - `results/`：可选，保存 task `output_dir` 中的文件。
 
+各层轨迹的生成条件、保留策略、参数组合和失败/Resume 行为见
+[轨迹产出文件指南](docs/trajectory-outputs.md)。
+
 默认 `--wire-trace actf` 只把 tools schema 嵌入 ACTF，不保留中间诊断文件；`--wire-trace full` 会额外保存脱敏后的 `cache_trace.jsonl` 和完整请求体 `wire_trace.jsonl`。
 
-User Simulator rollout 还会增加 `conversation.json` 和 `user_simulator/`，分别保存干净的交替对话和 Simulator 自己的 raw/ACTF 轨迹。
+User Simulator rollout 还会增加 `conversation.json` 和 `user_simulator/`，分别保存干净的交替对话和 Simulator 自己的 raw/ACTF/SFT 轨迹。
 
 运行期日志、Task Bundle、retry 中间文件和未声明的工作区临时文件不会进入最终 run。字段说明和 Resume 规则见 [文件、Task Bundle 与结果存储](docs/task-bundle-and-storage.md)。
 
@@ -251,8 +258,10 @@ roller collect --help
 | [Examples](examples/README.md) | 直接运行基础 task、User Simulator 和多模态配置 |
 | [Task 格式参考](docs/task-format.md) | 字段、对话模式、文件声明、runtime 与完整案例 |
 | [文件、Task Bundle 与结果存储](docs/task-bundle-and-storage.md) | 输入快照、Context、results、ACTF、重试与 Resume |
+| [轨迹产出文件指南](docs/trajectory-outputs.md) | raw、ACTF、SFT、wire、产出条件和使用区别 |
+| [SFT 数据格式](docs/sft-format.md) | `messages`/`tools` schema、ACTF 映射和严格校验 |
 | [OpenClaw、模型与 API](docs/openclaw-configuration.md) | Docker、provider、API base、代理、搜索和常见问题 |
-| [User Simulator 与动态对话](docs/user-simulator.md) | Conversation Manager、终止协议、资源占用和双轨迹 |
+| [User Simulator 与动态对话](docs/user-simulator.md) | Conversation Manager、终止协议、资源占用和双方轨迹 |
 
 ## 🔒 安全边界
 

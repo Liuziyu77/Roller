@@ -31,17 +31,28 @@ class FakeHarness(Harness):
                 return HarnessResult.error_result("transient")
             trace = output_dir / "trace.jsonl"
             trace.write_text(
-                json.dumps(
-                    {
-                        "type": "message",
-                        "message": {
-                            "role": "assistant",
-                            "content": [{"type": "text", "text": "done"}],
-                            "usage": {"input": 1, "output": 2},
-                            "stopReason": "stop",
-                            "timestamp": 1000,
+                "\n".join(
+                    json.dumps(event)
+                    for event in (
+                        {
+                            "type": "message",
+                            "message": {
+                                "role": "user",
+                                "content": request.task.prompts[0],
+                                "timestamp": 900,
+                            },
                         },
-                    }
+                        {
+                            "type": "message",
+                            "message": {
+                                "role": "assistant",
+                                "content": [{"type": "text", "text": "done"}],
+                                "usage": {"input": 1, "output": 2},
+                                "stopReason": "stop",
+                                "timestamp": 1000,
+                            },
+                        },
+                    )
                 )
                 + "\n",
                 encoding="utf-8",
@@ -106,10 +117,19 @@ class CollectorTests(unittest.TestCase):
             sample = next((run_dir / "samples").glob("*/00000000_task-0"))
             self.assertEqual(
                 {path.name for path in sample.iterdir()},
-                {"trace.jsonl", "trace_ACTF.json", "info.json"},
+                {"trace.jsonl", "trace_ACTF.json", "trace_SFT.json", "info.json"},
             )
             actf = json.loads((sample / "trace_ACTF.json").read_text())
             self.assertEqual(actf["schema_version"], "ACTF_v1.0")
+            sft = json.loads((sample / "trace_SFT.json").read_text())
+            self.assertEqual(set(sft), {"messages", "tools"})
+            self.assertEqual(sft["messages"][1]["content"], "hello")
+            dataset = [
+                json.loads(line)
+                for line in (run_dir / "sft.jsonl").read_text().splitlines()
+            ]
+            self.assertEqual(len(dataset), 4)
+            self.assertEqual(dataset[0], sft)
 
     def test_retries_then_resumes_completed_samples(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
