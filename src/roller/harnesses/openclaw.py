@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 from urllib.parse import urlsplit, urlunsplit
 
-from roller.artifacts import ArtifactCollectionResult, collect_output_artifacts
+from roller.artifacts import ArtifactCollectionResult, collect_output_directory
 from roller.harnesses.base import Harness
 from roller.models import HarnessResult, RunRequest
 from roller.storage import safe_component
@@ -295,20 +295,17 @@ print(files[0] if files else '')
             args.extend(["-v", f"{request.bundle.inputs_root}:{INPUTS_CONTAINER_PATH}:ro"])
             args.extend(["-v", f"{request.bundle.context_root}:{CONTEXT_CONTAINER_PATH}:ro"])
             if not request.bundle.legacy_workspace:
-                args.extend(
-                    [
-                        "-v",
-                        f"{request.bundle.inputs_root}:"
-                        f"{self.config.workspace_container_path}/inputs:ro",
-                    ]
-                )
-                args.extend(
-                    [
-                        "-v",
-                        f"{request.bundle.context_root}:"
-                        f"{self.config.workspace_container_path}/context:ro",
-                    ]
-                )
+                for input_file in request.task.inputs:
+                    input_path = request.bundle.inputs_root / input_file.path
+                    if not input_path.exists():
+                        continue
+                    args.extend(
+                        [
+                            "-v",
+                            f"{input_path}:"
+                            f"{self.config.workspace_container_path}/{input_file.path}:ro",
+                        ]
+                    )
         else:
             workspace = request.task.workspace
             if workspace is not None:
@@ -605,18 +602,13 @@ print(files[0] if files else '')
             )
         return records
 
-    def _collect_contract_outputs(
+    def _collect_outputs(
         self, container: str, request: RunRequest, output_dir: Path
     ) -> tuple[ArtifactCollectionResult, str | None]:
         staging_root = output_dir / ".runtime-outputs"
         if staging_root.exists():
             shutil.rmtree(staging_root)
         staging_root.mkdir(parents=True, exist_ok=True)
-        if not request.task.outputs:
-            try:
-                return collect_output_artifacts(staging_root, output_dir, ()), None
-            finally:
-                shutil.rmtree(staging_root, ignore_errors=True)
         result = self.runtime.run(
             [
                 "cp",
@@ -627,9 +619,7 @@ print(files[0] if files else '')
         )
         copy_error = None if result.returncode == 0 else self._error_text(result)
         try:
-            collected = collect_output_artifacts(
-                staging_root, output_dir, request.task.outputs
-            )
+            collected = collect_output_directory(staging_root, output_dir)
         finally:
             shutil.rmtree(staging_root, ignore_errors=True)
         return collected, copy_error
@@ -712,7 +702,7 @@ print(files[0] if files else '')
                 except Exception as exc:
                     logger.warning("[%s] trace collection failed: %s", request.task.id, exc)
                 try:
-                    artifact_result, output_copy_error = self._collect_contract_outputs(
+                    artifact_result, output_copy_error = self._collect_outputs(
                         container, request, output_dir
                     )
                 except Exception as exc:
@@ -737,7 +727,7 @@ print(files[0] if files else '')
                 error = f"output collection failed: {output_copy_error}"
             if status == "ok" and artifact_result is not None and not artifact_result.passed:
                 status = "error"
-                error = "output contract validation failed"
+                error = "unsafe output files were rejected"
             if container_started and not (self.config.keep_container_on_error and status != "ok"):
                 try:
                     remove_result = self.runtime.run(["rm", "-f", container], timeout=30)
@@ -783,9 +773,9 @@ print(files[0] if files else '')
             "started_at": started_at,
             "finished_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         }
-        output_contract_metadata = (
+        output_collection_metadata = (
             {
-                "requested": bool(request.task.outputs),
+                "mode": "all",
                 "agent_output_dir": request.task.output_dir,
                 "passed": artifact_result.passed,
                 "path": (
@@ -793,9 +783,8 @@ print(files[0] if files else '')
                     if artifact_result.results_path is not None
                     else None
                 ),
-                "declared_files": artifact_result.declared_files,
-                "ignored_files": artifact_result.ignored_files,
-                "declarations": list(artifact_result.declarations),
+                "file_count": artifact_result.file_count,
+                "directory_count": artifact_result.directory_count,
                 "files": list(artifact_result.files),
                 "errors": list(artifact_result.errors),
             }
@@ -818,7 +807,7 @@ print(files[0] if files else '')
                 "container": container if self.config.keep_container_on_error and status != "ok" else None,
                 "agent_return_codes": return_codes,
                 "turns": len(self._prompts(request)),
-                "output_contract": output_contract_metadata,
+                "output_collection": output_collection_metadata,
                 "output_copy_error": output_copy_error,
                 "legacy_artifacts": legacy_artifact_records,
                 "attempt": attempt,

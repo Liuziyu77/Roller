@@ -173,11 +173,11 @@ class Collector:
                 "actf": "trace_ACTF.json" if actf_path.is_file() else None,
                 "actf_schema": "ACTF_v1.0" if actf_path.is_file() else None,
             },
-            "output_contract": metadata.get("output_contract"),
+            "output_collection": metadata.get("output_collection"),
             "runtime": {
                 key: value
                 for key, value in metadata.items()
-                if key not in {"output_contract", "provenance"}
+                if key not in {"output_collection", "provenance"}
             },
             "provenance": provenance,
         }

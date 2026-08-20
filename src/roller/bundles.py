@@ -222,7 +222,7 @@ class TaskBundleStore:
             scanned = self._scan_source(spec.source, spec.required, f"task {task.id} input {index}")
             if scanned is None:
                 declarations.append(
-                    {"target": spec.target, "required": spec.required, "present": False}
+                    {"path": spec.path, "required": spec.required, "present": False}
                 )
                 continue
             actual_source_digest = (
@@ -235,7 +235,7 @@ class TaskBundleStore:
                 )
             declarations.append(
                 {
-                    "target": spec.target,
+                    "path": spec.path,
                     "required": spec.required,
                     "present": True,
                     "source_digest": actual_source_digest,
@@ -249,18 +249,20 @@ class TaskBundleStore:
                 )
             for directory in scanned.directories:
                 self._add_directory(
-                    _join_target(spec.target, directory),
+                    _join_target(spec.path, directory),
                     occupied_files,
                     directories,
                     f"task {task.id} input",
                 )
-            if spec.source.is_dir() and spec.target != ".":
+            if spec.source.is_dir() and spec.path != ".":
                 self._add_directory(
-                    spec.target, occupied_files, directories, f"task {task.id} input"
+                    spec.path, occupied_files, directories, f"task {task.id} input"
                 )
             for item in scanned.files:
                 logical_path = (
-                    spec.target if item.relative_path == "." else _join_target(spec.target, item.relative_path)
+                    spec.path
+                    if item.relative_path == "."
+                    else _join_target(spec.path, item.relative_path)
                 )
                 self._ensure_available(
                     logical_path,
@@ -441,15 +443,6 @@ class TaskBundleStore:
         input_manifest_digest = _canonical_digest(input_manifest)
         context_manifest_digest = _canonical_digest(context_manifest)
 
-        output_contract = [
-            {
-                "path": output.path,
-                "type": output.type,
-                "required": output.required,
-                "max_bytes": output.max_bytes,
-            }
-            for output in task.outputs
-        ]
         manifest = {
             "schema_version": task.schema_version,
             "id": task.id,
@@ -463,7 +456,7 @@ class TaskBundleStore:
                 "context_manifest": context_manifest_path.name,
                 "context_manifest_digest": context_manifest_digest,
                 "output_dir": task.output_dir,
-                "outputs": output_contract,
+                "output_collection": "all",
             },
             "runtime": {
                 "env": list(task.env_names),

@@ -6,18 +6,15 @@ import os
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
-
-from roller.models import OutputFile
+from typing import Any
 
 
 @dataclass(frozen=True)
 class ArtifactCollectionResult:
     passed: bool
     results_path: Path | None
-    declared_files: int
-    ignored_files: int
-    declarations: tuple[dict[str, Any], ...]
+    file_count: int
+    directory_count: int
     files: tuple[dict[str, Any], ...]
     errors: tuple[dict[str, Any], ...]
 
@@ -25,9 +22,8 @@ class ArtifactCollectionResult:
         return {
             "passed": self.passed,
             "path": str(self.results_path) if self.results_path is not None else None,
-            "declared_files": self.declared_files,
-            "ignored_files": self.ignored_files,
-            "declarations": list(self.declarations),
+            "file_count": self.file_count,
+            "directory_count": self.directory_count,
             "files": list(self.files),
             "errors": list(self.errors),
         }
@@ -41,11 +37,14 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _walk_outputs(root: Path) -> tuple[dict[str, Path], list[dict[str, Any]]]:
+def _walk_outputs(
+    root: Path,
+) -> tuple[dict[str, Path], set[str], list[dict[str, Any]]]:
     files: dict[str, Path] = {}
+    directories: set[str] = set()
     errors: list[dict[str, Any]] = []
     if not root.exists():
-        return files, errors
+        return files, directories, errors
     for current, dir_names, file_names in os.walk(root, followlinks=False):
         current_path = Path(current)
         retained_dirs: list[str] = []
@@ -56,6 +55,7 @@ def _walk_outputs(root: Path) -> tuple[dict[str, Path], list[dict[str, Any]]]:
                 errors.append({"type": "unsafe_symlink", "path": relative})
             else:
                 retained_dirs.append(name)
+                directories.add(relative)
         dir_names[:] = retained_dirs
         for name in sorted(file_names):
             path = current_path / name
@@ -66,124 +66,37 @@ def _walk_outputs(root: Path) -> tuple[dict[str, Path], list[dict[str, Any]]]:
                 errors.append({"type": "non_regular_file", "path": relative})
             else:
                 files[relative] = path
-    return files, errors
+    return files, directories, errors
 
 
-def _files_under(path: Path, root: Path, known_files: dict[str, Path]) -> set[str]:
-    if path.is_file() and not path.is_symlink():
-        return {path.relative_to(root).as_posix()}
-    if path.is_dir() and not path.is_symlink():
-        prefix = path.relative_to(root).as_posix()
-        if prefix == ".":
-            return set(known_files)
-        return {
-            relative
-            for relative in known_files
-            if relative == prefix or relative.startswith(f"{prefix}/")
-        }
-    return set()
-
-
-def collect_output_artifacts(
+def collect_output_directory(
     staging_root: Path,
     sample_dir: Path,
-    output_specs: Iterable[OutputFile],
 ) -> ArtifactCollectionResult:
-    """Validate declared outputs and copy only requested files into ``results/``."""
+    """Safely copy every regular file from the task output directory to ``results/``."""
 
-    specs = tuple(output_specs)
     results_root = sample_dir / "results"
     if results_root.exists():
         shutil.rmtree(results_root)
     staging_root.mkdir(parents=True, exist_ok=True)
 
-    known_files, errors = _walk_outputs(staging_root)
-    if not specs:
+    known_files, directories, errors = _walk_outputs(staging_root)
+    if not known_files and not directories:
         return ArtifactCollectionResult(
-            passed=True,
+            passed=not errors,
             results_path=None,
-            declared_files=0,
-            ignored_files=len(known_files),
-            declarations=(),
+            file_count=0,
+            directory_count=0,
             files=(),
-            errors=(),
+            errors=tuple(errors),
         )
 
     results_root.mkdir(parents=True, exist_ok=True)
-    declared_by: dict[str, list[str]] = {}
-    declared_directories: set[str] = set()
-    declaration_rows: list[dict[str, Any]] = []
-
-    for index, spec in enumerate(specs):
-        declaration_id = f"output-{index}"
-        matched_files: set[str] = set()
-        present = False
-        candidate = staging_root / spec.path
-
-        if spec.type == "file":
-            present = candidate.exists() or candidate.is_symlink()
-            if present and (candidate.is_symlink() or not candidate.is_file()):
-                errors.append(
-                    {"type": "output_type_mismatch", "declaration": declaration_id, "path": spec.path}
-                )
-            else:
-                matched_files = _files_under(candidate, staging_root, known_files)
-        elif spec.type == "directory":
-            present = candidate.exists() or candidate.is_symlink()
-            if present and (candidate.is_symlink() or not candidate.is_dir()):
-                errors.append(
-                    {"type": "output_type_mismatch", "declaration": declaration_id, "path": spec.path}
-                )
-            else:
-                matched_files = _files_under(candidate, staging_root, known_files)
-                if present and spec.path != ".":
-                    declared_directories.add(spec.path)
-        else:
-            matches = list(staging_root.glob(spec.path))
-            present = bool(matches)
-            for match in matches:
-                matched_files.update(_files_under(match, staging_root, known_files))
-                if match.is_dir() and not match.is_symlink():
-                    relative_directory = match.relative_to(staging_root).as_posix()
-                    if relative_directory != ".":
-                        declared_directories.add(relative_directory)
-
-        if spec.required and not present:
-            errors.append(
-                {"type": "required_output_missing", "declaration": declaration_id, "path": spec.path}
-            )
-        for relative in sorted(matched_files):
-            declared_by.setdefault(relative, []).append(declaration_id)
-            size = known_files[relative].stat().st_size
-            if spec.max_bytes is not None and size > spec.max_bytes:
-                errors.append(
-                    {
-                        "type": "output_too_large",
-                        "declaration": declaration_id,
-                        "path": relative,
-                        "size": size,
-                        "max_bytes": spec.max_bytes,
-                    }
-                )
-        declaration_rows.append(
-            {
-                "id": declaration_id,
-                "path": spec.path,
-                "type": spec.type,
-                "required": spec.required,
-                "max_bytes": spec.max_bytes,
-                "present": present,
-                "matched_files": sorted(matched_files),
-            }
-        )
-
-    for directory in sorted(declared_directories):
+    for directory in sorted(directories):
         (results_root / directory).mkdir(parents=True, exist_ok=True)
 
     file_rows: list[dict[str, Any]] = []
     for relative, source in sorted(known_files.items()):
-        if relative not in declared_by:
-            continue
         destination = results_root / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, destination)
@@ -191,7 +104,6 @@ def collect_output_artifacts(
         file_rows.append(
             {
                 "path": relative,
-                "declared_by": declared_by[relative],
                 "sha256": _sha256(source),
                 "size": source.stat().st_size,
                 "mime_type": mime_type or "application/octet-stream",
@@ -201,9 +113,8 @@ def collect_output_artifacts(
     return ArtifactCollectionResult(
         passed=not errors,
         results_path=results_root,
-        declared_files=len(file_rows),
-        ignored_files=len(known_files) - len(file_rows),
-        declarations=tuple(declaration_rows),
+        file_count=len(file_rows),
+        directory_count=len(directories),
         files=tuple(file_rows),
         errors=tuple(errors),
     )

@@ -28,24 +28,25 @@ class ExampleFilesTests(unittest.TestCase):
             ],
         )
         self.assertEqual([len(task.prompts) for task in tasks], [1, 1, 1, 2])
-        self.assertTrue(all(task.raw["file_root"] == "../.." for task in tasks))
         self.assertEqual(len(tasks[0].inputs), 0)
-        self.assertEqual(tasks[1].inputs[0].target, "product-brief.md")
+        self.assertEqual(tasks[1].inputs[0].path, "inputs/product-brief.md")
         self.assertEqual(
             tasks[1].inputs[0].source,
-            self.examples_root / "tasks/files/02_local_markdown/product-brief.md",
+            self.examples_root
+            / "tasks/files/02_local_markdown/inputs/product-brief.md",
         )
         self.assertEqual(
             [item.role for item in tasks[2].context_files], ["user", "memory"]
         )
-        self.assertEqual([len(task.outputs) for task in tasks], [0, 1, 0, 0])
-        self.assertEqual(tasks[1].output_dir, "quick_results")
+        self.assertEqual(tasks[1].output_dir, "outputs")
 
         with tempfile.TemporaryDirectory() as temporary:
             bundles = TaskBundleStore(Path(temporary)).prepare_all(tasks)
             markdown_bundle = bundles["02_local_markdown"]
             persona_bundle = bundles["03_user_memory_context"]
-            self.assertTrue((markdown_bundle.inputs_root / "product-brief.md").is_file())
+            self.assertTrue(
+                (markdown_bundle.inputs_root / "inputs/product-brief.md").is_file()
+            )
             self.assertTrue((persona_bundle.context_root / "USER.md").is_file())
             self.assertTrue((persona_bundle.context_root / "MEMORY.md").is_file())
 

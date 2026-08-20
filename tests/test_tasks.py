@@ -92,6 +92,7 @@ class TaskLoadingTests(unittest.TestCase):
             task = load_tasks(task_file)[0]
 
             self.assertEqual(task.inputs[0].source, source)
+            self.assertEqual(task.inputs[0].path, "files/input.md")
 
     def test_rejects_duplicate_ids(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -119,7 +120,6 @@ class TaskLoadingTests(unittest.TestCase):
                             "prompt": "write a file",
                             "files": {
                                 "output_dir": "deliverables/final",
-                                "outputs": ["answer.md"],
                             },
                         }
                     ]
@@ -142,6 +142,109 @@ class TaskLoadingTests(unittest.TestCase):
                 encoding="utf-8",
             )
             with self.assertRaisesRegex(TaskFormatError, "reserved"):
+                load_tasks(task_file)
+
+    def test_rejects_removed_input_target_and_output_declarations(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "input.txt").write_text("input", encoding="utf-8")
+            task_file = root / "tasks.json"
+            task_file.write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "target",
+                            "prompt": "read",
+                            "files": {
+                                "inputs": [
+                                    {"source": "input.txt", "target": "renamed.txt"}
+                                ]
+                            },
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(TaskFormatError, "target.*no longer supported"):
+                load_tasks(task_file)
+
+            task_file.write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "outputs",
+                            "prompt": "write",
+                            "files": {"outputs": ["answer.md"]},
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(TaskFormatError, "files.outputs.*no longer supported"):
+                load_tasks(task_file)
+
+    def test_rejects_input_outside_file_root_and_output_overlap(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "inputs").mkdir()
+            (root / "inputs" / "input.txt").write_text("input", encoding="utf-8")
+            (root / "shared.txt").write_text("shared", encoding="utf-8")
+            task_file = root / "tasks.json"
+            task_file.write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "outside",
+                            "prompt": "read",
+                            "files": {"inputs": ["../outside.txt"]},
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(TaskFormatError, "parent traversal"):
+                load_tasks(task_file)
+
+            task_file.write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "overlap",
+                            "prompt": "write",
+                            "files": {
+                                "inputs": ["inputs"],
+                                "output_dir": "inputs/generated",
+                            },
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(TaskFormatError, "reserved|overlaps input"):
+                load_tasks(task_file)
+
+            task_file.write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "context-overlap",
+                            "prompt": "read",
+                            "files": {
+                                "inputs": ["shared.txt"],
+                                "context": [
+                                    {
+                                        "role": "custom",
+                                        "source": "shared.txt",
+                                        "target": "shared.txt",
+                                    }
+                                ],
+                            },
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(TaskFormatError, "overlaps context target"):
                 load_tasks(task_file)
 
 

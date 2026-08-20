@@ -6,11 +6,10 @@ import re
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterable
 
-from roller.models import ContextFile, InputFile, OutputFile, RunRequest, Task
+from roller.models import ContextFile, InputFile, RunRequest, Task
 
 TASK_SCHEMA_V1 = "roller.task/v1"
 CAPTURE_POLICIES = {"full", "hash", "none"}
-OUTPUT_TYPES = {"file", "directory", "glob"}
 DEFAULT_CONTEXT_TARGETS = {
     "user": "USER.md",
     "memory": "MEMORY.md",
@@ -146,17 +145,22 @@ def _parse_inputs(value: Any, base_dir: Path, index: int) -> tuple[InputFile, ..
     for file_index, item in enumerate(value):
         label = f"task {index}, input {file_index}"
         if isinstance(item, str):
-            source = _resolve_source(item, base_dir, label)
-            target_value = source.name
+            source_value = item
             required = True
             expected_sha256 = None
         elif isinstance(item, dict):
-            source = _resolve_source(item.get("source"), base_dir, label)
-            target_value = item.get("target", source.name)
+            if "target" in item:
+                raise TaskFormatError(
+                    f"{label}: 'target' is no longer supported; input paths are "
+                    "preserved relative to file_root"
+                )
+            source_value = item.get("source")
             required = item.get("required", True)
             expected_sha256 = item.get("sha256")
         else:
             raise TaskFormatError(f"{label}: expected a source string or object")
+        logical_path = normalize_relative_path(source_value, f"{label}.source")
+        source = Path(os.path.abspath(base_dir / Path(logical_path)))
         if not isinstance(required, bool):
             raise TaskFormatError(f"{label}: required must be boolean")
         if expected_sha256 is not None:
@@ -168,9 +172,7 @@ def _parse_inputs(value: Any, base_dir: Path, index: int) -> tuple[InputFile, ..
         inputs.append(
             InputFile(
                 source=source,
-                target=normalize_relative_path(
-                    target_value, f"{label}.target", allow_dot=source.is_dir()
-                ),
+                path=logical_path,
                 required=required,
                 expected_sha256=expected_sha256,
             )
@@ -228,56 +230,6 @@ def _parse_context(value: Any, base_dir: Path, index: int) -> tuple[ContextFile,
     return tuple(context_files)
 
 
-def _parse_outputs(value: Any, index: int) -> tuple[OutputFile, ...]:
-    if value is None:
-        return ()
-    if not isinstance(value, list):
-        raise TaskFormatError(f"task {index}: files.outputs must be a list")
-    outputs: list[OutputFile] = []
-    for file_index, item in enumerate(value):
-        label = f"task {index}, output {file_index}"
-        if isinstance(item, str):
-            path_value = item
-            output_type = "glob" if GLOB_MARKERS.search(item) else "file"
-            required = True
-            max_bytes = None
-        elif isinstance(item, dict):
-            path_value = item.get("path")
-            output_type = item.get("type")
-            if output_type is None:
-                output_type = (
-                    "glob"
-                    if isinstance(path_value, str) and GLOB_MARKERS.search(path_value)
-                    else "file"
-                )
-            required = item.get("required", True)
-            max_bytes = item.get("max_bytes")
-        else:
-            raise TaskFormatError(f"{label}: expected a path string or object")
-        if output_type not in OUTPUT_TYPES:
-            raise TaskFormatError(f"{label}: type must be one of {sorted(OUTPUT_TYPES)}")
-        if not isinstance(required, bool):
-            raise TaskFormatError(f"{label}: required must be boolean")
-        if max_bytes is not None and (
-            not isinstance(max_bytes, int) or isinstance(max_bytes, bool) or max_bytes <= 0
-        ):
-            raise TaskFormatError(f"{label}: max_bytes must be a positive integer")
-        outputs.append(
-            OutputFile(
-                path=normalize_relative_path(
-                    path_value,
-                    f"{label}.path",
-                    allow_dot=output_type == "directory",
-                    allow_glob=output_type == "glob",
-                ),
-                type=output_type,
-                required=required,
-                max_bytes=max_bytes,
-            )
-        )
-    return tuple(outputs)
-
-
 def _parse_output_dir(value: Any, index: int) -> str:
     output_dir = normalize_relative_path(
         "outputs" if value is None else value,
@@ -289,6 +241,23 @@ def _parse_output_dir(value: Any, index: int) -> str:
             f"task {index}, files.output_dir: top-level inputs and context are reserved"
         )
     return output_dir
+
+
+def _validate_output_input_paths(
+    output_dir: str, inputs: tuple[InputFile, ...], index: int
+) -> None:
+    output_prefix = f"{output_dir}/"
+    for input_file in inputs:
+        input_prefix = f"{input_file.path}/"
+        if (
+            input_file.path == output_dir
+            or input_file.path.startswith(output_prefix)
+            or output_dir.startswith(input_prefix)
+        ):
+            raise TaskFormatError(
+                f"task {index}: files.output_dir {output_dir!r} overlaps input "
+                f"path {input_file.path!r}"
+            )
 
 
 def _validate_output_context_paths(
@@ -306,6 +275,24 @@ def _validate_output_context_paths(
                 f"task {index}: files.output_dir {output_dir!r} overlaps context target "
                 f"{context.target!r}"
             )
+
+
+def _validate_input_context_paths(
+    inputs: tuple[InputFile, ...], context_files: tuple[ContextFile, ...], index: int
+) -> None:
+    for input_file in inputs:
+        input_prefix = f"{input_file.path}/"
+        for context in context_files:
+            context_prefix = f"{context.target}/"
+            if (
+                input_file.path == context.target
+                or input_file.path.startswith(context_prefix)
+                or context.target.startswith(input_prefix)
+            ):
+                raise TaskFormatError(
+                    f"task {index}: input path {input_file.path!r} overlaps context "
+                    f"target {context.target!r}"
+                )
 
 
 def _legacy_persona_context(
@@ -383,15 +370,21 @@ def load_tasks(
         files = row.get("files", {})
         if not isinstance(files, dict):
             raise TaskFormatError(f"task {index}: files must be an object")
+        if "outputs" in files:
+            raise TaskFormatError(
+                f"task {index}: files.outputs is no longer supported; all files under "
+                "files.output_dir are collected automatically"
+            )
         output_dir = _parse_output_dir(files.get("output_dir"), index)
         inputs = _parse_inputs(files.get("inputs"), file_root, index)
+        _validate_output_input_paths(output_dir, inputs, index)
         legacy_workspace = workspace is not None and not inputs
         if legacy_workspace:
             inputs = (InputFile(workspace, ".", True, None),)
         context_files = _parse_context(files.get("context"), file_root, index)
         context_files += _legacy_persona_context(row, workspace, index)
+        _validate_input_context_paths(inputs, context_files, index)
         _validate_output_context_paths(output_dir, context_files, index)
-        outputs = _parse_outputs(files.get("outputs"), index)
 
         model = row.get("model")
         if model is not None and (not isinstance(model, str) or not model.strip()):
@@ -412,7 +405,6 @@ def load_tasks(
                 schema_version=schema_version,
                 inputs=inputs,
                 context_files=context_files,
-                outputs=outputs,
                 output_dir=output_dir,
                 legacy_workspace=legacy_workspace,
                 workspace=workspace,
