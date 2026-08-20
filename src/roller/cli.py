@@ -107,6 +107,35 @@ def _build_parser() -> argparse.ArgumentParser:
         action=argparse.BooleanOptionalAction,
         default=True,
     )
+    openclaw.add_argument(
+        "--cache-trace",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="record the assembled system prompt per LLM call (diagnostics.cacheTrace)",
+    )
+    openclaw.add_argument(
+        "--wire-trace",
+        choices=("off", "actf", "full"),
+        default="actf",
+        help=(
+            "wire-level recording through a local reverse proxy: 'actf' (default) embeds "
+            "the tools schema into trace_ACTF.json and keeps no extra file, 'full' "
+            "additionally saves wire_trace.jsonl with every request body, 'off' disables "
+            "(the selected provider needs a model-config baseUrl; without one, actf "
+            "falls back to tools=null while full fails)"
+        ),
+    )
+    openclaw.add_argument(
+        "--keep-thinking",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "for thinking models: keep reasoning content in the trajectory AND in the "
+            "context of subsequent requests. --no-keep-thinking blanks reasoning_content "
+            "in trace_ACTF.json and strips reasoning from request history at the wire "
+            "layer (OpenClaw itself keeps it and has no config switch)"
+        ),
+    )
     openclaw.add_argument("--keep-container-on-error", action="store_true")
     return parser
 
@@ -234,6 +263,9 @@ def _collect(args: argparse.Namespace) -> int:
         pass_env=_deduplicate((*COMMON_ENV_NAMES, *args.pass_env)),
         search_provider=args.search_provider,
         thinking=args.thinking,
+        capture_cache_trace=args.cache_trace,
+        wire_trace_mode=args.wire_trace,
+        keep_thinking=args.keep_thinking,
         collect_paths=tuple(args.collect_path),
         keep_container_on_error=args.keep_container_on_error,
         set_image_model=args.set_image_model,
@@ -289,6 +321,9 @@ def _collect(args: argparse.Namespace) -> int:
                 "session_id": args.session_id,
                 "search_provider": args.search_provider,
                 "thinking": args.thinking,
+                "keep_thinking": args.keep_thinking,
+                "cache_trace": args.cache_trace,
+                "wire_trace": args.wire_trace,
                 "pass_env_names": list(openclaw_config.pass_env),
                 "collect_paths": args.collect_path,
             },
@@ -309,10 +344,14 @@ def _collect(args: argparse.Namespace) -> int:
                     parallel=args.parallel,
                     retries=args.retries,
                     resume=args.resume,
+                    keep_aux_traces=args.wire_trace == "full",
+                    keep_thinking=args.keep_thinking,
                 ),
                 harness_factory=lambda slot: ConversationManager(
                     OpenClawHarness(openclaw_config, slot),
                     OpenClawHarness(openclaw_config, slot + args.parallel),
+                    keep_thinking=args.keep_thinking,
+                    keep_aux_traces=args.wire_trace == "full",
                 ),
             )
             results = collector.collect(requests)

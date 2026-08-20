@@ -5,6 +5,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from roller.bundles import TaskBundleStore
 from roller.harnesses.openclaw import (
@@ -12,6 +13,7 @@ from roller.harnesses.openclaw import (
     OpenClawHarness,
     expand_env_placeholders,
     load_model_config,
+    prepare_model_config,
 )
 from roller.models import RunRequest, Task
 from roller.tasks import load_tasks
@@ -89,6 +91,18 @@ class FakeDockerRuntime:
         return None
 
 
+class FakeCacheTraceRuntime(FakeDockerRuntime):
+    def run(self, args, timeout=None):
+        result = super().run(args, timeout=timeout)
+        args = list(args)
+        if args and args[0] == "cp" and ":/tmp/roller-cache-trace.jsonl" in args[1]:
+            Path(args[2]).write_text(
+                json.dumps({"options": {"apiKey": "secret"}}) + "\n",
+                encoding="utf-8",
+            )
+        return result
+
+
 class OpenClawHelpersTests(unittest.TestCase):
     def test_embedded_response_extractor_is_valid_python(self) -> None:
         script = OpenClawHarness._LAST_ASSISTANT_SCRIPT.replace(
@@ -109,6 +123,64 @@ class OpenClawHelpersTests(unittest.TestCase):
             path.write_text("[]", encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "must be a JSON object"):
                 load_model_config(path)
+
+    def test_prepares_selected_model_for_reasoning_without_mutating_source(self) -> None:
+        config = {
+            "providers": {
+                "proxy": {
+                    "baseUrl": "http://example.test/v1",
+                    "models": [
+                        {"id": "plain", "name": "Plain"},
+                        {"id": "think", "name": "Think", "tags": ["reasoning"]},
+                    ],
+                }
+            }
+        }
+
+        prepared = prepare_model_config(
+            config, "proxy/plain", enable_reasoning=True
+        )
+
+        models = prepared["providers"]["proxy"]["models"]
+        self.assertTrue(models[0]["reasoning"])
+        self.assertTrue(models[1]["reasoning"])
+        self.assertNotIn("tags", models[1])
+        self.assertNotIn("reasoning", config["providers"]["proxy"]["models"][1])
+        self.assertEqual(config["providers"]["proxy"]["models"][1]["tags"], ["reasoning"])
+
+    def test_no_keep_thinking_requires_interceptable_model_config(self) -> None:
+        task = Task(id="task", prompts=("hello",), source_index=0)
+        request = RunRequest(0, task, "provider/model", 30)
+        harness = OpenClawHarness(
+            OpenClawConfig(
+                docker_image="test-image",
+                wire_trace_mode="off",
+                keep_thinking=False,
+            ),
+            worker_slot=0,
+            runtime=FakeDockerRuntime(),
+        )
+
+        with tempfile.TemporaryDirectory() as temporary:
+            with self.assertRaisesRegex(RuntimeError, "requires --model-config"):
+                harness._start_wire_proxy(request, Path(temporary))
+
+    def test_cache_trace_redaction_failure_removes_unsanitized_file(self) -> None:
+        harness = OpenClawHarness(
+            OpenClawConfig(docker_image="test-image"),
+            worker_slot=0,
+            runtime=FakeCacheTraceRuntime(),
+        )
+
+        with tempfile.TemporaryDirectory() as temporary:
+            destination = Path(temporary) / "cache_trace.jsonl"
+            with mock.patch(
+                "roller.harnesses.openclaw.redact_jsonl_file",
+                side_effect=RuntimeError("redaction failed"),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "redaction failed"):
+                    harness._collect_cache_trace("container", Path(temporary))
+            self.assertFalse(destination.exists())
 
     def test_extracts_usage_from_raw_trace(self) -> None:
         events = [
@@ -179,6 +251,42 @@ class OpenClawHelpersTests(unittest.TestCase):
         self.assertEqual(runtime.agent_messages, ["Use $HOME and 'quotes' literally", "Finish"])
         self.assertIn('"assistant"', canonical_trace)
         self.assertEqual(result.usage["total_tokens"], 5)
+
+    def test_harness_passes_thinking_to_each_agent_turn_and_clears_retry_traces(self) -> None:
+        task = Task(id="task", prompts=("first", "second"), source_index=0)
+        request = RunRequest(0, task, "provider/model", 30)
+        runtime = FakeDockerRuntime()
+        harness = OpenClawHarness(
+            OpenClawConfig(
+                docker_image="test-image",
+                thinking="high",
+                wire_trace_mode="off",
+                set_image_model=False,
+            ),
+            worker_slot=0,
+            runtime=runtime,
+        )
+
+        with tempfile.TemporaryDirectory() as temporary:
+            output_dir = Path(temporary)
+            (output_dir / "rollout").mkdir()
+            (output_dir / "cache_trace.jsonl").write_text("stale", encoding="utf-8")
+            (output_dir / "wire_trace.jsonl").write_text("stale", encoding="utf-8")
+            (output_dir / "rollout" / "wire_strip.jsonl").write_text(
+                "stale", encoding="utf-8"
+            )
+
+            result = harness.run(request, output_dir, attempt=2)
+
+            self.assertFalse((output_dir / "cache_trace.jsonl").exists())
+            self.assertFalse((output_dir / "wire_trace.jsonl").exists())
+            self.assertFalse((output_dir / "rollout" / "wire_strip.jsonl").exists())
+
+        self.assertEqual(result.status, "ok")
+        agent_commands = [command for command in runtime.commands if "agent" in command]
+        self.assertEqual(len(agent_commands), 2)
+        for command in agent_commands:
+            self.assertEqual(command[command.index("--thinking") + 1], "high")
 
     def test_markdown_inside_one_message_remains_one_turn(self) -> None:
         prompt = "## Round 1\nKeep this whole message.\n## Round 2\nStill the same message."
