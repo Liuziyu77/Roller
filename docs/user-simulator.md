@@ -159,24 +159,26 @@ roller collect \
 samples/<task-agent-model>/<index>_<task>/
 ├── trace.jsonl                    # Task Agent 原始轨迹
 ├── trace_ACTF.json                # Task Agent ACTF_v1.0
+├── trace_SFT.json                 # Task Agent SFT record
 ├── conversation.json              # 交替对话与终止信息
 ├── info.json                      # 总 usage 与双方分项信息
 ├── user_simulator/
 │   ├── trace.jsonl                # Simulator 原始轨迹
 │   ├── trace_ACTF.json            # Simulator ACTF_v1.0
+│   ├── trace_SFT.json             # Simulator SFT record
 │   └── info.json                  # Simulator 独立 metadata
 └── results/                       # 可选；Task Agent 的 output_dir
 ```
 
 各文件的用途：
 
-- 训练或分析 Task Agent：使用根目录 `trace.jsonl` 或 `trace_ACTF.json`。
+- 训练 Task Agent：使用根目录 `trace_SFT.json` 或 run 级 `sft.jsonl`；分析时使用 `trace.jsonl` 或 `trace_ACTF.json`。
 - 研究模拟用户策略：使用 `user_simulator/` 下的轨迹。
 - 只分析双方可见对话：使用 `conversation.json`。
 - 统计成本：根 `info.json` 的 `usage` 是双方总量；根 `info.json` 的 `conversation.participants` 保存两边各自的 usage 和轨迹位置。
 - 检查任务交付：使用 `results/`，这里只回收 Task Agent 的输出。
 
-`conversation.json` 不复制隐藏 reasoning、tool call 或 tool result；这些事件仍留在各自 raw/ACTF 轨迹中。详细 sample 字段和结果安全规则见 [文件、Task Bundle 与结果存储](task-bundle-and-storage.md#6-run-与-sample)。
+`conversation.json` 不复制隐藏 reasoning、tool call 或 tool result；这些事件仍留在各自 raw/ACTF/SFT 轨迹中。详细产出条件见 [轨迹产出文件指南](trajectory-outputs.md)，sample 字段和结果安全规则见 [文件、Task Bundle 与结果存储](task-bundle-and-storage.md#6-run-与-sample)。
 
 ## 9. Retry 与 Resume
 
@@ -184,9 +186,9 @@ samples/<task-agent-model>/<index>_<task>/
 
 Instruction、Simulator model、thinking、`max_turns`、Task Agent 输入或 Context 发生变化时，Task Bundle digest 会变化。`--resume` 只会复用同时具备以下文件的成功 sample：
 
-- Task Agent 的 raw/ACTF；
+- Task Agent 的 raw/ACTF/SFT；
 - `conversation.json`；
-- Simulator 的 raw/ACTF；
+- Simulator 的 raw/ACTF/SFT；
 - 与当前 task 和文件一致的 digest。
 
 ## 10. 当前边界

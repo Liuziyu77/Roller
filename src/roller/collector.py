@@ -9,13 +9,14 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Iterator
 
 from roller.actf import convert_openclaw_trace
-from roller.wire_trace import extract_wire_tools
 from roller.harnesses.base import Harness
 from roller.models import HarnessResult, RunRequest
-from roller.storage import atomic_write_json, safe_component
+from roller.sft import write_sft
+from roller.storage import atomic_write_json, safe_component, write_jsonl
+from roller.wire_trace import extract_wire_tools
 
 logger = logging.getLogger(__name__)
 HarnessFactory = Callable[[int], Harness]
@@ -64,14 +65,17 @@ class Collector:
             return None
         if payload.get("status") != "ok":
             return None
-        if not (sample_dir / "trace.jsonl").is_file() or not (
-            sample_dir / "trace_ACTF.json"
-        ).is_file():
+        if (
+            not (sample_dir / "trace.jsonl").is_file()
+            or not (sample_dir / "trace_ACTF.json").is_file()
+            or not (sample_dir / "trace_SFT.json").is_file()
+        ):
             return None
         if request.task.user_simulator is not None and (
             not (sample_dir / "conversation.json").is_file()
             or not (sample_dir / "user_simulator" / "trace.jsonl").is_file()
             or not (sample_dir / "user_simulator" / "trace_ACTF.json").is_file()
+            or not (sample_dir / "user_simulator" / "trace_SFT.json").is_file()
         ):
             return None
         if request.bundle is not None:
@@ -111,6 +115,7 @@ class Collector:
         keep = {
             "trace.jsonl",
             "trace_ACTF.json",
+            "trace_SFT.json",
             "info.json",
             "results",
             "conversation.json",
@@ -139,6 +144,7 @@ class Collector:
         trace_source = self._trace_source(sample_dir, final.trace_path)
         trace_path = sample_dir / "trace.jsonl"
         actf_path = sample_dir / "trace_ACTF.json"
+        sft_path = sample_dir / "trace_SFT.json"
         if trace_source is None and final.status == "ok":
             final.status = "error"
             final.error = "harness finished but no raw trace was found"
@@ -148,18 +154,27 @@ class Collector:
             try:
                 cache_trace_path = sample_dir / "cache_trace.jsonl"
                 wire_trace_path = sample_dir / "wire_trace.jsonl"
-                convert_openclaw_trace(
+                trajectory = convert_openclaw_trace(
                     trace_path,
                     actf_path,
                     user_messages=request.task.prompts,
                     cache_trace=cache_trace_path if cache_trace_path.is_file() else None,
-                    tools=extract_wire_tools(wire_trace_path) if wire_trace_path.is_file() else None,
+                    tools=(
+                        extract_wire_tools(wire_trace_path)
+                        if wire_trace_path.is_file()
+                        else None
+                    ),
                     keep_thinking=self.config.keep_thinking,
                 )
+                write_sft(sft_path, trajectory)
             except Exception as exc:
-                logger.exception("[%s | %s] ACTF conversion failed", request.task.id, request.model)
+                logger.exception(
+                    "[%s | %s] trajectory conversion failed",
+                    request.task.id,
+                    request.model,
+                )
                 final.status = "error"
-                final.error = f"ACTF conversion failed: {exc}"
+                final.error = f"trajectory conversion failed: {exc}"
         if attempts and attempts[-1].get("status") != final.status:
             attempts[-1]["status"] = final.status
             attempts[-1]["error"] = final.error
@@ -198,6 +213,7 @@ class Collector:
                 "raw": "trace.jsonl" if trace_path.is_file() else None,
                 "actf": "trace_ACTF.json" if actf_path.is_file() else None,
                 "actf_schema": "ACTF_v1.0" if actf_path.is_file() else None,
+                "sft": "trace_SFT.json" if sft_path.is_file() else None,
             },
             "conversation": metadata.get("conversation"),
             "output_collection": metadata.get("output_collection"),
@@ -331,6 +347,24 @@ class Collector:
         )
         atomic_write_json(info_path, info)
 
+    def _write_sft_dataset(self, results: list[dict[str, Any]]) -> None:
+        def rows() -> Iterator[dict[str, Any]]:
+            for result in results:
+                if result.get("status") not in {"ok", "skipped"}:
+                    continue
+                path = self._sample_dir_from_result(result) / "trace_SFT.json"
+                try:
+                    row = json.loads(path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError) as exc:
+                    raise RuntimeError(
+                        f"cannot aggregate SFT sample {path}: {exc}"
+                    ) from exc
+                if not isinstance(row, dict) or set(row) != {"messages", "tools"}:
+                    raise RuntimeError(f"invalid SFT sample shape: {path}")
+                yield row
+
+        write_jsonl(self.run_dir / "sft.jsonl", rows())
+
     def collect(self, requests: list[RunRequest]) -> list[dict[str, Any]]:
         self.run_dir.mkdir(parents=True, exist_ok=True)
         slots: queue.Queue[int] = queue.Queue()
@@ -386,5 +420,6 @@ class Collector:
                         results.append(collector_error(request, exc))
 
         results.sort(key=lambda row: int(row.get("request_index", -1)))
+        self._write_sft_dataset(results)
         self._write_run_info(results)
         return results

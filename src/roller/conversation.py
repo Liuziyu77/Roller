@@ -12,6 +12,7 @@ from typing import Any
 from roller.actf import convert_openclaw_trace
 from roller.harnesses.base import Harness, InteractiveHarness
 from roller.models import HarnessResult, RunRequest, Task, UserSimulatorSpec
+from roller.sft import write_sft
 from roller.storage import atomic_write_json
 from roller.usage import ZERO_USAGE
 from roller.wire_trace import extract_wire_tools
@@ -151,12 +152,15 @@ class ConversationManager(Harness):
         source = ConversationManager._trace_source(simulator_dir, result.trace_path)
         raw_path = simulator_dir / "trace.jsonl"
         actf_path = simulator_dir / "trace_ACTF.json"
+        sft_path = simulator_dir / "trace_SFT.json"
+        if source is None and result.status == "ok":
+            raise RuntimeError("User Simulator finished but no raw trace was found")
         if source is not None:
             if source.resolve() != raw_path.resolve():
                 shutil.copy2(source, raw_path)
             cache_trace_path = simulator_dir / "cache_trace.jsonl"
             wire_trace_path = simulator_dir / "wire_trace.jsonl"
-            convert_openclaw_trace(
+            trajectory = convert_openclaw_trace(
                 raw_path,
                 actf_path,
                 user_messages=prompts,
@@ -170,6 +174,7 @@ class ConversationManager(Harness):
                 ),
                 keep_thinking=keep_thinking,
             )
+            write_sft(sft_path, trajectory)
         rollout_dir = simulator_dir / "rollout"
         if rollout_dir.exists():
             shutil.rmtree(rollout_dir)
@@ -188,6 +193,7 @@ class ConversationManager(Harness):
                 "raw": "trace.jsonl" if raw_path.is_file() else None,
                 "actf": "trace_ACTF.json" if actf_path.is_file() else None,
                 "actf_schema": "ACTF_v1.0" if actf_path.is_file() else None,
+                "sft": "trace_SFT.json" if sft_path.is_file() else None,
             },
             "runtime": {
                 key: value
@@ -320,6 +326,7 @@ class ConversationManager(Harness):
                 (simulator_dir / "wire_trace.jsonl").unlink(missing_ok=True)
             raw_path = simulator_dir / "trace.jsonl"
             actf_path = simulator_dir / "trace_ACTF.json"
+            sft_path = simulator_dir / "trace_SFT.json"
             simulator_info = {
                 "schema_version": PARTICIPANT_SCHEMA,
                 "role": "user_simulator",
@@ -332,6 +339,7 @@ class ConversationManager(Harness):
                     "raw": "trace.jsonl" if raw_path.is_file() else None,
                     "actf": "trace_ACTF.json" if actf_path.is_file() else None,
                     "actf_schema": "ACTF_v1.0" if actf_path.is_file() else None,
+                    "sft": "trace_SFT.json" if sft_path.is_file() else None,
                 },
                 "runtime": {
                     key: value
@@ -390,6 +398,7 @@ class ConversationManager(Harness):
                     "trajectory": {
                         "raw": "trace.jsonl" if agent_result.trace_path else None,
                         "actf": "trace_ACTF.json" if agent_result.trace_path else None,
+                        "sft": "trace_SFT.json" if agent_result.trace_path else None,
                     },
                 },
                 "user_simulator": {

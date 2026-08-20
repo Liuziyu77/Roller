@@ -19,6 +19,8 @@
 | --- | --- |
 | [Task 格式参考](task-format.md) | JSON/JSONL、顶层字段、三种对话模式、文件声明、runtime、完整案例 |
 | [文件、Task Bundle 与结果存储](task-bundle-and-storage.md) | 路径模型、输入快照、Context capture、results、ACTF、重试和 Resume |
+| [轨迹产出文件指南](trajectory-outputs.md) | raw、ACTF、SFT、wire 的生成条件、区别和推荐用法 |
+| [SFT 数据格式](sft-format.md) | 最小 `messages`/`tools` 训练格式、转换规则和完整性校验 |
 | [OpenClaw、模型与 API](openclaw-configuration.md) | Docker 镜像、provider JSON、API base、环境变量、代理、搜索和排错 |
 | [User Simulator 与动态对话](user-simulator.md) | Conversation Manager、双 Harness、JSON 决策、终止条件和双方轨迹 |
 | [Task JSON Schema](../schemas/task.schema.json) | `roller.task/v1` 的机器可读约束 |
@@ -42,6 +44,7 @@
 
 - Task schema：`roller.task/v1`
 - 标准化轨迹：`ACTF_v1.0`
+- 训练数据：每个 sample 的 `trace_SFT.json` 与 run 级 `sft.jsonl`
 - 已实现 Harness：OpenClaw
 - 支持 Python：3.10+
 

@@ -278,4 +278,4 @@ Sample provenance 会记录 OpenClaw 版本、镜像及 digest、model ref、使
 
 ### 任务成功回复但 sample 失败
 
-Roller 要求成功 sample 同时具有 OpenClaw raw trace 和可转换的 ACTF。还应检查输出目录里是否存在被拒绝的符号链接或特殊文件。具体规则见 [结果存储](task-bundle-and-storage.md#5-输出回收)。
+Roller 要求成功 sample 同时具有 OpenClaw raw trace、可转换的 ACTF 和标准化 SFT。还应检查输出目录里是否存在被拒绝的符号链接或特殊文件。具体产出条件见 [轨迹产出文件指南](trajectory-outputs.md)，结果安全规则见 [结果存储](task-bundle-and-storage.md#5-输出回收)。

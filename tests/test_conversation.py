@@ -102,23 +102,52 @@ class FakeInteractiveHarness(InteractiveHarness):
 
 
 class ConversationManagerTests(unittest.TestCase):
+    def test_simulator_archive_rejects_success_without_raw_trace(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            result = HarnessResult(
+                status="ok",
+                elapsed_seconds=0.01,
+                usage={},
+                trace_path=None,
+                metadata={},
+            )
+
+            with self.assertRaisesRegex(RuntimeError, "no raw trace"):
+                ConversationManager._archive_simulator(
+                    Path(temporary),
+                    result,
+                    ["prompt"],
+                    "provider/model",
+                    "openclaw",
+                    keep_thinking=True,
+                    keep_aux_traces=False,
+                )
+
     def test_simulator_archive_applies_actf_trace_options(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             simulator_dir = Path(temporary)
             raw_path = simulator_dir / "trace.jsonl"
             raw_path.write_text(
-                json.dumps(
-                    {
-                        "type": "message",
-                        "timestamp": 1000,
-                        "message": {
-                            "role": "assistant",
-                            "content": [
-                                {"type": "thinking", "thinking": "private"},
-                                {"type": "text", "text": "reply"},
-                            ],
+                "\n".join(
+                    json.dumps(event)
+                    for event in (
+                        {
+                            "type": "message",
+                            "timestamp": 999,
+                            "message": {"role": "user", "content": "prompt"},
                         },
-                    }
+                        {
+                            "type": "message",
+                            "timestamp": 1000,
+                            "message": {
+                                "role": "assistant",
+                                "content": [
+                                    {"type": "thinking", "thinking": "private"},
+                                    {"type": "text", "text": "reply"},
+                                ],
+                            },
+                        },
+                    )
                 )
                 + "\n",
                 encoding="utf-8",
@@ -164,6 +193,9 @@ class ConversationManagerTests(unittest.TestCase):
             self.assertEqual(
                 actf["steps"][0]["assistant_content"]["reasoning_content"], ""
             )
+            sft = json.loads((simulator_dir / "trace_SFT.json").read_text())
+            self.assertEqual(set(sft), {"messages", "tools"})
+            self.assertEqual(sft["messages"][2]["reasoning_content"], "")
             self.assertFalse((simulator_dir / "cache_trace.jsonl").exists())
             self.assertFalse((simulator_dir / "wire_trace.jsonl").exists())
 
@@ -244,9 +276,13 @@ class ConversationManagerTests(unittest.TestCase):
             self.assertEqual(info["usage"]["request_count"], 5)
             self.assertTrue((sample / "trace.jsonl").is_file())
             self.assertTrue((sample / "trace_ACTF.json").is_file())
+            self.assertTrue((sample / "trace_SFT.json").is_file())
             self.assertTrue((sample / "user_simulator" / "trace.jsonl").is_file())
             self.assertTrue(
                 (sample / "user_simulator" / "trace_ACTF.json").is_file()
+            )
+            self.assertTrue(
+                (sample / "user_simulator" / "trace_SFT.json").is_file()
             )
             self.assertTrue((sample / "user_simulator" / "info.json").is_file())
 

@@ -138,11 +138,13 @@ results/
 ```text
 <output>/<run-name>/
 ├── info.json
+├── sft.jsonl
 └── samples/
     └── <model>/
         └── <index>_<task>/
             ├── trace.jsonl
             ├── trace_ACTF.json
+            ├── trace_SFT.json
             ├── info.json
             └── results/                 # 可选
 ```
@@ -164,7 +166,7 @@ Sample `info.json` 保存：
 - OpenClaw 版本、镜像 digest、脱敏 API base
 - Task Bundle、输入与 Context digest
 - 输出文件清单
-- raw/ACTF 路径
+- raw/ACTF/SFT 路径
 
 运行期 gateway/agent 日志、临时模型配置、Task Bundle、retry 中间 trace 和未回收的工作区文件不会留在最终 sample。
 
@@ -176,12 +178,13 @@ User Simulator sample 会增加：
 └── user_simulator/
     ├── trace.jsonl
     ├── trace_ACTF.json
+    ├── trace_SFT.json
     └── info.json
 ```
 
 根 sample 仍代表任务 Agent；`user_simulator/` 代表模拟用户。双方 usage 的总和写入根 `info.json`，分项写入该文件的 `conversation.participants`。详情见 [User Simulator 与动态对话](user-simulator.md#8-保存与使用轨迹)。
 
-## 7. Raw Trace 与 ACTF
+## 7. Raw Trace、ACTF 与 SFT
 
 ### `trace.jsonl`
 
@@ -212,6 +215,16 @@ ACTF 文件直接保存 `ACTF_v1.0` trajectory object：
 
 如果 Harness 成功结束但没有可用 raw trace，sample 会标记为 `error`。ACTF 转换失败同样不会被当作成功 sample。
 
+### `trace_SFT.json` 与 `sft.jsonl`
+
+`trace_SFT.json` 由 ACTF 投影得到，顶层严格只有 `messages` 和 `tools`，不包含
+task/model、usage、时间戳或其他运行 metadata。Run 根目录的 `sft.jsonl` 按 request
+顺序汇总所有成功 task Agent，每行一个相同结构的 record。完整字段和校验规则见
+[SFT 数据格式](sft-format.md)。
+
+所有轨迹层、辅助文件、参数组合及失败/Resume 下的产出条件见
+[轨迹产出文件指南](trajectory-outputs.md)。
+
 ## 8. 安全与隐私边界
 
 ### 文件
@@ -236,15 +249,15 @@ ACTF 文件直接保存 `ACTF_v1.0` trajectory object：
 
 ## 9. Retry 与 Resume
 
-`--retries N` 在同一 sample 中最多额外执行 N 次。最终 `info.json` 保存每次 attempt 的状态、错误与耗时；canonical raw/ACTF 代表最后一次 attempt，运行期中间文件会被清理。
+`--retries N` 在同一 sample 中最多额外执行 N 次。最终 `info.json` 保存每次 attempt 的状态、错误与耗时；canonical raw/ACTF/SFT 代表最后一次 attempt，运行期中间文件会被清理。
 
 `--resume` 只复用满足全部条件的 sample：
 
 1. 旧状态为 `ok`。
-2. `trace.jsonl` 与 `trace_ACTF.json` 都存在。
+2. `trace.jsonl`、`trace_ACTF.json` 与 `trace_SFT.json` 都存在。
 3. 当前 Task Bundle digest 与旧 sample 一致。
 4. Context 没有使用 `capture=none`。
-5. User Simulator task 还必须有完整的 `conversation.json` 和 Simulator raw/ACTF。
+5. User Simulator task 还必须有完整的 `conversation.json` 和 Simulator raw/ACTF/SFT。
 
 以下变化会导致重新运行：
 
