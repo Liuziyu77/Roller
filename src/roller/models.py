@@ -45,6 +45,17 @@ class TaskBundle:
 
 
 @dataclass(frozen=True)
+class UserSimulatorSpec:
+    """Configuration for a model-driven user in an interactive rollout."""
+
+    instruction: str
+    harness: str = "openclaw"
+    model: str | None = None
+    max_turns: int = 6
+    thinking: str | None = None
+
+
+@dataclass(frozen=True)
 class Task:
     """A normalized task loaded from a JSON or JSONL task list."""
 
@@ -62,6 +73,7 @@ class Task:
     env_names: tuple[str, ...] = ()
     setup_commands: tuple[str, ...] = ()
     thinking: str | None = None
+    user_simulator: UserSimulatorSpec | None = None
 
 
 @dataclass(frozen=True)

@@ -463,6 +463,17 @@ class TaskBundleStore:
                 "setup": list(task.setup_commands),
                 "thinking": task.thinking,
             },
+            "user_simulator": (
+                {
+                    "instruction": task.user_simulator.instruction,
+                    "harness": task.user_simulator.harness,
+                    "model": task.user_simulator.model,
+                    "max_turns": task.user_simulator.max_turns,
+                    "thinking": task.user_simulator.thinking,
+                }
+                if task.user_simulator is not None
+                else None
+            ),
             "legacy_workspace": task.legacy_workspace,
             "resume_safe": context_manifest["resume_safe"],
         }

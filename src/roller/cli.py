@@ -13,6 +13,7 @@ from typing import Sequence
 
 from roller.collector import CollectionConfig, Collector
 from roller.bundles import BundlePolicy, TaskBundleStore
+from roller.conversation import ConversationManager
 from roller.harnesses.openclaw import (
     COMMON_ENV_NAMES,
     OpenClawConfig,
@@ -153,7 +154,23 @@ def _dry_run_payload(args: argparse.Namespace, requests: list) -> dict:
                 "request_index": request.index,
                 "task_id": request.task.id,
                 "model": request.model,
-                "turns": len(request.task.prompts),
+                "turns": (
+                    {
+                        "mode": "user_simulator",
+                        "max": request.task.user_simulator.max_turns,
+                    }
+                    if request.task.user_simulator is not None
+                    else {"mode": "predefined", "count": len(request.task.prompts)}
+                ),
+                "user_simulator": (
+                    {
+                        "harness": request.task.user_simulator.harness,
+                        "model": request.task.user_simulator.model or request.model,
+                        "max_turns": request.task.user_simulator.max_turns,
+                    }
+                    if request.task.user_simulator is not None
+                    else None
+                ),
                 "workspace": str(request.task.workspace) if request.task.workspace else None,
                 "inputs": len(request.task.inputs),
                 "context_files": len(request.task.context_files),
@@ -253,6 +270,12 @@ def _collect(args: argparse.Namespace) -> int:
             "limit": args.limit,
             "resume": args.resume,
             "task_schema": "roller.task/v1",
+            "conversation": {
+                "user_simulator_tasks": sum(
+                    task.user_simulator is not None for task in tasks
+                ),
+                "simulator_gateway_slot_offset": args.parallel,
+            },
             "bundle_policy": {
                 "max_input_file_bytes": args.max_input_file_bytes,
                 "max_task_input_bytes": args.max_task_input_bytes,
@@ -287,7 +310,10 @@ def _collect(args: argparse.Namespace) -> int:
                     retries=args.retries,
                     resume=args.resume,
                 ),
-                harness_factory=lambda slot: OpenClawHarness(openclaw_config, slot),
+                harness_factory=lambda slot: ConversationManager(
+                    OpenClawHarness(openclaw_config, slot),
+                    OpenClawHarness(openclaw_config, slot + args.parallel),
+                ),
             )
             results = collector.collect(requests)
         finally:

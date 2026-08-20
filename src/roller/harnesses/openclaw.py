@@ -17,7 +17,7 @@ from typing import Any, Mapping, Sequence
 from urllib.parse import urlsplit, urlunsplit
 
 from roller.artifacts import ArtifactCollectionResult, collect_output_directory
-from roller.harnesses.base import Harness
+from roller.harnesses.base import InteractiveHarness, InteractiveSession, TurnResult
 from roller.models import HarnessResult, RunRequest
 from roller.storage import safe_component
 from roller.usage import ZERO_USAGE, extract_openclaw_usage
@@ -178,7 +178,7 @@ class OpenClawConfig:
                 raise ValueError(f"collected container path must be absolute: {path}")
 
 
-class OpenClawHarness(Harness):
+class OpenClawHarness(InteractiveHarness):
     """Run OpenClaw in one disposable Docker container per trajectory."""
 
     name = "openclaw"
@@ -226,6 +226,49 @@ from pathlib import Path
 root = Path('/root/.openclaw/agents/main/sessions')
 files = sorted(root.glob('*.jsonl'), key=lambda path: path.stat().st_mtime, reverse=True)
 print(files[0] if files else '')
+""".strip()
+
+    _LAST_ASSISTANT_SCRIPT = """
+# ROLLER_LAST_ASSISTANT
+import json
+from pathlib import Path
+root = Path('/root/.openclaw/agents/main/sessions')
+preferred = root / __ROLLER_SESSION_FILE__
+files = [preferred] if preferred.is_file() else sorted(
+    root.glob('*.jsonl'), key=lambda path: path.stat().st_mtime, reverse=True
+)
+content = ''
+assistant_count = 0
+if files:
+    rows = []
+    for line in files[0].read_text(errors='replace').splitlines():
+        try:
+            rows.append(json.loads(line))
+        except json.JSONDecodeError:
+            pass
+    assistant_count = sum(
+        isinstance(row, dict)
+        and isinstance(row.get('message'), dict)
+        and row['message'].get('role') == 'assistant'
+        for row in rows
+    )
+    for row in reversed(rows):
+        message = row.get('message') if isinstance(row, dict) else None
+        if not isinstance(message, dict) or message.get('role') != 'assistant':
+            continue
+        value = message.get('content')
+        if isinstance(value, str):
+            content = value
+        elif isinstance(value, list):
+            content = '\\n'.join(
+                block.get('text', '')
+                for block in value
+                if isinstance(block, dict) and block.get('type') == 'text'
+            )
+        elif isinstance(value, dict) and isinstance(value.get('text'), str):
+            content = value['text']
+        break
+print(json.dumps({'content': content, 'assistant_count': assistant_count}, ensure_ascii=False))
 """.strip()
 
     def __init__(
@@ -515,51 +558,27 @@ print(files[0] if files else '')
     def _prompts(self, request: RunRequest) -> tuple[str, ...]:
         return request.task.prompts
 
-    def _run_agent_turns(
-        self,
-        container: str,
-        request: RunRequest,
-        output_dir: Path,
-        attempt: int,
-        started: float,
-    ) -> tuple[str, str | None, list[int]]:
-        log_path = output_dir / "rollout" / f"agent.attempt-{attempt}.log"
-        return_codes: list[int] = []
-        for turn_index, prompt in enumerate(self._prompts(request)):
-            remaining = request.timeout_seconds - (time.monotonic() - started)
-            if remaining <= 0:
-                return "timeout", "task timeout elapsed before next turn", return_codes
-            process = self.runtime.popen(
-                [
-                    "exec",
-                    "-w",
-                    self.config.workspace_container_path,
-                    container,
-                    "openclaw",
-                    "agent",
-                    "--session-id",
-                    self.config.session_id,
-                    "--timeout",
-                    str(max(1, int(remaining))),
-                    "--message",
-                    prompt,
-                ],
-                log_path,
-                append=turn_index > 0,
-            )
-            try:
-                return_code = process.wait(timeout=remaining)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait()
-                self.runtime.run(["exec", container, "pkill", "-f", "openclaw agent"])
-                return "timeout", f"task exceeded {request.timeout_seconds}s", return_codes
-            finally:
-                self.runtime.close_log(process)
-            return_codes.append(return_code)
-            if return_code != 0:
-                return "error", f"OpenClaw agent turn {turn_index + 1} exited with code {return_code}", return_codes
-        return "ok", None, return_codes
+    def _latest_assistant_content(self, container: str) -> tuple[str, int]:
+        script = self._LAST_ASSISTANT_SCRIPT.replace(
+            "__ROLLER_SESSION_FILE__", repr(f"{self.config.session_id}.jsonl")
+        )
+        result = self._checked(
+            ["exec", container, "python3", "-c", script],
+            "assistant response extraction",
+        )
+        try:
+            payload = json.loads(result.stdout.strip())
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("assistant response extraction returned invalid JSON") from exc
+        content = payload.get("content") if isinstance(payload, dict) else None
+        assistant_count = (
+            payload.get("assistant_count") if isinstance(payload, dict) else None
+        )
+        if not isinstance(content, str) or not content.strip():
+            raise RuntimeError("OpenClaw turn produced no visible assistant response")
+        if isinstance(assistant_count, bool) or not isinstance(assistant_count, int):
+            raise RuntimeError("assistant response extraction returned invalid count")
+        return content.strip(), assistant_count
 
     def _collect_trace(self, container: str, output_dir: Path, attempt: int) -> Path | None:
         rollout_dir = output_dir / "rollout"
@@ -643,143 +662,264 @@ print(files[0] if files else '')
             process.kill()
             process.wait()
 
+    def create_session(
+        self,
+        request: RunRequest,
+        output_dir: Path,
+        attempt: int,
+        *,
+        collect_outputs: bool = True,
+    ) -> InteractiveSession:
+        return OpenClawSession(
+            self,
+            request,
+            output_dir,
+            attempt,
+            collect_outputs=collect_outputs,
+        )
+
     def run(self, request: RunRequest, output_dir: Path, attempt: int) -> HarnessResult:
-        started = time.monotonic()
-        started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
-        # The canonical trace always represents the latest attempt; numbered raw
-        # traces remain available for retry diagnosis.
-        (output_dir / "rollout" / "trace.jsonl").unlink(missing_ok=True)
-        container = (
-            f"roller-{request.index}-{safe_component(request.model, 24)}-"
-            f"{uuid.uuid4().hex[:8]}"
-        ).lower()
-        gateway_process: subprocess.Popen[str] | None = None
-        container_started = False
+        session = self.create_session(request, output_dir, attempt)
         status = "error"
         error: str | None = None
-        version = ""
-        return_codes: list[int] = []
-        trace_path: Path | None = None
-        legacy_artifact_records: list[dict[str, Any]] = []
-        artifact_result: ArtifactCollectionResult | None = None
-        output_copy_error: str | None = None
-        environment: dict[str, str] = {}
-        image_digest = self._image_digest()
-
+        started = time.monotonic()
         try:
-            environment = self._start_container(container, request)
-            container_started = True
-            self._prepare_workspace(container, request)
-            self._prepare_context_and_setup(container, request)
-            version = self._configure(container, request, environment)
-            gateway_process = self.runtime.popen(
-                [
-                    "exec",
-                    "-w",
-                    self.config.workspace_container_path,
-                    container,
-                    "openclaw",
-                    "gateway",
-                    "--port",
-                    str(self.gateway_port),
-                ],
-                output_dir / "rollout" / f"gateway.attempt-{attempt}.log",
-            )
-            self._wait_for_gateway(container, gateway_process)
-            status, error, return_codes = self._run_agent_turns(
-                container, request, output_dir, attempt, started
-            )
-        except subprocess.TimeoutExpired:
+            session.start()
+            for prompt in self._prompts(request):
+                remaining = request.timeout_seconds - (time.monotonic() - started)
+                if remaining <= 0:
+                    raise TimeoutError(f"task exceeded {request.timeout_seconds}s")
+                session.send(prompt, remaining)
+            status = "ok"
+        except (TimeoutError, subprocess.TimeoutExpired):
             status = "timeout"
-            error = f"Docker operation timed out after {request.timeout_seconds}s"
+            error = f"task exceeded {request.timeout_seconds}s"
         except Exception as exc:
             status = "error"
             error = str(exc)
+        return session.finish(status, error)
+
+
+class OpenClawSession(InteractiveSession):
+    """One live OpenClaw container used turn-by-turn by a conversation manager."""
+
+    def __init__(
+        self,
+        harness: OpenClawHarness,
+        request: RunRequest,
+        output_dir: Path,
+        attempt: int,
+        *,
+        collect_outputs: bool,
+    ) -> None:
+        self.harness = harness
+        self.request = request
+        self.output_dir = output_dir
+        self.attempt = attempt
+        self.collect_outputs = collect_outputs
+        self.started = time.monotonic()
+        self.started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        self.container = (
+            f"roller-{request.index}-{safe_component(request.model, 24)}-"
+            f"{uuid.uuid4().hex[:8]}"
+        ).lower()
+        self.gateway_process: subprocess.Popen[str] | None = None
+        self.container_started = False
+        self.version = ""
+        self.return_codes: list[int] = []
+        self.messages: list[str] = []
+        self.environment: dict[str, str] = {}
+        self.image_digest = harness._image_digest()
+        self._assistant_count = 0
+        self._finished: HarnessResult | None = None
+
+    def start(self) -> None:
+        if self.container_started:
+            raise RuntimeError("OpenClaw session has already started")
+        (self.output_dir / "rollout" / "trace.jsonl").unlink(missing_ok=True)
+        self.environment = self.harness._start_container(self.container, self.request)
+        self.container_started = True
+        self.harness._prepare_workspace(self.container, self.request)
+        self.harness._prepare_context_and_setup(self.container, self.request)
+        self.version = self.harness._configure(
+            self.container, self.request, self.environment
+        )
+        self.gateway_process = self.harness.runtime.popen(
+            [
+                "exec",
+                "-w",
+                self.harness.config.workspace_container_path,
+                self.container,
+                "openclaw",
+                "gateway",
+                "--port",
+                str(self.harness.gateway_port),
+            ],
+            self.output_dir / "rollout" / f"gateway.attempt-{self.attempt}.log",
+        )
+        self.harness._wait_for_gateway(self.container, self.gateway_process)
+
+    def send(self, message: str, timeout_seconds: float) -> TurnResult:
+        if not self.container_started or self.gateway_process is None:
+            raise RuntimeError("OpenClaw session is not running")
+        if not isinstance(message, str) or not message.strip():
+            raise ValueError("interactive message must be non-empty")
+        if timeout_seconds <= 0:
+            raise TimeoutError("interactive turn has no time remaining")
+        turn_started = time.monotonic()
+        process = self.harness.runtime.popen(
+            [
+                "exec",
+                "-w",
+                self.harness.config.workspace_container_path,
+                self.container,
+                "openclaw",
+                "agent",
+                "--session-id",
+                self.harness.config.session_id,
+                "--timeout",
+                str(max(1, int(timeout_seconds))),
+                "--message",
+                message,
+            ],
+            self.output_dir / "rollout" / f"agent.attempt-{self.attempt}.log",
+            append=bool(self.messages),
+        )
+        try:
+            return_code = process.wait(timeout=timeout_seconds)
+        except subprocess.TimeoutExpired as exc:
+            process.kill()
+            process.wait()
+            self.harness.runtime.run(
+                ["exec", self.container, "pkill", "-f", "openclaw agent"]
+            )
+            raise TimeoutError("OpenClaw interactive turn timed out") from exc
         finally:
-            if container_started:
+            self.harness.runtime.close_log(process)
+        self.return_codes.append(return_code)
+        if return_code != 0:
+            raise RuntimeError(f"OpenClaw agent turn exited with code {return_code}")
+        content, assistant_count = self.harness._latest_assistant_content(self.container)
+        if assistant_count <= self._assistant_count:
+            raise RuntimeError("OpenClaw turn produced no new assistant response")
+        self._assistant_count = assistant_count
+        self.messages.append(message)
+        return TurnResult(content, time.monotonic() - turn_started, return_code)
+
+    def finish(self, status: str, error: str | None = None) -> HarnessResult:
+        if self._finished is not None:
+            return self._finished
+        trace_path: Path | None = None
+        legacy_records: list[dict[str, Any]] = []
+        artifact_result: ArtifactCollectionResult | None = None
+        output_copy_error: str | None = None
+        if self.container_started:
+            try:
+                trace_path = self.harness._collect_trace(
+                    self.container, self.output_dir, self.attempt
+                )
+            except Exception as exc:
+                logger.warning("[%s] trace collection failed: %s", self.request.task.id, exc)
+            if self.collect_outputs:
                 try:
-                    trace_path = self._collect_trace(container, output_dir, attempt)
-                except Exception as exc:
-                    logger.warning("[%s] trace collection failed: %s", request.task.id, exc)
-                try:
-                    artifact_result, output_copy_error = self._collect_outputs(
-                        container, request, output_dir
+                    artifact_result, output_copy_error = self.harness._collect_outputs(
+                        self.container, self.request, self.output_dir
                     )
                 except Exception as exc:
                     output_copy_error = str(exc)
-                    logger.warning("[%s] output collection failed: %s", request.task.id, exc)
-                try:
-                    legacy_artifact_records = self._collect_legacy_artifacts(
-                        container, output_dir
+                    logger.warning(
+                        "[%s] output collection failed: %s", self.request.task.id, exc
                     )
-                except Exception as exc:
-                    logger.warning("[%s] legacy artifact collection failed: %s", request.task.id, exc)
-            try:
-                self._stop_process(gateway_process)
-            finally:
-                self.runtime.close_log(gateway_process)
-
-            if status == "ok" and trace_path is None:
-                status = "error"
-                error = "OpenClaw finished but no session trace was found"
-            if status == "ok" and output_copy_error is not None:
-                status = "error"
-                error = f"output collection failed: {output_copy_error}"
-            if status == "ok" and artifact_result is not None and not artifact_result.passed:
-                status = "error"
-                error = "unsafe output files were rejected"
-            if container_started and not (self.config.keep_container_on_error and status != "ok"):
                 try:
-                    remove_result = self.runtime.run(["rm", "-f", container], timeout=30)
-                    if remove_result.returncode != 0:
-                        logger.warning("[%s] failed to remove container %s", request.task.id, container)
+                    legacy_records = self.harness._collect_legacy_artifacts(
+                        self.container, self.output_dir
+                    )
                 except Exception as exc:
                     logger.warning(
-                        "[%s] failed to remove container %s: %s",
-                        request.task.id,
-                        container,
+                        "[%s] legacy artifact collection failed: %s",
+                        self.request.task.id,
                         exc,
                     )
+        try:
+            self.harness._stop_process(self.gateway_process)
+        finally:
+            self.harness.runtime.close_log(self.gateway_process)
 
-        elapsed = time.monotonic() - started
+        if status == "ok" and trace_path is None:
+            status = "error"
+            error = "OpenClaw finished but no session trace was found"
+        if status == "ok" and output_copy_error is not None:
+            status = "error"
+            error = f"output collection failed: {output_copy_error}"
+        if status == "ok" and artifact_result is not None and not artifact_result.passed:
+            status = "error"
+            error = "unsafe output files were rejected"
+        if self.container_started and not (
+            self.harness.config.keep_container_on_error and status != "ok"
+        ):
+            try:
+                remove_result = self.harness.runtime.run(
+                    ["rm", "-f", self.container], timeout=30
+                )
+                if remove_result.returncode != 0:
+                    logger.warning(
+                        "[%s] failed to remove container %s",
+                        self.request.task.id,
+                        self.container,
+                    )
+            except Exception as exc:
+                logger.warning(
+                    "[%s] failed to remove container %s: %s",
+                    self.request.task.id,
+                    self.container,
+                    exc,
+                )
+
+        elapsed = time.monotonic() - self.started
         usage: dict[str, Any] = (
-            extract_openclaw_usage(trace_path) if trace_path is not None else dict(ZERO_USAGE)
+            extract_openclaw_usage(trace_path)
+            if trace_path is not None
+            else dict(ZERO_USAGE)
         )
         usage["elapsed_seconds"] = round(elapsed, 3)
-        api_base_urls = _model_base_urls(self.config.model_config or {})
-        if environment.get("OPENROUTER_BASE_URL"):
-            api_base_urls.append(_redact_url(environment["OPENROUTER_BASE_URL"]))
+        api_base_urls = _model_base_urls(self.harness.config.model_config or {})
+        if self.environment.get("OPENROUTER_BASE_URL"):
+            api_base_urls.append(_redact_url(self.environment["OPENROUTER_BASE_URL"]))
         provenance = {
             "schema_version": "roller.provenance/v1",
             "roller_version": __version__,
-            "task_id": request.task.id,
-            "task_bundle_digest": request.bundle.manifest_digest if request.bundle else None,
-            "input_tree_digest": request.bundle.input_tree_digest if request.bundle else None,
+            "task_id": self.request.task.id,
+            "task_bundle_digest": (
+                self.request.bundle.manifest_digest if self.request.bundle else None
+            ),
+            "input_tree_digest": (
+                self.request.bundle.input_tree_digest if self.request.bundle else None
+            ),
             "input_manifest_digest": (
-                request.bundle.input_manifest_digest if request.bundle else None
+                self.request.bundle.input_manifest_digest if self.request.bundle else None
             ),
             "context_manifest_digest": (
-                request.bundle.context_manifest_digest if request.bundle else None
+                self.request.bundle.context_manifest_digest if self.request.bundle else None
             ),
-            "resume_safe": request.bundle.resume_safe if request.bundle else None,
-            "harness": self.name,
-            "openclaw_version": version,
-            "docker_image": self.config.docker_image,
-            "docker_image_digest": image_digest,
-            "model": request.model,
+            "resume_safe": self.request.bundle.resume_safe if self.request.bundle else None,
+            "harness": self.harness.name,
+            "openclaw_version": self.version,
+            "docker_image": self.harness.config.docker_image,
+            "docker_image_digest": self.image_digest,
+            "model": self.request.model,
             "api_base_urls": list(dict.fromkeys(api_base_urls)),
-            "environment_names": sorted(environment),
-            "attempt": attempt,
-            "started_at": started_at,
+            "environment_names": sorted(self.environment),
+            "attempt": self.attempt,
+            "started_at": self.started_at,
             "finished_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         }
-        output_collection_metadata = (
+        output_metadata = (
             {
                 "mode": "all",
-                "agent_output_dir": request.task.output_dir,
+                "agent_output_dir": self.request.task.output_dir,
                 "passed": artifact_result.passed,
                 "path": (
-                    artifact_result.results_path.relative_to(output_dir).as_posix()
+                    artifact_result.results_path.relative_to(self.output_dir).as_posix()
                     if artifact_result.results_path is not None
                     else None
                 ),
@@ -791,26 +931,31 @@ print(files[0] if files else '')
             if artifact_result is not None
             else None
         )
-        return HarnessResult(
+        self._finished = HarnessResult(
             status=status,
             elapsed_seconds=elapsed,
             error=error,
             usage=usage,
             trace_path=(
-                trace_path.relative_to(output_dir).as_posix()
+                trace_path.relative_to(self.output_dir).as_posix()
                 if trace_path is not None
                 else None
             ),
             metadata={
-                "openclaw_version": version,
-                "gateway_port": self.gateway_port,
-                "container": container if self.config.keep_container_on_error and status != "ok" else None,
-                "agent_return_codes": return_codes,
-                "turns": len(self._prompts(request)),
-                "output_collection": output_collection_metadata,
+                "openclaw_version": self.version,
+                "gateway_port": self.harness.gateway_port,
+                "container": (
+                    self.container
+                    if self.harness.config.keep_container_on_error and status != "ok"
+                    else None
+                ),
+                "agent_return_codes": self.return_codes,
+                "turns": len(self.messages),
+                "output_collection": output_metadata,
                 "output_copy_error": output_copy_error,
-                "legacy_artifacts": legacy_artifact_records,
-                "attempt": attempt,
+                "legacy_artifacts": legacy_records,
+                "attempt": self.attempt,
                 "provenance": provenance,
             },
         )
+        return self._finished

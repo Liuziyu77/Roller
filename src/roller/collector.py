@@ -65,6 +65,12 @@ class Collector:
             sample_dir / "trace_ACTF.json"
         ).is_file():
             return None
+        if request.task.user_simulator is not None and (
+            not (sample_dir / "conversation.json").is_file()
+            or not (sample_dir / "user_simulator" / "trace.jsonl").is_file()
+            or not (sample_dir / "user_simulator" / "trace_ACTF.json").is_file()
+        ):
+            return None
         if request.bundle is not None:
             if not request.bundle.resume_safe:
                 logger.info(
@@ -99,7 +105,14 @@ class Collector:
 
     @staticmethod
     def _prune_sample(sample_dir: Path) -> None:
-        keep = {"trace.jsonl", "trace_ACTF.json", "info.json", "results"}
+        keep = {
+            "trace.jsonl",
+            "trace_ACTF.json",
+            "info.json",
+            "results",
+            "conversation.json",
+            "user_simulator",
+        }
         for path in sample_dir.iterdir():
             if path.name in keep:
                 continue
@@ -173,11 +186,12 @@ class Collector:
                 "actf": "trace_ACTF.json" if actf_path.is_file() else None,
                 "actf_schema": "ACTF_v1.0" if actf_path.is_file() else None,
             },
+            "conversation": metadata.get("conversation"),
             "output_collection": metadata.get("output_collection"),
             "runtime": {
                 key: value
                 for key, value in metadata.items()
-                if key not in {"output_collection", "provenance"}
+                if key not in {"conversation", "output_collection", "provenance"}
             },
             "provenance": provenance,
         }

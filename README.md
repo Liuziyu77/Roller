@@ -12,7 +12,7 @@
 
 Roller 是一个开源的 Agent 轨迹采集框架。提供任务和模型配置后，Roller 可以批量、并行地启动Docker和运行 Agent，并把完整轨迹整理成结构统一、便于分析和复用的轨迹数据。
 
-项目目前支持 **OpenClaw** Harness，并用统一的任务格式管理多轮对话、本地输入、系统文件、模型配置和文件输出。Harness 接口与数据格式彼此独立，后续可以在不改变任务数据的情况下接入更多 Agent Harness。
+项目目前支持 **OpenClaw** Harness，并用统一的任务格式管理单轮任务、预定义多轮对话、动态用户模拟、本地输入、系统文件、模型配置和文件输出。Harness 接口与数据格式彼此独立，后续可以在不改变任务数据的情况下接入更多 Agent Harness。
 
 ## ✨ 能做什么
 
@@ -22,6 +22,7 @@ Roller 是一个开源的 Agent 轨迹采集框架。提供任务和模型配置
 | 本地文件 | 每个 task 可以带自己的文件或目录，Agent 通过统一路径读取 |
 | Context 注入 | 支持 `USER.md`、`MEMORY.md`、`SYSTEM.md`、`SOUL.md` 和 skills |
 | 多轮输入 | 使用 `messages` 明确每一轮，不从 prompt 文本中猜测分隔位置 |
+| User Simulator | 独立 Harness 根据当前对话动态给出下一条指令，适合交互式 rollout |
 | 输出管理 | 每个 task 指定一个可写目录，任务结束后自动回收其中的全部文件 |
 | 两种轨迹 | 同时保留 OpenClaw 原始 JSONL 和 `ACTF_v1.0` |
 | 自定义 API | 支持自定义 provider、API base、文本模型和多模态模型 |
@@ -63,6 +64,7 @@ examples/
 │   └── api.env.example
 └── tasks/
     ├── tasks.jsonl
+    ├── user-simulator.jsonl
     └── files/
 ```
 
@@ -72,6 +74,8 @@ examples/
 2. 本地 Markdown 输入与文件输出
 3. `USER.md`、`MEMORY.md` 注入
 4. 两轮连续对话
+
+独立的 `user-simulator.jsonl` 演示由 HR Simulator 与任务 Agent 动态协作完成招聘广告，不会拖慢四个基础示例的快速测试。
 
 完整说明见 [examples/README.md](examples/README.md)。
 
@@ -169,7 +173,7 @@ task 清单可以使用 `.jsonl` 或 `.json`：JSONL 每行是一条 task，JSON
 | --- | --- | --- |
 | `schema_version` | 是 | 当前为 `roller.task/v1` |
 | `id` | 是 | task 的唯一标识 |
-| `prompt` / `question` / `messages` | 三选一 | `prompt` 用于单轮输入，`question` 是兼容字段，`messages` 用于多轮输入 |
+| `prompt` / `question` / `messages` / `user_simulator` | 选择一种输入模式 | `prompt` 用于单轮，`question` 是兼容字段，`messages` 是预定义多轮，`user_simulator` 动态生成每轮指令 |
 | `file_root` | 否 | 输入、context source 和 `output_dir` 共用的 task 工作区根目录 |
 | `model` | 否 | task 自己指定模型；命令行 `--model` 优先 |
 | `files` | 否 | 输入、context 和输出目录 |
@@ -183,7 +187,30 @@ task 清单可以使用 `.jsonl` 或 `.json`：JSONL 每行是一条 task，JSON
 
 多轮任务使用 `messages`，所有 message 会进入同一个 Agent session。完整示例和执行语义见 [单轮和多轮任务](docs/task-bundle-and-storage.md#单轮和多轮)。
 
-### 3. 输入文件
+### 3. User Simulator 动态对话
+
+```json
+{
+  "schema_version": "roller.task/v1",
+  "id": "hr_recruitment_ad",
+  "model": "my-openai-proxy/task-agent-model",
+  "user_simulator": {
+    "harness": "openclaw",
+    "model": "my-openai-proxy/simulator-model",
+    "max_turns": 6,
+    "instruction": "你是一名 HR。通过多轮交流让 Agent 完成招聘广告；检查每版草稿，逐步补充要求，确认最终文件保存后结束。"
+  },
+  "files": {
+    "output_dir": "outputs"
+  }
+}
+```
+
+User Simulator 使用独立模型、容器和 OpenClaw session。Conversation Manager 每轮向它提供固定 `instruction` 与完整对话；Simulator 决定发出下一条指令或结束。任务 Agent 也在同一个 session 中连续回复，因此可以保留对话状态并持续修改工作区文件。
+
+`user_simulator` 不能和 `prompt`、`question`、`messages` 同时出现。`model` 省略时 Simulator 跟随任务 Agent 模型；`max_turns` 默认是 `6`。完整示例见 [examples/tasks/user-simulator.jsonl](examples/tasks/user-simulator.jsonl)，调度、终止协议、资源占用和双轨迹格式见 [User Simulator 文档](docs/user-simulator.md)。
+
+### 4. 输入文件
 
 ```json
 "inputs": [
@@ -202,7 +229,7 @@ task 清单可以使用 `.jsonl` 或 `.json`：JSONL 每行是一条 task，JSON
 - Agent 可以通过 `/tmp_workspace/<source>` 或 `/roller/task/inputs/<source>` 读取。
 - 输入在容器中只读；目录会递归复制并检查符号链接。
 
-### 4. USER.md、MEMORY.md 与系统文件
+### 5. USER.md、MEMORY.md 与系统文件
 
 ```json
 "context": [
@@ -224,7 +251,7 @@ task 清单可以使用 `.jsonl` 或 `.json`：JSONL 每行是一条 task，JSON
 
 OpenClaw adapter 会把 context 放到 `/root/<target>` 和 `/tmp_workspace/<target>`。`capture` 可选 `full`、`hash` 或 `none`；详细差别见 [Task 文件与存储设计](docs/task-bundle-and-storage.md)。
 
-### 5. 输出目录与自动回收
+### 6. 输出目录与自动回收
 
 ```json
 "files": {
@@ -236,7 +263,7 @@ OpenClaw adapter 会把 context 放到 `/root/<target>` 和 `/tmp_workspace/<tar
 
 任务结束后，目录中的全部普通文件和空目录都会保存到 sample 的 `results/`，不需要预先声明文件名。Roller 会拒绝符号链接和特殊文件，并在 `info.json` 中记录每个结果文件的大小、MIME 和 SHA-256。`output_dir` 为空时不会创建 `results/`。
 
-### 6. 运行时设置
+### 7. 运行时设置
 
 ```json
 "runtime": {
@@ -339,6 +366,8 @@ roller collect \
     ├── trace.jsonl                   # OpenClaw 原始 session JSONL
     ├── trace_ACTF.json               # ACTF_v1.0 trajectory
     ├── info.json                     # 状态、usage、耗时、版本和 digest
+    ├── conversation.json             # 可选；动态对话和终止原因
+    ├── user_simulator/               # 可选；Simulator raw/ACTF/info
     └── results/                      # 可选；保存 output_dir 中的全部文件
 ```
 
@@ -347,6 +376,8 @@ roller collect \
 - `trace.jsonl`：原始事实来源，不做消息清洗或改写。
 - `trace_ACTF.json`：按 assistant step 组织 tool call、observation 和多轮 user message。
 - `info.json`：保存状态、错误、token/cost usage、attempt、版本和文件 digest。
+- `conversation.json`：User Simulator 模式下保存清晰的交替消息、轮次和终止原因。
+- `user_simulator/`：User Simulator 模式下保存 Simulator 自己的原始轨迹、ACTF 和 usage。
 - `results/`：`output_dir` 非空时存在，并保留其中的完整目录结构。
 
 运行期日志、Task Bundle、retry 中间 trace，以及 `output_dir` 之外的工作区文件不会留在最终 run 中。
@@ -359,8 +390,9 @@ roller collect \
 2. `trace.jsonl` 和 `trace_ACTF.json` 都还在。
 3. 当前 Task Bundle digest 与旧结果一致。
 4. context 没有使用会禁用安全 resume 的 `capture=none`。
+5. 动态任务的 `conversation.json` 与 User Simulator raw/ACTF 轨迹都存在。
 
-prompt、messages、输入文件、context、`output_dir` 或 runtime 设置变化后，task 会重新运行。
+prompt、messages、User Simulator instruction/model/轮次上限、输入文件、context、`output_dir` 或 runtime 设置变化后，task 会重新运行。
 
 ## 🔒 文件与密钥安全
 
@@ -373,6 +405,7 @@ prompt、messages、输入文件、context、`output_dir` 或 runtime 设置变�
 ## 🧪 开发与测试
 
 - Harness 接口：[src/roller/harnesses/base.py](src/roller/harnesses/base.py)
+- 对话管理器：[src/roller/conversation.py](src/roller/conversation.py)
 - OpenClaw adapter：[src/roller/harnesses/openclaw.py](src/roller/harnesses/openclaw.py)
 - ACTF 转换：[src/roller/actf.py](src/roller/actf.py)
 
@@ -386,7 +419,8 @@ PYTHONPATH=src python3 -m unittest discover -s tests -v
 
 | 文档 | 内容 |
 | --- | --- |
-| [Examples](examples/README.md) | 环境变量、普通/多模态模型和四类 task |
+| [Examples](examples/README.md) | 环境变量、普通/多模态模型、四类基础 task 和 User Simulator 示例 |
+| [User Simulator](docs/user-simulator.md) | 动态对话调度、JSON 决策协议、资源占用和双轨迹目录 |
 | [Task 文件与存储设计](docs/task-bundle-and-storage.md) | 输入快照、context、输出回收、ACTF 和 resume 细节 |
 | [Task JSON Schema](schemas/task.schema.json) | `roller.task/v1` 的机器可读约束 |
 
