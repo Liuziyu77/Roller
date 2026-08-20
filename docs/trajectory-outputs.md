@@ -265,7 +265,7 @@ schema 失败；没有工具调用时，SFT 的 `tools` 为 `[]`。因此需要�
 | `--keep-thinking`（默认） | 后端返回什么就接收什么 | 保留历史 reasoning | 保存可见 reasoning | 从 ACTF 保存 | 保留原始事件 |
 | `--no-keep-thinking` | 当前轮仍可产生 reasoning | 代理转发前剥离历史 reasoning | reasoning 置空 | reasoning 置空 | 仍保留原始事件 |
 
-`--thinking LEVEL` 控制向 OpenClaw/模型请求的 thinking level，但不能凭空生成可见文本。
+`--thinking LEVEL` 控制向 OpenClaw/模型请求的逻辑档位，但不能凭空生成可见文本。GPT 原生 effort、开源模型 profile 和旧镜像限制见 [Thinking 配置](openclaw-configuration.md#5-thinkingsystem-prompt-与-wire-trace)。
 后端只报告 reasoning token、却不返回 reasoning summary/content 时，ACTF/SFT 没有可保存
 的 `reasoning_content`。GPT 的压缩 summary 会原样进入该字段，encrypted reasoning
 不会进入 SFT。

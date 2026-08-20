@@ -54,7 +54,9 @@
           "default": 6,
           "description": "Maximum number of instructions delivered to the task agent"
         },
-        "thinking": {"type": "string", "minLength": 1}
+        "thinking": {
+          "enum": ["off", "none", "minimal", "low", "medium", "high", "xhigh", "adaptive", "max", "ultra"]
+        }
       },
       "additionalProperties": false
     },
@@ -118,7 +120,9 @@
             {"type": "array", "items": {"type": "string"}}
           ]
         },
-        "thinking": {"type": "string"}
+        "thinking": {
+          "enum": ["off", "none", "minimal", "low", "medium", "high", "xhigh", "adaptive", "max", "ultra"]
+        }
       },
       "additionalProperties": false
     }

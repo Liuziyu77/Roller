@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
 
+from roller.thinking import normalize_thinking
+
 
 @dataclass(frozen=True)
 class InputFile:
@@ -54,6 +56,13 @@ class UserSimulatorSpec:
     max_turns: int = 6
     thinking: str | None = None
 
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "thinking",
+            normalize_thinking(self.thinking, field="user simulator thinking"),
+        )
+
 
 @dataclass(frozen=True)
 class Task:
@@ -74,6 +83,13 @@ class Task:
     setup_commands: tuple[str, ...] = ()
     thinking: str | None = None
     user_simulator: UserSimulatorSpec | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "thinking",
+            normalize_thinking(self.thinking, field="task thinking"),
+        )
 
 
 @dataclass(frozen=True)

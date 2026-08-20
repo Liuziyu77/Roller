@@ -22,6 +22,7 @@ from roller.harnesses.openclaw import (
 )
 from roller.storage import atomic_write_json, safe_component
 from roller.tasks import TaskFormatError, build_requests, load_tasks
+from roller.thinking import THINKING_LEVELS, normalize_thinking
 from roller.version import __version__
 
 logger = logging.getLogger(__name__)
@@ -87,7 +88,16 @@ def _build_parser() -> argparse.ArgumentParser:
     openclaw.add_argument("--network", default="host")
     openclaw.add_argument("--session-id", default="roller")
     openclaw.add_argument("--search-provider")
-    openclaw.add_argument("--thinking")
+    openclaw.add_argument(
+        "--thinking",
+        type=normalize_thinking,
+        choices=THINKING_LEVELS,
+        metavar="LEVEL",
+        help=(
+            "OpenClaw logical thinking level; 'none' is accepted as an alias for 'off', "
+            "and model/provider support is validated by OpenClaw"
+        ),
+    )
     openclaw.add_argument(
         "--pass-env",
         action="append",

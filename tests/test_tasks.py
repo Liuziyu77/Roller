@@ -9,6 +9,37 @@ from roller.tasks import TaskFormatError, build_requests, load_tasks
 
 
 class TaskLoadingTests(unittest.TestCase):
+    def test_normalizes_and_validates_task_and_simulator_thinking(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            task_file = Path(temporary) / "tasks.json"
+            task_file.write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "reasoning",
+                            "model": "provider/model",
+                            "runtime": {"thinking": "none"},
+                            "user_simulator": {
+                                "instruction": "continue if needed",
+                                "thinking": "xhigh",
+                            },
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            task = load_tasks(task_file)[0]
+            self.assertEqual(task.thinking, "off")
+            assert task.user_simulator is not None
+            self.assertEqual(task.user_simulator.thinking, "xhigh")
+
+            payload = json.loads(task_file.read_text(encoding="utf-8"))
+            payload[0]["runtime"]["thinking"] = "turbo"
+            task_file.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(TaskFormatError, "runtime.thinking must be one of"):
+                load_tasks(task_file)
+
     def test_loads_user_simulator_task_without_predefined_messages(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             task_file = Path(temporary) / "tasks.json"

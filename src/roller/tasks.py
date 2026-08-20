@@ -7,6 +7,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Iterable
 
 from roller.models import ContextFile, InputFile, RunRequest, Task, UserSimulatorSpec
+from roller.thinking import normalize_thinking
 
 TASK_SCHEMA_V1 = "roller.task/v1"
 CAPTURE_POLICIES = {"full", "hash", "none"}
@@ -86,17 +87,18 @@ def _parse_user_simulator(value: Any, index: int) -> UserSimulatorSpec | None:
         raise TaskFormatError(
             f"task {index}: user_simulator.max_turns must be an integer from 1 to 100"
         )
-    thinking = value.get("thinking")
-    if thinking is not None and (not isinstance(thinking, str) or not thinking.strip()):
-        raise TaskFormatError(
-            f"task {index}: user_simulator.thinking must be a non-empty string"
+    try:
+        thinking = normalize_thinking(
+            value.get("thinking"), field=f"task {index}: user_simulator.thinking"
         )
+    except ValueError as exc:
+        raise TaskFormatError(str(exc)) from exc
     return UserSimulatorSpec(
         instruction=instruction.strip(),
         harness=harness,
         model=model.strip() if isinstance(model, str) else None,
         max_turns=max_turns,
-        thinking=thinking.strip() if isinstance(thinking, str) else None,
+        thinking=thinking,
     )
 
 
@@ -458,9 +460,13 @@ def load_tasks(
         runtime = row.get("runtime", {})
         if not isinstance(runtime, dict):
             raise TaskFormatError(f"task {index}: runtime must be an object")
-        thinking = runtime.get("thinking", row.get("thinking"))
-        if thinking is not None and not isinstance(thinking, str):
-            raise TaskFormatError(f"task {index}: thinking must be a string")
+        try:
+            thinking = normalize_thinking(
+                runtime.get("thinking", row.get("thinking")),
+                field=f"task {index}: runtime.thinking",
+            )
+        except ValueError as exc:
+            raise TaskFormatError(str(exc)) from exc
 
         tasks.append(
             Task(

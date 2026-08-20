@@ -281,9 +281,11 @@ OpenClaw adapter 会把 Context 注入 `/root/<target>` 与 `/tmp_workspace/<tar
 | --- | --- |
 | `env` | Task 强制依赖的宿主机环境变量名；缺失或为空时 task 失败 |
 | `setup` | Agent 启动前在 `/tmp_workspace` 执行的 shell 命令 |
-| `thinking` | 覆盖本 task 的 OpenClaw thinking 设置 |
+| `thinking` | 覆盖本 task 的 OpenClaw thinking 设置；可用值见 [Thinking 配置](openclaw-configuration.md#5-thinkingsystem-prompt-与-wire-trace) |
 
 `env` 和 `setup` 都接受单个字符串或字符串数组。Task 作者应把 setup 当作可执行代码管理，只运行可信数据集中的命令。
+
+`thinking` 接受 `off/minimal/low/medium/high/xhigh/adaptive/max/ultra`；`none` 会规范化为 `off`。这是 OpenClaw 的逻辑档位，模型是否支持由对应 OpenClaw model profile 决定。task 中的值优先于 CLI `--thinking`，非法值会在启动 Docker 前报错。User Simulator 的 `thinking` 使用同一组值和校验。
 
 ## 9. 路径与格式校验
 

@@ -148,11 +148,44 @@ roller collect ... --pass-env INTERNAL_SERVICE_TOKEN
 
 ## 5. Thinking、system prompt 与 wire trace
 
-thinking 等级本身没有默认值。需要模型生成 reasoning 时显式传入：
+### 逻辑档位与 provider effort
+
+Roller 的 `--thinking` 使用 OpenClaw 的**逻辑档位**，而不是把字符串直接写入任意模型 API：
+
+```text
+off | minimal | low | medium | high | xhigh | adaptive | max | ultra
+```
+
+另外接受 `none` 作为输入别名，并在进入 task、配置和轨迹元数据前统一规范化为 `off`。CLI 全局值、task 的 `runtime.thinking`、User Simulator 的 `thinking` 都使用同一套校验。task 值优先于 CLI 全局值；未设置时 Roller 不注入 thinking 默认值，也不向 `openclaw agent` 增加 `--thinking`。
+
+需要模型生成 reasoning 时显式传入：
 
 ```bash
 roller collect ... --thinking high
 ```
+
+档位先由 Roller 原样交给 OpenClaw，再由 OpenClaw 当前 model profile 校验并映射成 provider 参数。因此 Roller 接受某个逻辑档位，不代表每个模型都支持它：
+
+| Roller 输入 | OpenClaw 规范值 | GPT-5.6 Sol 的 Responses API | 说明 |
+| --- | --- | --- | --- |
+| `none` / `off` | `off` | `none` | `none` 只是 Roller 的输入别名；原生 GPT API 不接受 `off` |
+| `minimal` | `minimal` | 不支持 | 只用于声明支持它的其他模型 |
+| `low` | `low` | `low` | 原样映射 |
+| `medium` | `medium` | `medium` | 原样映射；GPT-5.6 Sol 未传 effort 时的 API 默认值也是 `medium` |
+| `high` | `high` | `high` | 原样映射 |
+| `xhigh` | `xhigh` | `xhigh` | 需要 OpenClaw profile 声明支持 |
+| `adaptive` | `adaptive` | 不是原生值 | 由支持自适应 thinking 的 OpenClaw profile 决定实际档位 |
+| `max` | `max` | `max` | 需要新版 OpenClaw 和对应 model profile |
+| `ultra` | `ultra` | 不是原生值 | 新版 OpenClaw 的编排档位；对支持的 GPT runtime 通常以 `max` 加额外编排实现 |
+
+对 `gpt-5.6-sol` 的实际 Responses 请求已逐项验证：`none/low/medium/high/xhigh/max` 成功；`minimal/adaptive/ultra` 作为原生 effort 会返回 400。`off` 必须由 OpenClaw 转成 `none`，不能直接发给 GPT API。官方支持矩阵以 [OpenAI GPT-5.6 model guidance](https://developers.openai.com/api/docs/guides/model-guidance?model=gpt-5.6) 为准。
+
+开源模型不在 Roller 中维护一张容易过期的硬编码表。常见 OpenAI-compatible 后端通常支持 `low/medium/high`，而 `minimal/xhigh/adaptive/max` 是否存在以及怎样映射由模型服务和 OpenClaw provider profile 决定。新版 OpenClaw 的自定义 provider 可通过 model `compat.supportedReasoningEfforts` 和 `compat.reasoningEffortMap` 描述服务能力；字段和具体模型档位以 [OpenClaw Thinking Levels](https://docs.openclaw.ai/tools/thinking) 及 [OpenClaw 配置文档](https://docs.openclaw.ai/gateway/config-tools) 为准。
+
+> [!IMPORTANT]
+> 目前测试到的默认镜像 `wildclawbench-ubuntu:v1.3` 内含 OpenClaw `2026.3.11`。该版本 CLI 只承诺 `off/minimal/low/medium/high`，并会把部分高级值静默降档，不能用于验证 GPT-5.6 Sol 的 `xhigh/max` 或开源模型的 `adaptive/max`。Roller 会对这个已知版本的 `xhigh/adaptive/max/ultra` 直接报错，避免产生档位标错的轨迹。使用这些档位时请通过 `--docker-image` 或 `ROLLER_OPENCLAW_IMAGE` 选择包含新版 OpenClaw 的镜像；只更新外部 Roller 仓库不会替换镜像内的 OpenClaw。
+
+### Reasoning 内容与轨迹
 
 Roller 会在本次 rollout 注入的模型配置副本中设置 `reasoning: true`。Chat Completions adapter 会发送 `reasoning_effort`；Responses adapter 会发送 reasoning 配置。旧配置中的 `tags: ["reasoning"]` 会自动转换为当前 OpenClaw 接受的布尔字段。
 
@@ -236,7 +269,7 @@ roller collect ... --gateway-port 22000 --gateway-port-step 10
 | `--gateway-port-step` | `10` | worker 之间的端口间隔 |
 | `--gateway-startup-timeout` | `30` | 等待 gateway 就绪的秒数 |
 | `--session-id` | `roller` | OpenClaw session ID 前缀 |
-| `--thinking` | 无 | 全局 thinking 设置，可被 task 覆盖 |
+| `--thinking` | 无 | 全局 OpenClaw 逻辑档位；完整值、模型映射和版本限制见第 5 节 |
 | `--keep-thinking` / `--no-keep-thinking` | 开启 | 是否保留轨迹和请求历史中的 thinking |
 | `--cache-trace` / `--no-cache-trace` | 开启 | 是否记录实际 system prompt |
 | `--wire-trace` | `actf` | tools schema / 完整请求体记录模式 |
