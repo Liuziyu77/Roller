@@ -74,7 +74,7 @@ set +a
 }
 ```
 
-采集 reasoning 模型时可增加 `--thinking high`。`--keep-thinking` 默认开启，会同时保留 ACTF 中的压缩 thinking 和后续轮次请求上文；通过 Responses API 返回 reasoning summary 的 GPT 模型应使用 `openai-responses`。
+采集 reasoning 模型时可增加 `--thinking high`。Roller 接受 OpenClaw 的完整逻辑档位 `off/minimal/low/medium/high/xhigh/adaptive/max/ultra`，也接受 GPT 风格的 `none` 并将它规范化为 `off`；实际可用档位由模型和镜像内的 OpenClaw 版本决定。`--keep-thinking` 默认开启，会同时保留 ACTF 中的压缩 thinking 和后续轮次请求上文；通过 Responses API 返回 reasoning summary 的 GPT 模型应使用 `openai-responses`。
 
 完整配置说明见 [OpenClaw、模型与 API](docs/openclaw-configuration.md)。
 
@@ -238,7 +238,7 @@ User Simulator rollout 还会增加 `conversation.json` 和 `user_simulator/`，
 | `--run-name NAME` | 本次 run 的目录名 |
 | `--resume` | 跳过满足完整性与 digest 条件的成功 sample |
 | `--dry-run` | 只校验并打印计划 |
-| `--thinking LEVEL` | 设置 `off` / `minimal` / `low` / `medium` / `high` reasoning 等级 |
+| `--thinking LEVEL` | OpenClaw 逻辑档位：`off/minimal/low/medium/high/xhigh/adaptive/max/ultra`；`none` 是 `off` 的别名 |
 | `--keep-thinking` / `--no-keep-thinking` | 保留或双向剥离轨迹与请求历史中的 thinking |
 | `--cache-trace` / `--no-cache-trace` | 是否记录实际组装的 system prompt |
 | `--wire-trace MODE` | `actf`（默认）、`full` 或 `off`；控制 tools schema 与请求体记录 |

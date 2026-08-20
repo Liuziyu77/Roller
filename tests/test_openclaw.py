@@ -14,6 +14,7 @@ from roller.harnesses.openclaw import (
     expand_env_placeholders,
     load_model_config,
     prepare_model_config,
+    validate_openclaw_thinking,
 )
 from roller.models import RunRequest, Task
 from roller.tasks import load_tasks
@@ -104,6 +105,16 @@ class FakeCacheTraceRuntime(FakeDockerRuntime):
 
 
 class OpenClawHelpersTests(unittest.TestCase):
+    def test_rejects_advanced_thinking_on_known_downgrading_openclaw(self) -> None:
+        for level in ("xhigh", "adaptive", "max", "ultra"):
+            with self.subTest(level=level):
+                with self.assertRaisesRegex(RuntimeError, "silently downgrade"):
+                    validate_openclaw_thinking(
+                        "OpenClaw 2026.3.11 (29dc654)", level
+                    )
+        validate_openclaw_thinking("OpenClaw 2026.3.11 (29dc654)", "high")
+        validate_openclaw_thinking("OpenClaw 2026.8.0", "max")
+
     def test_embedded_response_extractor_is_valid_python(self) -> None:
         script = OpenClawHarness._LAST_ASSISTANT_SCRIPT.replace(
             "__ROLLER_SESSION_FILE__", repr("roller.jsonl")
@@ -287,6 +298,41 @@ class OpenClawHelpersTests(unittest.TestCase):
         self.assertEqual(len(agent_commands), 2)
         for command in agent_commands:
             self.assertEqual(command[command.index("--thinking") + 1], "high")
+
+    def test_harness_passes_task_max_override_without_downgrading(self) -> None:
+        task = Task(
+            id="task",
+            prompts=("solve",),
+            source_index=0,
+            thinking="max",
+        )
+        request = RunRequest(0, task, "provider/model", 30)
+        runtime = FakeDockerRuntime()
+        harness = OpenClawHarness(
+            OpenClawConfig(
+                docker_image="test-image",
+                thinking="low",
+                wire_trace_mode="off",
+                set_image_model=False,
+            ),
+            worker_slot=0,
+            runtime=runtime,
+        )
+
+        with tempfile.TemporaryDirectory() as temporary:
+            result = harness.run(request, Path(temporary), attempt=1)
+
+        self.assertEqual(result.status, "ok")
+        config_command = next(
+            command
+            for command in runtime.commands
+            if "agents.defaults.thinkingDefault" in command
+        )
+        self.assertEqual(config_command[-1], "max")
+        agent_command = next(
+            command for command in runtime.commands if "agent" in command
+        )
+        self.assertEqual(agent_command[agent_command.index("--thinking") + 1], "max")
 
     def test_markdown_inside_one_message_remains_one_turn(self) -> None:
         prompt = "## Round 1\nKeep this whole message.\n## Round 2\nStill the same message."

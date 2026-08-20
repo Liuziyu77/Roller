@@ -21,6 +21,7 @@ from roller.artifacts import ArtifactCollectionResult, collect_output_directory
 from roller.harnesses.base import InteractiveHarness, InteractiveSession, TurnResult
 from roller.models import HarnessResult, RunRequest
 from roller.storage import safe_component
+from roller.thinking import normalize_thinking, resolve_thinking
 from roller.usage import ZERO_USAGE, extract_openclaw_usage
 from roller.version import __version__
 from roller.wire_trace import WireTraceProxy, redact_jsonl_file, rewrite_model_config
@@ -48,6 +49,25 @@ COMMON_ENV_NAMES = (
     "https_proxy",
     "no_proxy",
 )
+
+_OPENCLAW_2026_3_11_UNSAFE_THINKING = frozenset(
+    {"xhigh", "adaptive", "max", "ultra"}
+)
+
+
+def validate_openclaw_thinking(version: str, thinking: str | None) -> None:
+    """Reject advanced levels known to be silently changed by a legacy image."""
+
+    if (
+        thinking in _OPENCLAW_2026_3_11_UNSAFE_THINKING
+        and re.search(r"(?:^|\s)2026\.3\.11(?:\s|$)", version)
+    ):
+        raise RuntimeError(
+            f"OpenClaw {version!r} cannot faithfully apply --thinking {thinking!r}; "
+            "the bundled 2026.3.11 runtime predates the current advanced thinking "
+            "profiles and can silently downgrade the request. Use off|minimal|low|"
+            "medium|high, or select a newer OpenClaw image with --docker-image."
+        )
 
 
 def expand_env_placeholders(value: Any, environ: Mapping[str, str] | None = None) -> Any:
@@ -220,16 +240,7 @@ class OpenClawConfig:
         for path in self.collect_paths:
             if not path.startswith("/"):
                 raise ValueError(f"collected container path must be absolute: {path}")
-        if self.thinking is not None and self.thinking not in (
-            "off",
-            "minimal",
-            "low",
-            "medium",
-            "high",
-        ):
-            raise ValueError(
-                f"thinking must be one of off|minimal|low|medium|high: {self.thinking}"
-            )
+        object.__setattr__(self, "thinking", normalize_thinking(self.thinking))
         if self.wire_trace_mode not in ("off", "actf", "full"):
             raise ValueError(f"wire_trace_mode must be off|actf|full: {self.wire_trace_mode}")
 
@@ -522,7 +533,7 @@ print(json.dumps({'content': content, 'assistant_count': assistant_count}, ensur
     def _inject_models(self, container: str, request: RunRequest) -> None:
         if self.config.model_config is None:
             return
-        thinking = request.task.thinking or self.config.thinking
+        thinking = resolve_thinking(request.task.thinking, self.config.thinking)
         config_to_write = prepare_model_config(
             self.config.model_config,
             request.model,
@@ -550,6 +561,8 @@ print(json.dumps({'content': content, 'assistant_count': assistant_count}, ensur
 
     def _configure(self, container: str, request: RunRequest, environment: Mapping[str, str]) -> str:
         version = self._checked(["exec", container, "openclaw", "--version"], "OpenClaw version").stdout.strip()
+        thinking = resolve_thinking(request.task.thinking, self.config.thinking)
+        validate_openclaw_thinking(version, thinking)
         self._inject_models(container, request)
         self._checked(
             ["exec", container, "openclaw", "models", "set", request.model],
@@ -571,7 +584,6 @@ print(json.dumps({'content': content, 'assistant_count': assistant_count}, ensur
             ],
             "OpenClaw workspace setup",
         )
-        thinking = request.task.thinking or self.config.thinking
         if thinking:
             self._checked(
                 [
@@ -971,7 +983,9 @@ class OpenClawSession(InteractiveSession):
             "--timeout",
             str(max(1, int(timeout_seconds))),
         ]
-        thinking = self.request.task.thinking or self.harness.config.thinking
+        thinking = resolve_thinking(
+            self.request.task.thinking, self.harness.config.thinking
+        )
         if thinking:
             # The CLI flag reaches this live session; changing the default after
             # gateway startup does not reliably affect an existing agent turn.
