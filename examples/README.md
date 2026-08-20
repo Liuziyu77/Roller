@@ -1,72 +1,101 @@
 # Roller Examples
 
-示例按用途分成三个目录，避免把模型配置、环境变量和 task 数据混在一起：
+这个目录提供一套可以直接 dry-run、替换模型后即可采集的最小案例。更完整的字段和运行机制放在 [Docs](../docs/README.md)，这里专注于“准备什么”和“执行什么”。
+
+## 1. 目录结构
 
 ```text
 examples/
-├── json/
-│   ├── openclaw-models.json          # 普通文本模型
-│   └── openclaw-models-multimodal.json # 多模态模型
 ├── env/
-│   └── api.env.example               # API/Search 环境变量模板
+│   └── api.env.example
+├── json/
+│   ├── openclaw-models.json
+│   └── openclaw-models-multimodal.json
 └── tasks/
-    ├── tasks.jsonl                   # 四类轻量 task
-    ├── user-simulator.jsonl          # 独立的动态用户模拟 task
-    └── files/                        # task 的输入与 context 文件
+    ├── tasks.jsonl
+    ├── user-simulator.jsonl
+    └── files/
         ├── 02_local_markdown/
-        │   └── inputs/
-        │       └── product-brief.md
+        │   └── inputs/product-brief.md
         └── 03_user_memory_context/
             └── context/
                 ├── USER.md
                 └── MEMORY.md
 ```
 
-## 1. 准备环境变量
+- `env/`：只放环境变量模板，不提交真实 Key。
+- `json/`：OpenClaw provider 与模型定义。
+- `tasks/`：Task 清单，以及它们各自依赖的文件包。
 
-[`env/api.env.example`](env/api.env.example) 包含：
+## 2. 准备 API
 
-| 变量 | 用途 |
-| --- | --- |
-| `MY_PROXY_BASE_URL` | OpenAI-compatible API base URL |
-| `MY_PROXY_API_KEY` | 模型 API key |
-| `BRAVE_API_KEY` | OpenClaw Brave Search API key |
-
-复制为已被 `.gitignore` 排除的本地文件，替换占位值后加载：
+复制模板，填入自己的 OpenAI-compatible API base 与 Key：
 
 ```bash
 cp examples/env/api.env.example examples/env/api.env
+```
 
-# 编辑 examples/env/api.env 后执行
+```dotenv
+MY_PROXY_BASE_URL=https://api.example.com/v1
+MY_PROXY_API_KEY=replace-with-your-api-key
+BRAVE_API_KEY=replace-with-your-brave-api-key
+```
+
+加载到当前 shell：
+
+```bash
 set -a
 source examples/env/api.env
 set +a
 ```
 
-> [!IMPORTANT]
-> 不要把真实 API key 写入 `api.env.example`、JSON 配置或 task 文件。Roller 只在运行时读取环境变量。
+`examples/env/api.env` 已被 Git 忽略。模型 JSON 通过 `${MY_PROXY_BASE_URL}` 和 `${MY_PROXY_API_KEY}` 读取值，真实凭证不需要进入仓库。
 
-## 2. 选择普通模型或多模态模型
+自定义 API adapter、搜索变量与远程 Docker 设置见 [OpenClaw、模型与 API 配置](../docs/openclaw-configuration.md)。
 
-| 配置文件 | Model ref | 用途 |
+## 3. 配置模型
+
+文本模型模板 [`json/openclaw-models.json`](json/openclaw-models.json) 定义：
+
+```text
+my-openai-proxy/my-model
+```
+
+在第一次运行前，把 JSON 中的 model `id`、`name` 和 `api` 改成服务端真实支持的值。示例默认使用 `openai-responses`；只支持 Chat Completions 的后端应改为 `openai-completions`。
+
+多模态模板 [`json/openclaw-models-multimodal.json`](json/openclaw-models-multimodal.json) 另外声明：
+
+```json
+{"input": ["text", "image"]}
+```
+
+它代表视觉输入/图像理解模型，不是文生图模型。后端本身也必须支持图像输入。
+
+## 4. 四个基础案例
+
+[`tasks/tasks.jsonl`](tasks/tasks.jsonl) 每行一条 task：
+
+| Task ID | 输入方式 | 预期行为 |
 | --- | --- | --- |
-| [`openclaw-models.json`](json/openclaw-models.json) | `my-openai-proxy/my-model` | 普通文本和工具调用任务 |
-| [`openclaw-models-multimodal.json`](json/openclaw-models-multimodal.json) | `my-openai-proxy/my-multimodal-model` | 原生图像输入和图像理解任务 |
+| `01_text_only` | 单轮文本 | 计算 `2+3`，只回复结果 |
+| `02_local_markdown` | 本地 Markdown | 读取项目名称，写入 `outputs/name.txt` |
+| `03_user_memory_context` | `USER.md` + `MEMORY.md` | 根据注入的偏好与记忆回答问题 |
+| `04_multi_turn` | 两条 `messages` | 在同一 session 中记住并复述校验词 |
 
-OpenClaw 通过 model entry 的 `input` 判断是否可向模型发送图像。这里的 image model 指视觉输入/图像理解模型，不是文生图模型；后者使用 OpenClaw 独立的 image-generation 配置。
+文件案例的对应关系：
 
-示例使用 `"api":"openai-responses"`。如果代理只实现 `/v1/chat/completions`，请改成 `"openai-completions"`。更多字段见 [OpenClaw custom provider 文档](https://docs.openclaw.ai/gateway/config-tools#custom-providers-and-base-urls)。
+```text
+tasks.jsonl
+  └─ file_root: files/02_local_markdown
+       ├─ inputs/product-brief.md     # Agent 只读
+       └─ outputs/                    # 运行时创建，Agent 可写
+```
 
-## 3. 检查四类 task
+输入不会被重命名；Agent 生成的 `outputs/name.txt` 会出现在该 sample 的 `results/name.txt`。宿主机 `file_root` 不会被 Agent 回写。
 
-[`tasks/tasks.jsonl`](tasks/tasks.jsonl) 包含：
+### 4.1 先检查
 
-1. `01_text_only`：纯文本计算。
-2. `02_local_markdown`：读取本地 Markdown，并把生成文件写入 `outputs/`。
-3. `03_user_memory_context`：注入 `USER.md` 与 `MEMORY.md`。
-4. `04_multi_turn`：两个显式 user messages，共用一个 OpenClaw session。
-
-先执行 dry-run：
+在仓库根目录执行：
 
 ```bash
 roller collect \
@@ -77,11 +106,42 @@ roller collect \
   --dry-run
 ```
 
-计划中的 turn 数应为 `1、1、1、2`。第二个 task 声明了 `files.output_dir=outputs`；Agent 写入该目录的全部文件都会保存到 sample 的 `results/`。
+Dry-run 会解析四条 task、检查所有依赖文件和路径，但不会启动 Docker，也不会创建 run。计划中的 turn 数应为 `1、1、1、2`。
 
-## 4. 检查 User Simulator task
+### 4.2 并行执行
 
-[`tasks/user-simulator.jsonl`](tasks/user-simulator.jsonl) 是一个独立示例：User Simulator 扮演 HR，根据任务 Agent 当前给出的招聘广告逐轮提出新要求，完成后主动结束。它不使用预定义 `messages`。
+```bash
+roller collect \
+  --tasks examples/tasks/tasks.jsonl \
+  --model my-openai-proxy/my-model \
+  --model-config examples/json/openclaw-models.json \
+  --docker-image your-openclaw-image:tag \
+  --parallel 4 \
+  --timeout 600 \
+  --output runs \
+  --run-name examples_text
+```
+
+运行完成后检查：
+
+```text
+runs/examples_text/
+├── info.json
+└── samples/<model-safe-name>/
+    ├── 00000000_01_text_only/
+    ├── 00000001_02_local_markdown/
+    │   └── results/name.txt
+    ├── 00000002_03_user_memory_context/
+    └── 00000003_04_multi_turn/
+```
+
+Roller 会把 model ref 转成可用于文件系统的安全目录名；包含 `/` 等字符时会附加短 digest，因此程序应从 run `info.json` 的 sample 索引定位目录。每个 sample 的核心文件是 `trace.jsonl`、`trace_ACTF.json` 和 `info.json`。结果目录的完整结构见 [文件、Task Bundle 与结果存储](../docs/task-bundle-and-storage.md#6-run-与-sample)。
+
+## 5. 动态 User Simulator 案例
+
+[`tasks/user-simulator.jsonl`](tasks/user-simulator.jsonl) 中，另一个 OpenClaw Harness 扮演 HR。它不会使用预定义 `messages`，而是根据任务 Agent 当前版本的招聘广告逐轮补充要求，最终要求文件写入 `outputs/recruitment-ad.md`。
+
+先做检查：
 
 ```bash
 roller collect \
@@ -91,29 +151,39 @@ roller collect \
   --dry-run
 ```
 
-示例省略了 `user_simulator.model`，因此 Simulator 默认跟随任务 Agent 使用 `my-openai-proxy/my-model`。需要模型分工时，可以在 `user_simulator` 中指定同一 models JSON 里的另一个模型。
-
-动态对话的调度、终止条件和双轨迹目录见 [User Simulator 文档](../docs/user-simulator.md)。
-
-## 5. 运行示例
-
-### 文本模型 + Brave Search
+实际执行：
 
 ```bash
 roller collect \
-  --tasks examples/tasks/tasks.jsonl \
-  --model my-openai-proxy/my-model \
+  --tasks examples/tasks/user-simulator.jsonl \
   --model-config examples/json/openclaw-models.json \
-  --search-provider brave \
   --docker-image your-openclaw-image:tag \
-  --parallel 4 \
+  --parallel 1 \
+  --timeout 900 \
   --output runs \
-  --run-name examples_text
+  --run-name example_user_simulator
 ```
 
-`BRAVE_API_KEY` 属于 Roller 默认传入 OpenClaw 的常用环境变量；只有任务实际进行网页搜索时才会使用它。
+示例省略了 `user_simulator.model`，所以 Simulator 跟随任务 Agent 使用 `my-openai-proxy/my-model`。需要模型分工时，在 `user_simulator` 中指定同一 models JSON 中的另一个 model ref。
 
-### 视觉模型
+这个案例会多保存 `conversation.json` 和 `user_simulator/` 轨迹。调度协议、instruction 写法、终止原因和成本统计见 [User Simulator 与动态对话](../docs/user-simulator.md)。
+
+## 6. 使用多模态模型
+
+准备一条包含本地图像输入的 task，然后使用多模态配置：
+
+```json
+{
+  "schema_version": "roller.task/v1",
+  "id": "inspect_image",
+  "file_root": "files/inspect_image",
+  "prompt": "查看 inputs/example.png，描述画面并把结果保存到 outputs/description.md。",
+  "files": {
+    "inputs": ["inputs/example.png"],
+    "output_dir": "outputs"
+  }
+}
+```
 
 ```bash
 roller collect \
@@ -126,20 +196,11 @@ roller collect \
   --run-name examples_vision
 ```
 
-视觉 provider 必须真实支持所选 API adapter 的图像输入；`input: ["text", "image"]` 只是向 OpenClaw 声明模型能力，不会为不支持图像的后端增加该能力。
+Task 中只声明本地文件；模型是否实际读取图像取决于 OpenClaw 版本、模型能力和 provider adapter。Roller 不会把普通文本模型自动变成多模态模型。
 
-## 路径对应关系
+## 7. 下一步
 
-每个带文件的 task 都有独立 `file_root`。`inputs` 和 `output_dir` 都使用该目录下的相对路径，输入进入 Agent 后不会重命名：
-
-| 用途 | 示例路径 |
-| --- | --- |
-| task 清单 | `examples/tasks/tasks.jsonl` |
-| task 的 `file_root` | `examples/tasks/files/02_local_markdown/` |
-| task 本地 source | `inputs/product-brief.md` |
-| Agent 只读输入 | `inputs/product-brief.md` |
-| Agent 自定义输出 | `outputs/name.txt` |
-| sample 保留结果 | `results/name.txt` |
-| 系统文件 | `/root/<target>` 和 `/tmp_workspace/<target>` |
-
-完整的输入快照、context 注入、输出回收和归档规则见 [Task 文件与存储设计](../docs/task-bundle-and-storage.md)。
+- 写自己的 task：[Task 格式参考](../docs/task-format.md)
+- 理解输入、Context 和 `results/`：[文件与存储](../docs/task-bundle-and-storage.md)
+- 连接自定义 API：[OpenClaw 配置](../docs/openclaw-configuration.md)
+- 设计动态用户：[User Simulator](../docs/user-simulator.md)

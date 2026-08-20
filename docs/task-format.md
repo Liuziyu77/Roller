@@ -1,0 +1,311 @@
+# Task 格式参考
+
+Roller 使用 `roller.task/v1` 描述一次 rollout 需要的对话、文件、Context 和运行设置。Task 清单可以是 JSONL 或 JSON：
+
+- `.jsonl`：每个非空行是一条 task。
+- `.json`：顶层是 task 数组，或 `{"tasks": [...]}`。
+
+机器可读约束见 [Task JSON Schema](../schemas/task.schema.json)。
+
+## 1. 完整单轮示例
+
+```json
+{
+  "schema_version": "roller.task/v1",
+  "id": "product_summary",
+  "file_root": "files/product_summary",
+  "model": "my-openai-proxy/my-model",
+  "prompt": "阅读 inputs/product-brief.md，根据用户偏好写一份摘要，并保存到 outputs/summary.md。",
+  "files": {
+    "inputs": [
+      "inputs/product-brief.md"
+    ],
+    "context": [
+      {
+        "role": "user",
+        "source": "context/USER.md",
+        "capture": "hash"
+      },
+      {
+        "role": "memory",
+        "source": "context/MEMORY.md",
+        "capture": "hash"
+      }
+    ],
+    "output_dir": "outputs"
+  },
+  "runtime": {
+    "env": ["OPTIONAL_SERVICE_KEY"],
+    "setup": ["test -f inputs/product-brief.md"],
+    "thinking": "high"
+  }
+}
+```
+
+假设 task 清单位于 `examples/tasks/tasks.jsonl`，那么 `file_root` 会解析为：
+
+```text
+examples/tasks/files/product_summary/
+├── inputs/
+│   └── product-brief.md
+├── context/
+│   ├── USER.md
+│   └── MEMORY.md
+└── outputs/                   # 逻辑输出目录，可不预先创建
+```
+
+任务运行时，输入仍位于 `inputs/product-brief.md`；Agent 在 `outputs/summary.md` 写出的文件最终进入 sample 的 `results/summary.md`。
+
+## 2. 顶层字段
+
+| 字段 | 必需 | 说明 |
+| --- | --- | --- |
+| `schema_version` | 是 | 当前版本为 `roller.task/v1` |
+| `id` | 是 | Task 清单内唯一的字符串或整数标识 |
+| `prompt` / `question` / `messages` / `user_simulator` | 选择一种 | 单轮、兼容单轮、预定义多轮或动态多轮 |
+| `file_root` | 否 | 文件包根目录；默认是 task 清单所在目录 |
+| `model` | 条件必需 | Task 自己的模型；如果命令行提供 `--model`，则使用命令行模型 |
+| `files` | 否 | 输入、Context 和输出目录声明 |
+| `runtime` | 否 | 必需环境变量、setup 命令和 thinking 设置 |
+
+最小 task：
+
+```json
+{"schema_version":"roller.task/v1","id":"hello","prompt":"计算 2+3，只回复数字。"}
+```
+
+如果 task 没有 `model`，运行时必须提供至少一个 `--model`。重复使用 `--model` 会让每条 task 分别运行这些模型；一旦命令行提供模型，task 自己的 `model` 不参与本次组合。
+
+## 3. 对话模式
+
+### 3.1 单轮输入
+
+```json
+{
+  "schema_version": "roller.task/v1",
+  "id": "single_turn",
+  "prompt": "总结当前目录中的项目说明。"
+}
+```
+
+`question` 与 `prompt` 行为相同，主要用于兼容旧数据。新 task 建议使用 `prompt`。
+
+### 3.2 预定义多轮
+
+`messages` 中的每个元素是一轮 user message。Roller 按顺序把它们发送到同一个 Agent session：
+
+```json
+{
+  "schema_version": "roller.task/v1",
+  "id": "two_turn_review",
+  "messages": [
+    {
+      "role": "user",
+      "content": "阅读 inputs/brief.md，先概括主要需求。"
+    },
+    {
+      "role": "user",
+      "content": "根据刚才的概括生成最终报告，并保存到 outputs/report.md。"
+    }
+  ],
+  "file_root": "files/two_turn_review",
+  "files": {
+    "inputs": ["inputs/brief.md"],
+    "output_dir": "outputs"
+  }
+}
+```
+
+元素也可以直接写成字符串。对象形式目前只接受 `role: "user"`。
+
+Roller 不从 Markdown 标题、分隔线或其他文本标记中推断轮次。一条 message 中即使含有 `## Round 1` 或 `---`，仍然只是一轮。
+
+### 3.3 User Simulator 动态多轮
+
+```json
+{
+  "schema_version": "roller.task/v1",
+  "id": "hr_recruitment_ad",
+  "model": "my-openai-proxy/task-agent-model",
+  "user_simulator": {
+    "harness": "openclaw",
+    "model": "my-openai-proxy/simulator-model",
+    "max_turns": 6,
+    "instruction": "你是一名 HR。通过多轮交流让任务 Agent 完成招聘广告；检查每版草稿并逐步补充要求，确认最终文件已经保存后结束。"
+  },
+  "files": {
+    "output_dir": "outputs"
+  }
+}
+```
+
+在这种模式下，task 不预定义 user messages。Conversation Manager 每轮把固定 instruction 与完整对话交给 User Simulator，由 Simulator 决定下一条指令或结束。
+
+`user_simulator` 不能与 `prompt`、`question`、`messages` 同时出现。字段和调度细节见 [User Simulator 与动态对话](user-simulator.md)。
+
+## 4. `file_root`
+
+`file_root` 是当前 task 的文件包根目录。相对路径以 task 清单所在目录为基准；绝对路径也可用于 `file_root`，但可移植数据集建议使用相对路径。
+
+例如：
+
+```text
+dataset/
+├── tasks.jsonl
+└── files/
+    └── task_001/
+        ├── inputs/
+        └── context/
+```
+
+对应声明：
+
+```json
+{"file_root": "files/task_001"}
+```
+
+`files.inputs[].source` 和 `files.output_dir` 都是该根目录下的逻辑相对路径。Roller 不会把 Agent 输出直接写回宿主机 `file_root`，以免并行模型互相覆盖；文件统一保存到各自 sample 的 `results/`。
+
+## 5. 输入文件
+
+`files.inputs` 接受文件或目录：
+
+```json
+{
+  "files": {
+    "inputs": [
+      "inputs/brief.md",
+      {
+        "source": "inputs/documents",
+        "required": true
+      },
+      {
+        "source": "inputs/data.csv",
+        "required": true,
+        "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      }
+    ]
+  }
+}
+```
+
+| 字段 | 默认值 | 说明 |
+| --- | --- | --- |
+| `source` | 无 | `file_root` 下的相对文件或目录路径 |
+| `required` | `true` | 缺失时是否在启动前报错 |
+| `sha256` | 无 | 可选的文件或目录内容校验值 |
+
+输入路径在 Agent 工作区中保持不变，不能通过 `target` 重命名。例如 `inputs/data.csv` 会出现在：
+
+```text
+/tmp_workspace/inputs/data.csv
+/roller/task/inputs/inputs/data.csv
+```
+
+第一条路径适合在 prompt 中直接引用；第二条是完整输入快照的稳定入口。文件和目录以只读方式提供给任务 Agent。
+
+## 6. Context 与系统文件
+
+`files.context` 用于需要 Harness 语义注入的内容：
+
+```json
+{
+  "files": {
+    "context": [
+      {"role": "system", "source": "context/SYSTEM.md", "capture": "full"},
+      {"role": "user", "source": "context/USER.md", "capture": "hash"},
+      {"role": "memory", "source": "context/MEMORY.md", "capture": "hash"},
+      {
+        "role": "skill",
+        "source": "context/skills/web-research",
+        "target": "skills/web-research",
+        "capture": "full"
+      }
+    ]
+  }
+}
+```
+
+| 字段 | 必需 | 说明 |
+| --- | --- | --- |
+| `role` | 是 | Context 的语义角色 |
+| `source` | 是 | 相对于 `file_root` 的路径，也可以是绝对路径 |
+| `target` | 否 | 注入后的相对路径；省略时根据 role 推导 |
+| `capture` | 否 | `full`、`hash` 或 `none` |
+| `required` | 否 | 默认 `true` |
+
+默认 target：
+
+| role | target |
+| --- | --- |
+| `user` | `USER.md` |
+| `memory` | `MEMORY.md` |
+| `system` | `SYSTEM.md` |
+| `soul` | `SOUL.md` |
+| `agents` | `AGENTS.md` |
+| `skill` / `skills` | `skills/<source-name>` |
+
+OpenClaw adapter 会把 Context 注入 `/root/<target>` 与 `/tmp_workspace/<target>`。Capture 策略和内容留存规则见 [文件、Task Bundle 与结果存储](task-bundle-and-storage.md#3-context-注入与-capture)。
+
+## 7. 输出目录
+
+```json
+{
+  "files": {
+    "output_dir": "outputs"
+  }
+}
+```
+
+`output_dir` 默认是 `outputs`，可以是更深的相对路径，例如 `deliverables/final`。Roller 会在 `/tmp_workspace/<output_dir>/` 创建可写目录，并把 `/roller/task/outputs` 链接到同一位置。
+
+任务结束后，该目录内的全部安全文件与空目录会进入 sample 的 `results/`。不需要也不能预先声明固定输出文件名；旧字段 `files.outputs` 已停止支持。
+
+`files.output_dir` 与 CLI `--output` 解决不同问题：前者是 Agent 工作区里的可回收目录，后者是宿主机上保存整个 run 的根目录。例如 `files.output_dir=outputs`、`--output /data/roller-runs --run-name demo` 会把 Agent 的 `outputs/report.md` 保存到 `/data/roller-runs/demo/samples/.../results/report.md`。
+
+## 8. Runtime
+
+```json
+{
+  "runtime": {
+    "env": ["EXTRA_API_KEY"],
+    "setup": [
+      "python3 -m pip install -r inputs/requirements.txt"
+    ],
+    "thinking": "high"
+  }
+}
+```
+
+| 字段 | 说明 |
+| --- | --- |
+| `env` | Task 强制依赖的宿主机环境变量名；缺失或为空时 task 失败 |
+| `setup` | Agent 启动前在 `/tmp_workspace` 执行的 shell 命令 |
+| `thinking` | 覆盖本 task 的 OpenClaw thinking 设置 |
+
+`env` 和 `setup` 都接受单个字符串或字符串数组。Task 作者应把 setup 当作可执行代码管理，只运行可信数据集中的命令。
+
+## 9. 路径与格式校验
+
+Roller 在启动 Docker 前执行以下检查：
+
+- Task ID 在清单内不能重复。
+- 输入路径必须是相对于 `file_root` 的 POSIX 风格路径。
+- 输入和 `output_dir` 不允许绝对路径、`..` 或 glob。
+- `output_dir` 不能位于 `inputs/`、`context/` 下，也不能与输入或 Context target 重叠。
+- Context target 不能使用保留顶层目录 `inputs`、`outputs`、`context`。
+- `sha256` 必须是 64 位十六进制字符串。
+- User Simulator 的 `max_turns` 必须在 `1–100` 之间。
+
+随后 Task Bundle 阶段还会检查文件是否存在、类型、大小、符号链接和实际 hash。
+
+## 10. Legacy 兼容
+
+Roller 仍可读取 Interns2_data 风格的部分旧字段：
+
+- `question`
+- `workspace` / `workspace_path`
+- `persona`
+- `warmup`
+
+新数据建议使用 `prompt`、`file_root`、`files.inputs`、`files.context`、`files.output_dir` 和 `runtime.setup`，这样路径、快照和 Resume 行为更明确。
