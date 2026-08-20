@@ -46,11 +46,20 @@ class FakeDockerRuntime:
     def __init__(self) -> None:
         self.commands: list[list[str]] = []
         self.agent_messages: list[str] = []
+        self.assistant_extractions = 0
 
     def run(self, args, timeout=None):
         args = list(args)
         self.commands.append(args)
         stdout = "2026.1.0\n" if args[-2:] == ["openclaw", "--version"] else ""
+        if args[-2] == "-c" and "ROLLER_LAST_ASSISTANT" in args[-1]:
+            self.assistant_extractions += 1
+            stdout = json.dumps(
+                {
+                    "content": "done",
+                    "assistant_count": self.assistant_extractions,
+                }
+            ) + "\n"
         if args and args[0] == "cp" and ":/root/.openclaw/" in args[1]:
             destination = Path(args[2])
             event = {
@@ -81,6 +90,12 @@ class FakeDockerRuntime:
 
 
 class OpenClawHelpersTests(unittest.TestCase):
+    def test_embedded_response_extractor_is_valid_python(self) -> None:
+        script = OpenClawHarness._LAST_ASSISTANT_SCRIPT.replace(
+            "__ROLLER_SESSION_FILE__", repr("roller.jsonl")
+        )
+        compile(script, "<response-extractor>", "exec")
+
     def test_expands_model_config_environment(self) -> None:
         value = {"providers": {"proxy": {"apiKey": "${API_KEY}", "other": 1}}}
         expanded = expand_env_placeholders(value, {"API_KEY": "secret"})

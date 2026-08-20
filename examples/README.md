@@ -11,6 +11,7 @@ examples/
 │   └── api.env.example               # API/Search 环境变量模板
 └── tasks/
     ├── tasks.jsonl                   # 四类轻量 task
+    ├── user-simulator.jsonl          # 独立的动态用户模拟 task
     └── files/                        # task 的输入与 context 文件
         ├── 02_local_markdown/
         │   └── inputs/
@@ -78,7 +79,23 @@ roller collect \
 
 计划中的 turn 数应为 `1、1、1、2`。第二个 task 声明了 `files.output_dir=outputs`；Agent 写入该目录的全部文件都会保存到 sample 的 `results/`。
 
-## 4. 运行示例
+## 4. 检查 User Simulator task
+
+[`tasks/user-simulator.jsonl`](tasks/user-simulator.jsonl) 是一个独立示例：User Simulator 扮演 HR，根据任务 Agent 当前给出的招聘广告逐轮提出新要求，完成后主动结束。它不使用预定义 `messages`。
+
+```bash
+roller collect \
+  --tasks examples/tasks/user-simulator.jsonl \
+  --model-config examples/json/openclaw-models.json \
+  --parallel 1 \
+  --dry-run
+```
+
+示例省略了 `user_simulator.model`，因此 Simulator 默认跟随任务 Agent 使用 `my-openai-proxy/my-model`。需要模型分工时，可以在 `user_simulator` 中指定同一 models JSON 里的另一个模型。
+
+动态对话的调度、终止条件和双轨迹目录见 [User Simulator 文档](../docs/user-simulator.md)。
+
+## 5. 运行示例
 
 ### 文本模型 + Brave Search
 

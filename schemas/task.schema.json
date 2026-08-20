@@ -32,6 +32,32 @@
         ]
       }
     },
+    "user_simulator": {
+      "type": "object",
+      "required": ["instruction"],
+      "properties": {
+        "instruction": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Fixed persona and goal prompt given to the User Simulator on every turn"
+        },
+        "harness": {"const": "openclaw", "default": "openclaw"},
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Simulator model; defaults to the task-agent model"
+        },
+        "max_turns": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 6,
+          "description": "Maximum number of instructions delivered to the task agent"
+        },
+        "thinking": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
     "model": {"type": "string", "minLength": 1},
     "files": {
       "type": "object",
@@ -100,7 +126,22 @@
   "anyOf": [
     {"required": ["prompt"]},
     {"required": ["question"]},
-    {"required": ["messages"]}
+    {"required": ["messages"]},
+    {"required": ["user_simulator"]}
+  ],
+  "allOf": [
+    {
+      "if": {"required": ["user_simulator"]},
+      "then": {
+        "not": {
+          "anyOf": [
+            {"required": ["prompt"]},
+            {"required": ["question"]},
+            {"required": ["messages"]}
+          ]
+        }
+      }
+    }
   ],
   "$defs": {
     "relativePath": {

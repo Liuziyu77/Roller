@@ -9,6 +9,40 @@ from roller.tasks import TaskFormatError, build_requests, load_tasks
 
 
 class TaskLoadingTests(unittest.TestCase):
+    def test_loads_user_simulator_task_without_predefined_messages(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            task_file = Path(temporary) / "tasks.json"
+            task_file.write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "simulated",
+                            "model": "provider/agent",
+                            "user_simulator": {
+                                "instruction": "You are an HR manager.",
+                                "model": "provider/simulator",
+                                "max_turns": 5,
+                            },
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            task = load_tasks(task_file)[0]
+
+            self.assertEqual(task.prompts, ())
+            self.assertIsNotNone(task.user_simulator)
+            assert task.user_simulator is not None
+            self.assertEqual(task.user_simulator.model, "provider/simulator")
+            self.assertEqual(task.user_simulator.max_turns, 5)
+            self.assertEqual(build_requests([task], [], 30)[0].model, "provider/agent")
+
+            payload = json.loads(task_file.read_text())
+            payload[0]["prompt"] = "conflict"
+            task_file.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(TaskFormatError, "cannot be combined"):
+                load_tasks(task_file)
+
     def test_loads_interns_question_and_multi_turn_messages(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

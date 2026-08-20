@@ -32,6 +32,9 @@ Agent 可以在 `/tmp_workspace/deliverables/final/` 中生成任意文件；Rol
 
 - `prompt`：一轮 user message；兼容字段 `question` 行为相同。
 - `messages`：每个数组元素是一轮 user message，在同一个 OpenClaw session 中顺序发送。
+- `user_simulator`：由另一个 live Harness 根据完整上下文动态生成下一轮 user message。
+
+三种模式只能选择一种。`messages` 的内容在运行前已经确定；`user_simulator` 的消息则由 Conversation Manager 在任务 Agent 每次回复后生成。动态模式的完整设计见 [User Simulator 与动态对话](user-simulator.md)。
 
 下面是一条包含两轮对话、输入文件、Context 和文件输出的完整 task：
 
@@ -71,6 +74,8 @@ Agent 可以在 `/tmp_workspace/deliverables/final/` 中生成任意文件；Rol
 ```
 
 Roller 不使用正则表达式拆分 prompt。即使一条 message 中包含 `## Round 1`、`---` 等文本，它仍然只是一轮。
+
+动态对话同样不使用文本分隔符。Simulator 通过严格 JSON 告诉 Manager 继续发送消息或结束，Manager 保存双方独立轨迹和一份干净的 `conversation.json`。
 
 ## 3. 输入依赖
 
@@ -183,6 +188,8 @@ Roller 拒绝符号链接和特殊文件；发现不安全输出时 raw trace �
     ├── trace.jsonl                   # 原始 OpenClaw session JSONL
     ├── trace_ACTF.json               # ACTF_v1.0 trajectory object
     ├── info.json                     # 状态、usage、attempt、版本、digest、输出清单
+    ├── conversation.json             # 可选；User Simulator 动态对话
+    ├── user_simulator/               # 可选；Simulator 原始/ACTF 轨迹和 info
     └── results/                      # 可选；output_dir 中的全部文件
 ```
 
@@ -211,8 +218,9 @@ ACTF 文件直接保存 trajectory object，而不是额外套 benchmark result 
 2. `trace.jsonl` 与 `trace_ACTF.json` 都存在。
 3. 当前重新构建的 Task Bundle digest 与旧 `info.json` 一致。
 4. context 没有导致 `resume_safe=false` 的 `capture=none` 文件。
+5. User Simulator task 的 `conversation.json` 和双方 raw/ACTF 轨迹都完整存在。
 
-消息、输入、context、`output_dir` 或 runtime 声明变化都会改变 digest 并重新运行。
+消息、User Simulator 配置、输入、context、`output_dir` 或 runtime 声明变化都会改变 digest 并重新运行。
 
 ## 9. Legacy 输入
 

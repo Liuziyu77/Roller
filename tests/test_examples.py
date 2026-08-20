@@ -79,6 +79,19 @@ class ExampleFilesTests(unittest.TestCase):
         self.assertEqual(multimodal_model["id"], "my-multimodal-model")
         self.assertEqual(multimodal_model["input"], ["text", "image"])
 
+    def test_user_simulator_example_is_an_independent_dynamic_task(self) -> None:
+        tasks = load_tasks(
+            self.examples_root / "tasks" / "user-simulator.jsonl"
+        )
+        self.assertEqual(len(tasks), 1)
+        task = tasks[0]
+        self.assertEqual(task.prompts, ())
+        self.assertIsNotNone(task.user_simulator)
+        assert task.user_simulator is not None
+        self.assertEqual(task.user_simulator.harness, "openclaw")
+        self.assertEqual(task.user_simulator.max_turns, 6)
+        self.assertIn("HR", task.user_simulator.instruction)
+
     def test_environment_example_includes_model_and_search_variables(self) -> None:
         content = (self.examples_root / "env" / "api.env.example").read_text()
         self.assertIn("MY_PROXY_BASE_URL=https://api.example.com/v1", content)

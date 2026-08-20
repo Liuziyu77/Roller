@@ -6,7 +6,7 @@ import re
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterable
 
-from roller.models import ContextFile, InputFile, RunRequest, Task
+from roller.models import ContextFile, InputFile, RunRequest, Task, UserSimulatorSpec
 
 TASK_SCHEMA_V1 = "roller.task/v1"
 CAPTURE_POLICIES = {"full", "hash", "none"}
@@ -55,6 +55,49 @@ def _parse_messages(value: Any, index: int) -> tuple[str, ...]:
             raise TaskFormatError(f"task {index}, message {message_index}: empty content")
         prompts.append(content.strip())
     return tuple(prompts)
+
+
+def _parse_user_simulator(value: Any, index: int) -> UserSimulatorSpec | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise TaskFormatError(f"task {index}: user_simulator must be an object")
+    instruction = value.get("instruction")
+    if not isinstance(instruction, str) or not instruction.strip():
+        raise TaskFormatError(
+            f"task {index}: user_simulator.instruction must be a non-empty string"
+        )
+    harness = value.get("harness", "openclaw")
+    if harness != "openclaw":
+        raise TaskFormatError(
+            f"task {index}: unsupported user_simulator.harness {harness!r}"
+        )
+    model = value.get("model")
+    if model is not None and (not isinstance(model, str) or not model.strip()):
+        raise TaskFormatError(
+            f"task {index}: user_simulator.model must be a non-empty string"
+        )
+    max_turns = value.get("max_turns", 6)
+    if (
+        isinstance(max_turns, bool)
+        or not isinstance(max_turns, int)
+        or not 1 <= max_turns <= 100
+    ):
+        raise TaskFormatError(
+            f"task {index}: user_simulator.max_turns must be an integer from 1 to 100"
+        )
+    thinking = value.get("thinking")
+    if thinking is not None and (not isinstance(thinking, str) or not thinking.strip()):
+        raise TaskFormatError(
+            f"task {index}: user_simulator.thinking must be a non-empty string"
+        )
+    return UserSimulatorSpec(
+        instruction=instruction.strip(),
+        harness=harness,
+        model=model.strip() if isinstance(model, str) else None,
+        max_turns=max_turns,
+        thinking=thinking.strip() if isinstance(thinking, str) else None,
+    )
 
 
 def _read_rows(path: Path) -> list[dict[str, Any]]:
@@ -342,7 +385,30 @@ def load_tasks(
             raise TaskFormatError(f"task {index}: duplicate task id {task_id!r}")
         seen_ids.add(task_id)
 
-        if "messages" in row:
+        user_simulator = _parse_user_simulator(row.get("user_simulator"), index)
+        if user_simulator is not None:
+            predefined_fields = tuple(
+                dict.fromkeys(
+                    (
+                        "prompt",
+                        "question",
+                        "messages",
+                        *(() if prompt_key == "user_simulator" else (prompt_key,)),
+                    )
+                )
+            )
+            conflicting = [
+                name
+                for name in predefined_fields
+                if row.get(name) is not None
+            ]
+            if conflicting:
+                raise TaskFormatError(
+                    f"task {index}: user_simulator cannot be combined with "
+                    f"{', '.join(conflicting)}"
+                )
+            prompts = ()
+        elif "messages" in row:
             prompts = _parse_messages(row["messages"], index)
         else:
             prompt = row.get(prompt_key)
@@ -416,6 +482,7 @@ def load_tasks(
                     index,
                 ),
                 thinking=thinking,
+                user_simulator=user_simulator,
             )
         )
     return tasks
