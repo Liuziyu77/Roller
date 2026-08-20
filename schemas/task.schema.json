@@ -10,7 +10,7 @@
     "file_root": {
       "type": "string",
       "minLength": 1,
-      "description": "Base directory for relative files.*.source paths; itself relative to the task-list directory"
+      "description": "Task workspace root for relative input/context sources and output_dir; itself relative to the task-list directory"
     },
     "prompt": {"type": "string", "minLength": 1},
     "question": {"type": "string", "minLength": 1},
@@ -39,19 +39,18 @@
         "output_dir": {
           "$ref": "#/$defs/relativePath",
           "default": "outputs",
-          "description": "Writable directory in the agent workspace; outputs paths are relative to it"
+          "description": "Writable subdirectory of the file_root workspace; every file under it is collected"
         },
         "inputs": {
           "type": "array",
           "items": {
             "oneOf": [
-              {"type": "string", "minLength": 1},
+              {"$ref": "#/$defs/relativePath"},
               {
                 "type": "object",
                 "required": ["source"],
                 "properties": {
-                  "source": {"type": "string", "minLength": 1},
-                  "target": {"$ref": "#/$defs/relativePath"},
+                  "source": {"$ref": "#/$defs/relativePath"},
                   "required": {"type": "boolean", "default": true},
                   "sha256": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"}
                 },
@@ -73,25 +72,6 @@
               "required": {"type": "boolean", "default": true}
             },
             "additionalProperties": false
-          }
-        },
-        "outputs": {
-          "type": "array",
-          "items": {
-            "oneOf": [
-              {"$ref": "#/$defs/relativePath"},
-              {
-                "type": "object",
-                "required": ["path"],
-                "properties": {
-                  "path": {"$ref": "#/$defs/relativePath"},
-                  "type": {"enum": ["file", "directory", "glob"], "default": "file"},
-                  "required": {"type": "boolean", "default": true},
-                  "max_bytes": {"type": "integer", "minimum": 1}
-                },
-                "additionalProperties": false
-              }
-            ]
           }
         }
       },

@@ -13,10 +13,12 @@ examples/
     ├── tasks.jsonl                   # 四类轻量 task
     └── files/                        # task 的输入与 context 文件
         ├── 02_local_markdown/
-        │   └── product-brief.md
+        │   └── inputs/
+        │       └── product-brief.md
         └── 03_user_memory_context/
-            ├── USER.md
-            └── MEMORY.md
+            └── context/
+                ├── USER.md
+                └── MEMORY.md
 ```
 
 ## 1. 准备环境变量
@@ -59,7 +61,7 @@ OpenClaw 通过 model entry 的 `input` 判断是否可向模型发送图像。�
 [`tasks/tasks.jsonl`](tasks/tasks.jsonl) 包含：
 
 1. `01_text_only`：纯文本计算。
-2. `02_local_markdown`：读取本地 Markdown，并保留一个输出文件。
+2. `02_local_markdown`：读取本地 Markdown，并把生成文件写入 `outputs/`。
 3. `03_user_memory_context`：注入 `USER.md` 与 `MEMORY.md`。
 4. `04_multi_turn`：两个显式 user messages，共用一个 OpenClaw session。
 
@@ -74,7 +76,7 @@ roller collect \
   --dry-run
 ```
 
-计划中的 turn 数应为 `1、1、1、2`。第二个 task 声明了 `files.output_dir=quick_results` 和 `files.outputs=name.txt`，所以只有它会保存 `results/name.txt`。
+计划中的 turn 数应为 `1、1、1、2`。第二个 task 声明了 `files.output_dir=outputs`；Agent 写入该目录的全部文件都会保存到 sample 的 `results/`。
 
 ## 4. 运行示例
 
@@ -111,15 +113,16 @@ roller collect \
 
 ## 路径对应关系
 
-task 清单位于 `examples/tasks/`，因此使用 `"file_root":"../.."` 将宿主机 source 基准统一设为 Roller 根目录：
+每个带文件的 task 都有独立 `file_root`。`inputs` 和 `output_dir` 都使用该目录下的相对路径，输入进入 Agent 后不会重命名：
 
 | 用途 | 示例路径 |
 | --- | --- |
 | task 清单 | `examples/tasks/tasks.jsonl` |
-| task 本地 source | `examples/tasks/files/02_local_markdown/product-brief.md` |
+| task 的 `file_root` | `examples/tasks/files/02_local_markdown/` |
+| task 本地 source | `inputs/product-brief.md` |
 | Agent 只读输入 | `inputs/product-brief.md` |
-| Agent 自定义输出 | `quick_results/name.txt` |
+| Agent 自定义输出 | `outputs/name.txt` |
 | sample 保留结果 | `results/name.txt` |
 | 系统文件 | `/root/<target>` 和 `/tmp_workspace/<target>` |
 
-完整的输入快照、context 注入、输出契约和归档规则见 [Task 文件与存储设计](../docs/task-bundle-and-storage.md)。
+完整的输入快照、context 注入、输出回收和归档规则见 [Task 文件与存储设计](../docs/task-bundle-and-storage.md)。

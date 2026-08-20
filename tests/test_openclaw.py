@@ -65,6 +65,7 @@ class FakeDockerRuntime:
             destination = Path(args[2])
             destination.mkdir(parents=True, exist_ok=True)
             (destination / "report.md").write_text("generated", encoding="utf-8")
+            (destination / "extra.log").write_text("also collected", encoding="utf-8")
         return subprocess.CompletedProcess(args, 0, stdout=stdout, stderr="")
 
     def popen(self, args, log_path, append=False):
@@ -176,10 +177,11 @@ class OpenClawHelpersTests(unittest.TestCase):
 
         self.assertEqual(harness._prompts(request), (prompt,))
 
-    def test_harness_mounts_bundle_injects_context_and_validates_outputs(self) -> None:
+    def test_harness_mounts_bundle_injects_context_and_collects_all_outputs(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            (root / "input.txt").write_text("input", encoding="utf-8")
+            (root / "inputs").mkdir()
+            (root / "inputs" / "input.txt").write_text("input", encoding="utf-8")
             (root / "SYSTEM.md").write_text("system", encoding="utf-8")
             tasks_path = root / "tasks.json"
             tasks_path.write_text(
@@ -190,9 +192,8 @@ class OpenClawHelpersTests(unittest.TestCase):
                             "prompt": "write outputs/report.md",
                             "files": {
                                 "output_dir": "deliverables",
-                                "inputs": ["input.txt"],
+                                "inputs": ["inputs/input.txt"],
                                 "context": [{"role": "system", "source": "SYSTEM.md"}],
-                                "outputs": [{"path": "report.md", "required": True}],
                             },
                         }
                     ]
@@ -219,15 +220,21 @@ class OpenClawHelpersTests(unittest.TestCase):
                 result.metadata["provenance"]["task_bundle_digest"],
                 bundle.manifest_digest,
             )
-            self.assertTrue(result.metadata["output_contract"]["passed"])
+            self.assertTrue(result.metadata["output_collection"]["passed"])
             self.assertEqual(
-                result.metadata["output_contract"]["agent_output_dir"],
+                result.metadata["output_collection"]["agent_output_dir"],
                 "deliverables",
             )
-            self.assertTrue(
-                (output_dir / "results" / "report.md").is_file()
-            )
+            self.assertEqual(result.metadata["output_collection"]["file_count"], 2)
+            self.assertTrue((output_dir / "results" / "report.md").is_file())
+            self.assertTrue((output_dir / "results" / "extra.log").is_file())
             self.assertTrue(any("/roller/task/inputs:ro" in command for command in flattened_commands))
+            self.assertTrue(
+                any(
+                    "/tmp_workspace/inputs/input.txt:ro" in command
+                    for command in flattened_commands
+                )
+            )
             self.assertTrue(any("/roller/task/context/. /root/" in command for command in flattened_commands))
             self.assertTrue(
                 any(

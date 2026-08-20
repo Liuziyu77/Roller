@@ -10,7 +10,7 @@ class InputFile:
     """One immutable task input, resolved on the host before execution."""
 
     source: Path
-    target: str
+    path: str
     required: bool = True
     expected_sha256: str | None = None
 
@@ -24,16 +24,6 @@ class ContextFile:
     target: str
     capture: str = "full"
     required: bool = True
-
-
-@dataclass(frozen=True)
-class OutputFile:
-    """A declared output contract relative to the task's output directory."""
-
-    path: str
-    type: str = "file"
-    required: bool = True
-    max_bytes: int | None = None
 
 
 @dataclass(frozen=True)
@@ -65,7 +55,6 @@ class Task:
     schema_version: str = "roller.task/v1"
     inputs: tuple[InputFile, ...] = ()
     context_files: tuple[ContextFile, ...] = ()
-    outputs: tuple[OutputFile, ...] = ()
     output_dir: str = "outputs"
     legacy_workspace: bool = False
     workspace: Path | None = None

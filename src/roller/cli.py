@@ -157,8 +157,8 @@ def _dry_run_payload(args: argparse.Namespace, requests: list) -> dict:
                 "workspace": str(request.task.workspace) if request.task.workspace else None,
                 "inputs": len(request.task.inputs),
                 "context_files": len(request.task.context_files),
-                "outputs": len(request.task.outputs),
                 "output_dir": request.task.output_dir,
+                "output_collection": "all",
                 "legacy_workspace": request.task.legacy_workspace,
             }
             for request in requests

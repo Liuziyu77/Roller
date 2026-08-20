@@ -22,7 +22,7 @@ Roller 是一个开源的 Agent 轨迹采集框架。提供任务和模型配置
 | 本地文件 | 每个 task 可以带自己的文件或目录，Agent 通过统一路径读取 |
 | Context 注入 | 支持 `USER.md`、`MEMORY.md`、`SYSTEM.md`、`SOUL.md` 和 skills |
 | 多轮输入 | 使用 `messages` 明确每一轮，不从 prompt 文本中猜测分隔位置 |
-| 输出管理 | 每个 task 可以指定输出目录，只保存声明过的文件 |
+| 输出管理 | 每个 task 指定一个可写目录，任务结束后自动回收其中的全部文件 |
 | 两种轨迹 | 同时保留 OpenClaw 原始 JSONL 和 `ACTF_v1.0` |
 | 自定义 API | 支持自定义 provider、API base、文本模型和多模态模型 |
 | 断点续跑 | 对 task 与文件计算 digest，未发生变化的成功任务可以跳过 |
@@ -120,7 +120,7 @@ roller collect \
 
 ## 📝 Task 格式
 
-task 清单可以使用 `.jsonl` 或 `.json`：JSONL 每行是一条 task，JSON 则使用 task 数组或 `{"tasks": [...]}`。每条 task 描述一次 rollout 需要的对话、文件、Context、输出要求和运行参数。
+task 清单可以使用 `.jsonl` 或 `.json`：JSONL 每行是一条 task，JSON 则使用 task 数组或 `{"tasks": [...]}`。每条 task 描述一次 rollout 需要的对话、输入文件、Context、输出目录和运行参数。
 
 ### 1. 完整 Task 示例
 
@@ -137,7 +137,6 @@ task 清单可以使用 `.jsonl` 或 `.json`：JSONL 每行是一条 task，JSON
     "inputs": [
       {
         "source": "inputs/product-brief.md",
-        "target": "product-brief.md",
         "required": true
       }
     ],
@@ -146,15 +145,7 @@ task 清单可以使用 `.jsonl` 或 `.json`：JSONL 每行是一条 task，JSON
       {"role": "user", "source": "context/USER.md", "capture": "hash"},
       {"role": "memory", "source": "context/MEMORY.md", "capture": "hash"}
     ],
-    "output_dir": "outputs",
-    "outputs": [
-      {
-        "path": "report.md",
-        "type": "file",
-        "required": true,
-        "max_bytes": 1048576
-      }
-    ]
+    "output_dir": "outputs"
   },
   "runtime": {
     "thinking": "high"
@@ -170,7 +161,7 @@ task 清单可以使用 `.jsonl` 或 `.json`：JSONL 每行是一条 task，JSON
 └── outputs/report.md           # Agent 生成的输出
 ```
 
-`outputs/` 不需要提前创建；Roller 会准备可写目录，并按 `files.outputs` 的声明把结果带回宿主机。下面逐项说明这些配置。
+`outputs/` 不需要提前创建；Roller 会准备可写目录，并把其中生成的全部文件带回宿主机。下面逐项说明这些配置。
 
 ### 2. 常用顶层字段
 
@@ -179,9 +170,9 @@ task 清单可以使用 `.jsonl` 或 `.json`：JSONL 每行是一条 task，JSON
 | `schema_version` | 是 | 当前为 `roller.task/v1` |
 | `id` | 是 | task 的唯一标识 |
 | `prompt` / `question` / `messages` | 三选一 | `prompt` 用于单轮输入，`question` 是兼容字段，`messages` 用于多轮输入 |
-| `file_root` | 否 | 本地 `source` 相对路径的基准目录 |
+| `file_root` | 否 | 输入、context source 和 `output_dir` 共用的 task 工作区根目录 |
 | `model` | 否 | task 自己指定模型；命令行 `--model` 优先 |
-| `files` | 否 | 输入、context、输出目录和输出契约 |
+| `files` | 否 | 输入、context 和输出目录 |
 | `runtime` | 否 | 环境变量、setup 命令和 thinking 配置 |
 
 不需要文件或特殊运行设置时，可以只写一个最小 task：
@@ -197,19 +188,18 @@ task 清单可以使用 `.jsonl` 或 `.json`：JSONL 每行是一条 task，JSON
 ```json
 "inputs": [
   "inputs/brief.md",
-  {"source": "inputs/documents", "target": "documents"},
+  {"source": "inputs/documents", "required": true},
   {
     "source": "inputs/dataset.csv",
-    "target": "data/dataset.csv",
     "required": true,
     "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
   }
 ]
 ```
 
-- `source` 是宿主机文件或目录。
-- `target` 是 Agent 看到的相对路径。
-- Agent 可以通过 `inputs/<target>` 或 `/roller/task/inputs/<target>` 读取。
+- `source` 是 `file_root` 下的文件或目录相对路径，不允许绝对路径或 `..`。
+- Roller 不重命名输入；`inputs/dataset.csv` 在 Agent 工作区中仍是 `inputs/dataset.csv`。
+- Agent 可以通过 `/tmp_workspace/<source>` 或 `/roller/task/inputs/<source>` 读取。
 - 输入在容器中只读；目录会递归复制并检查符号链接。
 
 ### 4. USER.md、MEMORY.md 与系统文件
@@ -234,28 +224,17 @@ task 清单可以使用 `.jsonl` 或 `.json`：JSONL 每行是一条 task，JSON
 
 OpenClaw adapter 会把 context 放到 `/root/<target>` 和 `/tmp_workspace/<target>`。`capture` 可选 `full`、`hash` 或 `none`；详细差别见 [Task 文件与存储设计](docs/task-bundle-and-storage.md)。
 
-### 5. 输出目录与输出契约
+### 5. 输出目录与自动回收
 
 ```json
 "files": {
-  "output_dir": "outputs",
-  "outputs": [
-    {"path": "report.md", "type": "file", "required": true},
-    {"path": "assets", "type": "directory", "required": false},
-    {"path": "references/**", "type": "glob", "required": false}
-  ]
+  "output_dir": "outputs"
 }
 ```
 
-| 字段 | 说明 |
-| --- | --- |
-| `files.output_dir` | Agent 工作区中的可写目录，默认 `outputs` |
-| `path` | 相对于 `output_dir` 的路径 |
-| `type` | `file`、`directory` 或 `glob` |
-| `required` | 缺失时是否将 rollout 标记为失败 |
-| `max_bytes` | 每个匹配文件允许的最大字节数 |
+`output_dir` 是 `file_root` 工作区下的相对目录，默认值为 `outputs`。Roller 在容器中创建 `/tmp_workspace/<output_dir>/`；`/roller/task/outputs` 是同一目录的稳定别名。
 
-Agent 写入 `/tmp_workspace/<output_dir>/`；`/roller/task/outputs` 是同一目录的稳定别名。只有匹配 `files.outputs` 的内容会保存到 sample 的 `results/`。
+任务结束后，目录中的全部普通文件和空目录都会保存到 sample 的 `results/`，不需要预先声明文件名。Roller 会拒绝符号链接和特殊文件，并在 `info.json` 中记录每个结果文件的大小、MIME 和 SHA-256。`output_dir` 为空时不会创建 `results/`。
 
 ### 6. 运行时设置
 
@@ -360,7 +339,7 @@ roller collect \
     ├── trace.jsonl                   # OpenClaw 原始 session JSONL
     ├── trace_ACTF.json               # ACTF_v1.0 trajectory
     ├── info.json                     # 状态、usage、耗时、版本和 digest
-    └── results/                      # 可选；只保存 task 声明的输出
+    └── results/                      # 可选；保存 output_dir 中的全部文件
 ```
 
 ### 文件说明
@@ -368,9 +347,9 @@ roller collect \
 - `trace.jsonl`：原始事实来源，不做消息清洗或改写。
 - `trace_ACTF.json`：按 assistant step 组织 tool call、observation 和多轮 user message。
 - `info.json`：保存状态、错误、token/cost usage、attempt、版本和文件 digest。
-- `results/`：只有声明 `files.outputs` 时才存在。
+- `results/`：`output_dir` 非空时存在，并保留其中的完整目录结构。
 
-运行期日志、Task Bundle、retry 中间 trace 和未声明输出不会留在最终 run 中。
+运行期日志、Task Bundle、retry 中间 trace，以及 `output_dir` 之外的工作区文件不会留在最终 run 中。
 
 ## 🔁 Resume 规则
 
@@ -381,14 +360,14 @@ roller collect \
 3. 当前 Task Bundle digest 与旧结果一致。
 4. context 没有使用会禁用安全 resume 的 `capture=none`。
 
-prompt、messages、输入文件、context、输出契约或 runtime 设置变化后，task 会重新运行。
+prompt、messages、输入文件、context、`output_dir` 或 runtime 设置变化后，task 会重新运行。
 
 ## 🔒 文件与密钥安全
 
 - 输入和 context 会在启动容器前检查路径、大小、符号链接和 hash。
 - API key 只通过环境变量或现有外部配置读取，不写入 Roller run。
 - `examples/env/*.env` 默认被 Git 忽略，模板文件只放占位值。
-- sample 只保存声明过的输出，避免把工作区临时文件带进数据集。
+- sample 只回收 `output_dir`，不会把工作区其他临时文件带进数据集。
 - `capture=none` 不保存 context 内容 hash，同时会关闭该 task 的安全 resume。
 
 ## 🧪 开发与测试
@@ -408,7 +387,7 @@ PYTHONPATH=src python3 -m unittest discover -s tests -v
 | 文档 | 内容 |
 | --- | --- |
 | [Examples](examples/README.md) | 环境变量、普通/多模态模型和四类 task |
-| [Task 文件与存储设计](docs/task-bundle-and-storage.md) | 输入快照、context、输出校验、ACTF 和 resume 细节 |
+| [Task 文件与存储设计](docs/task-bundle-and-storage.md) | 输入快照、context、输出回收、ACTF 和 resume 细节 |
 | [Task JSON Schema](schemas/task.schema.json) | `roller.task/v1` 的机器可读约束 |
 
 ## 📄 License

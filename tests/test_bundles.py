@@ -19,7 +19,10 @@ class TaskBundleTests(unittest.TestCase):
     def test_materializes_inputs_context_and_privacy_policies(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            (root / "input.txt").write_text("immutable input", encoding="utf-8")
+            (root / "inputs").mkdir()
+            (root / "inputs" / "input.txt").write_text(
+                "immutable input", encoding="utf-8"
+            )
             (root / "USER.md").write_text("private user", encoding="utf-8")
             (root / "SYSTEM.md").write_text("system rules", encoding="utf-8")
             (root / "SECRET.md").write_text("ephemeral context", encoding="utf-8")
@@ -30,7 +33,7 @@ class TaskBundleTests(unittest.TestCase):
                     "id": "bundle-task",
                     "prompt": "Use inputs/input.txt and write outputs/report.md",
                     "files": {
-                        "inputs": [{"source": "input.txt", "target": "input.txt"}],
+                        "inputs": [{"source": "inputs/input.txt"}],
                         "context": [
                             {"role": "user", "source": "USER.md"},
                             {"role": "system", "source": "SYSTEM.md"},
@@ -41,7 +44,7 @@ class TaskBundleTests(unittest.TestCase):
                                 "capture": "none",
                             },
                         ],
-                        "outputs": [{"path": "report.md", "required": True}],
+                        "output_dir": "outputs",
                     },
                 },
             )
@@ -49,7 +52,10 @@ class TaskBundleTests(unittest.TestCase):
             store = TaskBundleStore(root / "run")
             bundle = store.prepare(task)
 
-            self.assertEqual((bundle.inputs_root / "input.txt").read_text(), "immutable input")
+            self.assertEqual(
+                (bundle.inputs_root / "inputs" / "input.txt").read_text(),
+                "immutable input",
+            )
             self.assertEqual((bundle.context_root / "USER.md").read_text(), "private user")
             input_manifest = json.loads(bundle.input_manifest_path.read_text())
             context_manifest = json.loads(bundle.context_manifest_path.read_text())
@@ -65,6 +71,7 @@ class TaskBundleTests(unittest.TestCase):
             self.assertNotIn("sha256", private_file)
             self.assertNotIn("blob", private_file)
             self.assertNotIn(str(root), json.dumps(task_manifest))
+            self.assertEqual(task_manifest["files"]["output_collection"], "all")
             self.assertFalse(bundle.resume_safe)
 
             store.cleanup_runtime()
@@ -104,7 +111,7 @@ class TaskBundleTests(unittest.TestCase):
                             "id": "bad",
                             "prompt": "bad",
                             "files": {
-                                "inputs": [{"source": "source/file.txt", "target": "../escape"}]
+                                "inputs": [{"source": "../escape"}]
                             },
                         },
                     )
