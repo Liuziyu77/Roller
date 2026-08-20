@@ -102,6 +102,71 @@ class FakeInteractiveHarness(InteractiveHarness):
 
 
 class ConversationManagerTests(unittest.TestCase):
+    def test_simulator_archive_applies_actf_trace_options(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            simulator_dir = Path(temporary)
+            raw_path = simulator_dir / "trace.jsonl"
+            raw_path.write_text(
+                json.dumps(
+                    {
+                        "type": "message",
+                        "timestamp": 1000,
+                        "message": {
+                            "role": "assistant",
+                            "content": [
+                                {"type": "thinking", "thinking": "private"},
+                                {"type": "text", "text": "reply"},
+                            ],
+                        },
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            (simulator_dir / "cache_trace.jsonl").write_text(
+                json.dumps({"stage": "stream:context", "system": "sim system"})
+                + "\n",
+                encoding="utf-8",
+            )
+            (simulator_dir / "wire_trace.jsonl").write_text(
+                json.dumps(
+                    {
+                        "kind": "tools",
+                        "tools": [
+                            {"type": "function", "function": {"name": "read"}}
+                        ],
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            result = HarnessResult(
+                status="ok",
+                elapsed_seconds=0.01,
+                usage={},
+                trace_path="trace.jsonl",
+                metadata={},
+            )
+
+            ConversationManager._archive_simulator(
+                simulator_dir,
+                result,
+                ["prompt"],
+                "provider/model",
+                "openclaw",
+                keep_thinking=False,
+                keep_aux_traces=False,
+            )
+
+            actf = json.loads((simulator_dir / "trace_ACTF.json").read_text())
+            self.assertEqual(actf["system_prompt"], "sim system")
+            self.assertEqual(actf["tools"][0]["function"]["name"], "read")
+            self.assertEqual(
+                actf["steps"][0]["assistant_content"]["reasoning_content"], ""
+            )
+            self.assertFalse((simulator_dir / "cache_trace.jsonl").exists())
+            self.assertFalse((simulator_dir / "wire_trace.jsonl").exists())
+
     def test_parses_strict_simulator_json(self) -> None:
         message = parse_user_simulator_decision(
             '{"action":"message","content":"Please revise it."}'

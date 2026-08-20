@@ -10,6 +10,7 @@ import subprocess
 import tempfile
 import time
 import uuid
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -22,12 +23,16 @@ from roller.models import HarnessResult, RunRequest
 from roller.storage import safe_component
 from roller.usage import ZERO_USAGE, extract_openclaw_usage
 from roller.version import __version__
+from roller.wire_trace import WireTraceProxy, redact_jsonl_file, rewrite_model_config
 
 logger = logging.getLogger(__name__)
 
 INPUTS_CONTAINER_PATH = "/roller/task/inputs"
 CONTEXT_CONTAINER_PATH = "/roller/task/context"
 OUTPUTS_CONTAINER_PATH = "/roller/task/outputs"
+# OpenClaw diagnostics.cacheTrace output; records the assembled system prompt
+# (and full request messages) for every LLM call made by the agent.
+CACHE_TRACE_CONTAINER_PATH = "/tmp/roller-cache-trace.jsonl"
 
 ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
@@ -77,6 +82,42 @@ def load_model_config(path: Path, environ: Mapping[str, str] | None = None) -> d
     if not isinstance(payload, dict):
         raise ValueError(f"model config must be a JSON object: {path}")
     return expand_env_placeholders(payload, environ)
+
+
+def prepare_model_config(
+    config: Mapping[str, Any],
+    model_name: str,
+    *,
+    proxy: WireTraceProxy | None = None,
+    enable_reasoning: bool = False,
+) -> dict[str, Any]:
+    """Copy a model config and apply rollout-local transport/model settings."""
+    prepared = rewrite_model_config(config, proxy) if proxy is not None else deepcopy(config)
+    providers = prepared.get("providers")
+    if not isinstance(providers, dict):
+        return prepared
+    for provider in providers.values():
+        models = provider.get("models") if isinstance(provider, dict) else None
+        if not isinstance(models, list):
+            continue
+        for model in models:
+            if not isinstance(model, dict):
+                continue
+            # Earlier local configs used tags=["reasoning"]. OpenClaw 2026.3.11
+            # rejects the tags key and gates reasoning_effort on this boolean.
+            tags = model.pop("tags", None)
+            if isinstance(tags, list) and "reasoning" in tags:
+                model.setdefault("reasoning", True)
+    if enable_reasoning and "/" in model_name:
+        provider_name, model_id = model_name.split("/", 1)
+        provider = providers.get(provider_name)
+        models = provider.get("models") if isinstance(provider, dict) else None
+        if isinstance(models, list):
+            for model in models:
+                if isinstance(model, dict) and model.get("id") == model_id:
+                    model["reasoning"] = True
+                    break
+    return prepared
 
 
 def _redact_url(value: str) -> str:
@@ -155,6 +196,9 @@ class OpenClawConfig:
     pass_env: tuple[str, ...] = COMMON_ENV_NAMES
     search_provider: str | None = None
     thinking: str | None = None
+    capture_cache_trace: bool = True
+    wire_trace_mode: str = "actf"
+    keep_thinking: bool = True
     collect_paths: tuple[str, ...] = ()
     keep_container_on_error: bool = False
     set_image_model: bool = True
@@ -176,6 +220,18 @@ class OpenClawConfig:
         for path in self.collect_paths:
             if not path.startswith("/"):
                 raise ValueError(f"collected container path must be absolute: {path}")
+        if self.thinking is not None and self.thinking not in (
+            "off",
+            "minimal",
+            "low",
+            "medium",
+            "high",
+        ):
+            raise ValueError(
+                f"thinking must be one of off|minimal|low|medium|high: {self.thinking}"
+            )
+        if self.wire_trace_mode not in ("off", "actf", "full"):
+            raise ValueError(f"wire_trace_mode must be off|actf|full: {self.wire_trace_mode}")
 
 
 class OpenClawHarness(InteractiveHarness):
@@ -283,6 +339,78 @@ print(json.dumps({'content': content, 'assistant_count': assistant_count}, ensur
         if self.gateway_port > 65535:
             raise ValueError(f"worker slot {worker_slot} produces invalid gateway port {self.gateway_port}")
         self.runtime = runtime or DockerRuntime(config.docker_binary)
+        self._wire_proxy: WireTraceProxy | None = None
+
+    def _start_wire_proxy(self, request: RunRequest, output_dir: Path) -> None:
+        """Start the wire-trace proxy for this rollout.
+
+        The proxy runs when wire tracing is active (``actf``/``full``) or when
+        thinking must be stripped from request history (``keep_thinking=False``
+        needs the wire layer; OpenClaw itself has no config for it).
+        """
+        self._wire_proxy = None
+        needs_proxy = self.config.wire_trace_mode != "off" or not self.config.keep_thinking
+        if not needs_proxy:
+            return
+        proxy_required = self.config.wire_trace_mode == "full" or not self.config.keep_thinking
+        if self.config.model_config is None:
+            if proxy_required:
+                raise RuntimeError(
+                    "wire tracing/stripping requires --model-config with the selected "
+                    "provider's baseUrl"
+                )
+            logger.debug(
+                "[%s] tools schema capture skipped: no model config was provided",
+                request.task.id,
+            )
+            return
+        providers = self.config.model_config.get("providers")
+        provider_name = request.model.split("/", 1)[0]
+        provider = providers.get(provider_name) if isinstance(providers, Mapping) else None
+        upstream = provider.get("baseUrl") if isinstance(provider, Mapping) else None
+        if not isinstance(upstream, str) or not upstream.strip():
+            if proxy_required:
+                raise RuntimeError(
+                    f"wire tracing/stripping requires baseUrl for provider {provider_name!r}"
+                )
+            logger.debug(
+                "[%s] tools schema capture skipped: provider %r has no baseUrl",
+                request.task.id,
+                provider_name,
+            )
+            return
+        if self.config.wire_trace_mode == "full":
+            log_path = output_dir / "wire_trace.jsonl"
+            log_mode = "full"
+        elif self.config.wire_trace_mode == "actf":
+            log_path = output_dir / "wire_trace.jsonl"
+            log_mode = "tools"
+        else:  # off, but thinking stripping still needs the proxy
+            log_path = output_dir / "rollout" / "wire_strip.jsonl"
+            log_mode = "tools"
+        try:
+            self._wire_proxy = WireTraceProxy(
+                upstream,
+                log_path,
+                mode=log_mode,
+                strip_thinking=not self.config.keep_thinking,
+            )
+            self._wire_proxy.start()
+        except Exception as exc:
+            if self._wire_proxy is not None:
+                self._stop_wire_proxy()
+            if proxy_required:
+                raise RuntimeError(f"wire trace proxy failed to start: {exc}") from exc
+            logger.warning("[%s] tools schema capture skipped: %s", request.task.id, exc)
+            self._wire_proxy = None
+
+    def _stop_wire_proxy(self) -> None:
+        if self._wire_proxy is not None:
+            try:
+                self._wire_proxy.stop()
+            except Exception as exc:
+                logger.warning("wire trace proxy shutdown failed: %s", exc)
+            self._wire_proxy = None
 
     @staticmethod
     def _error_text(result: subprocess.CompletedProcess[str]) -> str:
@@ -391,15 +519,22 @@ print(json.dumps({'content': content, 'assistant_count': assistant_count}, ensur
         )
         self._checked(["exec", container, "/bin/bash", "-c", link_script], "OpenClaw workspace link")
 
-    def _inject_models(self, container: str) -> None:
+    def _inject_models(self, container: str, request: RunRequest) -> None:
         if self.config.model_config is None:
             return
+        thinking = request.task.thinking or self.config.thinking
+        config_to_write = prepare_model_config(
+            self.config.model_config,
+            request.model,
+            proxy=self._wire_proxy,
+            enable_reasoning=thinking not in (None, "off"),
+        )
         temporary_path: Path | None = None
         try:
             with tempfile.NamedTemporaryFile(
                 "w", encoding="utf-8", suffix=".json", delete=False
             ) as stream:
-                json.dump(self.config.model_config, stream, ensure_ascii=False)
+                json.dump(config_to_write, stream, ensure_ascii=False)
                 temporary_path = Path(stream.name)
             self._checked(
                 ["cp", str(temporary_path), f"{container}:/tmp/roller-models.json"],
@@ -415,7 +550,7 @@ print(json.dumps({'content': content, 'assistant_count': assistant_count}, ensur
 
     def _configure(self, container: str, request: RunRequest, environment: Mapping[str, str]) -> str:
         version = self._checked(["exec", container, "openclaw", "--version"], "OpenClaw version").stdout.strip()
-        self._inject_models(container)
+        self._inject_models(container, request)
         self._checked(
             ["exec", container, "openclaw", "models", "set", request.model],
             "model setup",
@@ -462,6 +597,34 @@ print(json.dumps({'content': content, 'assistant_count': assistant_count}, ensur
                     self.config.search_provider,
                 ],
                 "search provider setup",
+            )
+        if self.config.capture_cache_trace:
+            # Persist the fully assembled system prompt (per LLM call) via
+            # OpenClaw's diagnostics.cacheTrace so downstream consumers never
+            # need to reconstruct or hardcode it.
+            self._checked(
+                [
+                    "exec",
+                    container,
+                    "openclaw",
+                    "config",
+                    "set",
+                    "diagnostics.cacheTrace.enabled",
+                    "true",
+                ],
+                "cache trace setup",
+            )
+            self._checked(
+                [
+                    "exec",
+                    container,
+                    "openclaw",
+                    "config",
+                    "set",
+                    "diagnostics.cacheTrace.filePath",
+                    CACHE_TRACE_CONTAINER_PATH,
+                ],
+                "cache trace path setup",
             )
         if self.config.set_image_model:
             image_result = self.runtime.run(
@@ -605,6 +768,26 @@ print(json.dumps({'content': content, 'assistant_count': assistant_count}, ensur
         shutil.copyfile(attempt_trace_path, trace_path)
         return trace_path
 
+    def _collect_cache_trace(self, container: str, output_dir: Path) -> Path | None:
+        """Copy the OpenClaw cache-trace file (system prompts per LLM call) into the sample."""
+        destination = output_dir / "cache_trace.jsonl"
+        if not self.config.capture_cache_trace:
+            return None
+        destination.unlink(missing_ok=True)
+        result = self.runtime.run(
+            ["cp", f"{container}:{CACHE_TRACE_CONTAINER_PATH}", str(destination)]
+        )
+        if result.returncode != 0 or not destination.is_file():
+            return None
+        try:
+            redact_jsonl_file(destination)
+        except Exception:
+            # Full mode retains this file. Never leave an unsanitized credential-
+            # bearing cache trace behind when the redaction pass fails.
+            destination.unlink(missing_ok=True)
+            raise
+        return destination
+
     def _collect_legacy_artifacts(self, container: str, output_dir: Path) -> list[dict[str, Any]]:
         records: list[dict[str, Any]] = []
         artifact_root = output_dir / "results" / "legacy"
@@ -736,7 +919,16 @@ class OpenClawSession(InteractiveSession):
     def start(self) -> None:
         if self.container_started:
             raise RuntimeError("OpenClaw session has already started")
-        (self.output_dir / "rollout" / "trace.jsonl").unlink(missing_ok=True)
+        # Retries share one sample directory. Every trace layer must represent
+        # the current attempt rather than a previous partial session.
+        for relative in (
+            "rollout/trace.jsonl",
+            "cache_trace.jsonl",
+            "wire_trace.jsonl",
+            "rollout/wire_strip.jsonl",
+        ):
+            (self.output_dir / relative).unlink(missing_ok=True)
+        self.harness._start_wire_proxy(self.request, self.output_dir)
         self.environment = self.harness._start_container(self.container, self.request)
         self.container_started = True
         self.harness._prepare_workspace(self.container, self.request)
@@ -767,21 +959,26 @@ class OpenClawSession(InteractiveSession):
         if timeout_seconds <= 0:
             raise TimeoutError("interactive turn has no time remaining")
         turn_started = time.monotonic()
+        command = [
+            "exec",
+            "-w",
+            self.harness.config.workspace_container_path,
+            self.container,
+            "openclaw",
+            "agent",
+            "--session-id",
+            self.harness.config.session_id,
+            "--timeout",
+            str(max(1, int(timeout_seconds))),
+        ]
+        thinking = self.request.task.thinking or self.harness.config.thinking
+        if thinking:
+            # The CLI flag reaches this live session; changing the default after
+            # gateway startup does not reliably affect an existing agent turn.
+            command += ["--thinking", thinking]
+        command += ["--message", message]
         process = self.harness.runtime.popen(
-            [
-                "exec",
-                "-w",
-                self.harness.config.workspace_container_path,
-                self.container,
-                "openclaw",
-                "agent",
-                "--session-id",
-                self.harness.config.session_id,
-                "--timeout",
-                str(max(1, int(timeout_seconds))),
-                "--message",
-                message,
-            ],
+            command,
             self.output_dir / "rollout" / f"agent.attempt-{self.attempt}.log",
             append=bool(self.messages),
         )
@@ -820,6 +1017,14 @@ class OpenClawSession(InteractiveSession):
                 )
             except Exception as exc:
                 logger.warning("[%s] trace collection failed: %s", self.request.task.id, exc)
+            try:
+                self.harness._collect_cache_trace(self.container, self.output_dir)
+            except Exception as exc:
+                logger.warning(
+                    "[%s] cache trace collection failed: %s",
+                    self.request.task.id,
+                    exc,
+                )
             if self.collect_outputs:
                 try:
                     artifact_result, output_copy_error = self.harness._collect_outputs(
@@ -841,9 +1046,12 @@ class OpenClawSession(InteractiveSession):
                         exc,
                     )
         try:
-            self.harness._stop_process(self.gateway_process)
+            try:
+                self.harness._stop_process(self.gateway_process)
+            finally:
+                self.harness.runtime.close_log(self.gateway_process)
         finally:
-            self.harness.runtime.close_log(self.gateway_process)
+            self.harness._stop_wire_proxy()
 
         if status == "ok" and trace_path is None:
             status = "error"

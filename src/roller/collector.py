@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from roller.actf import convert_openclaw_trace
+from roller.wire_trace import extract_wire_tools
 from roller.harnesses.base import Harness
 from roller.models import HarnessResult, RunRequest
 from roller.storage import atomic_write_json, safe_component
@@ -30,6 +31,8 @@ class CollectionConfig:
     parallel: int = 1
     retries: int = 0
     resume: bool = False
+    keep_aux_traces: bool = False
+    keep_thinking: bool = True
 
     def __post_init__(self) -> None:
         if self.parallel < 1:
@@ -104,7 +107,7 @@ class Collector:
         return path if path.is_file() else None
 
     @staticmethod
-    def _prune_sample(sample_dir: Path) -> None:
+    def _prune_sample(sample_dir: Path, keep_aux_traces: bool = False) -> None:
         keep = {
             "trace.jsonl",
             "trace_ACTF.json",
@@ -113,6 +116,9 @@ class Collector:
             "conversation.json",
             "user_simulator",
         }
+        if keep_aux_traces:
+            # Full mode: retain the diagnostic layers alongside the ACTF trajectory.
+            keep |= {"cache_trace.jsonl", "wire_trace.jsonl"}
         for path in sample_dir.iterdir():
             if path.name in keep:
                 continue
@@ -140,8 +146,15 @@ class Collector:
             if trace_source.resolve() != trace_path.resolve():
                 shutil.copy2(trace_source, trace_path)
             try:
+                cache_trace_path = sample_dir / "cache_trace.jsonl"
+                wire_trace_path = sample_dir / "wire_trace.jsonl"
                 convert_openclaw_trace(
-                    trace_path, actf_path, user_messages=request.task.prompts
+                    trace_path,
+                    actf_path,
+                    user_messages=request.task.prompts,
+                    cache_trace=cache_trace_path if cache_trace_path.is_file() else None,
+                    tools=extract_wire_tools(wire_trace_path) if wire_trace_path.is_file() else None,
+                    keep_thinking=self.config.keep_thinking,
                 )
             except Exception as exc:
                 logger.exception("[%s | %s] ACTF conversion failed", request.task.id, request.model)
@@ -195,7 +208,7 @@ class Collector:
             },
             "provenance": provenance,
         }
-        self._prune_sample(sample_dir)
+        self._prune_sample(sample_dir, keep_aux_traces=self.config.keep_aux_traces)
         atomic_write_json(sample_dir / "info.json", result)
         return result
 
@@ -337,7 +350,7 @@ class Collector:
             )
             sample_dir = self._sample_dir(request)
             sample_dir.mkdir(parents=True, exist_ok=True)
-            self._prune_sample(sample_dir)
+            self._prune_sample(sample_dir, keep_aux_traces=self.config.keep_aux_traces)
             result = {
                 "schema_version": "roller.sample/v1",
                 "request_index": request.index,

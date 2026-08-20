@@ -14,6 +14,7 @@ from roller.harnesses.base import Harness, InteractiveHarness
 from roller.models import HarnessResult, RunRequest, Task, UserSimulatorSpec
 from roller.storage import atomic_write_json
 from roller.usage import ZERO_USAGE
+from roller.wire_trace import extract_wire_tools
 
 
 CONVERSATION_SCHEMA = "roller.conversation/v1"
@@ -97,9 +98,14 @@ class ConversationManager(Harness):
         self,
         agent_harness: InteractiveHarness,
         simulator_harness: InteractiveHarness,
+        *,
+        keep_thinking: bool = True,
+        keep_aux_traces: bool = False,
     ) -> None:
         self.agent_harness = agent_harness
         self.simulator_harness = simulator_harness
+        self.keep_thinking = keep_thinking
+        self.keep_aux_traces = keep_aux_traces
         self.name = agent_harness.name
 
     @staticmethod
@@ -138,6 +144,9 @@ class ConversationManager(Harness):
         prompts: list[str],
         model: str,
         harness: str,
+        *,
+        keep_thinking: bool,
+        keep_aux_traces: bool,
     ) -> dict[str, Any]:
         source = ConversationManager._trace_source(simulator_dir, result.trace_path)
         raw_path = simulator_dir / "trace.jsonl"
@@ -145,10 +154,28 @@ class ConversationManager(Harness):
         if source is not None:
             if source.resolve() != raw_path.resolve():
                 shutil.copy2(source, raw_path)
-            convert_openclaw_trace(raw_path, actf_path, user_messages=prompts)
+            cache_trace_path = simulator_dir / "cache_trace.jsonl"
+            wire_trace_path = simulator_dir / "wire_trace.jsonl"
+            convert_openclaw_trace(
+                raw_path,
+                actf_path,
+                user_messages=prompts,
+                cache_trace=(
+                    cache_trace_path if cache_trace_path.is_file() else None
+                ),
+                tools=(
+                    extract_wire_tools(wire_trace_path)
+                    if wire_trace_path.is_file()
+                    else None
+                ),
+                keep_thinking=keep_thinking,
+            )
         rollout_dir = simulator_dir / "rollout"
         if rollout_dir.exists():
             shutil.rmtree(rollout_dir)
+        if not keep_aux_traces:
+            (simulator_dir / "cache_trace.jsonl").unlink(missing_ok=True)
+            (simulator_dir / "wire_trace.jsonl").unlink(missing_ok=True)
         participant = {
             "schema_version": PARTICIPANT_SCHEMA,
             "role": "user_simulator",
@@ -281,11 +308,16 @@ class ConversationManager(Harness):
                 simulator_prompts,
                 simulator_request.model,
                 self.simulator_harness.name,
+                keep_thinking=self.keep_thinking,
+                keep_aux_traces=self.keep_aux_traces,
             )
         except Exception as exc:
             rollout_dir = simulator_dir / "rollout"
             if rollout_dir.exists():
                 shutil.rmtree(rollout_dir)
+            if not self.keep_aux_traces:
+                (simulator_dir / "cache_trace.jsonl").unlink(missing_ok=True)
+                (simulator_dir / "wire_trace.jsonl").unlink(missing_ok=True)
             raw_path = simulator_dir / "trace.jsonl"
             actf_path = simulator_dir / "trace_ACTF.json"
             simulator_info = {

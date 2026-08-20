@@ -132,12 +132,51 @@ def _read_events(path: Path) -> list[dict[str, Any]]:
     return events
 
 
+def _cache_trace_system_prompts(path: Path) -> list[str]:
+    """Extract the assembled system prompt of every LLM call from an OpenClaw cache-trace file.
+
+    Prefers per-call ``stream:context.system`` entries; falls back to the
+    session-level ``session:loaded.system`` snapshot (openclaw emits the
+    assembled prompt there once per session).
+    """
+    per_call: list[str] = []
+    session_level: list[str] = []
+    with path.open("r", encoding="utf-8", errors="replace") as stream:
+        for line in stream:
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(row, dict):
+                continue
+            system = row.get("system")
+            if not isinstance(system, str):
+                continue
+            stage = row.get("stage")
+            if stage == "stream:context":
+                per_call.append(system)
+            elif stage == "session:loaded":
+                session_level.append(system)
+    return per_call if per_call else session_level
+
+
 def openclaw_events_to_actf(
-    events: Iterable[dict[str, Any]], user_messages: Iterable[str] | None = None
+    events: Iterable[dict[str, Any]],
+    user_messages: Iterable[str] | None = None,
+    system_prompts: Iterable[str] | None = None,
+    tools: list[Any] | None = None,
+    keep_thinking: bool = True,
 ) -> dict[str, Any]:
-    """Project raw OpenClaw session events into the ACTF_v1.0 step shape."""
+    """Project raw OpenClaw session events into the ACTF_v1.0 step shape.
+
+    The system prompt and tools schema are stored once at the top level (they
+    are session-level constants for a rollout); steps never repeat them.
+    ``keep_thinking=False`` blanks ``reasoning_content`` in every step.
+    """
 
     rows = list(events)
+    system_prompt_list = list(system_prompts) if system_prompts is not None else []
+    system_prompt = system_prompt_list[0] if system_prompt_list else ""
     first_time = next(
         (_timestamp(row.get("timestamp")) for row in rows if _timestamp(row.get("timestamp"))),
         None,
@@ -191,7 +230,7 @@ def openclaw_events_to_actf(
                 "step_id": len(steps) + 1,
                 "assistant_content": {
                     "content": content,
-                    "reasoning_content": reasoning,
+                    "reasoning_content": reasoning if keep_thinking else "",
                     "tool_calls": deepcopy(tool_calls),
                 },
                 "metric": {
@@ -201,7 +240,6 @@ def openclaw_events_to_actf(
                     "env_action_ms": None,
                     "stop_reason": message.get("stopReason", message.get("stop_reason", "")),
                 },
-                "system_prompt": "",
                 "user_content": pending_user,
                 "tools": deepcopy(tool_calls),
                 "observation": [],
@@ -224,6 +262,8 @@ def openclaw_events_to_actf(
     finished_at = steps[-1]["finished_at"] if steps else last_time or started_at
     return {
         "schema_version": "ACTF_v1.0",
+        "system_prompt": system_prompt,
+        "tools": deepcopy(tools) if tools is not None else None,
         "steps": steps,
         "started_at": started_at,
         "finished_at": finished_at,
@@ -235,9 +275,17 @@ def convert_openclaw_trace(
     destination: Path,
     *,
     user_messages: Iterable[str] | None = None,
+    cache_trace: Path | None = None,
+    tools: list[Any] | None = None,
+    keep_thinking: bool = True,
 ) -> dict[str, Any]:
+    system_prompts = _cache_trace_system_prompts(cache_trace) if cache_trace is not None else []
     trajectory = openclaw_events_to_actf(
-        _read_events(source), user_messages=user_messages
+        _read_events(source),
+        user_messages=user_messages,
+        system_prompts=system_prompts,
+        tools=tools,
+        keep_thinking=keep_thinking,
     )
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = destination.with_name(f".{destination.name}.tmp")
