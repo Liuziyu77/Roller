@@ -213,15 +213,31 @@ Roller 会在本次 rollout 注入的模型配置副本中设置 `reasoning: tru
 
 ### ACTF、cache trace 与 wire trace
 
-默认 `--cache-trace` 记录 OpenClaw 实际组装的 system prompt；Roller 将它写入 `trace_ACTF.json` 顶层。默认 `--wire-trace actf` 通过本地反向代理捕获完整 tools schema，写入 ACTF 顶层后删除中间文件。
+默认 `--cache-trace` 记录 OpenClaw 每次 LLM call 组装的 system prompt；Roller 将首个有效
+值写入 `trace_ACTF.json` 顶层。默认 `--wire-trace actf` 通过本地反向代理捕获完整 tools
+schema，写入 ACTF 顶层后删除中间文件。
 
 | `--wire-trace` | 行为 |
 | --- | --- |
-| `actf`（默认） | 捕获 tools schema 并写入 ACTF，不保留额外文件；缺少可代理 `baseUrl` 时降级为 `tools=null` |
-| `full` | 要求可代理 `baseUrl`，额外保留 `wire_trace.jsonl` 和脱敏后的 `cache_trace.jsonl` |
+| `actf`（默认） | 捕获 tools schema 并写入 ACTF，不记录完整 messages/input；缺少可代理 `baseUrl` 时降级为 `tools=null` |
+| `full` | 要求可代理 `baseUrl`，额外保留每次完整 JSON 请求体 `wire_trace.jsonl` 和按敏感 key 脱敏后的 `cache_trace.jsonl` |
 | `off` | 不记录 wire 数据，ACTF 的 `tools` 为 `null`；但 `--no-keep-thinking` 仍会启用代理做剥离 |
 
-`wire_trace.jsonl` 保存每次完整请求体，多轮轨迹的体积接近 O(N²)，适合审计，不适合大批量常开。`cache_trace.jsonl` 在保存前会递归脱敏 API key、token、authorization、password 和 secret 等字段。
+OpenClaw session 文件与模型请求 context 不是同一层：session 保存持久化事件，而模型调用
+前还可能发生 system/runtime 注入、compaction、tool-result pruning、context-engine/hook
+处理以及 provider 协议适配。因此 `trace.jsonl` 中存在的消息不保证逐字进入每次请求；
+ACTF/SFT 又是从该 session 文件投影，也不能证明模型当时看到了哪些完整历史。
+
+需要审计真实请求 context 时使用 `full`。代理位于 OpenClaw provider adapter 和真实模型
+API 之间；对合法 JSON，它在可选的历史 thinking 剥离之后记录与转发同一 request body。
+`wire_trace.jsonl` 因而保存 Roller 客户端实际交给上游 API 的 messages/input、tools 和
+参数。它不记录 headers、响应 body 或模型服务内部的二次处理，也不是字节级抓包。
+
+多轮 full wire 会重复历史，体积接近 O(N²)，适合审计，不适合大批量常开。
+`cache_trace.jsonl` 保存前会递归脱敏 API key、token、authorization、password 和 secret
+等 JSON 字段；`wire_trace.jsonl` 不扫描 system/user/tool/reasoning 自由文本，必须按敏感
+数据管理。完整捕获边界、对照步骤和失败/重试语义见
+[轨迹产出文件指南](trajectory-outputs.md#32-session-历史不等于模型请求-context)。
 
 本地代理绑定宿主机 `127.0.0.1`，因此 `actf`、`full` 和 `--no-keep-thinking` 当前要求保留默认 `--network host`，且所选 provider 必须提供绝对 `baseUrl`。
 
@@ -271,7 +287,7 @@ roller collect ... --gateway-port 22000 --gateway-port-step 10
 | `--session-id` | `roller` | OpenClaw session ID 前缀 |
 | `--thinking` | 无 | 全局 OpenClaw 逻辑档位；完整值、模型映射和版本限制见第 5 节 |
 | `--keep-thinking` / `--no-keep-thinking` | 开启 | 是否保留轨迹和请求历史中的 thinking |
-| `--cache-trace` / `--no-cache-trace` | 开启 | 是否记录实际 system prompt |
+| `--cache-trace` / `--no-cache-trace` | 开启 | 是否记录每次组装的 system prompt；ACTF 固化首个有效值 |
 | `--wire-trace` | `actf` | tools schema / 完整请求体记录模式 |
 | `--search-provider` | 无 | OpenClaw Web Search provider |
 | `--pass-env NAME` | 无 | 增加一个环境变量名，可重复 |

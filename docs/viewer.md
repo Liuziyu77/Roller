@@ -53,7 +53,7 @@ Viewer 当前不提供认证。对外监听会暴露 system prompt、用户输�
    task/model/error 文本搜索，并按状态或模型筛选。
 2. 中间显示所选 rollout 的 ACTF 时间线。step 标题先展示 token、耗时、stop reason、
    reasoning/tool 数量；点击后才加载完整 step。
-3. 右侧 Inspector 显示 sample 信息、system prompt、完整 tools schema、原始
+3. 右侧 Inspector 显示 sample 信息、ACTF 顶层固化的首个 system prompt、完整 tools schema、原始
    `info.json`；User Simulator task 还会显示 `conversation.json`。
 
 Reasoning 使用独立区域并默认折叠。工具调用按 `tool_call_id` 和对应结果配对，
@@ -75,6 +75,12 @@ HTML 或脚本。
 Viewer 不以 `trace_SFT.json` 为展示数据源，因为 SFT 刻意删除了 step ID、时间、metric、
 stop reason 和 observation metadata。`trace.jsonl`、`cache_trace.jsonl` 和
 `wire_trace.jsonl` 也不会默认传给浏览器。
+
+Viewer 展示的是 ACTF 对 session 事件的分析投影，不是每次模型请求的完整 context。
+OpenClaw 在 session 与 provider 调用之间发生 compaction、pruning、runtime/hook 注入或
+协议适配时，中间时间线不能证明模型逐字看到了哪些历史。此类审计应在采集时启用
+`--wire-trace full`，离线检查 sample 中的 `wire_trace.jsonl` 和 `cache_trace.jsonl`；
+详细边界见 [轨迹产出文件指南](trajectory-outputs.md#32-session-历史不等于模型请求-context)。
 
 run `info.json` 尚未正常收尾时，Viewer 会额外扫描 `samples/<model>/<task>/info.json`，
 因此已经 finalize 的 sample 仍能显示。没有 sample `info.json` 的运行中临时目录不进入

@@ -228,8 +228,8 @@ files/product_summary/
     └── results/                 # 可选
 ```
 
-- `trace.jsonl`：Harness 原始轨迹，不清洗、不改写。
-- `trace_ACTF.json`：转换后的 `ACTF_v1.0` 轨迹，顶层包含实际 system prompt 和完整 tools schema，并按 step 保存 reasoning。
+- `trace.jsonl`：OpenClaw session 原始事件；Roller 不清洗、不改写，但它不是模型请求体的逐字副本。
+- `trace_ACTF.json`：转换后的 `ACTF_v1.0` 轨迹，顶层固化捕获到的首个组装后 system prompt 和 tools schema，并按 step 保存 reasoning。
 - `trace_SFT.json`：只包含 `messages` 和 `tools` 的标准化训练样本；assistant 固定包含 `reasoning_content`、`content` 和 `tool_calls`。
 - `sft.jsonl`：按 request 顺序汇总所有成功 task Agent 的 `trace_SFT.json`，每行一个样本。
 - `info.json`：状态、错误、usage、版本、耗时和输入 digest。
@@ -238,7 +238,12 @@ files/product_summary/
 各层轨迹的生成条件、保留策略、参数组合和失败/Resume 行为见
 [轨迹产出文件指南](docs/trajectory-outputs.md)。
 
-默认 `--wire-trace actf` 只把 tools schema 嵌入 ACTF，不保留中间诊断文件；`--wire-trace full` 会额外保存脱敏后的 `cache_trace.jsonl` 和完整请求体 `wire_trace.jsonl`。
+默认 `--wire-trace actf` 只把 tools schema 嵌入 ACTF，不保留完整消息历史；
+`--wire-trace full` 会额外保存脱敏后的 `cache_trace.jsonl` 和每次发往模型 API 的
+JSON 请求体 `wire_trace.jsonl`。OpenClaw 可能在 session 与模型调用之间进行 context
+组装、压缩、裁剪或格式适配，因此需要核对“模型当时真正看到了什么”时必须使用
+`full`。捕获点、隐私边界和审计方法见
+[轨迹产出文件指南](docs/trajectory-outputs.md#32-session-历史不等于模型请求-context)。
 
 User Simulator rollout 还会增加 `conversation.json` 和 `user_simulator/`，分别保存干净的交替对话和 Simulator 自己的 raw/ACTF/SFT 轨迹。
 
@@ -258,7 +263,7 @@ User Simulator rollout 还会增加 `conversation.json` 和 `user_simulator/`，
 | `--dry-run` | 只校验并打印计划 |
 | `--thinking LEVEL` | OpenClaw 逻辑档位：`off/minimal/low/medium/high/xhigh/adaptive/max/ultra`；`none` 是 `off` 的别名 |
 | `--keep-thinking` / `--no-keep-thinking` | 保留或双向剥离轨迹与请求历史中的 thinking |
-| `--cache-trace` / `--no-cache-trace` | 是否记录实际组装的 system prompt |
+| `--cache-trace` / `--no-cache-trace` | 是否记录每次组装的 system prompt；ACTF 固化首个有效值 |
 | `--wire-trace MODE` | `actf`（默认）、`full` 或 `off`；控制 tools schema 与请求体记录 |
 
 查看全部参数：
