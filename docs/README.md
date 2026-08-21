@@ -24,6 +24,7 @@
 | [SFT 数据格式](sft-format.md) | 最小 `messages`/`tools` 训练格式、转换规则和完整性校验 |
 | [轨迹可视化 Viewer](viewer.md) | 本地只读 Web UI、数据来源、懒加载、远程访问和安全边界 |
 | [OpenClaw、模型与 API](openclaw-configuration.md) | Docker 镜像、provider JSON、API base、环境变量、代理、搜索和排错 |
+| [External Thinking](external-thinking.md) | 关闭原生 reasoning，以 `deep_think` 工具实现 external/external_always 显式 CoT |
 | [User Simulator 与动态对话](user-simulator.md) | Conversation Manager、双 Harness、JSON 决策、终止条件和双方轨迹 |
 | [Task JSON Schema](../schemas/task.schema.json) | `roller.task/v1` 的机器可读约束 |
 | [Examples](../examples/README.md) | 仓库内可运行的配置与 task |

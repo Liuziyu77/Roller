@@ -82,6 +82,35 @@ SFT record 不包含 schema version、task/model、usage、时间戳、step ID�
 reasoning 不进入训练数据；只有 ACTF 中可见的 reasoning summary 会进入
 `reasoning_content`。
 
+启用 `--external-thinking` 时，raw/ACTF 保持真实 `deep_think` 调用协议，专用 SFT 则把它
+标准化成随后实际 action 对应 assistant 的 `reasoning_content`：
+
+```json
+{
+  "role": "assistant",
+  "reasoning_content": "完整、显式的中间推理",
+  "content": "",
+  "tool_calls": [{
+    "id": "call_business",
+    "type": "function",
+    "function": {
+      "name": "read",
+      "arguments": "{\"path\":\"input.txt\"}"
+    }
+  }]
+}
+```
+
+转换器删除 `deep_think` tool call、其 `------` result、顶层 schema 和 OpenClaw system
+prompt 工具清单中的对应条目；独立 THINK message
+的 thoughts 合并进下一条 ACT assistant，同一 response 内与业务工具并列的 think 则合并进
+当前 assistant。业务 tool call/result 原样保留。若原有 `reasoning_content` 也非空，各段按
+顺序以空行连接；孤立且没有后续 action 的 think 会令 SFT 转换失败，不会静默丢失。
+
+这里的 `reasoning_content` 是 Roller 面向训练的标准化字段，不声称 provider 原生返回了
+该字段。`--no-keep-thinking` 不删除显式 external CoT；要排除它必须使用
+`--external-thinking off`。详细模式说明见 [External Thinking](external-thinking.md)。
+
 ## 4. 数据完整性
 
 导出器要求：

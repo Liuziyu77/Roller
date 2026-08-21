@@ -10,6 +10,7 @@ from unittest import mock
 from roller.bundles import TaskBundleStore
 from roller.harnesses.openclaw import (
     DEFAULT_OPENCLAW_IMAGE,
+    EXTERNAL_THINKING_PLUGIN_CONTAINER_PATH,
     OPENCLAW_STATE_CONTAINER_PATH,
     TRANSCRIPT_EXPORT_CONTAINER_PATH,
     OpenClawConfig,
@@ -192,6 +193,83 @@ class OpenClawHelpersTests(unittest.TestCase):
         self.assertNotIn("tags", models[1])
         self.assertNotIn("reasoning", config["providers"]["proxy"]["models"][1])
         self.assertEqual(config["providers"]["proxy"]["models"][1]["tags"], ["reasoning"])
+
+    def test_external_thinking_disables_selected_model_native_reasoning(self) -> None:
+        config = {
+            "providers": {
+                "proxy": {
+                    "baseUrl": "http://example.test/v1",
+                    "api": "openai-responses",
+                    "models": [{"id": "think", "reasoning": True}],
+                }
+            }
+        }
+
+        prepared = prepare_model_config(
+            config,
+            "proxy/think",
+            disable_reasoning=True,
+        )
+
+        self.assertFalse(prepared["providers"]["proxy"]["models"][0]["reasoning"])
+        self.assertTrue(config["providers"]["proxy"]["models"][0]["reasoning"])
+
+    def test_external_thinking_forces_effective_openclaw_thinking_off(self) -> None:
+        task = Task(id="task", prompts=("hello",), source_index=0, thinking="max")
+        request = RunRequest(0, task, "provider/model", 30)
+        harness = OpenClawHarness(
+            OpenClawConfig(thinking="high", external_thinking="external"),
+            worker_slot=0,
+        )
+
+        self.assertEqual(harness._effective_thinking(request), "off")
+
+    def test_external_thinking_requires_responses_provider(self) -> None:
+        task = Task(id="task", prompts=("hello",), source_index=0)
+        request = RunRequest(0, task, "provider/model", 30)
+        harness = OpenClawHarness(
+            OpenClawConfig(
+                model_config={
+                    "providers": {
+                        "provider": {
+                            "baseUrl": "http://example.test/v1",
+                            "api": "openai-completions",
+                            "models": [{"id": "model"}],
+                        }
+                    }
+                },
+                external_thinking="external",
+            ),
+            worker_slot=0,
+        )
+
+        with tempfile.TemporaryDirectory() as temporary:
+            with self.assertRaisesRegex(ValueError, "openai-responses"):
+                harness._start_wire_proxy(request, Path(temporary))
+
+    def test_external_thinking_plugin_is_copied_and_configured(self) -> None:
+        runtime = FakeDockerRuntime()
+        harness = OpenClawHarness(
+            OpenClawConfig(external_thinking="external"),
+            worker_slot=0,
+            runtime=runtime,
+        )
+
+        harness._inject_external_thinking_plugin(
+            "container",
+            OPENCLAW_STATE_CONTAINER_PATH,
+        )
+
+        flattened = [" ".join(command) for command in runtime.commands]
+        self.assertTrue(
+            any(EXTERNAL_THINKING_PLUGIN_CONTAINER_PATH in command for command in flattened)
+        )
+        self.assertTrue(
+            any("ROLLER_EXTERNAL_THINKING_PLUGIN_PATH=" in command for command in flattened)
+        )
+        self.assertTrue(
+            any("chown -R" in command and "/proc/1" in command for command in flattened)
+        )
 
     def test_no_keep_thinking_requires_interceptable_model_config(self) -> None:
         task = Task(id="task", prompts=("hello",), source_index=0)

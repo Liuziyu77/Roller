@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterator
 
 from roller.actf import convert_openclaw_trace
+from roller.external_thinking import external_thinking_mode_from_metadata
 from roller.harnesses.base import Harness
 from roller.models import HarnessResult, RunRequest
 from roller.sft import write_sft
@@ -141,6 +142,7 @@ class Collector:
         attempts: list[dict[str, Any]],
         started_at: str,
     ) -> dict[str, Any]:
+        metadata = final.metadata if isinstance(final.metadata, dict) else {}
         trace_source = self._trace_source(sample_dir, final.trace_path)
         trace_path = sample_dir / "trace.jsonl"
         actf_path = sample_dir / "trace_ACTF.json"
@@ -166,7 +168,11 @@ class Collector:
                     ),
                     keep_thinking=self.config.keep_thinking,
                 )
-                write_sft(sft_path, trajectory)
+                write_sft(
+                    sft_path,
+                    trajectory,
+                    external_thinking=external_thinking_mode_from_metadata(metadata),
+                )
             except Exception as exc:
                 logger.exception(
                     "[%s | %s] trajectory conversion failed",
@@ -179,7 +185,6 @@ class Collector:
             attempts[-1]["status"] = final.status
             attempts[-1]["error"] = final.error
 
-        metadata = final.metadata if isinstance(final.metadata, dict) else {}
         provenance = metadata.get("provenance")
         if not isinstance(provenance, dict):
             provenance = {}

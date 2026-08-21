@@ -18,6 +18,11 @@ from typing import Any, Mapping, Sequence
 from urllib.parse import urlsplit, urlunsplit
 
 from roller.artifacts import ArtifactCollectionResult, collect_output_directory
+from roller.external_thinking import (
+    normalize_external_thinking_mode,
+    validate_external_thinking_provider,
+    validate_external_thinking_trace,
+)
 from roller.harnesses.base import InteractiveHarness, InteractiveSession, TurnResult
 from roller.models import HarnessResult, RunRequest
 from roller.storage import safe_component
@@ -37,6 +42,10 @@ OUTPUTS_CONTAINER_PATH = "/roller/task/outputs"
 # (and full request messages) for every LLM call made by the agent.
 CACHE_TRACE_CONTAINER_PATH = "/tmp/roller-cache-trace.jsonl"
 TRANSCRIPT_EXPORT_CONTAINER_PATH = "/tmp/roller-session-trace.jsonl"
+EXTERNAL_THINKING_PLUGIN_CONTAINER_PATH = "/tmp/roller-external-thinking-plugin"
+EXTERNAL_THINKING_PLUGIN_HOST_PATH = (
+    Path(__file__).resolve().parents[1] / "assets" / "external_thinking"
+)
 
 ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
@@ -124,8 +133,11 @@ def prepare_model_config(
     *,
     proxy: WireTraceProxy | None = None,
     enable_reasoning: bool = False,
+    disable_reasoning: bool = False,
 ) -> dict[str, Any]:
     """Copy a model config and apply rollout-local transport/model settings."""
+    if enable_reasoning and disable_reasoning:
+        raise ValueError("enable_reasoning and disable_reasoning are mutually exclusive")
     prepared = rewrite_model_config(config, proxy) if proxy is not None else deepcopy(config)
     providers = prepared.get("providers")
     if not isinstance(providers, dict):
@@ -142,14 +154,14 @@ def prepare_model_config(
             tags = model.pop("tags", None)
             if isinstance(tags, list) and "reasoning" in tags:
                 model.setdefault("reasoning", True)
-    if enable_reasoning and "/" in model_name:
+    if (enable_reasoning or disable_reasoning) and "/" in model_name:
         provider_name, model_id = model_name.split("/", 1)
         provider = providers.get(provider_name)
         models = provider.get("models") if isinstance(provider, dict) else None
         if isinstance(models, list):
             for model in models:
                 if isinstance(model, dict) and model.get("id") == model_id:
-                    model["reasoning"] = True
+                    model["reasoning"] = not disable_reasoning
                     break
     return prepared
 
@@ -231,6 +243,7 @@ class OpenClawConfig:
     pass_env: tuple[str, ...] = COMMON_ENV_NAMES
     search_provider: str | None = None
     thinking: str | None = None
+    external_thinking: str = "off"
     capture_cache_trace: bool = True
     wire_trace_mode: str = "actf"
     keep_thinking: bool = True
@@ -258,6 +271,11 @@ class OpenClawConfig:
             if not path.startswith("/"):
                 raise ValueError(f"collected container path must be absolute: {path}")
         object.__setattr__(self, "thinking", normalize_thinking(self.thinking))
+        object.__setattr__(
+            self,
+            "external_thinking",
+            normalize_external_thinking_mode(self.external_thinking),
+        )
         if self.wire_trace_mode not in ("off", "actf", "full"):
             raise ValueError(f"wire_trace_mode must be off|actf|full: {self.wire_trace_mode}")
 
@@ -275,6 +293,27 @@ config_path = Path(os.environ['ROLLER_OPENCLAW_CONFIG_PATH'])
 models_path = Path('/tmp/roller-models.json')
 config = json.loads(config_path.read_text()) if config_path.exists() else {}
 config['models'] = json.loads(models_path.read_text())
+config_path.parent.mkdir(parents=True, exist_ok=True)
+config_path.write_text(json.dumps(config, indent=2))
+""".strip()
+
+    _EXTERNAL_THINKING_PLUGIN_INJECT_SCRIPT = """
+import json
+import os
+from pathlib import Path
+config_path = Path(os.environ['ROLLER_OPENCLAW_CONFIG_PATH'])
+plugin_path = os.environ['ROLLER_EXTERNAL_THINKING_PLUGIN_PATH']
+config = json.loads(config_path.read_text()) if config_path.exists() else {}
+plugins = config.setdefault('plugins', {})
+load_paths = plugins.setdefault('load', {}).setdefault('paths', [])
+if plugin_path not in load_paths:
+    load_paths.append(plugin_path)
+allow = plugins.setdefault('allow', [])
+if 'roller-external-thinking' not in allow:
+    allow.append('roller-external-thinking')
+plugins.setdefault('entries', {}).setdefault(
+    'roller-external-thinking', {'enabled': True}
+)['enabled'] = True
 config_path.parent.mkdir(parents=True, exist_ok=True)
 config_path.write_text(json.dumps(config, indent=2))
 """.strip()
@@ -425,8 +464,8 @@ exec node --input-type=module -e "$1"
         """Start the wire-trace proxy for this rollout.
 
         The proxy runs when wire tracing is active, when thinking must be
-        stripped from request history, or when a custom Chat Completions model
-        may need response-field normalization for faithful thinking replay.
+        stripped from request history, when Chat Completions reasoning fields
+        need normalization, or when Responses external thinking is enabled.
         """
         self._wire_proxy = None
         needs_proxy = (
@@ -436,7 +475,17 @@ exec node --input-type=module -e "$1"
         )
         if not needs_proxy:
             return
-        proxy_required = self.config.wire_trace_mode == "full" or not self.config.keep_thinking
+        external_thinking = self.config.external_thinking != "off"
+        validate_external_thinking_provider(
+            self.config.model_config,
+            request.model,
+            self.config.external_thinking,
+        )
+        proxy_required = (
+            self.config.wire_trace_mode == "full"
+            or not self.config.keep_thinking
+            or external_thinking
+        )
         if self.config.model_config is None:
             if proxy_required:
                 raise RuntimeError(
@@ -469,8 +518,12 @@ exec node --input-type=module -e "$1"
         elif self.config.wire_trace_mode == "actf":
             log_path = output_dir / "wire_trace.jsonl"
             log_mode = "tools"
-        else:  # off, but thinking stripping still needs the proxy
-            log_path = output_dir / "rollout" / "wire_strip.jsonl"
+        else:  # Internal-only proxy; external thinking still needs tools for SFT.
+            log_path = (
+                output_dir / "wire_trace.jsonl"
+                if external_thinking
+                else output_dir / "rollout" / "wire_strip.jsonl"
+            )
             log_mode = "tools"
         try:
             self._wire_proxy = WireTraceProxy(
@@ -479,6 +532,7 @@ exec node --input-type=module -e "$1"
                 mode=log_mode,
                 strip_thinking=not self.config.keep_thinking,
                 normalize_reasoning_replay=self.config.keep_thinking,
+                external_thinking_mode=self.config.external_thinking,
             )
             self._wire_proxy.start()
         except Exception as exc:
@@ -621,6 +675,61 @@ exec node --input-type=module -e "$1"
             return "/root/.openclaw"
         return OPENCLAW_STATE_CONTAINER_PATH
 
+    def _effective_thinking(self, request: RunRequest) -> str | None:
+        if self.config.external_thinking != "off":
+            return "off"
+        return resolve_thinking(request.task.thinking, self.config.thinking)
+
+    def _inject_external_thinking_plugin(
+        self,
+        container: str,
+        state_dir: str,
+    ) -> None:
+        if self.config.external_thinking == "off":
+            return
+        entry_path = EXTERNAL_THINKING_PLUGIN_HOST_PATH / "index.cjs"
+        manifest_path = EXTERNAL_THINKING_PLUGIN_HOST_PATH / "openclaw.plugin.json"
+        if not entry_path.is_file() or not manifest_path.is_file():
+            raise RuntimeError(
+                "Roller external thinking plugin assets are missing from the installation"
+            )
+        self._checked(
+            [
+                "cp",
+                f"{EXTERNAL_THINKING_PLUGIN_HOST_PATH}/.",
+                f"{container}:{EXTERNAL_THINKING_PLUGIN_CONTAINER_PATH}",
+            ],
+            "external thinking plugin copy",
+        )
+        self._checked(
+            [
+                "exec",
+                "--user",
+                "0",
+                container,
+                "/bin/sh",
+                "-c",
+                "owner=$(stat -c %u:%g /proc/1) && "
+                f"chown -R \"$owner\" {EXTERNAL_THINKING_PLUGIN_CONTAINER_PATH}",
+            ],
+            "external thinking plugin ownership",
+        )
+        self._checked(
+            [
+                "exec",
+                "-e",
+                f"ROLLER_OPENCLAW_CONFIG_PATH={state_dir}/openclaw.json",
+                "-e",
+                "ROLLER_EXTERNAL_THINKING_PLUGIN_PATH="
+                f"{EXTERNAL_THINKING_PLUGIN_CONTAINER_PATH}/index.cjs",
+                container,
+                "python3",
+                "-c",
+                self._EXTERNAL_THINKING_PLUGIN_INJECT_SCRIPT,
+            ],
+            "external thinking plugin config injection",
+        )
+
     def _inject_models(
         self,
         container: str,
@@ -629,12 +738,13 @@ exec node --input-type=module -e "$1"
     ) -> None:
         if self.config.model_config is None:
             return
-        thinking = resolve_thinking(request.task.thinking, self.config.thinking)
+        thinking = self._effective_thinking(request)
         config_to_write = prepare_model_config(
             self.config.model_config,
             request.model,
             proxy=self._wire_proxy,
             enable_reasoning=thinking not in (None, "off"),
+            disable_reasoning=self.config.external_thinking != "off",
         )
         temporary_path: Path | None = None
         try:
@@ -666,9 +776,17 @@ exec node --input-type=module -e "$1"
     def _configure(self, container: str, request: RunRequest, environment: Mapping[str, str]) -> str:
         version = self._checked(["exec", container, "openclaw", "--version"], "OpenClaw version").stdout.strip()
         state_dir = self._state_dir_for_version(version)
-        thinking = resolve_thinking(request.task.thinking, self.config.thinking)
+        thinking = self._effective_thinking(request)
         validate_openclaw_thinking(version, thinking)
+        if self.config.external_thinking != "off" and re.search(
+            r"(?:^|\s)2026\.3\.11(?:\s|$)", version
+        ):
+            raise RuntimeError(
+                "external thinking requires OpenClaw 2026.7.1 or newer because "
+                "the legacy 2026.3.11 image lacks the required plugin contract"
+            )
         self._inject_models(container, request, state_dir)
+        self._inject_external_thinking_plugin(container, state_dir)
         self._checked(
             ["exec", container, "openclaw", "models", "set", request.model],
             "model setup",
@@ -1168,9 +1286,7 @@ class OpenClawSession(InteractiveSession):
             "--timeout",
             str(max(1, int(timeout_seconds))),
         ]
-        thinking = resolve_thinking(
-            self.request.task.thinking, self.harness.config.thinking
-        )
+        thinking = self.harness._effective_thinking(self.request)
         if thinking:
             # The CLI flag reaches this live session; changing the default after
             # gateway startup does not reliably affect an existing agent turn.
@@ -1222,6 +1338,16 @@ class OpenClawSession(InteractiveSession):
         legacy_records: list[dict[str, Any]] = []
         artifact_result: ArtifactCollectionResult | None = None
         output_copy_error: str | None = None
+        external_thinking_metadata: dict[str, Any] = {
+            "mode": self.harness.config.external_thinking,
+            "native_reasoning": (
+                "off" if self.harness.config.external_thinking != "off" else None
+            ),
+            "validated": self.harness.config.external_thinking == "off",
+            "deep_think_calls": 0,
+            "thought_action_pairs": 0,
+            "validation_error": None,
+        }
         if self.container_started:
             try:
                 trace_path = self.harness._collect_trace(
@@ -1257,6 +1383,27 @@ class OpenClawSession(InteractiveSession):
                         self.request.task.id,
                         exc,
                     )
+        if (
+            trace_path is not None
+            and self.harness.config.external_thinking != "off"
+        ):
+            try:
+                external_stats = validate_external_thinking_trace(
+                    trace_path,
+                    self.harness.config.external_thinking,
+                )
+                external_thinking_metadata.update(
+                    {
+                        "validated": True,
+                        "deep_think_calls": external_stats.deep_think_calls,
+                        "thought_action_pairs": external_stats.thought_action_pairs,
+                    }
+                )
+            except ValueError as exc:
+                external_thinking_metadata["validation_error"] = str(exc)
+                if status == "ok":
+                    status = "error"
+                    error = f"external thinking protocol validation failed: {exc}"
         try:
             try:
                 self.harness._stop_process(self.gateway_process)
@@ -1327,6 +1474,7 @@ class OpenClawSession(InteractiveSession):
             "docker_image": self.harness.config.docker_image,
             "docker_image_digest": self.image_digest,
             "model": self.request.model,
+            "external_thinking": self.harness.config.external_thinking,
             "api_base_urls": list(dict.fromkeys(api_base_urls)),
             "environment_names": sorted(self.environment),
             "attempt": self.attempt,
@@ -1371,6 +1519,7 @@ class OpenClawSession(InteractiveSession):
                 ),
                 "agent_return_codes": self.return_codes,
                 "turns": len(self.messages),
+                "external_thinking": external_thinking_metadata,
                 "output_collection": output_metadata,
                 "output_copy_error": output_copy_error,
                 "legacy_artifacts": legacy_records,

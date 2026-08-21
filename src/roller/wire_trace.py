@@ -21,6 +21,11 @@ from typing import Any, Mapping
 from urllib import request as urllib_request
 from urllib.parse import urlsplit
 
+from roller.external_thinking import (
+    ExternalThinkingController,
+    normalize_external_thinking_mode,
+)
+
 HOP_BY_HOP_HEADERS = {
     "connection",
     "keep-alive",
@@ -192,7 +197,12 @@ class _ProxyHandler(BaseHTTPRequestHandler):
     def log_message(self, format: str, *args: Any) -> None:  # noqa: A002 - stdlib signature
         return
 
-    def _record(self, body: bytes | None) -> None:
+    def _record(
+        self,
+        body: bytes | None,
+        *,
+        external_thinking_phase: str | None = None,
+    ) -> None:
         proxy: WireTraceProxy = self.server.proxy  # type: ignore[attr-defined]
         entry: dict[str, Any] = {
             "seq": proxy.next_seq(),
@@ -210,6 +220,8 @@ class _ProxyHandler(BaseHTTPRequestHandler):
                 parsed = None
         if parsed is not None:
             entry["model"] = parsed.get("model")
+            if external_thinking_phase is not None:
+                entry["external_thinking_phase"] = external_thinking_phase
             if proxy.mode == "full":
                 entry["body"] = parsed
             else:
@@ -230,15 +242,40 @@ class _ProxyHandler(BaseHTTPRequestHandler):
         proxy: WireTraceProxy = self.server.proxy  # type: ignore[attr-defined]
         length = self.headers.get("Content-Length")
         body = self.rfile.read(int(length)) if length and length.isdigit() else None
-        if body and proxy.strip_thinking:
+        external_thinking_phase = None
+        responses_request = self.path.split("?", 1)[0].rstrip("/").endswith(
+            "/responses"
+        )
+        if body and (
+            proxy.strip_thinking
+            or (proxy.external_thinking_controller is not None and responses_request)
+        ):
             try:
                 parsed = json.loads(body)
-                parsed = strip_thinking_from_body(parsed)
+                if proxy.strip_thinking:
+                    parsed = strip_thinking_from_body(parsed)
+                if proxy.external_thinking_controller is not None and responses_request:
+                    parsed, external_thinking_phase = (
+                        proxy.external_thinking_controller.rewrite_request(parsed)
+                    )
                 body = json.dumps(parsed, ensure_ascii=False).encode("utf-8")
             except (json.JSONDecodeError, UnicodeDecodeError):
                 pass
+            except ValueError as exc:
+                payload = json.dumps(
+                    {"error": {"type": "roller_external_thinking", "message": str(exc)}}
+                ).encode("utf-8")
+                self.send_response(502)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+                return
         try:
-            self._record(body)
+            self._record(
+                body,
+                external_thinking_phase=external_thinking_phase,
+            )
         except Exception:
             pass
         self.close_connection = True
@@ -335,6 +372,7 @@ class WireTraceProxy:
         timeout_seconds: int = 600,
         strip_thinking: bool = False,
         normalize_reasoning_replay: bool = False,
+        external_thinking_mode: str = "off",
     ) -> None:
         if mode not in ("tools", "full"):
             raise ValueError(f"unknown wire trace mode: {mode}")
@@ -347,6 +385,14 @@ class WireTraceProxy:
         self.mode = mode
         self.strip_thinking = strip_thinking
         self.normalize_reasoning_replay = normalize_reasoning_replay
+        normalized_external_mode = normalize_external_thinking_mode(
+            external_thinking_mode
+        )
+        self.external_thinking_controller = (
+            ExternalThinkingController(normalized_external_mode)
+            if normalized_external_mode != "off"
+            else None
+        )
         self.timeout_seconds = timeout_seconds
         self._lock = threading.Lock()
         self._seq = 0

@@ -75,6 +75,79 @@ def _trajectory() -> dict:
     }
 
 
+def _external_trajectory() -> dict:
+    deep_tool = {
+        "type": "function",
+        "function": {
+            "name": "deep_think",
+            "description": "scratchpad",
+            "parameters": {
+                "type": "object",
+                "properties": {"thoughts": {"type": "string"}},
+                "required": ["thoughts"],
+            },
+        },
+    }
+    read_tool = _trajectory()["tools"][0]
+
+    def assistant(calls, *, content="", reasoning=""):
+        return {
+            "reasoning_content": reasoning,
+            "content": content,
+            "tool_calls": calls,
+        }
+
+    def call(call_id, name, arguments):
+        return {
+            "type": "toolCall",
+            "id": call_id,
+            "name": name,
+            "arguments": arguments,
+        }
+
+    def result(call_id, name, content):
+        return {
+            "role": "toolResult",
+            "toolCallId": call_id,
+            "toolName": name,
+            "content": [{"type": "text", "text": content}],
+        }
+
+    return {
+        "schema_version": "ACTF_v1.0",
+        "system_prompt": "Use tools carefully.\n- deep_think\n- read\n",
+        "tools": [deep_tool, read_tool],
+        "steps": [
+            {
+                "user_content": "Read input.txt",
+                "assistant_content": assistant(
+                    [call("think-1", "deep_think", {"thoughts": "First inspect."})]
+                ),
+                "observation": [result("think-1", "deep_think", "------")],
+            },
+            {
+                "user_content": "",
+                "assistant_content": assistant(
+                    [call("read-1", "read", {"path": "input.txt"})]
+                ),
+                "observation": [result("read-1", "read", "file contents")],
+            },
+            {
+                "user_content": "",
+                "assistant_content": assistant(
+                    [call("think-2", "deep_think", {"thoughts": "Now answer."})]
+                ),
+                "observation": [result("think-2", "deep_think", "------")],
+            },
+            {
+                "user_content": "",
+                "assistant_content": assistant([], content="Done"),
+                "observation": [],
+            },
+        ],
+    }
+
+
 class SFTConversionTests(unittest.TestCase):
     def test_projects_minimal_messages_and_tools(self) -> None:
         record = actf_to_sft(_trajectory())
@@ -114,6 +187,71 @@ class SFTConversionTests(unittest.TestCase):
             path = Path(temporary) / "trace_SFT.json"
             expected = write_sft(path, _trajectory())
             self.assertEqual(json.loads(path.read_text()), expected)
+
+    def test_folds_external_thinking_into_following_assistant_reasoning(self) -> None:
+        record = actf_to_sft(
+            _external_trajectory(), external_thinking="external_always"
+        )
+
+        self.assertEqual(
+            [message["role"] for message in record["messages"]],
+            ["system", "user", "assistant", "tool", "assistant"],
+        )
+        first_assistant = record["messages"][2]
+        self.assertEqual(first_assistant["reasoning_content"], "First inspect.")
+        self.assertEqual(
+            [call["function"]["name"] for call in first_assistant["tool_calls"]],
+            ["read"],
+        )
+        self.assertEqual(record["messages"][4]["reasoning_content"], "Now answer.")
+        self.assertEqual(record["messages"][4]["content"], "Done")
+        self.assertEqual(
+            [tool["function"]["name"] for tool in record["tools"]], ["read"]
+        )
+        self.assertNotIn("deep_think", json.dumps(record))
+        self.assertNotIn("------", json.dumps(record))
+
+    def test_keeps_deep_think_as_a_tool_when_external_mode_is_off(self) -> None:
+        record = actf_to_sft(_external_trajectory())
+
+        self.assertIn(
+            "deep_think", [tool["function"]["name"] for tool in record["tools"]]
+        )
+        self.assertIn("- deep_think", record["messages"][0]["content"])
+        self.assertEqual(
+            record["messages"][2]["tool_calls"][0]["function"]["name"],
+            "deep_think",
+        )
+
+    def test_folds_external_think_batched_with_a_business_tool(self) -> None:
+        trajectory = _external_trajectory()
+        think_step = trajectory["steps"][0]
+        business_step = trajectory["steps"][1]
+        think_step["assistant_content"]["tool_calls"].extend(
+            business_step["assistant_content"]["tool_calls"]
+        )
+        think_step["observation"].extend(business_step["observation"])
+        trajectory["steps"] = [think_step]
+
+        record = actf_to_sft(trajectory, external_thinking="external")
+
+        assistant = record["messages"][2]
+        self.assertEqual(assistant["reasoning_content"], "First inspect.")
+        self.assertEqual(
+            [call["function"]["name"] for call in assistant["tool_calls"]],
+            ["read"],
+        )
+        self.assertEqual(
+            record["messages"][3],
+            {"role": "tool", "tool_call_id": "read-1", "content": "file contents"},
+        )
+
+    def test_rejects_external_thought_without_following_action(self) -> None:
+        trajectory = _external_trajectory()
+        trajectory["steps"] = trajectory["steps"][:1]
+
+        with self.assertRaisesRegex(SFTConversionError, "following assistant action"):
+            actf_to_sft(trajectory, external_thinking="external")
 
     def test_allows_empty_tools_only_without_calls(self) -> None:
         trajectory = _trajectory()

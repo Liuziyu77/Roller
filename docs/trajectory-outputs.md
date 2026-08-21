@@ -164,6 +164,10 @@ engine；Roller 不从 session 文件猜测这些变换，而是在最终 API �
   响应不再是逐字对应关系；
 - `--no-keep-thinking` 不修改 raw，因此 raw 仍可包含当前轮产生的 thinking；该参数影响
   ACTF/SFT 和后续请求历史，不是 raw 脱敏开关。
+- external thinking 的完整 thoughts 位于 `deep_think` tool call arguments；这是显式模型
+  输出，不受 `--no-keep-thinking` 剥离。`info.json.runtime.external_thinking` 保存模式、协议
+  校验状态、think 次数与 THINK/ACT 配对数。该描述适用于 raw；ACTF 同样保留真实工具
+  结构，SFT 则将 thoughts 折叠进随后 action assistant 的 `reasoning_content`。
 
 ### 4.2 `trace_ACTF.json`：统一分析轨迹
 
@@ -206,6 +210,11 @@ SFT 从 ACTF 生成，顶层严格只有：
 
 SFT 表达的是从 session 事件重建的逻辑对话，不是每次 provider 请求的快照。它适合
 训练，但不能用于逐请求重放或证明某个较早 tool result 在后续模型调用中仍然可见。
+
+external thinking 还有一层训练专用投影：`deep_think` call、固定 placeholder result、
+工具 schema 和 system prompt 工具清单项会被删除，thoughts 合并到同一逻辑动作的 assistant
+`reasoning_content`，业务工具调用与结果保持不变。raw/ACTF 仍保留实际执行结构，因此
+审计协议时不要用 SFT 代替它们。
 
 生成条件：
 
