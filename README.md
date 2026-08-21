@@ -88,6 +88,19 @@ set +a
 `reasoning`/`reasoning_text` 会规范化为 `reasoning_content`，使其真实进入后续请求历史；
 通过 Responses API 返回压缩 reasoning summary 的 GPT 模型应使用 `openai-responses`。
 
+如果希望关闭 GPT 的原生 reasoning，改用完整可见、可训练的工具参数作为显式 CoT，可以
+启用 `deep_think` 协议：
+
+```bash
+roller collect ... --external-thinking external_always
+```
+
+`external` 只强制第一次 `deep_think`，之后允许模型按需调用；`external_always` 在每个
+业务动作或最终回复前强制一个独立 THINK。两者只支持 `openai-responses` provider，并会把
+原生 thinking 强制设为 `off`。raw/ACTF 保留真实工具协议，SFT 会把 thoughts 标准化进
+随后 assistant 的 `reasoning_content`。详见
+[External Thinking 指南](docs/external-thinking.md)。
+
 完整配置说明见 [OpenClaw、模型与 API](docs/openclaw-configuration.md)。
 
 ### 3. 检查 task
@@ -277,6 +290,7 @@ User Simulator rollout 还会增加 `conversation.json` 和 `user_simulator/`，
 | `--docker-image IMAGE` | OpenClaw 镜像；默认固定为 `2026.7.1-2` 官方镜像 |
 | `--container-user USER` | 一次性 task 容器用户；默认 `0`，`image` 表示沿用镜像默认用户 |
 | `--thinking LEVEL` | OpenClaw 逻辑档位：`off/minimal/low/medium/high/xhigh/adaptive/max/ultra`；`none` 是 `off` 的别名 |
+| `--external-thinking MODE` | `off`（默认）、`external` 或 `external_always`；使用 `deep_think` 工具构造显式 CoT |
 | `--keep-thinking` / `--no-keep-thinking` | 保留或双向剥离轨迹与请求历史中的 thinking |
 | `--cache-trace` / `--no-cache-trace` | 是否记录每次组装的 system prompt；ACTF 固化首个有效值 |
 | `--wire-trace MODE` | `actf`（默认）、`full` 或 `off`；控制 tools schema 与请求体记录 |

@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from roller.actf import convert_openclaw_trace
+from roller.external_thinking import external_thinking_mode_from_metadata
 from roller.harnesses.base import Harness, InteractiveHarness
 from roller.models import HarnessResult, RunRequest, Task, UserSimulatorSpec
 from roller.sft import write_sft
@@ -174,7 +175,13 @@ class ConversationManager(Harness):
                 ),
                 keep_thinking=keep_thinking,
             )
-            write_sft(sft_path, trajectory)
+            write_sft(
+                sft_path,
+                trajectory,
+                external_thinking=external_thinking_mode_from_metadata(
+                    result.metadata
+                ),
+            )
         rollout_dir = simulator_dir / "rollout"
         if rollout_dir.exists():
             shutil.rmtree(rollout_dir)

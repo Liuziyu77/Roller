@@ -14,6 +14,7 @@ from typing import Sequence
 from roller.collector import CollectionConfig, Collector
 from roller.bundles import BundlePolicy, TaskBundleStore
 from roller.conversation import ConversationManager
+from roller.external_thinking import validate_external_thinking_provider
 from roller.harnesses.openclaw import (
     COMMON_ENV_NAMES,
     DEFAULT_OPENCLAW_IMAGE,
@@ -108,6 +109,15 @@ def _build_parser() -> argparse.ArgumentParser:
         help=(
             "OpenClaw logical thinking level; 'none' is accepted as an alias for 'off', "
             "and model/provider support is validated by OpenClaw"
+        ),
+    )
+    openclaw.add_argument(
+        "--external-thinking",
+        choices=("off", "external", "external_always"),
+        default="off",
+        help=(
+            "tool-based CoT for OpenAI Responses: external forces the first "
+            "deep_think call; external_always pairs every action with deep_think"
         ),
     )
     openclaw.add_argument(
@@ -274,6 +284,13 @@ def _collect(args: argparse.Namespace) -> int:
             raise FileNotFoundError(f"model config not found: {model_config_path}")
         model_config = load_model_config(model_config_path)
 
+    for request in requests:
+        validate_external_thinking_provider(
+            model_config,
+            request.model,
+            args.external_thinking,
+        )
+
     openclaw_config = OpenClawConfig(
         docker_image=args.docker_image,
         container_user=None if args.container_user == "image" else args.container_user,
@@ -286,6 +303,7 @@ def _collect(args: argparse.Namespace) -> int:
         pass_env=_deduplicate((*COMMON_ENV_NAMES, *args.pass_env)),
         search_provider=args.search_provider,
         thinking=args.thinking,
+        external_thinking=args.external_thinking,
         capture_cache_trace=args.cache_trace,
         wire_trace_mode=args.wire_trace,
         keep_thinking=args.keep_thinking,
@@ -345,6 +363,7 @@ def _collect(args: argparse.Namespace) -> int:
                 "session_id": args.session_id,
                 "search_provider": args.search_provider,
                 "thinking": args.thinking,
+                "external_thinking": args.external_thinking,
                 "keep_thinking": args.keep_thinking,
                 "cache_trace": args.cache_trace,
                 "wire_trace": args.wire_trace,

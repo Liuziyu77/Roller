@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 import json
+import re
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, Mapping
 
+from roller.external_thinking import (
+    DEEP_THINK_TOOL_NAME,
+    normalize_external_thinking_mode,
+)
 from roller.storage import atomic_write_json
 
 
@@ -114,12 +119,51 @@ def _tool_result_content(value: Any, field: str) -> str:
     return "\n".join(parts)
 
 
-def actf_to_sft(trajectory: Mapping[str, Any]) -> dict[str, Any]:
+def _deep_think_content(call: Mapping[str, Any], field: str) -> str:
+    function = call.get("function")
+    arguments = function.get("arguments") if isinstance(function, Mapping) else None
+    try:
+        parsed = json.loads(arguments) if isinstance(arguments, str) else arguments
+    except json.JSONDecodeError as exc:
+        raise SFTConversionError(f"{field}.arguments must contain valid JSON") from exc
+    thoughts = parsed.get("thoughts") if isinstance(parsed, Mapping) else None
+    if not isinstance(thoughts, str) or not thoughts.strip():
+        raise SFTConversionError(
+            f"{field}.arguments.thoughts must be a non-empty string"
+        )
+    return thoughts
+
+
+def _join_reasoning(parts: list[str]) -> str:
+    return "\n\n".join(part for part in parts if part)
+
+
+def _strip_deep_think_tool_listing(system_prompt: str) -> str:
+    listing = re.compile(
+        r"^[ \t]*[-*][ \t]+`?deep_think`?"
+        r"(?:[ \t]*:[^\r\n]*)?[ \t]*(?:\r?\n)?$"
+    )
+    return "".join(
+        line
+        for line in system_prompt.splitlines(keepends=True)
+        if listing.fullmatch(line) is None
+    )
+
+
+def actf_to_sft(
+    trajectory: Mapping[str, Any],
+    *,
+    external_thinking: str = "off",
+) -> dict[str, Any]:
     """Convert one ACTF trajectory to a minimal messages/tools SFT record."""
 
+    external_mode = normalize_external_thinking_mode(external_thinking)
+    fold_deep_think = external_mode != "off"
     system_prompt = trajectory.get("system_prompt", "")
     if not isinstance(system_prompt, str):
         raise SFTConversionError("system_prompt must be a string")
+    if fold_deep_think:
+        system_prompt = _strip_deep_think_tool_listing(system_prompt)
     tools = _normalize_tools(trajectory.get("tools"))
     tool_names = {tool["function"]["name"] for tool in tools}
 
@@ -131,6 +175,7 @@ def actf_to_sft(trajectory: Mapping[str, Any]) -> dict[str, Any]:
     seen_call_ids: set[str] = set()
     user_count = 0
     assistant_count = 0
+    pending_reasoning: list[str] = []
 
     for step_index, step in enumerate(steps):
         prefix = f"steps[{step_index}]"
@@ -177,20 +222,11 @@ def actf_to_sft(trajectory: Mapping[str, Any]) -> dict[str, Any]:
             expected_ids.add(call_id)
             call_names[call_id] = name
 
-        messages.append(
-            {
-                "role": "assistant",
-                "reasoning_content": reasoning,
-                "content": content,
-                "tool_calls": calls,
-            }
-        )
-        assistant_count += 1
-
         observations = step.get("observation", [])
         if not isinstance(observations, list):
             raise SFTConversionError(f"{prefix}.observation must be a list")
         observed_ids: set[str] = set()
+        tool_messages: list[dict[str, Any]] = []
         for observation_index, observation in enumerate(observations):
             field = f"{prefix}.observation[{observation_index}]"
             if not isinstance(observation, dict):
@@ -212,7 +248,7 @@ def actf_to_sft(trajectory: Mapping[str, Any]) -> dict[str, Any]:
                     f"tool result name {observed_name} does not match call {call_names[call_id]}"
                 )
             observed_ids.add(call_id)
-            messages.append(
+            tool_message = (
                 {
                     "role": "tool",
                     "tool_call_id": call_id,
@@ -221,18 +257,81 @@ def actf_to_sft(trajectory: Mapping[str, Any]) -> dict[str, Any]:
                     ),
                 }
             )
+            if not (
+                fold_deep_think
+                and call_names[call_id] == DEEP_THINK_TOOL_NAME
+            ):
+                tool_messages.append(tool_message)
         if observed_ids != expected_ids:
             missing = sorted(expected_ids - observed_ids)
             raise SFTConversionError(f"tool calls missing results: {', '.join(missing)}")
 
+        deep_calls = (
+            [
+                (index, call)
+                for index, call in enumerate(calls)
+                if call["function"]["name"] == DEEP_THINK_TOOL_NAME
+            ]
+            if fold_deep_think
+            else []
+        )
+        business_calls = (
+            [
+                call
+                for call in calls
+                if call["function"]["name"] != DEEP_THINK_TOOL_NAME
+            ]
+            if fold_deep_think
+            else calls
+        )
+        external_reasoning = [
+            _deep_think_content(
+                call,
+                f"{prefix}.assistant_content.tool_calls[{index}]",
+            )
+            for index, call in deep_calls
+        ]
+        merged_reasoning = [*pending_reasoning, reasoning, *external_reasoning]
+        pending_reasoning = []
+
+        if deep_calls and not business_calls and not content:
+            pending_reasoning = [part for part in merged_reasoning if part]
+            continue
+
+        messages.append(
+            {
+                "role": "assistant",
+                "reasoning_content": _join_reasoning(merged_reasoning),
+                "content": content,
+                "tool_calls": business_calls,
+            }
+        )
+        messages.extend(tool_messages)
+        assistant_count += 1
+
+    if pending_reasoning:
+        raise SFTConversionError(
+            "external thinking trajectory ends without a following assistant action"
+        )
     if user_count == 0:
         raise SFTConversionError("trajectory contains no user message")
     if assistant_count == 0:
         raise SFTConversionError("trajectory contains no assistant message")
+    if fold_deep_think:
+        tools = [
+            tool
+            for tool in tools
+            if tool["function"]["name"] != DEEP_THINK_TOOL_NAME
+        ]
     return {"messages": messages, "tools": tools}
 
 
-def write_sft(path: Path, trajectory: Mapping[str, Any]) -> dict[str, Any]:
-    record = actf_to_sft(trajectory)
+def write_sft(
+    path: Path,
+    trajectory: Mapping[str, Any],
+    *,
+    external_thinking: str = "off",
+) -> dict[str, Any]:
+    record = actf_to_sft(trajectory, external_thinking=external_thinking)
     atomic_write_json(path, record)
     return record

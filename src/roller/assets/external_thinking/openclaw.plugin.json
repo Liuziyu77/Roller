@@ -1,0 +1,13 @@
+{
+  "id": "roller-external-thinking",
+  "name": "Roller External Thinking",
+  "description": "Local scratchpad tool used by Roller's explicit reasoning protocol",
+  "configSchema": {
+    "type": "object",
+    "properties": {},
+    "additionalProperties": false
+  },
+  "contracts": {
+    "tools": ["deep_think"]
+  }
+}
