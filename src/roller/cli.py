@@ -16,6 +16,7 @@ from roller.bundles import BundlePolicy, TaskBundleStore
 from roller.conversation import ConversationManager
 from roller.harnesses.openclaw import (
     COMMON_ENV_NAMES,
+    DEFAULT_OPENCLAW_IMAGE,
     OpenClawConfig,
     OpenClawHarness,
     load_model_config,
@@ -84,7 +85,12 @@ def _build_parser() -> argparse.ArgumentParser:
     openclaw = collect.add_argument_group("OpenClaw")
     openclaw.add_argument(
         "--docker-image",
-        default=os.environ.get("ROLLER_OPENCLAW_IMAGE", "wildclawbench-ubuntu:v1.3"),
+        default=os.environ.get("ROLLER_OPENCLAW_IMAGE", DEFAULT_OPENCLAW_IMAGE),
+    )
+    openclaw.add_argument(
+        "--container-user",
+        default="0",
+        help="Docker user for the disposable task container (default: root); use 'image' for the image default",
     )
     openclaw.add_argument("--docker-binary", default="docker")
     openclaw.add_argument("--model-config", help="OpenClaw models JSON; supports ${ENV_NAME}")
@@ -270,6 +276,7 @@ def _collect(args: argparse.Namespace) -> int:
 
     openclaw_config = OpenClawConfig(
         docker_image=args.docker_image,
+        container_user=None if args.container_user == "image" else args.container_user,
         gateway_port_start=args.gateway_port,
         gateway_port_step=args.gateway_port_step,
         gateway_startup_timeout=args.gateway_startup_timeout,
@@ -330,6 +337,7 @@ def _collect(args: argparse.Namespace) -> int:
             },
             "openclaw": {
                 "docker_image": args.docker_image,
+                "container_user": args.container_user,
                 "model_config_path": str(model_config_path) if model_config_path else None,
                 "gateway_port_start": args.gateway_port,
                 "gateway_port_step": args.gateway_port_step,

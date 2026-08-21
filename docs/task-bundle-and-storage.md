@@ -188,10 +188,12 @@ User Simulator sample 会增加：
 
 ### `trace.jsonl`
 
-这是 OpenClaw session 事件的原始事实来源。Roller 不删除 tool call、不改写消息内容，也
-不把多个事件合并成自定义文本格式。但“session 中持久化”不等于“逐字进入每次模型
-请求”：OpenClaw 可以在调用前组装、压缩或裁剪 context。需要核对模型实际收到的
-messages/input 时使用 `--wire-trace full`；详见
+这是 OpenClaw transcript 语义事件的原始事实来源。默认镜像下，Roller 通过官方公开
+transcript SDK 按 session identity 导出，再逐事件序列化为 JSONL；legacy OpenClaw 才回退
+到直接复制 session JSONL。Roller 不为训练删除 tool call、不改写消息文本，也不把多个
+事件合并成自定义文本格式，但该文件不是底层存储的字节副本或上游 HTTP 响应副本。
+“session 中持久化”也不等于“逐字进入每次模型请求”：OpenClaw 可以在调用前组装、压缩
+或裁剪 context。需要核对模型实际收到的 messages/input 时使用 `--wire-trace full`；详见
 [轨迹产出文件指南](trajectory-outputs.md#32-session-历史不等于模型请求-context)。
 
 ### `trace_ACTF.json`

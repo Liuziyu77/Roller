@@ -7,9 +7,11 @@ from pathlib import Path
 
 from roller.wire_trace import (
     REDACTED_VALUE,
+    _ProxyHandler,
     extract_wire_tools,
     redact_jsonl_file,
     redact_sensitive_values,
+    normalize_chat_completion_reasoning_response,
     strip_thinking_from_body,
 )
 
@@ -82,6 +84,65 @@ class StripThinkingTests(unittest.TestCase):
         self.assertEqual(
             [item.get("type") for item in stripped["input"]],
             [None, None, "message"],
+        )
+
+
+class NormalizeReasoningReplayTests(unittest.TestCase):
+    def test_normalizes_stream_and_non_stream_reasoning_fields(self) -> None:
+        body = {
+            "choices": [
+                {"delta": {"reasoning": "stream chain", "content": None}},
+                {
+                    "message": {
+                        "reasoning_text": "final chain",
+                        "content": "answer",
+                    }
+                },
+            ]
+        }
+
+        normalized = normalize_chat_completion_reasoning_response(body)
+
+        self.assertEqual(
+            normalized["choices"][0]["delta"]["reasoning_content"],
+            "stream chain",
+        )
+        self.assertEqual(
+            normalized["choices"][1]["message"]["reasoning_content"],
+            "final chain",
+        )
+        self.assertNotIn("reasoning", normalized["choices"][0]["delta"])
+        self.assertNotIn("reasoning_text", normalized["choices"][1]["message"])
+
+    def test_preserves_existing_reasoning_content_and_unrelated_fields(self) -> None:
+        body = {
+            "id": "response",
+            "choices": [
+                {
+                    "delta": {
+                        "reasoning_content": "native",
+                        "reasoning": "fallback",
+                    }
+                }
+            ],
+        }
+
+        normalized = normalize_chat_completion_reasoning_response(body)
+
+        self.assertEqual(normalized["id"], "response")
+        self.assertEqual(
+            normalized["choices"][0]["delta"]["reasoning_content"], "native"
+        )
+        self.assertNotIn("reasoning", normalized["choices"][0]["delta"])
+
+    def test_normalizes_sse_data_line(self) -> None:
+        line = b'data: {"choices":[{"delta":{"reasoning":"chain"}}]}\n'
+
+        normalized = _ProxyHandler._normalize_sse_reasoning_line(line)
+
+        payload = json.loads(normalized.removeprefix(b"data: "))
+        self.assertEqual(
+            payload["choices"][0]["delta"]["reasoning_content"], "chain"
         )
 
 

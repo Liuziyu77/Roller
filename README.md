@@ -33,11 +33,17 @@ Roller 适合构建训练轨迹数据集、比较不同模型的 Agent 行为、
 
 ### 1. 安装
 
-运行环境需要 Python 3.10+、Docker，以及一个包含 `openclaw` 和 `python3` 的 Docker 镜像。
+运行环境需要 Python 3.10+ 和可用的 Docker daemon。默认镜像固定为
+`ghcr.io/openclaw/openclaw:2026.7.1-2`；它已经包含 OpenClaw、Node.js 和 Python 3，
+无需修改镜像内源码或另做兼容镜像。
 
 ```bash
 python3 -m pip install -e .
 roller --version
+
+# 二选一：在线拉取，或加载离线归档
+docker pull --platform linux/amd64 ghcr.io/openclaw/openclaw:2026.7.1-2
+docker load -i /path/to/openclaw-2026.7.1-2-linux-amd64.tar.gz
 ```
 
 也可以通过环境变量设置默认镜像：
@@ -75,7 +81,12 @@ set +a
 }
 ```
 
-采集 reasoning 模型时可增加 `--thinking high`。Roller 接受 OpenClaw 的完整逻辑档位 `off/minimal/low/medium/high/xhigh/adaptive/max/ultra`，也接受 GPT 风格的 `none` 并将它规范化为 `off`；实际可用档位由模型和镜像内的 OpenClaw 版本决定。`--keep-thinking` 默认开启，会同时保留 ACTF 中的压缩 thinking 和后续轮次请求上文；通过 Responses API 返回 reasoning summary 的 GPT 模型应使用 `openai-responses`。
+采集 reasoning 模型时可增加 `--thinking high`。Roller 接受逻辑档位
+`off/minimal/low/medium/high/xhigh/adaptive/max/ultra`，也接受 GPT 风格的 `none` 并将它
+规范化为 `off`；默认 OpenClaw `2026.7.1` 实际支持到 `max`，不接受 `ultra`。
+`--keep-thinking` 默认开启：除写入 ACTF/SFT 外，Chat Completions 返回的
+`reasoning`/`reasoning_text` 会规范化为 `reasoning_content`，使其真实进入后续请求历史；
+通过 Responses API 返回压缩 reasoning summary 的 GPT 模型应使用 `openai-responses`。
 
 完整配置说明见 [OpenClaw、模型与 API](docs/openclaw-configuration.md)。
 
@@ -228,7 +239,9 @@ files/product_summary/
     └── results/                 # 可选
 ```
 
-- `trace.jsonl`：OpenClaw session 原始事件；Roller 不清洗、不改写，但它不是模型请求体的逐字副本。
+- `trace.jsonl`：通过 OpenClaw 官方 transcript SDK 按 session identity 导出的原始事件；
+  legacy 镜像回退到 session JSONL。Roller 不做训练清洗，但它不是模型请求体或上游响应的
+  逐字副本。
 - `trace_ACTF.json`：转换后的 `ACTF_v1.0` 轨迹，顶层固化捕获到的首个组装后 system prompt 和 tools schema，并按 step 保存 reasoning。
 - `trace_SFT.json`：只包含 `messages` 和 `tools` 的标准化训练样本；assistant 固定包含 `reasoning_content`、`content` 和 `tool_calls`。
 - `sft.jsonl`：按 request 顺序汇总所有成功 task Agent 的 `trace_SFT.json`，每行一个样本。
@@ -261,6 +274,8 @@ User Simulator rollout 还会增加 `conversation.json` 和 `user_simulator/`，
 | `--run-name NAME` | 本次 run 的目录名 |
 | `--resume` | 跳过满足完整性与 digest 条件的成功 sample |
 | `--dry-run` | 只校验并打印计划 |
+| `--docker-image IMAGE` | OpenClaw 镜像；默认固定为 `2026.7.1-2` 官方镜像 |
+| `--container-user USER` | 一次性 task 容器用户；默认 `0`，`image` 表示沿用镜像默认用户 |
 | `--thinking LEVEL` | OpenClaw 逻辑档位：`off/minimal/low/medium/high/xhigh/adaptive/max/ultra`；`none` 是 `off` 的别名 |
 | `--keep-thinking` / `--no-keep-thinking` | 保留或双向剥离轨迹与请求历史中的 thinking |
 | `--cache-trace` / `--no-cache-trace` | 是否记录每次组装的 system prompt；ACTF 固化首个有效值 |

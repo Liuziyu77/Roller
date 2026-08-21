@@ -1,0 +1,48 @@
+{
+  "mode": "merge",
+  "providers": {
+    "my-gpt-proxy": {
+      "baseUrl": "${MY_PROXY_BASE_URL}",
+      "apiKey": "${MY_PROXY_API_KEY}",
+      "api": "openai-responses",
+      "models": [
+        {
+          "id": "gpt-5.6-sol",
+          "name": "GPT-5.6 Sol",
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": "none",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "xhigh",
+            "max": "max"
+          }
+        }
+      ]
+    },
+    "my-chat-proxy": {
+      "baseUrl": "${MY_CHAT_BASE_URL}",
+      "apiKey": "${MY_CHAT_API_KEY}",
+      "api": "openai-completions",
+      "models": [
+        {
+          "id": "my-reasoning-model",
+          "name": "My OpenAI-compatible reasoning model",
+          "reasoning": true,
+          "thinkingLevelMap": {
+            "off": "none",
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+            "xhigh": "xhigh",
+            "max": "max"
+          },
+          "compat": {
+            "supportsReasoningEffort": true
+          }
+        }
+      ]
+    }
+  }
+}

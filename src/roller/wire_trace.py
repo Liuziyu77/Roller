@@ -1,10 +1,13 @@
-"""Wire-level request recorder: a transparent reverse proxy in front of the model API.
+"""Wire-level request recorder and thinking-history compatibility proxy.
 
 Roller points the harness's model ``baseUrl`` at a local instance of this proxy.
 The proxy records what the real server would receive — full tools schema,
 sampling parameters and (optionally) complete message bodies — then forwards
-the request unchanged. Because the interception happens at the OpenAI-compatible
-HTTP layer, it works for any harness version that honours ``baseUrl``.
+the request. Depending on configuration, it can also strip historical thinking
+from requests or normalize equivalent Chat Completions reasoning response fields
+before OpenClaw receives them. Because interception happens at the
+OpenAI-compatible HTTP layer, it works for harness versions that honour
+``baseUrl``.
 """
 
 from __future__ import annotations
@@ -45,6 +48,38 @@ REDACTED_VALUE = "<redacted>"
 
 THINKING_MESSAGE_KEYS = ("reasoning_content", "reasoning", "reasoning_text")
 THINKING_BLOCK_TYPES = ("thinking", "reasoning")
+
+
+def normalize_chat_completion_reasoning_response(body: Any) -> Any:
+    """Normalize visible Chat Completions reasoning to ``reasoning_content``.
+
+    OpenClaw 2026.7.1 records ``reasoning``/``reasoning_text`` response deltas as
+    thinking blocks but only replays ``reasoning_content`` for a generic custom
+    provider. Normalizing those equivalent response fields before OpenClaw sees
+    them preserves the text in later request history without inventing content.
+    """
+    if not isinstance(body, dict):
+        return body
+    choices = body.get("choices")
+    if not isinstance(choices, list):
+        return body
+    for choice in choices:
+        if not isinstance(choice, dict):
+            continue
+        for container_name in ("delta", "message"):
+            message = choice.get(container_name)
+            if not isinstance(message, dict):
+                continue
+            current = message.get("reasoning_content")
+            if not isinstance(current, str) or not current:
+                for source_name in ("reasoning", "reasoning_text"):
+                    source = message.get(source_name)
+                    if isinstance(source, str) and source:
+                        message["reasoning_content"] = source
+                        break
+            message.pop("reasoning", None)
+            message.pop("reasoning_text", None)
+    return body
 
 
 def strip_thinking_from_body(body: Any) -> Any:
@@ -230,12 +265,60 @@ class _ProxyHandler(BaseHTTPRequestHandler):
                 self.send_header(key, value)
         self.send_header("Connection", "close")
         self.end_headers()
+        content_type = response.headers.get("Content-Type", "").lower()
+        content_encoding = response.headers.get("Content-Encoding", "").lower()
+        normalize_reasoning = (
+            proxy.normalize_reasoning_replay
+            and self.path.split("?", 1)[0].rstrip("/").endswith("/chat/completions")
+            and content_encoding in ("", "identity")
+        )
+        if normalize_reasoning and "text/event-stream" in content_type:
+            while True:
+                line = response.readline()
+                if not line:
+                    break
+                self.wfile.write(self._normalize_sse_reasoning_line(line))
+                self.wfile.flush()
+            return
+        if normalize_reasoning and "json" in content_type:
+            payload = response.read()
+            try:
+                parsed = json.loads(payload)
+                payload = json.dumps(
+                    normalize_chat_completion_reasoning_response(parsed),
+                    ensure_ascii=False,
+                ).encode("utf-8")
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                pass
+            self.wfile.write(payload)
+            self.wfile.flush()
+            return
         while True:
             chunk = response.read(65536)
             if not chunk:
                 break
             self.wfile.write(chunk)
             self.wfile.flush()
+
+    @staticmethod
+    def _normalize_sse_reasoning_line(line: bytes) -> bytes:
+        newline = b"\r\n" if line.endswith(b"\r\n") else b"\n" if line.endswith(b"\n") else b""
+        content = line[: -len(newline)] if newline else line
+        if not content.startswith(b"data:"):
+            return line
+        data = content[5:].lstrip()
+        if not data or data == b"[DONE]":
+            return line
+        try:
+            parsed = json.loads(data)
+            normalized = json.dumps(
+                normalize_chat_completion_reasoning_response(parsed),
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return line
+        return b"data: " + normalized + newline
 
     do_GET = do_POST = do_PUT = do_DELETE = do_PATCH = _handle
 
@@ -251,6 +334,7 @@ class WireTraceProxy:
         host: str = "127.0.0.1",
         timeout_seconds: int = 600,
         strip_thinking: bool = False,
+        normalize_reasoning_replay: bool = False,
     ) -> None:
         if mode not in ("tools", "full"):
             raise ValueError(f"unknown wire trace mode: {mode}")
@@ -262,6 +346,7 @@ class WireTraceProxy:
         self.log_path = log_path
         self.mode = mode
         self.strip_thinking = strip_thinking
+        self.normalize_reasoning_replay = normalize_reasoning_replay
         self.timeout_seconds = timeout_seconds
         self._lock = threading.Lock()
         self._seq = 0

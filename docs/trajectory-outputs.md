@@ -10,7 +10,7 @@
 | 直接训练 Task Agent | Run 级 `sft.jsonl` | 每行一个最小 SFT record，可直接流式读取 |
 | 查看单条训练样本 | Sample 级 `trace_SFT.json` | 与 `sft.jsonl` 中对应 record 完全相同 |
 | 轨迹分析、打分、统计 token | `trace_ACTF.json` | 有 step、reasoning、observation、metric 和时间信息 |
-| 追查 Harness session 原始事件 | `trace.jsonl` | OpenClaw 持久化的 session 事件，Roller 改写最少 |
+| 追查 Harness session 原始事件 | `trace.jsonl` | OpenClaw transcript 的语义事件，Roller 不做训练清洗 |
 | 核对首个捕获到的组装后 system prompt | `trace_ACTF.json` 顶层 | 默认从 cache trace 提取并固化一次 |
 | 核对每次 system prompt 是否变化 | `--wire-trace full` 的 `cache_trace.jsonl` | 保留 OpenClaw 每次 LLM call 的诊断记录 |
 | 核对模型实际收到的请求历史和 tools | `--wire-trace full` 的 `wire_trace.jsonl` | 保存代理实际转发的每次 JSON 请求体 |
@@ -86,8 +86,8 @@ Run 级 `sft.jsonl` 只汇总根目录的 Task Agent，不混入 User Simulator 
 一条轨迹按以下顺序生成：
 
 ```text
-OpenClaw session JSONL ─────────────────────────> trace.jsonl
-          │
+OpenClaw session store ─> 官方 transcript SDK 导出 ─> trace.jsonl
+          │                    （legacy 回退 JSONL）
           └─ context 组装 / 压缩 / 裁剪 / provider 序列化
                               │
                               ├─ diagnostics.cacheTrace ─> cache_trace.jsonl ─┐
@@ -98,14 +98,14 @@ trace_ACTF.json ─────────────────────�
 全部成功/Resume sample 的 trace_SFT.json ───────> run/sft.jsonl
 ```
 
-`trace.jsonl` 是 session 事件的事实来源。ACTF 是该 session 的分析投影，SFT 是进一步
-删除训练无关字段后的训练投影。SFT 不反向参与 ACTF 或 raw 的生成。
+`trace.jsonl` 是 session transcript 语义事件的事实来源。ACTF 是该 transcript 的分析
+投影，SFT 是进一步删除训练无关字段后的训练投影。SFT 不反向参与 ACTF 或 raw 的生成。
 
 ### 3.1 三种文件回答的是三个不同问题
 
 | 文件 | 捕获位置 | 能回答 | 不能据此断言 |
 | --- | --- | --- | --- |
-| `trace.jsonl` | OpenClaw session 持久化层 | Agent 记录了哪些 user/assistant/tool 事件、顺序与 usage | 某次请求完整携带了哪些历史消息 |
+| `trace.jsonl` | OpenClaw transcript 导出层 | Agent 记录了哪些 user/assistant/tool 事件、顺序与 usage | 某次请求完整携带了哪些历史消息；底层文件的逐字内容 |
 | `cache_trace.jsonl` | OpenClaw context 组装诊断点 | 每次 LLM call 组装出的 system prompt 及相关诊断阶段 | 完整 messages/input 和最终 provider 请求参数 |
 | `wire_trace.jsonl`（full） | OpenClaw provider adapter 之后、真实模型 API 之前 | Roller 代理实际转发的 JSON body，包括 messages/input、tools 和采样参数 | 模型服务收到请求后内部如何 tokenize、截断或路由 |
 
@@ -138,17 +138,20 @@ engine；Roller 不从 session 文件猜测这些变换，而是在最终 API �
 
 ### 4.1 `trace.jsonl`：Harness 原始轨迹
 
-内容包括 OpenClaw session 中的 user、assistant、thinking、tool call、tool result、usage
-等原始 message event。Roller 不为了训练而删除或重排这些事件。这里的“原始”是相对
-Roller 的 ACTF/SFT 转换而言，不表示网络层原始请求，也不表示 session 文件中的全部
-事件都逐字进入了每次模型调用。
+内容包括 OpenClaw transcript 中的 user、assistant、thinking、tool call、tool result、usage
+等原始 message event。默认镜像中，Roller 通过公开的
+`openclaw/plugin-sdk/session-transcript-runtime` 按精确 session identity 读取事件，再逐条
+序列化为 JSONL；它不为了训练而删除、合并或重排合法事件。这里的“原始”是相对 Roller
+的 ACTF/SFT 转换而言，不是底层 SQLite/JSONL 文件的字节副本，也不是网络层原始请求或
+响应。SDK 只返回 OpenClaw 认可的 transcript 事件，因此底层存储中的损坏行或非事件记录
+不会出现在导出文件中。legacy OpenClaw 不提供该 SDK 时，Roller 才直接复制 session JSONL。
 
 生成条件：
 
-- OpenClaw 容器已经启动，并且结束阶段成功复制指定 session 文件或最新 session
-  fallback；
-- Harness 成功返回但找不到 raw trace 时，sample 会改为 `error`；
-- Harness 本身为 `error` 或 `timeout` 时，只要能复制到 session，raw 仍会保留。
+- OpenClaw 容器已经启动，结束阶段能通过 SDK 导出非空 transcript；legacy 路径则要求
+  找到指定 session JSONL 或最新 session fallback；
+- Harness 成功返回但不能取得非空 raw trace 时，sample 会改为 `error`；
+- Harness 本身为 `error` 或 `timeout` 时，只要仍能导出 transcript，raw 就会保留。
 
 用途与边界：
 
@@ -156,6 +159,9 @@ Roller 的 ACTF/SFT 转换而言，不表示网络层原始请求，也不表示
 - 结构属于 Harness，不作为稳定训练 schema；
 - 不能单独用于验证 context compaction、tool-result pruning 或 provider 适配后的真实
   请求；这类问题需要 `--wire-trace full`；
+- Chat Completions 返回的 `reasoning`/`reasoning_text` 在进入 OpenClaw 前可能被等价规范化
+  为 `reasoning_content`，以保证后续轮次重放；thinking 文本不变，但字段签名和上游 HTTP
+  响应不再是逐字对应关系；
 - `--no-keep-thinking` 不修改 raw，因此 raw 仍可包含当前轮产生的 thinking；该参数影响
   ACTF/SFT 和后续请求历史，不是 raw 脱敏开关。
 

@@ -8,10 +8,21 @@
 
 - Python 3.10+；
 - 可用的 Docker daemon；
-- 一个同时包含 `openclaw` 和 `python3` 的 Docker 镜像；
+- OpenClaw Docker 镜像；
 - 模型服务所需的 API 地址与凭证。
 
-镜像可以通过参数或环境变量指定：
+Roller 默认固定使用官方稳定镜像 `ghcr.io/openclaw/openclaw:2026.7.1-2`。该镜像已包含
+OpenClaw、Node.js 与 Python 3；Roller 直接运行它，不修改镜像内 OpenClaw 源码，也不要求
+派生镜像。在线与离线准备方式二选一：
+
+```bash
+docker pull --platform linux/amd64 ghcr.io/openclaw/openclaw:2026.7.1-2
+
+# docker load 可以直接读取 gzip 压缩的 docker save 归档
+docker load -i /path/to/openclaw-2026.7.1-2-linux-amd64.tar.gz
+```
+
+其他镜像仍可通过参数或环境变量指定：
 
 ```bash
 roller collect ... --docker-image your-openclaw-image:tag
@@ -27,9 +38,25 @@ docker version
 docker image inspect your-openclaw-image:tag
 ```
 
+官方镜像默认用户是 `node`，而 Roller task 需要创建 `/tmp_workspace` 并执行用户提供的 setup
+命令。为保持旧 benchmark 镜像的行为，Roller 默认用 `--container-user 0` 在**一次性 task
+容器内部**运行；这不会赋予宿主机 root 权限。自定义镜像已经为默认用户准备好可写工作区时，
+可以传 `--container-user image`。Roller 还会为每个 rollout 生成仅存在于容器进程环境中的
+临时 Gateway token，并固定 `gateway.mode=local`、`gateway.bind=loopback`；token 不写入 run、
+task、轨迹或模型配置。
+
+OpenClaw `2026.7.1` 的 session registry 位于
+`$OPENCLAW_STATE_DIR/state/openclaw.sqlite`。Roller 不直接查询数据库，而是通过官方公开的
+`openclaw/plugin-sdk/session-transcript-runtime` 按 `{agentId, sessionKey, sessionId}` 导出
+事件。legacy `2026.3.11` 不识别 `OPENCLAW_STATE_DIR`，Roller 会自动回退到
+`/root/.openclaw` 和 session JSONL。
+
 ## 2. 模型配置文件
 
-`--model-config` 接受一份 OpenClaw models JSON。仓库中的文本模型模板是 [`examples/json/openclaw-models.json`](../examples/json/openclaw-models.json)：
+`--model-config` 接受一份 OpenClaw models JSON。基础文本模板是
+[`examples/json/openclaw-models.json`](../examples/json/openclaw-models.json)，GPT 与
+Chat Completions reasoning 模板是
+[`examples/json/openclaw-models-reasoning.json`](../examples/json/openclaw-models-reasoning.json)：
 
 ```json
 {
@@ -176,14 +203,42 @@ roller collect ... --thinking high
 | `xhigh` | `xhigh` | `xhigh` | 需要 OpenClaw profile 声明支持 |
 | `adaptive` | `adaptive` | 不是原生值 | 由支持自适应 thinking 的 OpenClaw profile 决定实际档位 |
 | `max` | `max` | `max` | 需要新版 OpenClaw 和对应 model profile |
-| `ultra` | `ultra` | 不是原生值 | 新版 OpenClaw 的编排档位；对支持的 GPT runtime 通常以 `max` 加额外编排实现 |
+| `ultra` | `ultra` | 不是原生值 | 默认 OpenClaw `2026.7.1` CLI 不接受；只有所选新版本明确列出时才能使用 |
 
 对 `gpt-5.6-sol` 的实际 Responses 请求已逐项验证：`none/low/medium/high/xhigh/max` 成功；`minimal/adaptive/ultra` 作为原生 effort 会返回 400。`off` 必须由 OpenClaw 转成 `none`，不能直接发给 GPT API。官方支持矩阵以 [OpenAI GPT-5.6 model guidance](https://developers.openai.com/api/docs/guides/model-guidance?model=gpt-5.6) 为准。
 
-开源模型不在 Roller 中维护一张容易过期的硬编码表。常见 OpenAI-compatible 后端通常支持 `low/medium/high`，而 `minimal/xhigh/adaptive/max` 是否存在以及怎样映射由模型服务和 OpenClaw provider profile 决定。新版 OpenClaw 的自定义 provider 可通过 model `compat.supportedReasoningEfforts` 和 `compat.reasoningEffortMap` 描述服务能力；字段和具体模型档位以 [OpenClaw Thinking Levels](https://docs.openclaw.ai/tools/thinking) 及 [OpenClaw 配置文档](https://docs.openclaw.ai/gateway/config-tools) 为准。
+开源模型不在 Roller 中维护一张容易过期的硬编码表。OpenClaw `2026.7.1` 的自定义
+model 使用顶层 `thinkingLevelMap` 把逻辑档位映射为服务值；Chat Completions 服务通过
+`compat.supportsReasoningEffort: true` 声明接受 `reasoning_effort`：
+
+```json
+{
+  "id": "my-reasoning-model",
+  "name": "My reasoning model",
+  "reasoning": true,
+  "thinkingLevelMap": {
+    "off": "none",
+    "low": "low",
+    "medium": "medium",
+    "high": "high",
+    "xhigh": "xhigh",
+    "max": "max"
+  },
+  "compat": {"supportsReasoningEffort": true}
+}
+```
+
+`thinkingLevelMap` 属于 model 顶层，不要放进 `compat`。此稳定版的用户配置 schema 不接受
+自定义 `compat.supportedReasoningEfforts` 或 `compat.reasoningEffortMap`；写入这些字段会导致
+配置校验失败。使用 `enable_thinking` 的 Qwen-compatible 服务可以把
+`compat.thinkingFormat` 设为 `qwen`；实际字段和档位仍以服务实现为准。
 
 > [!IMPORTANT]
-> 目前测试到的默认镜像 `wildclawbench-ubuntu:v1.3` 内含 OpenClaw `2026.3.11`。该版本 CLI 只承诺 `off/minimal/low/medium/high`，并会把部分高级值静默降档，不能用于验证 GPT-5.6 Sol 的 `xhigh/max` 或开源模型的 `adaptive/max`。Roller 会对这个已知版本的 `xhigh/adaptive/max/ultra` 直接报错，避免产生档位标错的轨迹。使用这些档位时请通过 `--docker-image` 或 `ROLLER_OPENCLAW_IMAGE` 选择包含新版 OpenClaw 的镜像；只更新外部 Roller 仓库不会替换镜像内的 OpenClaw。
+> 默认官方镜像内的 OpenClaw `2026.7.1` 支持
+> `off/minimal/low/medium/high/xhigh/adaptive/max`，Roller 会拒绝该版本的 `ultra`。
+> legacy `wildclawbench-ubuntu:v1.3` 内含 `2026.3.11`，只可靠支持到 `high`；Roller 会拒绝
+> 其 `xhigh/adaptive/max/ultra`。只更新 Roller 仓库不会替换 Docker 镜像，运行时版本以
+> sample `info.json` 的 `runtime.openclaw_version` 为准。
 
 ### Reasoning 内容与轨迹
 
@@ -207,7 +262,14 @@ Roller 会在本次 rollout 注入的模型配置副本中设置 `reasoning: tru
 `--keep-thinking` 默认开启，同时控制：
 
 1. `trace_ACTF.json` 中 `steps[*].assistant_content.reasoning_content`；
-2. 后续 Chat Completions messages 或 Responses input 中的历史 thinking。
+2. 后续 Chat Completions `messages` 或 Responses `input` 中的历史 thinking。
+
+OpenAI-compatible 服务并不统一使用同一个返回字段。对于 Chat Completions，Roller 的本地
+传输代理会在响应进入 OpenClaw 前把非空 `reasoning`/`reasoning_text` 规范化为等价的
+`reasoning_content`。这是因为 OpenClaw `2026.7.1` 能记录前两者，却只为 generic custom
+provider 重放 `reasoning_content`。规范化不生成或总结文本，后续请求携带的内容与模型返回
+文本一致。已用官方 `2026.7.1` + GLM-5.2 工具任务验证：首个 assistant raw thinking 与
+第二次 `/chat/completions` 请求的 `reasoning_content` 完全相同。
 
 `--no-keep-thinking` 会把 ACTF reasoning 置空，并在本地代理转发前移除 `reasoning_content`、`reasoning`、`reasoning_text`、thinking content block 和 Responses reasoning item。OpenClaw 本身没有关闭历史 thinking 的配置，因此该模式必须使用 wire 层代理。
 
@@ -221,7 +283,7 @@ schema，写入 ACTF 顶层后删除中间文件。
 | --- | --- |
 | `actf`（默认） | 捕获 tools schema 并写入 ACTF，不记录完整 messages/input；缺少可代理 `baseUrl` 时降级为 `tools=null` |
 | `full` | 要求可代理 `baseUrl`，额外保留每次完整 JSON 请求体 `wire_trace.jsonl` 和按敏感 key 脱敏后的 `cache_trace.jsonl` |
-| `off` | 不记录 wire 数据，ACTF 的 `tools` 为 `null`；但 `--no-keep-thinking` 仍会启用代理做剥离 |
+| `off` | 不保留 wire 数据，ACTF 的 `tools` 为 `null`；有可代理 model config 时仍可在内存中启用代理做 thinking 规范化/剥离 |
 
 OpenClaw session 文件与模型请求 context 不是同一层：session 保存持久化事件，而模型调用
 前还可能发生 system/runtime 注入、compaction、tool-result pruning、context-engine/hook
@@ -233,13 +295,20 @@ API 之间；对合法 JSON，它在可选的历史 thinking 剥离之后记录�
 `wire_trace.jsonl` 因而保存 Roller 客户端实际交给上游 API 的 messages/input、tools 和
 参数。它不记录 headers、响应 body 或模型服务内部的二次处理，也不是字节级抓包。
 
+响应侧 `reasoning`/`reasoning_text` 规范化发生在上游响应返回 OpenClaw 的方向，因此不会
+出现在 request-only 的 `wire_trace.jsonl`。它会影响 OpenClaw raw 中 thinking block 的
+`thinkingSignature` 字段名，但不改变 thinking 文本；`trace.jsonl` 也因此不是上游 HTTP
+响应的逐字副本。
+
 多轮 full wire 会重复历史，体积接近 O(N²)，适合审计，不适合大批量常开。
 `cache_trace.jsonl` 保存前会递归脱敏 API key、token、authorization、password 和 secret
 等 JSON 字段；`wire_trace.jsonl` 不扫描 system/user/tool/reasoning 自由文本，必须按敏感
 数据管理。完整捕获边界、对照步骤和失败/重试语义见
 [轨迹产出文件指南](trajectory-outputs.md#32-session-历史不等于模型请求-context)。
 
-本地代理绑定宿主机 `127.0.0.1`，因此 `actf`、`full` 和 `--no-keep-thinking` 当前要求保留默认 `--network host`，且所选 provider 必须提供绝对 `baseUrl`。
+本地代理绑定宿主机 `127.0.0.1`，因此 `actf`、`full`、Chat Completions thinking 规范化和
+`--no-keep-thinking` 当前要求保留默认 `--network host`，且所选 provider 必须提供绝对
+`baseUrl`。
 
 ## 6. Web Search
 
@@ -278,6 +347,7 @@ roller collect ... --gateway-port 22000 --gateway-port-step 10
 | 参数 | 默认值 | 用途 |
 | --- | --- | --- |
 | `--docker-image` | `ROLLER_OPENCLAW_IMAGE` 或内置值 | OpenClaw 镜像 |
+| `--container-user` | `0` | 一次性 task 容器用户；`image` 使用镜像默认用户 |
 | `--docker-binary` | `docker` | Docker CLI 名称或路径 |
 | `--model-config` | 无 | 自定义 provider/model JSON |
 | `--network` | `host` | 容器网络模式 |

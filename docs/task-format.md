@@ -285,7 +285,11 @@ OpenClaw adapter 会把 Context 注入 `/root/<target>` 与 `/tmp_workspace/<tar
 
 `env` 和 `setup` 都接受单个字符串或字符串数组。Task 作者应把 setup 当作可执行代码管理，只运行可信数据集中的命令。
 
-`thinking` 接受 `off/minimal/low/medium/high/xhigh/adaptive/max/ultra`；`none` 会规范化为 `off`。这是 OpenClaw 的逻辑档位，模型是否支持由对应 OpenClaw model profile 决定。task 中的值优先于 CLI `--thinking`，非法值会在启动 Docker 前报错。User Simulator 的 `thinking` 使用同一组值和校验。
+`thinking` 的 Roller schema 接受 `off/minimal/low/medium/high/xhigh/adaptive/max/ultra`；
+`none` 会规范化为 `off`。这是 OpenClaw 的逻辑档位，实际能否使用还由运行时版本和 model
+profile 决定：默认 OpenClaw `2026.7.1` 支持到 `max`，会在调用前拒绝 `ultra`。task 中的值
+优先于 CLI `--thinking`，非法值会在启动 Docker 前报错。User Simulator 的 `thinking` 使用
+同一组值和校验。
 
 ## 9. 路径与格式校验
 
