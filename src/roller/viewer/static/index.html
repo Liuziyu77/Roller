@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="light">
+    <title>Roller Trajectory Viewer</title>
+    <link rel="stylesheet" href="/style.css">
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 44 44" role="img">
+              <path d="M10 30.5 22 9l12 21.5H10Z"></path>
+              <circle cx="22" cy="29" r="5"></circle>
+            </svg>
+          </div>
+          <div>
+            <div class="eyebrow">ROLLER</div>
+            <h1 id="run-name">Trajectory Viewer</h1>
+          </div>
+        </div>
+        <div class="run-location">
+          <span class="live-dot"></span>
+          <span id="run-path">正在读取 run…</span>
+        </div>
+        <button class="icon-button" id="refresh-button" title="刷新 run 索引" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.34 5.66M20 4v7h-7"></path></svg>
+          <span>刷新</span>
+        </button>
+      </header>
+
+      <section class="metrics" id="metrics" aria-label="Run summary"></section>
+
+      <section class="toolbar">
+        <label class="search-box">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path></svg>
+          <input id="search-input" type="search" placeholder="搜索 task、model 或 error…" autocomplete="off">
+        </label>
+        <label class="select-field">
+          <span>状态</span>
+          <select id="status-filter"><option value="">全部状态</option></select>
+        </label>
+        <label class="select-field">
+          <span>模型</span>
+          <select id="model-filter"><option value="">全部模型</option></select>
+        </label>
+        <div class="toolbar-note" id="task-range"></div>
+      </section>
+
+      <main class="workspace">
+        <aside class="task-panel panel">
+          <div class="panel-heading">
+            <div>
+              <span class="eyebrow">TASKS</span>
+              <h2>任务导航</h2>
+            </div>
+            <span class="count-pill" id="task-count">0</span>
+          </div>
+          <div class="task-list" id="task-list">
+            <div class="skeleton-list" aria-label="加载中">
+              <i></i><i></i><i></i><i></i>
+            </div>
+          </div>
+          <div class="pagination" id="pagination"></div>
+        </aside>
+
+        <section class="timeline-panel panel" id="timeline-panel">
+          <div class="empty-state" id="timeline-empty">
+            <div class="empty-orbit"><span></span></div>
+            <p class="eyebrow">SELECT A ROLLOUT</p>
+            <h2>选择一个任务，展开它的完整思考与行动轨迹</h2>
+            <p>Reasoning、工具调用、工具结果和最终回复会依照 step 顺序呈现。</p>
+          </div>
+          <div id="timeline-content" hidden></div>
+        </section>
+
+        <aside class="inspector-panel panel" id="inspector-panel">
+          <div class="panel-heading">
+            <div>
+              <span class="eyebrow">INSPECTOR</span>
+              <h2>上下文</h2>
+            </div>
+          </div>
+          <div id="inspector-content" class="inspector-empty">
+            选择 rollout 后可查看运行信息、system prompt、tools schema 和原始 metadata。
+          </div>
+        </aside>
+      </main>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <div class="error-banner" id="error-banner" role="alert" hidden></div>
+    <script src="/app.js" defer></script>
+  </body>
+</html>

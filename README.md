@@ -24,6 +24,7 @@ Roller 把 task 清单与模型列表展开成独立 rollout，在隔离的 Dock
 | 系统文件注入 | 支持 `USER.md`、`MEMORY.md`、`SYSTEM.md`、`SOUL.md`、`AGENTS.md` 和 skills |
 | 自动回收结果 | Agent 写入 `output_dir` 的全部安全文件会按原目录结构保存 |
 | 三层轨迹格式 | 同时保存 OpenClaw raw、便于分析的 `ACTF_v1.0` 和最小 SFT 数据 |
+| 轨迹可视化 | 内置只读 Web Viewer，按 task 展示 reasoning、工具调用、结果和最终回复 |
 | 自定义模型服务 | 支持自定义 provider、API base、文本模型和多模态模型 |
 
 Roller 适合构建训练轨迹数据集、比较不同模型的 Agent 行为、回归测试 Harness，以及批量收集带文件产物的长程任务。
@@ -106,6 +107,23 @@ roller collect \
 ```
 
 结果保存在 `runs/quickstart/`。可直接运行的模型、环境与 task 示例见 [Examples](examples/README.md)。
+
+### 5. 查看轨迹
+
+采集完成后可以直接启动内置 Viewer，不需要额外安装前端或 Web 框架：
+
+```bash
+roller view runs/quickstart
+```
+
+打开终端打印的 `http://127.0.0.1:8765`。Viewer 按 task 聚合同一任务的多个模型
+rollout；选中 rollout 后可逐步展开 user、reasoning、tool call、tool result 和最终
+assistant content，并在 Inspector 中查看 system prompt、tools schema、运行信息和 User
+Simulator conversation。
+
+远程机器建议保持默认 loopback 并使用 SSH 端口转发。确实需要直接对外监听时使用
+`--host 0.0.0.0`，但页面会暴露 prompt、reasoning 和工具结果等敏感内容。完整说明见
+[轨迹可视化 Viewer](docs/viewer.md)。
 
 ## 📚 内置案例
 
@@ -260,6 +278,7 @@ roller collect --help
 | [文件、Task Bundle 与结果存储](docs/task-bundle-and-storage.md) | 输入快照、Context、results、ACTF、重试与 Resume |
 | [轨迹产出文件指南](docs/trajectory-outputs.md) | raw、ACTF、SFT、wire、产出条件和使用区别 |
 | [SFT 数据格式](docs/sft-format.md) | `messages`/`tools` schema、ACTF 映射和严格校验 |
+| [轨迹可视化 Viewer](docs/viewer.md) | 启动方式、页面结构、懒加载、安全边界和缺失字段行为 |
 | [OpenClaw、模型与 API](docs/openclaw-configuration.md) | Docker、provider、API base、代理、搜索和常见问题 |
 | [User Simulator 与动态对话](docs/user-simulator.md) | Conversation Manager、终止协议、资源占用和双方轨迹 |
 

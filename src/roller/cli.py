@@ -24,6 +24,7 @@ from roller.storage import atomic_write_json, safe_component
 from roller.tasks import TaskFormatError, build_requests, load_tasks
 from roller.thinking import THINKING_LEVELS, normalize_thinking
 from roller.version import __version__
+from roller.viewer import serve as serve_viewer
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,11 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--version", action="version", version=f"Roller {__version__}")
     subparsers = parser.add_subparsers(dest="command", required=True)
+
+    view = subparsers.add_parser("view", help="browse a Roller run in a local web UI")
+    view.add_argument("run_dir", help="Roller run directory containing info.json/samples")
+    view.add_argument("--host", default="127.0.0.1", help="listen host (default: loopback)")
+    view.add_argument("--port", type=int, default=8765, help="listen port (default: 8765)")
 
     collect = subparsers.add_parser("collect", help="collect trajectories")
     collect.add_argument("--tasks", required=True, help="JSON or JSONL task list")
@@ -375,6 +381,10 @@ def _collect(args: argparse.Namespace) -> int:
     return 1 if failed else 0
 
 
+def _view(args: argparse.Namespace) -> int:
+    return serve_viewer(Path(args.run_dir), host=args.host, port=args.port)
+
+
 def main(argv: Sequence[str] | None = None) -> None:
     parser = _build_parser()
     args = parser.parse_args(argv)
@@ -386,6 +396,8 @@ def main(argv: Sequence[str] | None = None) -> None:
     try:
         if args.command == "collect":
             exit_code = _collect(args)
+        elif args.command == "view":
+            exit_code = _view(args)
         else:
             parser.error(f"unsupported command: {args.command}")
             return
