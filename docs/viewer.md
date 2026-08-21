@@ -132,8 +132,3 @@ roller view /path/to/run --port 8766
 
 输入路径必须是 run 根目录，而不是 `samples/`、单个 sample 或
 `trace_ACTF.json`。合法根目录包含 run `info.json` 或 `samples/`。
-
-### 能否读取 AgentCompass 的 `details/*.json`
-
-当前命令只实现 Roller 原生格式。数据读取层与页面 view model 已隔离，后续可以增加
-AgentCompass adapter，而不改变 Roller ACTF/SFT 产物。
