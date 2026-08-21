@@ -10,6 +10,7 @@
 2. [Task 格式参考](task-format.md)：编写自己的单轮、多轮或 User Simulator task。
 3. [文件、Task Bundle 与结果存储](task-bundle-and-storage.md)：理解输入、Context、输出和最终 run。
 4. [OpenClaw、模型与 API](openclaw-configuration.md)：连接自定义 API、选择 adapter、配置 Docker 与搜索。
+5. [轨迹可视化 Viewer](viewer.md)：按 task 浏览 reasoning、工具调用、结果和运行信息。
 
 需要动态生成 user message 时，再阅读 [User Simulator 与动态对话](user-simulator.md)。
 
@@ -21,6 +22,7 @@
 | [文件、Task Bundle 与结果存储](task-bundle-and-storage.md) | 路径模型、输入快照、Context capture、results、ACTF、重试和 Resume |
 | [轨迹产出文件指南](trajectory-outputs.md) | raw、ACTF、SFT、wire 的生成条件、区别和推荐用法 |
 | [SFT 数据格式](sft-format.md) | 最小 `messages`/`tools` 训练格式、转换规则和完整性校验 |
+| [轨迹可视化 Viewer](viewer.md) | 本地只读 Web UI、数据来源、懒加载、远程访问和安全边界 |
 | [OpenClaw、模型与 API](openclaw-configuration.md) | Docker 镜像、provider JSON、API base、环境变量、代理、搜索和排错 |
 | [User Simulator 与动态对话](user-simulator.md) | Conversation Manager、双 Harness、JSON 决策、终止条件和双方轨迹 |
 | [Task JSON Schema](../schemas/task.schema.json) | `roller.task/v1` 的机器可读约束 |
