@@ -10,7 +10,8 @@ examples/
 │   └── api.env.example
 ├── json/
 │   ├── openclaw-models.json
-│   └── openclaw-models-multimodal.json
+│   ├── openclaw-models-multimodal.json
+│   └── openclaw-models-reasoning.json
 └── tasks/
     ├── tasks.jsonl
     ├── user-simulator.jsonl
@@ -38,6 +39,8 @@ cp examples/env/api.env.example examples/env/api.env
 ```dotenv
 MY_PROXY_BASE_URL=https://api.example.com/v1
 MY_PROXY_API_KEY=replace-with-your-api-key
+MY_CHAT_BASE_URL=https://chat-api.example.com/v1
+MY_CHAT_API_KEY=replace-with-your-api-key
 BRAVE_API_KEY=replace-with-your-brave-api-key
 ```
 
@@ -70,6 +73,18 @@ my-openai-proxy/my-model
 ```
 
 它代表视觉输入/图像理解模型，不是文生图模型。后端本身也必须支持图像输入。
+
+Reasoning 模板
+[`json/openclaw-models-reasoning.json`](json/openclaw-models-reasoning.json) 同时展示：
+
+- GPT Responses provider：`my-gpt-proxy/gpt-5.6-sol`；
+- Chat Completions provider：`my-chat-proxy/my-reasoning-model`；
+- OpenClaw `2026.7.1` 的顶层 `thinkingLevelMap` 与
+  `compat.supportsReasoningEffort` 正确位置。
+
+采集时通过 `--thinking low|medium|high|xhigh|max` 选择模型实际支持的档位，并保持默认
+`--keep-thinking`。完整兼容边界见
+[OpenClaw、模型与 API 配置](../docs/openclaw-configuration.md#逻辑档位与-provider-effort)。
 
 ## 4. 四个基础案例
 
@@ -115,7 +130,6 @@ roller collect \
   --tasks examples/tasks/tasks.jsonl \
   --model my-openai-proxy/my-model \
   --model-config examples/json/openclaw-models.json \
-  --docker-image your-openclaw-image:tag \
   --parallel 4 \
   --timeout 600 \
   --output runs \
@@ -157,7 +171,6 @@ roller collect \
 roller collect \
   --tasks examples/tasks/user-simulator.jsonl \
   --model-config examples/json/openclaw-models.json \
-  --docker-image your-openclaw-image:tag \
   --parallel 1 \
   --timeout 900 \
   --output runs \
@@ -190,7 +203,6 @@ roller collect \
   --tasks your-image-tasks.jsonl \
   --model my-openai-proxy/my-multimodal-model \
   --model-config examples/json/openclaw-models-multimodal.json \
-  --docker-image your-openclaw-image:tag \
   --parallel 2 \
   --output runs \
   --run-name examples_vision

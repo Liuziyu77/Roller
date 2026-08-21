@@ -28,12 +28,15 @@ from roller.wire_trace import WireTraceProxy, redact_jsonl_file, rewrite_model_c
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_OPENCLAW_IMAGE = "ghcr.io/openclaw/openclaw:2026.7.1-2"
+OPENCLAW_STATE_CONTAINER_PATH = "/tmp/roller-openclaw-state"
 INPUTS_CONTAINER_PATH = "/roller/task/inputs"
 CONTEXT_CONTAINER_PATH = "/roller/task/context"
 OUTPUTS_CONTAINER_PATH = "/roller/task/outputs"
 # OpenClaw diagnostics.cacheTrace output; records the assembled system prompt
 # (and full request messages) for every LLM call made by the agent.
 CACHE_TRACE_CONTAINER_PATH = "/tmp/roller-cache-trace.jsonl"
+TRANSCRIPT_EXPORT_CONTAINER_PATH = "/tmp/roller-session-trace.jsonl"
 
 ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
@@ -53,6 +56,7 @@ COMMON_ENV_NAMES = (
 _OPENCLAW_2026_3_11_UNSAFE_THINKING = frozenset(
     {"xhigh", "adaptive", "max", "ultra"}
 )
+_OPENCLAW_2026_7_1_UNSAFE_THINKING = frozenset({"ultra"})
 
 
 def validate_openclaw_thinking(version: str, thinking: str | None) -> None:
@@ -67,6 +71,16 @@ def validate_openclaw_thinking(version: str, thinking: str | None) -> None:
             "the bundled 2026.3.11 runtime predates the current advanced thinking "
             "profiles and can silently downgrade the request. Use off|minimal|low|"
             "medium|high, or select a newer OpenClaw image with --docker-image."
+        )
+    if (
+        thinking in _OPENCLAW_2026_7_1_UNSAFE_THINKING
+        and re.search(r"(?:^|\s)2026\.7\.1(?:\s|$)", version)
+    ):
+        raise RuntimeError(
+            f"OpenClaw {version!r} does not accept --thinking {thinking!r}; "
+            "this stable runtime supports off|minimal|low|medium|high|xhigh|"
+            "adaptive|max. Select one of those levels or a later OpenClaw "
+            "version that explicitly lists ultra in `openclaw agent --help`."
         )
 
 
@@ -205,7 +219,8 @@ class DockerRuntime:
 
 @dataclass(frozen=True)
 class OpenClawConfig:
-    docker_image: str = "wildclawbench-ubuntu:v1.3"
+    docker_image: str = DEFAULT_OPENCLAW_IMAGE
+    container_user: str | None = "0"
     gateway_port_start: int = 18789
     gateway_port_step: int = 10
     gateway_startup_timeout: float = 30.0
@@ -227,6 +242,8 @@ class OpenClawConfig:
     def __post_init__(self) -> None:
         if not self.docker_image.strip():
             raise ValueError("docker_image cannot be empty")
+        if self.container_user is not None and not self.container_user.strip():
+            raise ValueError("container_user must be non-empty or None")
         if not (1 <= self.gateway_port_start <= 65535):
             raise ValueError("gateway_port_start must be between 1 and 65535")
         if self.gateway_port_step < 1:
@@ -252,8 +269,9 @@ class OpenClawHarness(InteractiveHarness):
 
     _MODEL_INJECT_SCRIPT = """
 import json
+import os
 from pathlib import Path
-config_path = Path('/root/.openclaw/openclaw.json')
+config_path = Path(os.environ['ROLLER_OPENCLAW_CONFIG_PATH'])
 models_path = Path('/tmp/roller-models.json')
 config = json.loads(config_path.read_text()) if config_path.exists() else {}
 config['models'] = json.loads(models_path.read_text())
@@ -265,7 +283,7 @@ config_path.write_text(json.dumps(config, indent=2))
 import json
 import os
 from pathlib import Path
-path = Path('/root/.openclaw/agents/main/agent/auth-profiles.json')
+path = Path(os.environ['ROLLER_OPENCLAW_AUTH_PATH'])
 data = json.loads(path.read_text()) if path.exists() else {'version': 1, 'profiles': {}}
 data.setdefault('profiles', {})['openrouter:default'] = {
     'type': 'api_key', 'provider': 'openrouter', 'key': os.environ['ROLLER_OPENROUTER_KEY']
@@ -285,25 +303,41 @@ if persona.is_dir():
     for name in ('USER.md', 'MEMORY.md'):
         source = persona / name
         if source.is_file():
-            shutil.copyfile(source, Path('/root') / name)
+            shutil.copyfile(source, Path.home() / name)
 """.strip()
 
     _LATEST_SESSION_SCRIPT = """
+import os
 from pathlib import Path
-root = Path('/root/.openclaw/agents/main/sessions')
-files = sorted(root.glob('*.jsonl'), key=lambda path: path.stat().st_mtime, reverse=True)
+roots = [
+    Path(os.environ['OPENCLAW_STATE_DIR']) / 'agents/main/sessions',
+    Path('/root/.openclaw/agents/main/sessions'),
+]
+files = sorted(
+    {path for root in roots for path in root.glob('*.jsonl')},
+    key=lambda path: path.stat().st_mtime,
+    reverse=True,
+)
 print(files[0] if files else '')
 """.strip()
 
-    _LAST_ASSISTANT_SCRIPT = """
-# ROLLER_LAST_ASSISTANT
+    _LEGACY_LAST_ASSISTANT_SCRIPT = """
+# ROLLER_LEGACY_LAST_ASSISTANT
 import json
+import os
 from pathlib import Path
-root = Path('/root/.openclaw/agents/main/sessions')
-preferred = root / __ROLLER_SESSION_FILE__
-files = [preferred] if preferred.is_file() else sorted(
-    root.glob('*.jsonl'), key=lambda path: path.stat().st_mtime, reverse=True
-)
+roots = [
+    Path(os.environ['OPENCLAW_STATE_DIR']) / 'agents/main/sessions',
+    Path('/root/.openclaw/agents/main/sessions'),
+]
+preferred = [root / __ROLLER_SESSION_FILE__ for root in roots]
+files = [path for path in preferred if path.is_file()]
+if not files:
+    files = sorted(
+        {path for root in roots for path in root.glob('*.jsonl')},
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
 content = ''
 assistant_count = 0
 if files:
@@ -338,6 +372,41 @@ if files:
 print(json.dumps({'content': content, 'assistant_count': assistant_count}, ensure_ascii=False))
 """.strip()
 
+    _SDK_LAST_ASSISTANT_SCRIPT = """
+// ROLLER_SDK_LAST_ASSISTANT
+const scope = JSON.parse(process.env.ROLLER_SESSION_SCOPE);
+const { readLatestAssistantTextByIdentity, readSessionTranscriptEvents } =
+  await import('openclaw/plugin-sdk/session-transcript-runtime');
+const events = await readSessionTranscriptEvents(scope);
+const latest = await readLatestAssistantTextByIdentity(scope);
+const assistantCount = events.filter((event) =>
+  event && typeof event === 'object' && event.message &&
+  typeof event.message === 'object' && event.message.role === 'assistant'
+).length;
+process.stdout.write(JSON.stringify({
+  content: typeof latest?.text === 'string' ? latest.text : '',
+  assistant_count: assistantCount,
+}));
+""".strip()
+
+    _SDK_EXPORT_TRANSCRIPT_SCRIPT = """
+// ROLLER_SDK_EXPORT_TRANSCRIPT
+import fs from 'node:fs';
+const scope = JSON.parse(process.env.ROLLER_SESSION_SCOPE);
+const { readSessionTranscriptEvents } =
+  await import('openclaw/plugin-sdk/session-transcript-runtime');
+const events = await readSessionTranscriptEvents(scope);
+const payload = events.map((event) => JSON.stringify(event)).join('\\n');
+fs.writeFileSync(process.env.ROLLER_TRACE_OUTPUT, payload ? `${payload}\\n` : '');
+process.stdout.write(JSON.stringify({ event_count: events.length }));
+""".strip()
+
+    _OPENCLAW_NODE_EVAL_SCRIPT = """
+runtime_dir=$(dirname "$(readlink -f "$(command -v openclaw)")")
+cd "$runtime_dir"
+exec node --input-type=module -e "$1"
+""".strip()
+
     def __init__(
         self,
         config: OpenClawConfig,
@@ -355,12 +424,16 @@ print(json.dumps({'content': content, 'assistant_count': assistant_count}, ensur
     def _start_wire_proxy(self, request: RunRequest, output_dir: Path) -> None:
         """Start the wire-trace proxy for this rollout.
 
-        The proxy runs when wire tracing is active (``actf``/``full``) or when
-        thinking must be stripped from request history (``keep_thinking=False``
-        needs the wire layer; OpenClaw itself has no config for it).
+        The proxy runs when wire tracing is active, when thinking must be
+        stripped from request history, or when a custom Chat Completions model
+        may need response-field normalization for faithful thinking replay.
         """
         self._wire_proxy = None
-        needs_proxy = self.config.wire_trace_mode != "off" or not self.config.keep_thinking
+        needs_proxy = (
+            self.config.wire_trace_mode != "off"
+            or not self.config.keep_thinking
+            or self.config.model_config is not None
+        )
         if not needs_proxy:
             return
         proxy_required = self.config.wire_trace_mode == "full" or not self.config.keep_thinking
@@ -405,6 +478,7 @@ print(json.dumps({'content': content, 'assistant_count': assistant_count}, ensur
                 log_path,
                 mode=log_mode,
                 strip_thinking=not self.config.keep_thinking,
+                normalize_reasoning_replay=self.config.keep_thinking,
             )
             self._wire_proxy.start()
         except Exception as exc:
@@ -468,10 +542,16 @@ print(json.dumps({'content': content, 'assistant_count': assistant_count}, ensur
             "--label",
             "ai.roller.harness=openclaw",
         ]
+        if self.config.container_user is not None:
+            args.extend(["--user", self.config.container_user])
         if self.config.network:
             args.extend(["--network", self.config.network])
         for key, value in sorted(environment.items()):
             args.extend(["-e", f"{key}={value}"])
+        # Keep Roller independent of the image's default user/HOME. Official
+        # OpenClaw images run as ``node`` while legacy benchmark images run as
+        # ``root``; both can write this per-container state directory.
+        args.extend(["-e", f"OPENCLAW_STATE_DIR={OPENCLAW_STATE_CONTAINER_PATH}"])
 
         if request.bundle is not None:
             args.extend(["-v", f"{request.bundle.inputs_root}:{INPUTS_CONTAINER_PATH}:ro"])
@@ -525,12 +605,28 @@ print(json.dumps({'content': content, 'assistant_count': assistant_count}, ensur
         )
         self._checked(["exec", container, "/bin/bash", "-c", script], "workspace setup")
         link_script = (
+            f"mkdir -p {OPENCLAW_STATE_CONTAINER_PATH} /root/.openclaw && "
+            f"rm -rf {OPENCLAW_STATE_CONTAINER_PATH}/workspace && "
+            f"ln -s {workspace} {OPENCLAW_STATE_CONTAINER_PATH}/workspace && "
             "rm -rf /root/.openclaw/workspace && "
             f"ln -s {workspace} /root/.openclaw/workspace"
         )
         self._checked(["exec", container, "/bin/bash", "-c", link_script], "OpenClaw workspace link")
 
-    def _inject_models(self, container: str, request: RunRequest) -> None:
+    @staticmethod
+    def _state_dir_for_version(version: str) -> str:
+        # OpenClaw 2026.3.11 predates OPENCLAW_STATE_DIR. Keep its baked image
+        # and JSONL compatibility path while newer runtimes use isolated state.
+        if re.search(r"(?:^|\s)2026\.3\.11(?:\s|$)", version):
+            return "/root/.openclaw"
+        return OPENCLAW_STATE_CONTAINER_PATH
+
+    def _inject_models(
+        self,
+        container: str,
+        request: RunRequest,
+        state_dir: str,
+    ) -> None:
         if self.config.model_config is None:
             return
         thinking = resolve_thinking(request.task.thinking, self.config.thinking)
@@ -552,7 +648,15 @@ print(json.dumps({'content': content, 'assistant_count': assistant_count}, ensur
                 "model config copy",
             )
             self._checked(
-                ["exec", container, "python3", "-c", self._MODEL_INJECT_SCRIPT],
+                [
+                    "exec",
+                    "-e",
+                    f"ROLLER_OPENCLAW_CONFIG_PATH={state_dir}/openclaw.json",
+                    container,
+                    "python3",
+                    "-c",
+                    self._MODEL_INJECT_SCRIPT,
+                ],
                 "model config injection",
             )
         finally:
@@ -561,9 +665,10 @@ print(json.dumps({'content': content, 'assistant_count': assistant_count}, ensur
 
     def _configure(self, container: str, request: RunRequest, environment: Mapping[str, str]) -> str:
         version = self._checked(["exec", container, "openclaw", "--version"], "OpenClaw version").stdout.strip()
+        state_dir = self._state_dir_for_version(version)
         thinking = resolve_thinking(request.task.thinking, self.config.thinking)
         validate_openclaw_thinking(version, thinking)
-        self._inject_models(container, request)
+        self._inject_models(container, request, state_dir)
         self._checked(
             ["exec", container, "openclaw", "models", "set", request.model],
             "model setup",
@@ -571,6 +676,14 @@ print(json.dumps({'content': content, 'assistant_count': assistant_count}, ensur
         self._checked(
             ["exec", container, "openclaw", "config", "set", "gateway.port", str(self.gateway_port)],
             "gateway port setup",
+        )
+        self._checked(
+            ["exec", container, "openclaw", "config", "set", "gateway.mode", "local"],
+            "gateway mode setup",
+        )
+        self._checked(
+            ["exec", container, "openclaw", "config", "set", "gateway.bind", "loopback"],
+            "gateway bind setup",
         )
         self._checked(
             [
@@ -658,6 +771,8 @@ print(json.dumps({'content': content, 'assistant_count': assistant_count}, ensur
                     "exec",
                     "-e",
                     f"ROLLER_OPENROUTER_KEY={environment['OPENROUTER_API_KEY']}",
+                    "-e",
+                    f"ROLLER_OPENCLAW_AUTH_PATH={state_dir}/agents/main/agent/auth-profiles.json",
                     container,
                     "python3",
                     "-c",
@@ -675,7 +790,7 @@ print(json.dumps({'content': content, 'assistant_count': assistant_count}, ensur
                     container,
                     "/bin/bash",
                     "-c",
-                    f"cp -a {CONTEXT_CONTAINER_PATH}/. /root/ && "
+                    f"cp -a {CONTEXT_CONTAINER_PATH}/. \"$HOME\"/ && "
                     f"cp -a {CONTEXT_CONTAINER_PATH}/. "
                     f"{self.config.workspace_container_path}/",
                 ],
@@ -733,14 +848,54 @@ print(json.dumps({'content': content, 'assistant_count': assistant_count}, ensur
     def _prompts(self, request: RunRequest) -> tuple[str, ...]:
         return request.task.prompts
 
+    def _session_scope(self) -> dict[str, str]:
+        session_id = self.config.session_id
+        return {
+            "agentId": "main",
+            "sessionId": session_id,
+            "sessionKey": f"agent:main:explicit:{session_id}",
+        }
+
+    def _run_transcript_sdk(
+        self,
+        container: str,
+        script: str,
+        *,
+        output_path: str | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        args = [
+            "exec",
+            "-e",
+            f"ROLLER_SESSION_SCOPE={json.dumps(self._session_scope(), separators=(',', ':'))}",
+        ]
+        if output_path is not None:
+            args.extend(["-e", f"ROLLER_TRACE_OUTPUT={output_path}"])
+        args.extend(
+            [
+                container,
+                "/bin/sh",
+                "-lc",
+                self._OPENCLAW_NODE_EVAL_SCRIPT,
+                "roller-transcript-sdk",
+                script,
+            ]
+        )
+        return self.runtime.run(args)
+
     def _latest_assistant_content(self, container: str) -> tuple[str, int]:
-        script = self._LAST_ASSISTANT_SCRIPT.replace(
-            "__ROLLER_SESSION_FILE__", repr(f"{self.config.session_id}.jsonl")
-        )
-        result = self._checked(
-            ["exec", container, "python3", "-c", script],
-            "assistant response extraction",
-        )
+        result = self._run_transcript_sdk(container, self._SDK_LAST_ASSISTANT_SCRIPT)
+        if result.returncode != 0:
+            logger.debug(
+                "OpenClaw transcript SDK unavailable; using legacy JSONL response reader: %s",
+                self._error_text(result),
+            )
+            script = self._LEGACY_LAST_ASSISTANT_SCRIPT.replace(
+                "__ROLLER_SESSION_FILE__", repr(f"{self.config.session_id}.jsonl")
+            )
+            result = self._checked(
+                ["exec", container, "python3", "-c", script],
+                "assistant response extraction",
+            )
         try:
             payload = json.loads(result.stdout.strip())
         except json.JSONDecodeError as exc:
@@ -760,12 +915,33 @@ print(json.dumps({'content': content, 'assistant_count': assistant_count}, ensur
         rollout_dir.mkdir(parents=True, exist_ok=True)
         attempt_trace_path = rollout_dir / f"trace.attempt-{attempt}.jsonl"
         trace_path = rollout_dir / "trace.jsonl"
-        container_path = (
-            f"/root/.openclaw/agents/main/sessions/{self.config.session_id}.jsonl"
+        attempt_trace_path.unlink(missing_ok=True)
+
+        sdk_result = self._run_transcript_sdk(
+            container,
+            self._SDK_EXPORT_TRANSCRIPT_SCRIPT,
+            output_path=TRANSCRIPT_EXPORT_CONTAINER_PATH,
         )
-        result = self.runtime.run(
-            ["cp", f"{container}:{container_path}", str(attempt_trace_path)]
-        )
+        if sdk_result.returncode == 0:
+            result = self.runtime.run(
+                [
+                    "cp",
+                    f"{container}:{TRANSCRIPT_EXPORT_CONTAINER_PATH}",
+                    str(attempt_trace_path),
+                ]
+            )
+        else:
+            logger.debug(
+                "OpenClaw transcript SDK unavailable; copying legacy JSONL trace: %s",
+                self._error_text(sdk_result),
+            )
+            container_path = (
+                f"{OPENCLAW_STATE_CONTAINER_PATH}/agents/main/sessions/"
+                f"{self.config.session_id}.jsonl"
+            )
+            result = self.runtime.run(
+                ["cp", f"{container}:{container_path}", str(attempt_trace_path)]
+            )
         if result.returncode != 0:
             latest = self.runtime.run(
                 ["exec", container, "python3", "-c", self._LATEST_SESSION_SCRIPT]
@@ -775,7 +951,11 @@ print(json.dumps({'content': content, 'assistant_count': assistant_count}, ensur
                 result = self.runtime.run(
                     ["cp", f"{container}:{fallback_path}", str(attempt_trace_path)]
                 )
-        if result.returncode != 0 or not attempt_trace_path.is_file():
+        if (
+            result.returncode != 0
+            or not attempt_trace_path.is_file()
+            or attempt_trace_path.stat().st_size == 0
+        ):
             return None
         shutil.copyfile(attempt_trace_path, trace_path)
         return trace_path
@@ -918,6 +1098,7 @@ class OpenClawSession(InteractiveSession):
             f"roller-{request.index}-{safe_component(request.model, 24)}-"
             f"{uuid.uuid4().hex[:8]}"
         ).lower()
+        self.gateway_token = uuid.uuid4().hex
         self.gateway_process: subprocess.Popen[str] | None = None
         self.container_started = False
         self.version = ""
@@ -951,6 +1132,8 @@ class OpenClawSession(InteractiveSession):
         self.gateway_process = self.harness.runtime.popen(
             [
                 "exec",
+                "-e",
+                f"OPENCLAW_GATEWAY_TOKEN={self.gateway_token}",
                 "-w",
                 self.harness.config.workspace_container_path,
                 self.container,
@@ -973,6 +1156,8 @@ class OpenClawSession(InteractiveSession):
         turn_started = time.monotonic()
         command = [
             "exec",
+            "-e",
+            f"OPENCLAW_GATEWAY_TOKEN={self.gateway_token}",
             "-w",
             self.harness.config.workspace_container_path,
             self.container,
@@ -991,9 +1176,12 @@ class OpenClawSession(InteractiveSession):
             # gateway startup does not reliably affect an existing agent turn.
             command += ["--thinking", thinking]
         command += ["--message", message]
+        agent_log_path = (
+            self.output_dir / "rollout" / f"agent.attempt-{self.attempt}.log"
+        )
         process = self.harness.runtime.popen(
             command,
-            self.output_dir / "rollout" / f"agent.attempt-{self.attempt}.log",
+            agent_log_path,
             append=bool(self.messages),
         )
         try:
@@ -1009,7 +1197,17 @@ class OpenClawSession(InteractiveSession):
             self.harness.runtime.close_log(process)
         self.return_codes.append(return_code)
         if return_code != 0:
-            raise RuntimeError(f"OpenClaw agent turn exited with code {return_code}")
+            detail = ""
+            try:
+                detail = agent_log_path.read_text(
+                    encoding="utf-8", errors="replace"
+                ).strip()[-2000:]
+            except OSError:
+                pass
+            suffix = f": {detail}" if detail else ""
+            raise RuntimeError(
+                f"OpenClaw agent turn exited with code {return_code}{suffix}"
+            )
         content, assistant_count = self.harness._latest_assistant_content(self.container)
         if assistant_count <= self._assistant_count:
             raise RuntimeError("OpenClaw turn produced no new assistant response")

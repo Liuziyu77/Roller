@@ -9,6 +9,9 @@ from unittest import mock
 
 from roller.bundles import TaskBundleStore
 from roller.harnesses.openclaw import (
+    DEFAULT_OPENCLAW_IMAGE,
+    OPENCLAW_STATE_CONTAINER_PATH,
+    TRANSCRIPT_EXPORT_CONTAINER_PATH,
     OpenClawConfig,
     OpenClawHarness,
     expand_env_placeholders,
@@ -55,7 +58,7 @@ class FakeDockerRuntime:
         args = list(args)
         self.commands.append(args)
         stdout = "2026.1.0\n" if args[-2:] == ["openclaw", "--version"] else ""
-        if args[-2] == "-c" and "ROLLER_LAST_ASSISTANT" in args[-1]:
+        if args and "ROLLER_SDK_LAST_ASSISTANT" in args[-1]:
             self.assistant_extractions += 1
             stdout = json.dumps(
                 {
@@ -63,7 +66,11 @@ class FakeDockerRuntime:
                     "assistant_count": self.assistant_extractions,
                 }
             ) + "\n"
-        if args and args[0] == "cp" and ":/root/.openclaw/" in args[1]:
+        if (
+            args
+            and args[0] == "cp"
+            and f":{TRANSCRIPT_EXPORT_CONTAINER_PATH}" in args[1]
+        ):
             destination = Path(args[2])
             event = {
                 "type": "message",
@@ -113,13 +120,40 @@ class OpenClawHelpersTests(unittest.TestCase):
                         "OpenClaw 2026.3.11 (29dc654)", level
                     )
         validate_openclaw_thinking("OpenClaw 2026.3.11 (29dc654)", "high")
+        with self.assertRaisesRegex(RuntimeError, "does not accept"):
+            validate_openclaw_thinking("OpenClaw 2026.7.1", "ultra")
+        validate_openclaw_thinking("OpenClaw 2026.7.1", "max")
         validate_openclaw_thinking("OpenClaw 2026.8.0", "max")
 
-    def test_embedded_response_extractor_is_valid_python(self) -> None:
-        script = OpenClawHarness._LAST_ASSISTANT_SCRIPT.replace(
+    def test_embedded_legacy_response_extractor_is_valid_python(self) -> None:
+        script = OpenClawHarness._LEGACY_LAST_ASSISTANT_SCRIPT.replace(
             "__ROLLER_SESSION_FILE__", repr("roller.jsonl")
         )
         compile(script, "<response-extractor>", "exec")
+
+    def test_defaults_to_stable_official_openclaw_image(self) -> None:
+        self.assertEqual(OpenClawConfig().docker_image, DEFAULT_OPENCLAW_IMAGE)
+
+    def test_session_scope_matches_explicit_session_id_key(self) -> None:
+        harness = OpenClawHarness(OpenClawConfig(session_id="roller"), worker_slot=0)
+        self.assertEqual(
+            harness._session_scope(),
+            {
+                "agentId": "main",
+                "sessionId": "roller",
+                "sessionKey": "agent:main:explicit:roller",
+            },
+        )
+
+    def test_state_dir_keeps_legacy_image_compatibility(self) -> None:
+        self.assertEqual(
+            OpenClawHarness._state_dir_for_version("OpenClaw 2026.3.11 (29dc654)"),
+            "/root/.openclaw",
+        )
+        self.assertEqual(
+            OpenClawHarness._state_dir_for_version("OpenClaw 2026.7.1"),
+            OPENCLAW_STATE_CONTAINER_PATH,
+        )
 
     def test_expands_model_config_environment(self) -> None:
         value = {"providers": {"proxy": {"apiKey": "${API_KEY}", "other": 1}}}
@@ -262,6 +296,24 @@ class OpenClawHelpersTests(unittest.TestCase):
         self.assertEqual(runtime.agent_messages, ["Use $HOME and 'quotes' literally", "Finish"])
         self.assertIn('"assistant"', canonical_trace)
         self.assertEqual(result.usage["total_tokens"], 5)
+        flattened_commands = [" ".join(command) for command in runtime.commands]
+        self.assertTrue(
+            any(
+                f"OPENCLAW_STATE_DIR={OPENCLAW_STATE_CONTAINER_PATH}" in command
+                for command in flattened_commands
+            )
+        )
+        container_command = next(command for command in runtime.commands if command[:2] == ["run", "-d"])
+        self.assertEqual(container_command[container_command.index("--user") + 1], "0")
+        self.assertTrue(
+            any("ROLLER_SDK_EXPORT_TRANSCRIPT" in command for command in flattened_commands)
+        )
+        self.assertTrue(
+            any("openclaw config set gateway.mode local" in command for command in flattened_commands)
+        )
+        self.assertTrue(
+            any("openclaw config set gateway.bind loopback" in command for command in flattened_commands)
+        )
 
     def test_harness_passes_thinking_to_each_agent_turn_and_clears_retry_traces(self) -> None:
         task = Task(id="task", prompts=("first", "second"), source_index=0)
@@ -296,8 +348,15 @@ class OpenClawHelpersTests(unittest.TestCase):
         self.assertEqual(result.status, "ok")
         agent_commands = [command for command in runtime.commands if "agent" in command]
         self.assertEqual(len(agent_commands), 2)
+        gateway_command = next(
+            command for command in runtime.commands if "gateway" in command
+        )
+        gateway_token = next(
+            value for value in gateway_command if value.startswith("OPENCLAW_GATEWAY_TOKEN=")
+        )
         for command in agent_commands:
             self.assertEqual(command[command.index("--thinking") + 1], "high")
+            self.assertIn(gateway_token, command)
 
     def test_harness_passes_task_max_override_without_downgrading(self) -> None:
         task = Task(
@@ -404,7 +463,12 @@ class OpenClawHelpersTests(unittest.TestCase):
                     for command in flattened_commands
                 )
             )
-            self.assertTrue(any("/roller/task/context/. /root/" in command for command in flattened_commands))
+            self.assertTrue(
+                any(
+                    '/roller/task/context/. "$HOME"/' in command
+                    for command in flattened_commands
+                )
+            )
             self.assertTrue(
                 any(
                     "openclaw config set agents.defaults.workspace /tmp_workspace" in command
