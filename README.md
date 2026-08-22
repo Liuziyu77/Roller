@@ -48,8 +48,8 @@ Docker 中的 Agent Harness
 
 | 模型类型 | 推荐方式 | 保存结果 |
 | --- | --- | --- |
-| GPT reasoning 系列，例如 `gpt-5.6-sol` | OpenClaw 或 Codex 的 `--external-thinking external|external_always` | 模型写入 `deep_think` 的显式 CoT 会进入 SFT `reasoning_content` |
-| Claude 系列，例如 Claude Opus 4.8（示例 ID：`claude-opus-4-8`） | Claude Code 的 `--claude-signature-recovery fill|prefer` | Provider replay 成功后，恢复文本进入 ACTF/SFT `reasoning_content` |
+| GPT reasoning 系列，例如 `gpt-5.6-sol` | OpenClaw 或 Codex 的 `--external-thinking external\|external_always` | 模型写入 `deep_think` 的显式 CoT 会进入 SFT `reasoning_content` |
+| Claude 系列，例如 Claude Opus 4.8（示例 ID：`claude-opus-4-8`） | Claude Code 的 `--claude-signature-recovery fill\|prefer` | Provider replay 成功后，恢复文本进入 ACTF/SFT `reasoning_content` |
 | 返回明文 reasoning 的开源模型，例如 Qwen、GLM | 保持默认 `--keep-thinking`，无需 external thinking | API 返回的 `reasoning_content`、`reasoning` 或 `reasoning_text` 会保留到 ACTF/SFT |
 
 开源模型服务必须实际返回明文 reasoning。只报告 reasoning token 数、只返回压缩 summary 或返回加密状态时，Roller 无法从中反推出完整 CoT。
