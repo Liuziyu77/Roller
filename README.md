@@ -1,7 +1,7 @@
 <div align="center">
   <img src="assets/roller-logo.png" alt="Roller logo" width="132">
   <h1>Roller</h1>
-  <p><strong>面向多模型与多 Harness 的 Agent 轨迹采集框架</strong></p>
+  <p><strong>面向多模型、多 Harness 的 Agent 轨迹采集框架</strong></p>
   <p>
     <img alt="Python 3.10+" src="https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white">
     <img alt="OpenClaw, Codex, and Claude Code Harnesses" src="https://img.shields.io/badge/Harness-OpenClaw%20%7C%20Codex%20%7C%20Claude_Code-6F42C1">
@@ -10,196 +10,85 @@
   </p>
 </div>
 
-Roller 把 task 清单与模型列表展开成独立 rollout，在隔离的 Docker 环境中并行运行 Agent Harness，并把每次执行整理成可复用的轨迹样本。每个样本保留 Harness raw、`ACTF_v1.0`、标准化 SFT、运行信息，以及 Agent 明确写入输出目录的文件。
+Roller 把 task 清单与模型列表展开为独立 rollout，在一次性 Docker 容器中运行 Agent，最终同时保存 Harness 原始轨迹、统一分析轨迹、标准 SFT 数据和任务文件产物。
 
-当前支持 **OpenClaw**、**Codex CLI** 和 **Claude Code**。Task、文件管理与结果格式不依赖具体 benchmark；动态 User Simulator 当前使用 OpenClaw。
+```text
+tasks.jsonl × models
+        │
+        ▼
+Docker 中的 Agent Harness
+        │
+        ├─ trace.jsonl       Harness 原始轨迹
+        ├─ trace_ACTF.json   统一分析与可视化格式
+        ├─ trace_SFT.json    单条标准训练样本
+        ├─ results/          Agent 生成的文件
+        └─ info.json         状态、usage 与运行来源
+```
 
-## ✨ 核心能力
+## 核心用途
 
-| 能力 | 说明 |
-| --- | --- |
-| 批量 rollout | 一份 task 清单可以运行一个或多个模型，支持并行、重试和断点续跑 |
-| 多种对话方式 | 支持单轮 prompt、预定义 `messages`，以及动态 User Simulator |
-| 独立文件包 | 每个 task 可以携带自己的输入文件、目录和 Context |
-| 系统文件注入 | 支持 `USER.md`、`MEMORY.md`、`SYSTEM.md`、`SOUL.md`、`AGENTS.md` 和 skills |
-| 自动回收结果 | Agent 写入 `output_dir` 的全部安全文件会按原目录结构保存 |
-| 三层轨迹格式 | 同时保存 Harness-native raw、便于分析的 `ACTF_v1.0` 和最小 SFT 数据 |
-| 可靠断点续跑 | 运行锁阻止配置混用，周期 checkpoint 保存进度，复用前校验轨迹完整性 |
-| 轨迹可视化 | 内置只读 Web Viewer，按 task 展示 reasoning、工具调用、结果和最终回复 |
-| 自定义模型服务 | 支持自定义 provider、API base、文本模型和多模态模型 |
+- 批量采集单轮、多轮或工具型 Agent 轨迹；
+- 同一批 task 对比多个模型或 Harness；
+- 生成顶层严格为 `messages` 和 `tools` 的 SFT JSONL；
+- 保存 reasoning、工具调用、工具结果与任务文件产物；
+- 用 run lock、重试和 Resume 构建可恢复的数据生产流程；
+- 在内置 Viewer 中逐步检查每个 task 的思考与行动轨迹。
 
-Roller 适合构建训练轨迹数据集、比较不同模型的 Agent 行为、回归测试 Harness，以及批量收集带文件产物的长程任务。
+## 选择 Harness
 
-## 🚀 快速开始
+| Harness | 模型服务协议 | 适合场景 | 关键能力与限制 |
+| --- | --- | --- | --- |
+| OpenClaw（默认） | OpenAI Responses 或 Chat Completions | 自定义/开源模型、动态 User Simulator、多模态输入 | 支持 `external` / `external_always`；模型通过 JSON 配置 |
+| Codex | Responses | Codex CLI 工具轨迹、GPT 与兼容 Responses 服务 | 支持 external thinking；暂不支持 User Simulator |
+| Claude Code | Anthropic `/v1/messages` | Claude Code 工具轨迹与 native thinking | 支持实验性 signature recovery；暂不支持 external thinking 和 User Simulator |
 
-### 1. 安装
+三者共享相同的 Task、Sample、ACTF、SFT、Viewer、重试和 Resume 边界。镜像、API 和 reasoning 参数不同，详见对应的 [Harness 指南](docs/README.md#按-harness-选择)。
 
-运行环境需要 Python 3.10+ 和可用的 Docker daemon。OpenClaw 默认镜像固定为
-`ghcr.io/openclaw/openclaw:2026.7.1-2`；它已经包含 OpenClaw、Node.js 和 Python 3，
-无需修改镜像内源码或另做兼容镜像。
+## 最小运行流程
+
+以下流程使用 OpenClaw 完成一次基础采集。镜像构建、Codex/Claude Code 配置和结果验收见 [快速上手](docs/getting-started.md)。
+
+### 1. 安装 Roller 与镜像
+
+需要 Python 3.10+、Docker CLI 和可用的 Docker daemon。
 
 ```bash
 python3 -m pip install -e .
 roller --version
+docker version
 
-# 二选一：在线拉取，或加载离线归档
 docker pull --platform linux/amd64 ghcr.io/openclaw/openclaw:2026.7.1-2
+```
+
+已有 `docker save` 归档时可离线加载：
+
+```bash
 docker load -i /path/to/openclaw-2026.7.1-2-linux-amd64.tar.gz
 ```
 
-也可以通过环境变量设置默认镜像：
-
-```bash
-export ROLLER_OPENCLAW_IMAGE=your-openclaw-image:tag
-```
-
-Codex 使用仓库内 [`docker/codex/Dockerfile`](docker/codex/Dockerfile) 构建的固定版本镜像：
-
-```bash
-docker load -i /path/to/node-22-bookworm-slim-linux-amd64.tar.gz
-docker build -f docker/codex/Dockerfile -t roller-codex:0.149.0 .
-docker run --rm roller-codex:0.149.0 codex --version
-
-export ROLLER_CODEX_IMAGE=roller-codex:0.149.0
-```
-
-Claude Code 可以复用同一个 Node 22 基础镜像归档，无需另行下载基础镜像：
-
-```bash
-docker load -i /path/to/node-22-bookworm-slim-linux-amd64.tar.gz
-docker build -f docker/claude-code/Dockerfile -t roller-claude-code:2.1.222 .
-docker run --rm roller-claude-code:2.1.222 claude --version
-
-export ROLLER_CLAUDE_CODE_IMAGE=roller-claude-code:2.1.222
-```
-
-### 2. 配置模型 API
-
-复制示例环境文件并填入自己的 API 地址和 Key。`examples/env/*.env` 已被 Git 忽略：
+### 2. 配置 API
 
 ```bash
 cp examples/env/api.env.example examples/env/api.env
+```
 
-# 编辑 examples/env/api.env 后加载
+编辑 `examples/env/api.env` 中的 `MY_PROXY_BASE_URL` 和 `MY_PROXY_API_KEY`，然后加载：
+
+```bash
 set -a
 source examples/env/api.env
 set +a
 ```
 
-模型配置通过 `${ENV_NAME}` 引用环境变量，不需要把真实 Key 写进 JSON：
-
-```json
-{
-  "mode": "merge",
-  "providers": {
-    "my-openai-proxy": {
-      "baseUrl": "${MY_PROXY_BASE_URL}",
-      "apiKey": "${MY_PROXY_API_KEY}",
-      "api": "openai-responses",
-      "models": [{"id": "my-model", "name": "My model"}]
-    }
-  }
-}
-```
-
-采集 reasoning 模型时可增加 `--thinking high`。Roller 接受逻辑档位
-`off/minimal/low/medium/high/xhigh/adaptive/max/ultra`，也接受 GPT 风格的 `none` 并将它
-规范化为 `off`；默认 OpenClaw `2026.7.1` 实际支持到 `max`，不接受 `ultra`。
-`--keep-thinking` 默认开启：除写入 ACTF/SFT 外，Chat Completions 返回的
-`reasoning`/`reasoning_text` 会规范化为 `reasoning_content`，使其真实进入后续请求历史；
-通过 Responses API 返回压缩 reasoning summary 的 GPT 模型应使用 `openai-responses`。
-
-如果希望关闭 GPT 的原生 reasoning，改用完整可见、可训练的工具参数作为显式 CoT，可以
-启用 `deep_think` 协议：
-
-```bash
-roller collect ... --external-thinking external_always
-```
-
-`external` 只强制第一次 `deep_think`，之后允许模型按需调用；`external_always` 在每个
-业务动作或最终回复前强制一个独立 THINK。OpenClaw 要求 `openai-responses` provider；
-Codex 要求显式 `--api-base` 并使用 Responses HTTP。两者都会把原生 thinking 强制设为
-`off`。ACTF 保留 canonical 工具协议，SFT 会把 thoughts 标准化进随后 assistant 的
-`reasoning_content`。详见
-[External Thinking 指南](docs/external-thinking.md)。
-
-完整配置说明见 [OpenClaw、模型与 API](docs/openclaw-configuration.md)。
-
-Codex CLI 直接使用 API base 和 Key 环境变量，不读取 OpenClaw model JSON：
-
-```bash
-export ROLLER_CODEX_KEY='...'
-
-roller collect \
-  --harness codex \
-  --tasks examples/tasks/tasks.jsonl \
-  --model gpt-5.6-sol \
-  --api-base http://your-api.example/v1 \
-  --api-key-env ROLLER_CODEX_KEY \
-  --thinking high \
-  --reasoning-summary detailed \
-  --parallel 2 \
-  --output runs \
-  --run-name codex-demo
-```
-
-该 API 必须支持 Codex CLI 使用的 Responses 请求；只实现 `/chat/completions` 的服务不能
-直接用于这个 Harness。自定义 `--api-base` 默认使用 HTTP Responses streaming；只有
-服务明确支持 Responses WebSocket 时才传 `--codex-websockets`。Codex 同样支持
-`--external-thinking external|external_always`；启用后保持默认 host network 且不要开启
-WebSocket，Roller 会自动注入本地 MCP `deep_think`，无需修改镜像或 Codex config。镜像、
-effort、reasoning 保存和原生 session 说明见
-[Codex Harness 指南](docs/codex-configuration.md)。
-
-Claude Code 直接调用 Anthropic Messages API。`--api-base` 既接受 API origin，也接受完整
-`/v1/messages` endpoint；Roller 会把它规范化为 Claude SDK 使用的 base URL：
-
-```bash
-export ROLLER_ANTHROPIC_KEY='...'
-
-roller collect \
-  --harness claude-code \
-  --tasks examples/tasks/tasks.jsonl \
-  --model claude-sonnet-4-6-thinking \
-  --api-base http://your-api.example/v1/messages \
-  --api-key-env ROLLER_ANTHROPIC_KEY \
-  --thinking high \
-  --parallel 2 \
-  --output runs \
-  --run-name claude-code-demo
-```
-
-Claude Code 默认保留 native session 中实际可见的 `thinking`、工具调用、工具结果和 usage；
-预定义多轮使用 `--continue` 延续同一 session。当前不支持 Claude Code 的
-`external/external_always` 和动态 User Simulator。镜像、effort、Anthropic endpoint、raw、
-wire、ACTF/SFT 说明见 [Claude Code Harness 指南](docs/claude-code-configuration.md)。
-
-Native session 只有压缩 summary 或空 thinking、但带有 `thinking.signature` 时，可以显式开启
-provider replay。`fill` 只填空值，`prefer` 用通过检查的恢复文本替换 native summary：
+再把 [`examples/json/openclaw-models.json`](examples/json/openclaw-models.json) 中的 model `id` 改成服务端真实模型名。运行时 model ref 由 provider 名与 model id 组成：
 
 ```text
---claude-signature-recovery fill
---claude-signature-recovery-attempts 2
---claude-signature-recovery-max-tokens 8192
+my-openai-proxy/my-model
 ```
 
-这是任务结束后的独立、best-effort 调用，不污染 Claude Code session，也不是本地解密。
-恢复可能拒绝、改写或不完整，默认保持 `off`；详细质量与成本边界见
-[Signature recovery](docs/claude-code-configuration.md#5-signature-recovery实验性)。
+只支持 `/chat/completions` 的服务应把配置中的 `api` 从 `openai-responses` 改为 `openai-completions`。API Key 使用环境变量占位符，不要写入 task、命令或仓库文件。
 
-最小 external-always 验收可以在上述命令中去掉 `--thinking/--reasoning-summary`，并增加：
-
-```text
---external-thinking external_always --wire-trace full
-```
-
-运行后使用 `roller view <run-dir>` 查看 ACTF 的 THINK/ACT 时间线；训练投影请检查
-`trace_SFT.json` 中的 `reasoning_content`。完整验收项和常见错误见
-[External Thinking 指南](docs/external-thinking.md#7-如何查看和验收)。
-
-### 3. 检查 task
-
-`--dry-run` 会解析 task、校验文件并打印执行计划，不启动 Docker：
+### 3. 先检查，再采集
 
 ```bash
 roller collect \
@@ -210,243 +99,96 @@ roller collect \
   --dry-run
 ```
 
-### 4. 并行采集
+Dry-run 只解析 task、检查输入文件并打印执行计划，不启动 Docker。确认无误后移除 `--dry-run`：
 
 ```bash
 roller collect \
   --tasks examples/tasks/tasks.jsonl \
   --model my-openai-proxy/my-model \
   --model-config examples/json/openclaw-models.json \
-  --docker-image your-openclaw-image:tag \
   --parallel 4 \
   --timeout 600 \
   --output runs \
   --run-name quickstart
 ```
 
-结果保存在 `runs/quickstart/`。可直接运行的模型、环境与 task 示例见 [Examples](examples/README.md)。
-
-### 5. 查看轨迹
-
-采集完成后可以直接启动内置 Viewer，不需要额外安装前端或 Web 框架：
+### 4. 查看轨迹
 
 ```bash
 roller view runs/quickstart
 ```
 
-打开终端打印的 `http://127.0.0.1:8765`。Viewer 按 task 聚合同一任务的多个模型
-rollout；选中 rollout 后可逐步展开 user、reasoning、tool call、tool result 和最终
-assistant content，并在 Inspector 中查看 system prompt、tools schema、运行信息和 User
-Simulator conversation。
+打开终端打印的 `http://127.0.0.1:8765`，按 task 查看 user、reasoning、工具调用、工具结果和最终回复。
 
-远程机器建议保持默认 loopback 并使用 SSH 端口转发。确实需要直接对外监听时使用
-`--host 0.0.0.0`，但页面会暴露 prompt、reasoning 和工具结果等敏感内容。完整说明见
-[轨迹可视化 Viewer](docs/viewer.md)。
+## 输入与输出
 
-## 📚 内置案例
-
-基础示例位于 [`examples/tasks/tasks.jsonl`](examples/tasks/tasks.jsonl)：
-
-| Task | 展示内容 |
-| --- | --- |
-| `01_text_only` | 纯文本单轮输入 |
-| `02_local_markdown` | 读取本地 Markdown，并生成文件结果 |
-| `03_user_memory_context` | 注入 `USER.md` 与 `MEMORY.md` |
-| `04_multi_turn` | 两条预定义 message 共用同一 Agent session |
-
-[`examples/tasks/user-simulator.jsonl`](examples/tasks/user-simulator.jsonl) 是独立的动态对话案例：User Simulator 扮演 HR，根据任务 Agent 当前给出的招聘广告逐轮补充要求，最后要求 Agent 把完整广告保存到 `outputs/recruitment-ad.md`。
-
-```bash
-roller collect \
-  --tasks examples/tasks/user-simulator.jsonl \
-  --model-config examples/json/openclaw-models.json \
-  --docker-image your-openclaw-image:tag \
-  --parallel 1 \
-  --timeout 900 \
-  --output runs \
-  --run-name user_simulator_hr
-```
-
-动态对话会运行两个独立 Harness，详细调度与保存规则见 [User Simulator 与动态对话](docs/user-simulator.md)。
-
-## 📝 Task 一览
-
-Task 清单支持 `.jsonl` 和 `.json`。JSONL 每行是一条 task；JSON 可以直接使用 task 数组或 `{"tasks": [...]}`。
-
-### 1. 单轮 Task
-
-下面是一条带本地输入、Context 和文件输出的单轮 task：
+最小 task 是一行 JSON：
 
 ```json
-{
-  "schema_version": "roller.task/v1",
-  "id": "product_summary",
-  "file_root": "files/product_summary",
-  "model": "my-openai-proxy/my-model",
-  "prompt": "阅读 inputs/product-brief.md，撰写摘要并保存到 outputs/summary.md。",
-  "files": {
-    "inputs": ["inputs/product-brief.md"],
-    "context": [
-      {"role": "user", "source": "context/USER.md", "capture": "hash"},
-      {"role": "memory", "source": "context/MEMORY.md", "capture": "hash"}
-    ],
-    "output_dir": "outputs"
-  }
-}
+{"schema_version":"roller.task/v1","id":"hello","prompt":"计算 2+3，只回复数字。"}
 ```
 
-对应文件包建议把输入和输出分开：
+Task 清单支持 `.jsonl`、JSON 数组或 `{"tasks": [...]}`。一条 task 可以进一步声明：
 
-```text
-files/product_summary/
-├── inputs/
-│   └── product-brief.md
-├── context/
-│   ├── USER.md
-│   └── MEMORY.md
-└── outputs/                   # 逻辑输出目录，可不预先创建
-```
+- `messages`：预定义多轮 user message；
+- `file_root` 与 `files.inputs`：需要复制进工作区的本地输入；
+- `files.context`：`AGENTS.md`、`USER.md`、`MEMORY.md`、skills 等 Context；
+- `files.output_dir`：Agent 可写且会被完整回收的目录；
+- `runtime`：环境变量、setup 命令和 task 级 thinking；
+- `user_simulator`：由另一个 OpenClaw Harness 动态生成后续 user message。
 
-`outputs/` 不需要预先创建。Roller 会在 Agent 工作区中准备可写目录，并把其中的文件保存到 sample 的 `results/`。
+完整字段见 [Task 格式参考](docs/task-format.md)。
 
-### 2. 对话模式
+每个成功 sample 至少包含：
 
-| 字段 | 用途 |
+| 文件 | 用途 |
 | --- | --- |
-| `prompt` / `question` | 单轮输入；`question` 是兼容字段 |
-| `messages` | 预定义多轮输入，按数组顺序发送到同一个 session |
-| `user_simulator` | 由另一个 Harness 根据完整上下文动态生成下一轮指令 |
+| `trace.jsonl` | 保留 Harness-native session，便于追溯与重新转换 |
+| `trace_ACTF.json` | 使用 `ACTF_v1.0` 统一 reasoning、工具调用和工具结果 |
+| `trace_SFT.json` | 单条最小训练样本，顶层只有 `messages` 与 `tools` |
+| `info.json` | 状态、耗时、usage、版本和输入来源 |
+| `results/` | task `output_dir` 中生成了文件时存在 |
 
-每条 task 只能选择一种对话模式。完整字段、路径约束和多轮示例见 [Task 格式参考](docs/task-format.md)。
+Run 根目录的 `sft.jsonl` 按 request 顺序汇总全部成功样本。需要审计 Harness 是否压缩、裁剪或改写了模型请求 context 时，使用 `--wire-trace full`；native session 不等同于模型实际收到的请求。详见 [轨迹产出文件指南](docs/trajectory-outputs.md)。
 
-### 3. 文件约定
+## 文档导航
 
-- `file_root`：该 task 的文件包根目录，相对于 task 清单所在目录。
-- `files.inputs`：只读输入，进入 Agent 后保持相对于 `file_root` 的路径。
-- `files.context`：由 Harness 按语义注入的系统文件或目录。
-- `files.output_dir`：Agent 可写目录，默认是 `outputs`；其中全部安全文件会被回收。
+阅读顺序：
 
-不要混淆两个输出位置：task 的 `files.output_dir` 决定 Agent 在工作区写到哪里，CLI 的 `--output` 决定整个 run 在宿主机保存到哪里。
+1. [快速上手](docs/getting-started.md)：从安装到采集、验收和查看轨迹。
+2. [Examples](examples/README.md)：OpenClaw、Codex、Claude Code 和进阶案例命令。
+3. [Task 格式参考](docs/task-format.md)：开始编写自己的 task。
+4. [轨迹产出文件指南](docs/trajectory-outputs.md)：理解 raw、ACTF、SFT、wire 和产出条件。
 
-输入快照、Context capture、输出安全检查和路径映射见 [文件、Task Bundle 与结果存储](docs/task-bundle-and-storage.md)。机器可读约束见 [Task JSON Schema](schemas/task.schema.json)。
+按需查阅：
 
-## 📦 结果格式
-
-普通 rollout 只保留必要文件：
-
-```text
-<output>/<run-name>/
-├── info.json
-├── lock.json                   # 脱敏后的可复现 Resume 运行锁
-├── sft.jsonl                    # 全部成功 task Agent 的训练记录
-└── samples/<model>/<index>_<task>/
-    ├── trace.jsonl
-    ├── trace_ACTF.json
-    ├── trace_SFT.json
-    ├── signature_recovery.jsonl # Claude Code 显式开启 signature recovery 时存在
-    ├── info.json
-    └── results/                 # 可选
-```
-
-- `trace.jsonl`：Harness-native session 事件。OpenClaw 通过 transcript SDK 导出；Codex
-  保存 `$CODEX_HOME/sessions` 中的原生 rollout；Claude Code 合并本 rollout 的主
-  session 和 subagent native JSONL。Roller 不做训练清洗，但它不是模型请求体或上游响应的逐字副本。
-- `trace_ACTF.json`：转换后的 `ACTF_v1.0` 轨迹，顶层固化捕获到的首个组装后 system prompt 和 tools schema，并按 step 保存 reasoning。
-- `trace_SFT.json`：只包含 `messages` 和 `tools` 的标准化训练样本；assistant 固定包含 `reasoning_content`、`content` 和 `tool_calls`。
-- `sft.jsonl`：按 request 顺序汇总所有成功 task Agent 的 `trace_SFT.json`，每行一个样本。
-- Run `info.json`：当前运行阶段、进度、usage 汇总和 sample 索引；采集中会周期更新。
-- `lock.json`：固定 task/input/context digest、模型配置、镜像 ID 和轨迹语义选项；不保存
-  API Key，`--resume` 配置不一致时拒绝混用旧样本。
-- Sample `info.json`：状态、错误、usage、版本、耗时和输入 digest。
-- `results/`：可选，保存 task `output_dir` 中的文件。
-
-各层轨迹的生成条件、保留策略、参数组合和失败/Resume 行为见
-[轨迹产出文件指南](docs/trajectory-outputs.md)。
-
-默认 `--wire-trace actf` 只把 tools schema 嵌入 ACTF，不保留完整消息历史；
-`--wire-trace full` 会额外保存每次发往模型 API 的 JSON 请求体
-`wire_trace.jsonl`；OpenClaw 还会保留 `cache_trace.jsonl`。Harness 可能在 session 与模型
-调用之间进行 context 组装、压缩、裁剪或格式适配，因此需要核对“模型当时真正看到了
-什么”时必须使用 `full`。捕获点、隐私边界和审计方法见
-[轨迹产出文件指南](docs/trajectory-outputs.md#32-session-历史不等于模型请求-context)。
-
-User Simulator rollout 还会增加 `conversation.json` 和 `user_simulator/`，分别保存干净的交替对话和 Simulator 自己的 raw/ACTF/SFT 轨迹。
-
-运行期日志、Task Bundle、retry 中间文件和未声明的工作区临时文件不会进入最终 run。字段说明和 Resume 规则见 [文件、Task Bundle 与结果存储](docs/task-bundle-and-storage.md)。
-
-## 🛠️ 常用参数
-
-| 参数 | 说明 |
+| 目标 | 文档 |
 | --- | --- |
-| `--model MODEL` | 指定任务 Agent 模型；可重复使用以运行多个模型 |
-| `--parallel N` | 并行 rollout 数量 |
-| `--retries N` | 失败后的重试次数 |
-| `--timeout N` | 每条 rollout 的总超时秒数 |
-| `--output DIR` | run 的宿主机根目录 |
-| `--run-name NAME` | 本次 run 的目录名 |
-| `--resume` | 在运行锁一致时，校验并跳过完整的成功 sample；损坏 sample 自动重跑 |
-| `--dry-run` | 只校验并打印计划 |
-| `--harness NAME` | `openclaw`（默认）、`codex` 或 `claude-code` |
-| `--docker-image IMAGE` | Harness 镜像；默认使用对应的 OpenClaw、`roller-codex:0.149.0` 或 `roller-claude-code:2.1.222` |
-| `--container-user USER` | 一次性 task 容器用户；默认 `0`，`image` 表示沿用镜像默认用户 |
-| `--thinking LEVEL` | OpenClaw thinking、Codex reasoning effort 或 Claude Code effort；Harness 会校验不适用的档位 |
-| `--external-thinking MODE` | `off`（默认）、`external` 或 `external_always`；OpenClaw/Codex 使用 `deep_think` 构造显式 CoT，Claude Code 当前只接受 `off` |
-| `--keep-thinking` / `--no-keep-thinking` | 控制 ACTF/SFT 是否导出 thinking；OpenClaw 的关闭模式还会剥离后续请求历史，Codex/Claude Code raw 和 resume/continue 不受影响 |
-| `--claude-signature-recovery MODE` | Claude Code 实验性 signature replay：`off`（默认）、`fill` 或 `prefer`；成功文本进入 ACTF/SFT，raw 不改写 |
-| `--cache-trace` / `--no-cache-trace` | 是否记录每次组装的 system prompt；ACTF 固化首个有效值 |
-| `--wire-trace MODE` | `actf`（默认）、`full` 或 `off`；控制 tools schema 与请求体记录 |
+| 选择并配置 Harness | [OpenClaw](docs/openclaw-configuration.md) · [Codex](docs/codex-configuration.md) · [Claude Code](docs/claude-code-configuration.md) |
+| 查命令行参数与适用范围 | [CLI 参数参考](docs/cli-reference.md) |
+| 管理输入、Context、输出和 Resume | [Task Bundle 与结果存储](docs/task-bundle-and-storage.md) |
+| 制作训练数据 | [SFT 数据格式](docs/sft-format.md) |
+| 保存显式 CoT | [External Thinking](docs/external-thinking.md) |
+| 动态生成 user message | [User Simulator](docs/user-simulator.md) |
+| 使用可视化页面 | [Viewer](docs/viewer.md) |
+| 浏览全部资料 | [Docs 首页](docs/README.md) |
 
-查看全部参数：
+## 安全边界
 
-```bash
-roller collect --help
-```
+- 输入和 Context 在启动容器前校验路径、大小、符号链接和内容摘要；
+- API Key 只从宿主机环境或外部配置读取，不写入 run metadata；
+- 只回收 task `output_dir` 中的普通文件和目录；
+- `wire_trace.jsonl` 会保存完整请求文本，可能包含敏感 prompt、reasoning 和工具结果，应按敏感数据管理；
+- Viewer 默认只监听 `127.0.0.1`，远程访问建议使用 SSH 端口转发。
 
-## 📖 文档
+完整规则见 [Task Bundle 与结果存储](docs/task-bundle-and-storage.md#8-安全与隐私边界)。
 
-建议从 [Docs 首页](docs/README.md) 开始。
+## 开发
 
-| 文档 | 内容 |
-| --- | --- |
-| [Examples](examples/README.md) | 直接运行基础 task、User Simulator 和多模态配置 |
-| [Task 格式参考](docs/task-format.md) | 字段、对话模式、文件声明、runtime 与完整案例 |
-| [文件、Task Bundle 与结果存储](docs/task-bundle-and-storage.md) | 输入快照、Context、results、ACTF、重试与 Resume |
-| [轨迹产出文件指南](docs/trajectory-outputs.md) | raw、ACTF、SFT、wire、产出条件和使用区别 |
-| [SFT 数据格式](docs/sft-format.md) | `messages`/`tools` schema、ACTF 映射和严格校验 |
-| [轨迹可视化 Viewer](docs/viewer.md) | 启动方式、页面结构、懒加载、安全边界和缺失字段行为 |
-| [OpenClaw、模型与 API](docs/openclaw-configuration.md) | Docker、provider、API base、代理、搜索和常见问题 |
-| [Codex Harness 指南](docs/codex-configuration.md) | 镜像构建、API、reasoning、native raw、ACTF/SFT 和限制 |
-| [Claude Code Harness 指南](docs/claude-code-configuration.md) | 镜像构建、Anthropic API、thinking effort、signature recovery、native raw、wire 和 ACTF/SFT |
-| [User Simulator 与动态对话](docs/user-simulator.md) | Conversation Manager、终止协议、资源占用和双方轨迹 |
-
-## 🔒 安全边界
-
-- 输入和 Context 在启动容器前检查路径、大小、符号链接和 hash。
-- API Key 只从运行环境或外部配置读取，不写入 run metadata。
-- 只回收 `output_dir` 中的普通文件和目录；符号链接及特殊文件会被拒绝。
-- Context capture 策略会影响内容留存方式和安全 Resume。
-
-详细规则见 [文件、Task Bundle 与结果存储](docs/task-bundle-and-storage.md#8-安全与隐私边界)。
-
-## 🧪 开发
-
-主要扩展点：
-
-- Harness 接口：[src/roller/harnesses/base.py](src/roller/harnesses/base.py)
-- OpenClaw adapter：[src/roller/harnesses/openclaw.py](src/roller/harnesses/openclaw.py)
-- Codex adapter：[src/roller/harnesses/codex.py](src/roller/harnesses/codex.py)
-- Claude Code adapter：[src/roller/harnesses/claude_code.py](src/roller/harnesses/claude_code.py)
-- Claude signature recovery：[src/roller/claude_signature_recovery.py](src/roller/claude_signature_recovery.py)
-- Conversation Manager：[src/roller/conversation.py](src/roller/conversation.py)
-- ACTF 转换：[src/roller/actf.py](src/roller/actf.py)、[src/roller/codex_actf.py](src/roller/codex_actf.py)、
-  [src/roller/claude_code_actf.py](src/roller/claude_code_actf.py)
-
-运行测试：
+主要扩展点位于 `src/roller/harnesses/`、`src/roller/*_actf.py`、`src/roller/sft.py` 和 `src/roller/viewer/`。
 
 ```bash
 PYTHONPATH=src python3 -m unittest discover -s tests -v
 ```
 
-## 📄 License
-
-[Apache License 2.0](LICENSE)
+项目当前处于 Alpha 阶段，Task schema 为 `roller.task/v1`，统一轨迹格式为 `ACTF_v1.0`。许可证为 [Apache License 2.0](LICENSE)。

@@ -1,5 +1,7 @@
 # Task 格式参考
 
+[文档中心](README.md) · [快速上手](getting-started.md) · [文件生命周期](task-bundle-and-storage.md) · [机器可读 Schema](../schemas/task.schema.json)
+
 Roller 使用 `roller.task/v1` 描述一次 rollout 需要的对话、文件、Context 和运行设置。Task 清单可以是 JSONL 或 JSON：
 
 - `.jsonl`：每个非空行是一条 task。

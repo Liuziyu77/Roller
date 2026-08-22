@@ -13,6 +13,21 @@ from roller.cli import _build_parser, _collect, _docker_preflight
 
 
 class CliTests(unittest.TestCase):
+    def test_collect_help_groups_shared_options_by_scope(self) -> None:
+        parser = _build_parser()
+        collect_parser = parser._subparsers._group_actions[0].choices["collect"]
+        groups = {
+            group.title: {action.dest for action in group._group_actions}
+            for group in collect_parser._action_groups
+        }
+
+        self.assertIn("thinking", groups["Harness runtime and trajectory"])
+        self.assertIn("wire_trace", groups["Harness runtime and trajectory"])
+        self.assertIn("model_config", groups["OpenClaw"])
+        self.assertNotIn("thinking", groups["OpenClaw"])
+        self.assertIn("api_base", groups["Codex and Claude Code API"])
+        self.assertIn("api_key_env", groups["Codex and Claude Code API"])
+
     def test_parser_accepts_codex_harness_options(self) -> None:
         args = _build_parser().parse_args(
             [

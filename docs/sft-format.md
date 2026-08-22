@@ -1,5 +1,7 @@
 # SFT 数据格式
 
+[文档中心](README.md) · [轨迹产物](trajectory-outputs.md) · [Task 格式](task-format.md) · [External Thinking](external-thinking.md)
+
 Roller 在保留 raw trace 和 ACTF 的同时，为每条成功轨迹生成一份只用于训练的
 `trace_SFT.json`。Run 根目录的 `sft.jsonl` 按 request index 汇总所有成功 sample，
 每行与对应的 `trace_SFT.json` 内容相同。

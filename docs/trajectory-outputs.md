@@ -1,5 +1,7 @@
 # 轨迹产出文件指南
 
+[文档中心](README.md) · [快速上手](getting-started.md) · [SFT 格式](sft-format.md) · [Viewer](viewer.md)
+
 本文说明 `roller collect` 会产出哪些文件、每个文件何时生成和保留、它们之间的
 信息差异，以及训练、分析、调试时应选择哪一层。
 
@@ -11,8 +13,8 @@
 | 查看单条训练样本 | Sample 级 `trace_SFT.json` | 与 `sft.jsonl` 中对应 record 完全相同 |
 | 轨迹分析、打分、统计 token | `trace_ACTF.json` | 有 step、reasoning、observation、metric 和时间信息 |
 | 追查 Harness session 原始事件 | `trace.jsonl` | OpenClaw、Codex 或 Claude Code native session，Roller 不做训练清洗 |
-| 核对首个捕获到的组装后 system prompt | `trace_ACTF.json` 顶层 | 默认从 cache trace 提取并固化一次 |
-| 核对每次 system prompt 是否变化 | `--wire-trace full` 的 `cache_trace.jsonl` | 保留 OpenClaw 每次 LLM call 的诊断记录 |
+| 查看 ACTF 捕获的首个 system prompt | `trace_ACTF.json` 顶层 | 来自各 Harness 可取得的 native/cache/wire 来源，只固化一次 |
+| 核对 OpenClaw 每次 system prompt 是否变化 | `--wire-trace full` 的 `cache_trace.jsonl` | 保留 OpenClaw 每次 LLM call 的诊断记录 |
 | 核对模型实际收到的请求历史和 tools | `--wire-trace full` 的 `wire_trace.jsonl` | 保存代理实际转发的每次 JSON 请求体 |
 | 审计 Claude signature 恢复 | `signature_recovery.jsonl` | 保存每个 signed block 的尝试、质量、usage 和恢复文本，不复制 signature |
 | 查看 Task Agent 交付文件 | `results/` | 只回收 task 声明的输出目录和额外 collect path |

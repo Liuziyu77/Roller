@@ -1,7 +1,10 @@
 # Codex Harness 指南
 
-本文说明如何构建 Roller 的 Codex CLI 镜像、连接 API、控制 reasoning effort，以及理解
-Codex native raw、ACTF 和 SFT 之间的信息边界。
+[文档中心](README.md) · [快速上手](getting-started.md) · [OpenClaw](openclaw-configuration.md) · [Claude Code](claude-code-configuration.md) · [CLI 参数](cli-reference.md)
+
+本页只说明 Codex 专属的镜像、Responses API、reasoning、native session 和排错。Task 字段见 [Task 格式参考](task-format.md)，所有 Harness 共用的产物语义见 [轨迹产出文件指南](trajectory-outputs.md)。
+
+> 快速定位：支持范围（第 1 节）· 镜像（第 2 节）· API（第 3 节）· reasoning/external thinking（第 4 节）· native/ACTF/SFT/wire（第 7–8 节）· 排错（第 9 节）
 
 ## 1. 当前支持范围
 

@@ -1,60 +1,99 @@
-# Roller 文档
+# Roller 文档中心
 
-这里集中说明 Roller 的 Task、文件生命周期、OpenClaw/Codex/Claude Code
-配置和动态对话机制。想先跑通项目，请从根目录
-[README](../README.md#-快速开始) 或 [Examples](../examples/README.md) 开始。
+[项目首页](../README.md) · [快速上手](getting-started.md) · [示例](../examples/README.md) · [CLI 参数参考](cli-reference.md)
+
+文档分为快速上手、Harness 配置、Task、轨迹产物和高级功能五类。各专题页独立维护，不要求按目录顺序通读。
 
 ## 阅读顺序
 
-第一次使用建议按以下顺序阅读：
+| 阶段 | 阅读内容 | 完成标准 |
+| --- | --- | --- |
+| 1. 跑通 | [快速上手](getting-started.md) | 完成 dry-run、采集并打开 Viewer |
+| 2. 选 Harness | [OpenClaw](openclaw-configuration.md)、[Codex](codex-configuration.md) 或 [Claude Code](claude-code-configuration.md) | 镜像、API 协议和 reasoning 参数匹配 |
+| 3. 写 Task | [Task 格式参考](task-format.md) | 能声明 prompt/messages、输入、Context 和输出目录 |
+| 4. 验收产物 | [轨迹产出文件指南](trajectory-outputs.md) | 能区分 raw、ACTF、SFT、wire 与 results |
+| 5. 批量运行 | [Task Bundle 与结果存储](task-bundle-and-storage.md) | 理解快照、run lock、retry 与 Resume |
 
-1. [Examples](../examples/README.md)：准备环境变量，执行四个基础 task。
-2. [Task 格式参考](task-format.md)：编写自己的单轮、多轮或 User Simulator task。
-3. [文件、Task Bundle 与结果存储](task-bundle-and-storage.md)：理解输入、Context、输出和最终 run。
-4. [OpenClaw、模型与 API](openclaw-configuration.md)：连接自定义 API、选择 adapter、配置 Docker 与搜索。
-5. 使用 Codex 时改读 [Codex Harness 指南](codex-configuration.md)；使用 Anthropic
-   Messages API 和 Claude Code 时改读 [Claude Code Harness 指南](claude-code-configuration.md)。
-6. [轨迹可视化 Viewer](viewer.md)：按 task 浏览 reasoning、工具调用、结果和运行信息。
+仓库内可运行命令集中在 [Examples](../examples/README.md)。
 
-需要动态生成 user message 时，再阅读 [User Simulator 与动态对话](user-simulator.md)。
+## 按目标查文档
 
-## 文档索引
+### 配置与运行
 
-| 文档 | 主要内容 |
+| 目标 | 文档 |
 | --- | --- |
-| [Task 格式参考](task-format.md) | JSON/JSONL、顶层字段、三种对话模式、文件声明、runtime、完整案例 |
-| [文件、Task Bundle 与结果存储](task-bundle-and-storage.md) | 路径模型、输入快照、Context capture、results、ACTF、重试和 Resume |
-| [轨迹产出文件指南](trajectory-outputs.md) | raw、ACTF、SFT、wire 的生成条件、区别和推荐用法 |
-| [SFT 数据格式](sft-format.md) | 最小 `messages`/`tools` 训练格式、转换规则和完整性校验 |
-| [轨迹可视化 Viewer](viewer.md) | 本地只读 Web UI、数据来源、懒加载、远程访问和安全边界 |
-| [OpenClaw、模型与 API](openclaw-configuration.md) | Docker 镜像、provider JSON、API base、环境变量、代理、搜索和排错 |
-| [Codex Harness 指南](codex-configuration.md) | Codex 镜像、API、effort、native session、ACTF/SFT 和当前限制 |
-| [Claude Code Harness 指南](claude-code-configuration.md) | Claude Code 镜像、Anthropic API、thinking、signature recovery、native session、wire 和轨迹转换 |
-| [External Thinking](external-thinking.md) | 关闭原生 reasoning，以 `deep_think` 工具实现 external/external_always 显式 CoT |
-| [User Simulator 与动态对话](user-simulator.md) | Conversation Manager、双 Harness、JSON 决策、终止条件和双方轨迹 |
-| [Task JSON Schema](../schemas/task.schema.json) | `roller.task/v1` 的机器可读约束 |
-| [Examples](../examples/README.md) | 仓库内可运行的配置与 task |
+| 从空环境完成第一次采集 | [快速上手](getting-started.md) |
+| 查某个 CLI 参数、默认值或适用 Harness | [CLI 参数参考](cli-reference.md) |
+| 连接 Responses、Chat Completions 或开源模型服务 | [OpenClaw Harness 指南](openclaw-configuration.md) |
+| 使用 Codex CLI 采集轨迹 | [Codex Harness 指南](codex-configuration.md) |
+| 使用 Anthropic Messages API 与 Claude Code | [Claude Code Harness 指南](claude-code-configuration.md) |
+| 批量并行、retry 或断点续跑 | [Task Bundle 与结果存储](task-bundle-and-storage.md#6-run-与-sample) |
 
-## 核心名词
+### Task 与文件
+
+| 目标 | 文档 |
+| --- | --- |
+| 编写单轮或预定义多轮 task | [Task 格式参考](task-format.md) |
+| 携带本地文件、Context、skills 或 setup | [Task 格式参考](task-format.md#4-fileroot) |
+| 理解输入快照、工作区和结果回收 | [Task Bundle 与结果存储](task-bundle-and-storage.md) |
+| 让另一个模型动态扮演用户 | [User Simulator](user-simulator.md) |
+
+### 轨迹与训练数据
+
+| 目标 | 文档 |
+| --- | --- |
+| 知道每个产物何时生成、应该看哪个 | [轨迹产出文件指南](trajectory-outputs.md) |
+| 直接训练 `messages` + `tools` 数据 | [SFT 数据格式](sft-format.md) |
+| 核对模型实际收到的请求 context | [Wire trace 与 context 审计](trajectory-outputs.md#32-session-历史不等于模型请求-context) |
+| 用工具参数保存显式 CoT | [External Thinking](external-thinking.md) |
+| 恢复 Claude signed thinking | [Claude Signature Recovery](claude-code-configuration.md#5-signature-recovery实验性) |
+| 在网页中检查 reasoning 和工具步骤 | [Viewer](viewer.md) |
+
+## 按 Harness 选择
+
+| 能力 | OpenClaw | Codex | Claude Code |
+| --- | --- | --- | --- |
+| API 协议 | Responses / Chat Completions | Responses | Anthropic Messages |
+| 模型配置入口 | `--model-config` | `--api-base` + `--api-key-env` | `--api-base` + `--api-key-env` |
+| 单轮 / 预定义多轮 | 是 / 是 | 是 / 是 | 是 / 是 |
+| 动态 User Simulator | 是 | 否 | 否 |
+| External thinking | 是 | 是 | 否 |
+| Signature recovery | 否 | 否 | 实验性 |
+| Wire request capture | 是 | 是 | 是 |
+| Harness 专属指南 | [打开](openclaw-configuration.md) | [打开](codex-configuration.md) | [打开](claude-code-configuration.md) |
+
+## 核心概念
 
 | 名词 | 含义 |
 | --- | --- |
-| Task | 一条输入数据，声明对话方式、依赖文件、Context、输出目录和运行要求 |
-| Model ref | Harness 使用的模型标识，例如 `provider/model` |
+| Task | 一条输入数据，声明对话、文件、Context、输出目录和运行要求 |
+| Model ref | Harness 使用的模型标识；OpenClaw 通常为 `provider/model` |
 | Rollout | 一个 task 与一个任务 Agent 模型的实际执行 |
-| Harness | 驱动 Agent 运行并返回原始轨迹与 canonical ACTF 的适配器；当前支持 OpenClaw、Codex 和 Claude Code |
+| Harness | 运行 Agent 并导出 native raw、ACTF 和 usage 的适配器 |
 | Task Bundle | 运行前构建的不可变输入与 Context 快照，只在运行期存在 |
+| Run | 一次 `roller collect` 的完整目录，包含多个 sample 和聚合 SFT |
 | Sample | 一个 rollout 的最终保存目录 |
-| User Simulator | 另一个 live Harness，读取当前对话并动态生成下一条 user message |
+| ACTF | Roller 的统一分析轨迹 `ACTF_v1.0` |
+| SFT | 顶层只有 `messages` 与 `tools` 的训练投影 |
+| Wire trace | Roller 客户端实际转发给模型 API 的 request body 记录 |
 
-命令行传入多个 `--model` 时，Roller 会把每个 task 与这些模型组合，分别产生 rollout。`--parallel` 控制同时运行多少个 rollout，而不是一个 rollout 内的模型调用数。
+命令行传入多个 `--model` 时，每个 task 会与每个模型组合成独立 rollout；`--parallel` 控制同时运行的 rollout 数，不是单个 rollout 内的模型调用数。
 
-## 当前范围
+## 文档职责
 
-- Task schema：`roller.task/v1`
-- 标准化轨迹：`ACTF_v1.0`
-- 训练数据：每个 sample 的 `trace_SFT.json` 与 run 级 `sft.jsonl`
-- 已实现 Harness：OpenClaw、Codex CLI、Claude Code
-- 支持 Python：3.10+
+- `README.md`：项目定位和最短入门路径；
+- `getting-started.md`：首次运行的完整流程；
+- Harness 指南：只解释对应镜像、API、reasoning、native raw 与限制；
+- `task-format.md`：输入 schema 的权威人工参考；
+- `trajectory-outputs.md`：产物条件和信息边界的权威参考；
+- `sft-format.md`：训练投影 schema 的权威参考；
+- `cli-reference.md`：参数适用范围和默认值。
 
-项目仍处于 Alpha 阶段。扩展 Harness 时应保留 Task、Sample 与 ACTF 的稳定边界，Harness 私有运行细节放在 adapter 内部。
+机器可读 Task 约束见 [`schemas/task.schema.json`](../schemas/task.schema.json)。CLI 的最终事实来源始终是：
+
+```bash
+roller collect --help
+roller view --help
+```
+
+当前范围：Python 3.10+、Task schema `roller.task/v1`、轨迹格式 `ACTF_v1.0`，项目处于 Alpha 阶段。
