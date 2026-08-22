@@ -1,6 +1,6 @@
 # External Thinking：以工具调用保存显式 CoT
 
-本文说明 Roller 的 `external` 与 `external_always` 模式如何关闭 provider 原生 reasoning，
+参考https://github.com/can1357/oh-my-pi， Roller 实现了类似的 `external` 与 `external_always` 模式：关闭 provider 原生 reasoning，
 把模型明确生成的中间推理保存进 `deep_think` 工具参数，以及如何在专用 SFT 中把它
 标准化为 `reasoning_content`。
 
