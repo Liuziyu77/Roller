@@ -171,7 +171,7 @@ Roller 不根据 token 数、最终文本或签名推测隐藏 reasoning。`--no
 
 ## 5. Signature recovery（实验性）
 
-某些 provider/模型会在 Claude Code native session 中保存 `thinking.signature`，但只给出压缩
+参考https://github.com/5SSjw/open-open-reasoning， 某些 provider/模型会在 Claude Code native session 中保存 `thinking.signature`，但只给出压缩
 summary，甚至把 `thinking` 文本留空。Signature 本身是 provider 可解封的不透明载荷，Roller
 不能在本地解密。可显式启用第二次 Anthropic Messages 请求：把 signature 原样放回
 `assistant.thinking` block，再要求模型机械转录该 block 表示的 working。
