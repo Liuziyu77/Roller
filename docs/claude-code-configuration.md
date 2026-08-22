@@ -180,6 +180,10 @@ summary，甚至把 `thinking` 文本留空。Signature 本身是 provider 可�
 不能在本地解密。可显式启用第二次 Anthropic Messages 请求：把 signature 原样放回
 `assistant.thinking` block，再要求模型机械转录该 block 表示的 working。
 
+Signature recovery 专用于 Claude 系列的 signed thinking，例如 Claude Opus 4.8（示例服务
+ID：`claude-opus-4-8`）。它不用于 GPT 或默认返回明文 reasoning 的开源模型；GPT 使用
+external thinking，开源模型保持默认 `--keep-thinking`。
+
 ```bash
 roller collect \
   --harness claude-code \

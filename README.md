@@ -44,6 +44,16 @@ Docker 中的 Agent Harness
 
 三者共享相同的 Task、Sample、ACTF、SFT、Viewer、重试和 Resume 边界。镜像、API 和 reasoning 参数不同，详见对应的 [Harness 指南](docs/README.md#按-harness-选择)。
 
+## CoT 采集方式
+
+| 模型类型 | 推荐方式 | 保存结果 |
+| --- | --- | --- |
+| GPT reasoning 系列，例如 `gpt-5.6-sol` | OpenClaw 或 Codex 的 `--external-thinking external|external_always` | 模型写入 `deep_think` 的显式 CoT 会进入 SFT `reasoning_content` |
+| Claude 系列，例如 Claude Opus 4.8（示例 ID：`claude-opus-4-8`） | Claude Code 的 `--claude-signature-recovery fill|prefer` | Provider replay 成功后，恢复文本进入 ACTF/SFT `reasoning_content` |
+| 返回明文 reasoning 的开源模型，例如 Qwen、GLM | 保持默认 `--keep-thinking`，无需 external thinking | API 返回的 `reasoning_content`、`reasoning` 或 `reasoning_text` 会保留到 ACTF/SFT |
+
+开源模型服务必须实际返回明文 reasoning。只报告 reasoning token 数、只返回压缩 summary 或返回加密状态时，Roller 无法从中反推出完整 CoT。
+
 ## 最小运行流程
 
 以下流程使用 OpenClaw 完成一次基础采集。镜像构建、Codex/Claude Code 配置和结果验收见 [快速上手](docs/getting-started.md)。

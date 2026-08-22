@@ -34,6 +34,14 @@ OpenClaw 同时兼容 Responses 与 Chat Completions，也是当前唯一支持�
 | Codex | Responses streaming | `roller-codex:0.149.0` | 用仓库 Dockerfile 构建 |
 | Claude Code | Anthropic `/v1/messages` | `roller-claude-code:2.1.222` | 用仓库 Dockerfile 构建 |
 
+CoT 配置按模型返回形式选择：
+
+- GPT reasoning 系列（如 `gpt-5.6-sol`）：使用 OpenClaw/Codex 的 `external` 或 `external_always` 获取显式 CoT；
+- Claude 系列（如 Claude Opus 4.8，示例 ID `claude-opus-4-8`）：使用 Claude Code signature recovery；
+- Qwen、GLM 等开源模型：保持默认 `--keep-thinking`。服务返回的明文 reasoning 会进入 ACTF/SFT `reasoning_content`，无需 external thinking。
+
+如果服务只返回 reasoning token 数而没有明文 reasoning，第三种方式不会产生 CoT 文本。
+
 ### OpenClaw
 
 在线拉取和离线加载二选一：

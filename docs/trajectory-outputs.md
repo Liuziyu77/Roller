@@ -482,6 +482,13 @@ effort、开源模型 profile 和 OpenClaw 镜像限制见
 的 `reasoning_content`。GPT 的压缩 summary 会原样进入该字段，encrypted reasoning
 不会进入 SFT。
 
+模型类别对应的推荐路径：
+
+- GPT reasoning 系列（如 `gpt-5.6-sol`）：使用 `external` / `external_always` 获取显式 CoT；
+- Claude 系列（如 Claude Opus 4.8，示例 ID `claude-opus-4-8`）：使用 signature recovery；
+- 返回明文 reasoning 的 Qwen、GLM 等开源模型：保持默认 `--keep-thinking`，CoT 直接进入
+  ACTF/SFT `reasoning_content`。
+
 `--no-keep-thinking` 即使配合 `--wire-trace off`，也必须启动代理来剥离请求历史，因此
 OpenClaw 仍要求 `--model-config` 中存在可代理 `baseUrl`；Codex 和 Claude Code 不做
 该 history 剥离。
