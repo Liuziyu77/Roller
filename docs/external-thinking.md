@@ -219,9 +219,15 @@ SFT 不要求训练后的模型继续调用内部 scratchpad 工具。转换器�
 顶层仍严格只有 `messages` 与 `tools`。该 `reasoning_content` 是训练投影，不是 provider
 原生 reasoning 字段的 wire 证据；检查真实协议必须查看 raw 或 full wire。
 
+Claude Code Harness 当前不实现 external thinking。`--harness claude-code` 只接受
+`--external-thinking off`，并从 Claude native session 导出服务实际返回的明文 thinking。
+该限制与 Anthropic Messages API 的调用和轨迹采集无关；见
+[Claude Code Harness 指南](claude-code-configuration.md)。
+
 ### `wire_trace.jsonl`
 
-`--wire-trace full` 在 OpenClaw 和 Codex 中都保存代理实际转发的 body，并增加诊断字段：
+`--wire-trace full` 在支持 external thinking 的 OpenClaw 和 Codex 中都保存代理
+实际转发的 body，并增加诊断字段：
 
 ```json
 {"external_thinking_phase":"think","body":{"reasoning":{"effort":"none"}}}

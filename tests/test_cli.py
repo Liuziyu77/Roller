@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import contextlib
+import io
+import json
 import subprocess
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
-from roller.cli import _build_parser, _docker_preflight
+from roller.cli import _build_parser, _collect, _docker_preflight
 
 
 class CliTests(unittest.TestCase):
@@ -35,6 +40,91 @@ class CliTests(unittest.TestCase):
         self.assertEqual(args.reasoning_summary, "detailed")
         self.assertEqual(args.external_thinking, "external_always")
         self.assertTrue(args.codex_websockets)
+
+    def test_parser_accepts_claude_code_harness_options(self) -> None:
+        args = _build_parser().parse_args(
+            [
+                "collect",
+                "--tasks",
+                "tasks.jsonl",
+                "--harness",
+                "claude-code",
+                "--api-key-env",
+                "ROLLER_ANTHROPIC_KEY",
+                "--anthropic-base-url",
+                "http://example.test/v1/messages",
+                "--thinking",
+                "high",
+                "--claude-max-turns",
+                "20",
+                "--claude-max-thinking-tokens",
+                "4096",
+                "--claude-permission-mode",
+                "bypassPermissions",
+            ]
+        )
+        self.assertEqual(args.harness, "claude-code")
+        self.assertEqual(args.api_key_env, "ROLLER_ANTHROPIC_KEY")
+        self.assertEqual(args.api_base, "http://example.test/v1/messages")
+        self.assertEqual(args.thinking, "high")
+        self.assertEqual(args.claude_max_turns, 20)
+        self.assertEqual(args.claude_max_thinking_tokens, 4096)
+
+    def test_claude_code_dry_run_normalizes_without_docker_or_secret(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            tasks = Path(temporary) / "tasks.jsonl"
+            tasks.write_text(
+                json.dumps({"id": "hello", "prompt": "say hello"}) + "\n",
+                encoding="utf-8",
+            )
+            args = _build_parser().parse_args(
+                [
+                    "collect",
+                    "--tasks",
+                    str(tasks),
+                    "--harness",
+                    "claude-code",
+                    "--model",
+                    "claude-sonnet-4-6-thinking",
+                    "--api-base",
+                    "http://example.test/v1/messages",
+                    "--thinking",
+                    "high",
+                    "--dry-run",
+                ]
+            )
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                result = _collect(args)
+        payload = json.loads(output.getvalue())
+        self.assertEqual(result, 0)
+        self.assertEqual(payload["harness"], "claude-code")
+        self.assertEqual(payload["trajectories"], 1)
+        self.assertEqual(payload["plan"][0]["turns"]["count"], 1)
+
+    def test_claude_code_rejects_external_thinking_before_docker(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            tasks = Path(temporary) / "tasks.jsonl"
+            tasks.write_text(
+                json.dumps({"id": "hello", "prompt": "say hello"}) + "\n",
+                encoding="utf-8",
+            )
+            args = _build_parser().parse_args(
+                [
+                    "collect",
+                    "--tasks",
+                    str(tasks),
+                    "--harness",
+                    "claude-code",
+                    "--model",
+                    "claude-sonnet-4-6-thinking",
+                    "--external-thinking",
+                    "external",
+                    "--dry-run",
+                ]
+            )
+            with self.assertRaisesRegex(ValueError, "not implemented"):
+                _collect(args)
 
     @patch("roller.cli.subprocess.run")
     @patch("roller.cli.shutil.which", return_value="/usr/bin/docker")
