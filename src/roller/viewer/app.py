@@ -223,7 +223,10 @@ class RollerRun:
                         logger.warning("ignoring unreadable sample info %s: %s", info_path, exc)
                         continue
                     relative = safe_info.parent.relative_to(self.root).as_posix()
-                    candidates[relative] = {**candidates.get(relative, {}), **sample_info}
+                    # Sample info carries the finalized trajectory details, while the
+                    # run checkpoint carries this invocation's status (for example,
+                    # ``skipped`` after Resume). Preserve that run-level overlay.
+                    candidates[relative] = {**sample_info, **candidates.get(relative, {})}
 
             rollouts: dict[str, Rollout] = {}
             for relative, info in sorted(candidates.items()):
@@ -250,6 +253,7 @@ class RollerRun:
                     models.add(item["model"])
                 tasks.add(item["task_id"])
             configuration = _mapping(self._run_info.get("configuration"))
+            progress = _mapping(self._run_info.get("summary"))
             return {
                 "schema_version": "roller.viewer.run/v1",
                 "name": self.root.name,
@@ -258,6 +262,13 @@ class RollerRun:
                 "roller_version": self._run_info.get("roller_version"),
                 "started_at": self._run_info.get("started_at"),
                 "finished_at": self._run_info.get("finished_at"),
+                "updated_at": self._run_info.get("updated_at"),
+                "state": self._run_info.get("state"),
+                "progress": {
+                    "total": progress.get("total"),
+                    "processed": progress.get("processed"),
+                    "pending": progress.get("pending"),
+                },
                 "task_count": len(tasks),
                 "rollout_count": len(summaries),
                 "status_counts": status_counts,
@@ -267,6 +278,9 @@ class RollerRun:
                     "harness": configuration.get("harness"),
                     "trajectory_count": configuration.get("trajectory_count"),
                     "thinking": _mapping(configuration.get("openclaw")).get("thinking"),
+                    "external_thinking": _mapping(configuration.get("openclaw")).get(
+                        "external_thinking"
+                    ),
                     "keep_thinking": _mapping(configuration.get("openclaw")).get(
                         "keep_thinking"
                     ),

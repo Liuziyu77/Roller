@@ -24,6 +24,7 @@ Roller 把 task 清单与模型列表展开成独立 rollout，在隔离的 Dock
 | 系统文件注入 | 支持 `USER.md`、`MEMORY.md`、`SYSTEM.md`、`SOUL.md`、`AGENTS.md` 和 skills |
 | 自动回收结果 | Agent 写入 `output_dir` 的全部安全文件会按原目录结构保存 |
 | 三层轨迹格式 | 同时保存 OpenClaw raw、便于分析的 `ACTF_v1.0` 和最小 SFT 数据 |
+| 可靠断点续跑 | 运行锁阻止配置混用，周期 checkpoint 保存进度，复用前校验轨迹完整性 |
 | 轨迹可视化 | 内置只读 Web Viewer，按 task 展示 reasoning、工具调用、结果和最终回复 |
 | 自定义模型服务 | 支持自定义 provider、API base、文本模型和多模态模型 |
 
@@ -243,6 +244,7 @@ files/product_summary/
 ```text
 <output>/<run-name>/
 ├── info.json
+├── lock.json                   # 脱敏后的可复现 Resume 运行锁
 ├── sft.jsonl                    # 全部成功 task Agent 的训练记录
 └── samples/<model>/<index>_<task>/
     ├── trace.jsonl
@@ -258,7 +260,10 @@ files/product_summary/
 - `trace_ACTF.json`：转换后的 `ACTF_v1.0` 轨迹，顶层固化捕获到的首个组装后 system prompt 和 tools schema，并按 step 保存 reasoning。
 - `trace_SFT.json`：只包含 `messages` 和 `tools` 的标准化训练样本；assistant 固定包含 `reasoning_content`、`content` 和 `tool_calls`。
 - `sft.jsonl`：按 request 顺序汇总所有成功 task Agent 的 `trace_SFT.json`，每行一个样本。
-- `info.json`：状态、错误、usage、版本、耗时和输入 digest。
+- Run `info.json`：当前运行阶段、进度、usage 汇总和 sample 索引；采集中会周期更新。
+- `lock.json`：固定 task/input/context digest、模型配置、镜像 ID 和轨迹语义选项；不保存
+  API Key，`--resume` 配置不一致时拒绝混用旧样本。
+- Sample `info.json`：状态、错误、usage、版本、耗时和输入 digest。
 - `results/`：可选，保存 task `output_dir` 中的文件。
 
 各层轨迹的生成条件、保留策略、参数组合和失败/Resume 行为见
@@ -285,7 +290,7 @@ User Simulator rollout 还会增加 `conversation.json` 和 `user_simulator/`，
 | `--timeout N` | 每条 rollout 的总超时秒数 |
 | `--output DIR` | run 的宿主机根目录 |
 | `--run-name NAME` | 本次 run 的目录名 |
-| `--resume` | 跳过满足完整性与 digest 条件的成功 sample |
+| `--resume` | 在运行锁一致时，校验并跳过完整的成功 sample；损坏 sample 自动重跑 |
 | `--dry-run` | 只校验并打印计划 |
 | `--docker-image IMAGE` | OpenClaw 镜像；默认固定为 `2026.7.1-2` 官方镜像 |
 | `--container-user USER` | 一次性 task 容器用户；默认 `0`，`image` 表示沿用镜像默认用户 |

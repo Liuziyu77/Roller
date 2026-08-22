@@ -66,7 +66,7 @@ HTML 或脚本。
 
 | 内容 | 文件 | 加载时机 |
 | --- | --- | --- |
-| Run 名称、总 usage、采集配置 | Run `info.json` | 首页加载 |
+| Run 名称、state、processed/total、总 usage、采集配置 | Run `info.json` | 首页加载/刷新 |
 | Task/model/status/error/path | Run 与 sample `info.json` | 首页加载 |
 | Step 摘要与 system/tools | `trace_ACTF.json` | 选中 rollout |
 | Step reasoning/content/tool/result | `trace_ACTF.json` | 展开 step |
@@ -82,9 +82,16 @@ OpenClaw 在 session 与 provider 调用之间发生 compaction、pruning、runt
 `--wire-trace full`，离线检查 sample 中的 `wire_trace.jsonl` 和 `cache_trace.jsonl`；
 详细边界见 [轨迹产出文件指南](trajectory-outputs.md#32-session-历史不等于模型请求-context)。
 
-run `info.json` 尚未正常收尾时，Viewer 会额外扫描 `samples/<model>/<task>/info.json`，
-因此已经 finalize 的 sample 仍能显示。没有 sample `info.json` 的运行中临时目录不进入
-列表；点击页面右上角“刷新”可重新扫描。
+采集中，首页的 Run 卡片显示 `state` 和最近 checkpoint 的 `processed / total`。Roller 在
+首条结果、之后每累计 25 条结果时更新；如果完成事件相隔至少 30 秒也会立即更新，并在
+中断/收尾时强制更新。
+Resume 后，sample 磁盘 `info.json` 仍保留原始 `status=ok`，Viewer 会用本次 run 索引中的
+`status=skipped` 覆盖显示，以便 Completed 卡片准确标出复用数量。External Thinking 开启
+时，Thinking 卡片显示 external 模式并注明 native thinking 实际为 `off`。
+
+run `info.json` 尚未正常收尾时，Viewer 还会扫描 `samples/<model>/<task>/info.json`，因此
+checkpoint 后新 finalize 的 sample 仍能显示。没有 sample `info.json` 的运行中临时目录
+不进入列表；点击页面右上角“刷新”可重新读取状态与 sample。
 
 ## 5. 懒加载和大内容
 

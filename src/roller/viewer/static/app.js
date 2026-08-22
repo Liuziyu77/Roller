@@ -124,7 +124,17 @@
     const completed = Number(counts.ok || 0) + Number(counts.skipped || 0);
     const failed = Number(counts.error || 0) + Number(counts.timeout || 0);
     const usage = run.usage || {};
+    const progress = run.progress || {};
+    const externalThinking = run.configuration?.external_thinking;
+    const thinkingNote = externalThinking && externalThinking !== "off"
+      ? `${externalThinking} · native off`
+      : (run.configuration?.thinking || "model default");
     elements.metrics.innerHTML = [
+      metric(
+        "Run",
+        run.state || (run.finished_at ? "finished" : "unknown"),
+        progress.total == null ? "no checkpoint" : `${formatNumber(progress.processed || 0)} / ${formatNumber(progress.total)} processed`,
+      ),
       metric("Tasks", formatNumber(run.task_count), "unique task IDs"),
       metric("Rollouts", formatNumber(run.rollout_count), `${formatNumber(run.models?.length || 0)} models`),
       metric("Completed", formatNumber(completed), counts.skipped ? `${counts.skipped} resumed` : "ok"),
@@ -135,7 +145,7 @@
         run.configuration?.keep_thinking === true
           ? "kept"
           : run.configuration?.keep_thinking === false ? "stripped" : "unknown",
-        run.configuration?.thinking || "model default",
+        thinkingNote,
       ),
     ].join("");
 

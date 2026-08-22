@@ -14,6 +14,7 @@ from typing import Any, Callable, Iterator
 from roller.actf import convert_openclaw_trace
 from roller.external_thinking import external_thinking_mode_from_metadata
 from roller.harnesses.base import Harness
+from roller.integrity import validate_resumable_sample
 from roller.models import HarnessResult, RunRequest
 from roller.sft import write_sft
 from roller.storage import atomic_write_json, safe_component, write_jsonl
@@ -21,6 +22,8 @@ from roller.wire_trace import extract_wire_tools
 
 logger = logging.getLogger(__name__)
 HarnessFactory = Callable[[int], Harness]
+RUN_CHECKPOINT_RESULT_INTERVAL = 25
+RUN_CHECKPOINT_TIME_INTERVAL_SECONDS = 30.0
 
 
 def _now() -> str:
@@ -34,6 +37,7 @@ class CollectionConfig:
     retries: int = 0
     resume: bool = False
     keep_aux_traces: bool = False
+    capture_cache_trace: bool = True
     keep_thinking: bool = True
 
     def __post_init__(self) -> None:
@@ -64,21 +68,6 @@ class Collector:
             payload = json.loads(info_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             return None
-        if payload.get("status") != "ok":
-            return None
-        if (
-            not (sample_dir / "trace.jsonl").is_file()
-            or not (sample_dir / "trace_ACTF.json").is_file()
-            or not (sample_dir / "trace_SFT.json").is_file()
-        ):
-            return None
-        if request.task.user_simulator is not None and (
-            not (sample_dir / "conversation.json").is_file()
-            or not (sample_dir / "user_simulator" / "trace.jsonl").is_file()
-            or not (sample_dir / "user_simulator" / "trace_ACTF.json").is_file()
-            or not (sample_dir / "user_simulator" / "trace_SFT.json").is_file()
-        ):
-            return None
         if request.bundle is not None:
             if not request.bundle.resume_safe:
                 logger.info(
@@ -97,6 +86,24 @@ class Collector:
                     request.model,
                 )
                 return None
+        try:
+            validate_resumable_sample(
+                sample_dir,
+                request,
+                payload,
+                require_wire_trace=self.config.keep_aux_traces,
+                require_cache_trace=(
+                    self.config.keep_aux_traces and self.config.capture_cache_trace
+                ),
+            )
+        except ValueError as exc:
+            logger.info(
+                "[%s | %s] existing sample failed integrity validation; rerunning: %s",
+                request.task.id,
+                request.model,
+                exc,
+            )
+            return None
         resumed = dict(payload)
         resumed["status"] = "skipped"
         resumed["resumed_from_status"] = "ok"
@@ -314,14 +321,22 @@ class Collector:
         task = safe_component(str(result.get("task_id", "unknown")))
         return self.run_dir / "samples" / model / f"{source_index:08d}_{task}"
 
-    def _write_run_info(self, results: list[dict[str, Any]]) -> None:
+    def _write_run_info(
+        self,
+        results: list[dict[str, Any]],
+        *,
+        total_requests: int,
+        state: str,
+    ) -> None:
         info_path = self.run_dir / "info.json"
         try:
             info = json.loads(info_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             info = {"schema_version": "roller.run/v1"}
         summary = {
-            "total": len(results),
+            "total": total_requests,
+            "processed": len(results),
+            "pending": max(0, total_requests - len(results)),
             "ok": sum(result.get("status") == "ok" for result in results),
             "error": sum(result.get("status") == "error" for result in results),
             "timeout": sum(result.get("status") == "timeout" for result in results),
@@ -332,6 +347,7 @@ class Collector:
         summary["failed"] = summary["error"] + summary["timeout"]
         info.update(
             {
+                "state": state,
                 "summary": summary,
                 "samples": [
                     {
@@ -347,9 +363,13 @@ class Collector:
                     }
                     for result in results
                 ],
-                "finished_at": _now(),
+                "updated_at": _now(),
             }
         )
+        if state == "finished":
+            info["finished_at"] = info["updated_at"]
+        else:
+            info.pop("finished_at", None)
         atomic_write_json(info_path, info)
 
     def _write_sft_dataset(self, results: list[dict[str, Any]]) -> None:
@@ -372,6 +392,10 @@ class Collector:
 
     def collect(self, requests: list[RunRequest]) -> list[dict[str, Any]]:
         self.run_dir.mkdir(parents=True, exist_ok=True)
+        total_requests = len(requests)
+        self._write_run_info(
+            [], total_requests=total_requests, state="running"
+        )
         slots: queue.Queue[int] = queue.Queue()
         for slot in range(self.config.parallel):
             slots.put(slot)
@@ -406,25 +430,67 @@ class Collector:
             return result
 
         results: list[dict[str, Any]] = []
-        if self.config.parallel == 1:
-            for request in requests:
-                try:
-                    results.append(with_slot(request))
-                except Exception as exc:
-                    results.append(collector_error(request, exc))
-        else:
-            with ThreadPoolExecutor(
-                max_workers=self.config.parallel, thread_name_prefix="roller"
-            ) as pool:
-                futures = {pool.submit(with_slot, request): request for request in requests}
-                for future in as_completed(futures):
-                    request = futures[future]
+        checkpoint_count = 0
+        checkpoint_time = time.monotonic()
+
+        def checkpoint(state: str, *, force: bool = False) -> list[dict[str, Any]]:
+            nonlocal checkpoint_count, checkpoint_time
+            now = time.monotonic()
+            if (
+                state == "running"
+                and not force
+                and len(results) != 1
+                and len(results) - checkpoint_count < RUN_CHECKPOINT_RESULT_INTERVAL
+                and now - checkpoint_time < RUN_CHECKPOINT_TIME_INTERVAL_SECONDS
+            ):
+                return []
+            ordered = sorted(
+                results, key=lambda row: int(row.get("request_index", -1))
+            )
+            self._write_run_info(
+                ordered,
+                total_requests=total_requests,
+                state=state,
+            )
+            checkpoint_count = len(results)
+            checkpoint_time = now
+            return ordered
+
+        try:
+            if self.config.parallel == 1:
+                for request in requests:
                     try:
-                        results.append(future.result())
+                        results.append(with_slot(request))
                     except Exception as exc:
                         results.append(collector_error(request, exc))
+                    checkpoint("running")
+            else:
+                with ThreadPoolExecutor(
+                    max_workers=self.config.parallel, thread_name_prefix="roller"
+                ) as pool:
+                    futures = {
+                        pool.submit(with_slot, request): request for request in requests
+                    }
+                    for future in as_completed(futures):
+                        request = futures[future]
+                        try:
+                            results.append(future.result())
+                        except Exception as exc:
+                            results.append(collector_error(request, exc))
+                        checkpoint("running")
+        except BaseException:
+            ordered = checkpoint("interrupted", force=True)
+            try:
+                self._write_sft_dataset(ordered)
+            except Exception:
+                logger.exception("failed to aggregate partial SFT dataset")
+            raise
 
-        results.sort(key=lambda row: int(row.get("request_index", -1)))
-        self._write_sft_dataset(results)
-        self._write_run_info(results)
-        return results
+        ordered = checkpoint("finalizing", force=True)
+        try:
+            self._write_sft_dataset(ordered)
+        except BaseException:
+            checkpoint("finalization_error", force=True)
+            raise
+        checkpoint("finished", force=True)
+        return ordered

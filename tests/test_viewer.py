@@ -27,12 +27,23 @@ class ViewerTests(unittest.TestCase):
             {
                 "schema_version": "roller.run/v1",
                 "roller_version": "0.2.0",
+                "state": "running",
+                "updated_at": "2026-08-21T10:00:03+00:00",
                 "configuration": {
                     "harness": "openclaw",
                     "trajectory_count": 2,
-                    "openclaw": {"thinking": "high", "keep_thinking": True},
+                    "openclaw": {
+                        "thinking": "high",
+                        "external_thinking": "off",
+                        "keep_thinking": True,
+                    },
                 },
-                "summary": {"usage": {"total_tokens": 17, "request_count": 2}},
+                "summary": {
+                    "total": 3,
+                    "processed": 2,
+                    "pending": 1,
+                    "usage": {"total_tokens": 17, "request_count": 2},
+                },
                 "samples": [
                     {
                         "task_id": "shared-task",
@@ -150,6 +161,11 @@ class ViewerTests(unittest.TestCase):
         self.assertEqual(summary["rollout_count"], 2)
         self.assertEqual(summary["status_counts"], {"ok": 1, "error": 1})
         self.assertEqual(summary["configuration"]["thinking"], "high")
+        self.assertEqual(summary["configuration"]["external_thinking"], "off")
+        self.assertEqual(summary["state"], "running")
+        self.assertEqual(
+            summary["progress"], {"total": 3, "processed": 2, "pending": 1}
+        )
 
         tasks = source.list_tasks(page_size=10)
         self.assertEqual(tasks["total"], 1)
@@ -157,6 +173,18 @@ class ViewerTests(unittest.TestCase):
         errors = source.list_tasks(status="error", query="model-b")
         self.assertEqual(errors["total"], 1)
         self.assertEqual(errors["items"][0]["rollouts"][0]["status"], "error")
+
+    def test_run_checkpoint_status_overlays_finalized_sample_status(self) -> None:
+        info_path = self.root / "info.json"
+        run_info = json.loads(info_path.read_text(encoding="utf-8"))
+        run_info["samples"][0]["status"] = "skipped"
+        write_json(info_path, run_info)
+
+        source = RollerRun(self.root)
+        rollout = source.list_tasks(model="provider/model-a")["items"][0]["rollouts"][0]
+
+        self.assertEqual(rollout["status"], "skipped")
+        self.assertEqual(source.run_summary()["status_counts"]["skipped"], 1)
 
     def test_projects_actf_summaries_and_truncates_large_step_fields(self) -> None:
         source = RollerRun(self.root)

@@ -31,6 +31,7 @@
 ```text
 <output>/<run-name>/
 ├── info.json
+├── lock.json
 ├── sft.jsonl
 └── samples/
     └── <model>/
@@ -248,25 +249,44 @@ Collector 完成所有 request 后，按 request index 读取 sample 级 `trace_
 
 ## 5. 诊断与辅助文件
 
-### 5.1 Run `info.json`
+### 5.1 Run `lock.json`
 
-CLI 在正式采集前先写入初始 run 信息，正常收尾时补充：
+`lock.json` 在采集前生成，用于保证一个 run 内不会混合不同解析配置的样本。它固定 request
+顺序、Task Bundle digest、模型配置、OpenClaw image ID，以及 thinking、wire/cache trace
+等会影响轨迹含义的选项。Resume 时逐字段比较；不一致会打印有限的差异路径并在启动
+Harness 前停止。
+
+锁不会保存 credential：敏感 key 的值替换为 `<redacted>`；URL 的 userinfo 和 fragment
+被移除，敏感 query value 被替换，`api-version` 等非敏感 query 则保留参与比较。
+credential 或 pass-through env 的值变化不会让锁失配；如果它们会改变实际模型行为，应
+另建 run。配置对象直接比较，task/input/context 则复用 Task Bundle 已有的 digest。
+
+### 5.2 Run `info.json`
+
+CLI 在正式采集前写入初始 run 信息；Collector 在首条结果、之后每累计 25 条结果时更新，
+如果两次完成事件相隔至少 30 秒也会立即更新，并在中断和收尾阶段强制 checkpoint。它
+保存：
 
 - Roller 版本和采集配置；
+- 当前 `state`：`initializing`、`running`、`finalizing`、`finished`、`interrupted` 或
+  `finalization_error`；
+- `total/processed/pending` 实时进度；
 - task/model request 数量；
 - `ok`、`error`、`timeout`、`skipped` 汇总；
 - token、cache、cost、请求数汇总；
 - 每个 sample 的状态、错误、路径与 usage。
 
-进程被强制终止时，文件可能只包含启动配置，没有最终 summary。
+可捕获的中断会写 `state=interrupted`，并尽力用已完成 sample 生成一份部分
+`sft.jsonl`。`SIGKILL`、断电或宿主机故障无法执行最后一次写入，但原子写和周期 checkpoint
+可以保证 `info.json` 是上一个完整快照；Viewer 还会扫描已 finalize 的 sample。
 
-### 5.2 Sample `info.json`
+### 5.3 Sample `info.json`
 
 每个完成 finalize 的 sample 都会写入，包括失败 sample。它保存 task/model、Harness、
 最终状态、错误、attempt 历史、usage、耗时、raw/ACTF/SFT 相对路径、输出回收信息、
 runtime 和输入 provenance。训练数据刻意删除的 metadata 在这里保留。
 
-### 5.3 `cache_trace.jsonl`
+### 5.4 `cache_trace.jsonl`
 
 OpenClaw 的 `diagnostics.cacheTrace` 记录每次 LLM call 组装后的 system prompt。默认启用，
 Roller 复制后按敏感 key 递归脱敏，再用它填充 ACTF 顶层 `system_prompt`。
@@ -282,7 +302,7 @@ cache trace 能展示每次差异；ACTF 顶层值不能代表所有 step。
 脱敏基于 JSON key，不会扫描 system prompt 自由文本中的秘密；该文件和下游 ACTF/SFT
 仍应按敏感数据管理。
 
-### 5.4 `wire_trace.jsonl`
+### 5.5 `wire_trace.jsonl`
 
 本地反向代理在请求发往模型服务前记录 wire 数据：
 
@@ -310,7 +330,7 @@ cache trace 能展示每次差异；ACTF 顶层值不能代表所有 step。
   连续，并结合 sample usage/request count 与运行日志确认完整性；
 - 多轮请求会重复历史，文件体积接近 O(N²)，只适合审计和调试。
 
-### 5.5 如何审计 context 压缩或改写
+### 5.6 如何审计 context 压缩或改写
 
 1. 使用 `--cache-trace --wire-trace full` 运行最小可复现 task；不要使用默认 `actf`
    模式代替 full，因为它不保存 messages/input。
@@ -326,7 +346,7 @@ cache trace 能展示每次差异；ACTF 顶层值不能代表所有 step。
 审计完成后应单独保护或删除 cache/wire 文件。它们可能包含重复的用户输入、system
 prompt、tool result、reasoning、文件内容和运行时注入信息。
 
-### 5.6 `results/`
+### 5.7 `results/`
 
 只有 task 输出目录中存在普通文件或目录时才创建。Roller：
 
@@ -338,7 +358,7 @@ prompt、tool result、reasoning、文件内容和运行时注入信息。
 
 `results/` 是 Agent 交付物，不属于对话训练数据，也不会写入 `sft.jsonl`。
 
-### 5.7 `conversation.json`
+### 5.8 `conversation.json`
 
 仅 User Simulator task 生成。它保存双方可见的 user/assistant 轮次、终止原因、待发送但
 未交付的 instruction、参与模型和时间，不复制双方隐藏 reasoning、tool call 或 tool
@@ -419,15 +439,26 @@ raw/cache/wire 文件，避免混合不同 attempt。Sample `info.json.attempts`
 
 ### 7.4 Resume
 
-`--resume` 只复用旧状态为 `ok` 且满足以下条件的 sample：
+Resume 先要求当前 run lock 与旧 `lock.json` 一致；task/model 顺序、Task Bundle、模型配置、
+Docker image ID、timeout 或轨迹语义选项变化时直接停止，避免不同采集条件混批。旧 run
+没有锁时会写入当前锁并把旧 sample 全部重跑一次；持久迁移标记会一直禁止复用，直到
+整次重采和 run 级 SFT 汇总成功，即使中途被强杀也不会误信遗留 sample。
 
-- raw、ACTF、SFT 都存在；
+锁一致后，`--resume` 只复用旧状态为 `ok` 且满足以下条件的 sample：
+
+- sample identity 与当前 request 一致；
+- raw 含有效 message，ACTF schema/连续 step 合法；
+- SFT 与 ACTF 重新生成的 canonical 投影完全一致；
+- `full` 模式要求 wire trace 存在，启用 cache trace 时也要求 cache trace 存在；
 - 当前 Task Bundle digest 与旧 provenance 一致；
 - Context 没有使用 `capture=none`；
-- User Simulator task 还具有 `conversation.json` 和 Simulator raw/ACTF/SFT。
+- 输出文件路径安全、文件存在且大小未改变；
+- User Simulator task 还具有合法的 `conversation.json`、participant info 和 Simulator
+  raw/ACTF/SFT。
 
 复用结果在本次 run 中标为 `skipped`，仍会写入新的 `sft.jsonl`。缺失任一必需文件或
-输入 provenance 变化时，会重新执行整个 sample。
+轨迹校验不通过时，会重新执行整个 sample。输出清单保存的 SHA-256 不会在 Resume 时
+重新计算，以免为了常规断点续跑再次读取大型产物；需要内容级审计时可单独核对该 hash。
 
 ## 8. 推荐配置
 

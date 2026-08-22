@@ -138,6 +138,7 @@ results/
 ```text
 <output>/<run-name>/
 ├── info.json
+├── lock.json
 ├── sft.jsonl
 └── samples/
     └── <model>/
@@ -152,10 +153,23 @@ results/
 Run `info.json` 保存：
 
 - 本次命令的重要配置
+- `initializing/running/finalizing/finished/interrupted/finalization_error` 运行阶段
+- 已处理、待处理、成功、失败、超时和跳过数量；采集中周期 checkpoint
 - task、模型与 trajectory 数量
 - 成功、失败、超时和跳过数量
 - 全部 sample 的 usage 汇总
 - sample 相对路径索引
+
+Run `lock.json` 是脱敏后的可复现运行锁。它直接保存需要比较的结构化配置，并复用
+Task Bundle 已有的内容 digest，不为小型配置再计算一层无意义的 hash。锁定内容包括：
+
+- request 顺序、task/model、timeout 和 Task Bundle/input/context digest；
+- OpenClaw 镜像引用与本机解析出的 image ID；
+- 模型配置内容，以及 thinking、wire trace、cache trace、容器与输出等语义选项。
+
+API Key、token 等 credential 被替换为 `<redacted>`；URL 中的 userinfo 和 fragment 被
+移除，敏感 query value 被替换，但 `api-version` 等非敏感 query 会保留用于一致性比较。
+锁用来防止数据混批，不是密钥备份，也不验证 credential 是否仍可用。
 
 Sample `info.json` 保存：
 
@@ -257,20 +271,42 @@ task/model、usage、时间戳或其他运行 metadata。Run 根目录的 `sft.j
 
 `--retries N` 在同一 sample 中最多额外执行 N 次。最终 `info.json` 保存每次 attempt 的状态、错误与耗时；canonical raw/ACTF/SFT 代表最后一次 attempt，运行期中间文件会被清理。
 
-`--resume` 只复用满足全部条件的 sample：
+`--resume` 分两层检查。首先，当前解析出的 `lock.json` 必须与旧锁完全一致；否则命令
+直接报出差异并停止，不会把不同配置产生的 sample 混入同一个 run。锁覆盖 task/model
+顺序、timeout、Task Bundle digest、模型配置、镜像 ID、thinking 和轨迹策略等会影响样本
+语义的选项。`--parallel`、`--retries`、gateway 端口/启动超时、路径位置和 bundle 大小
+上限属于执行调度或约束，不影响已成功样本的语义，因此可以在 Resume 时调整。
+
+credential 与 pass-through environment 的值不会保存到锁，也不会触发不一致；如果这些
+值代表的不只是认证，而会改变实际模型或服务行为，应使用新的 `--run-name`。
+
+运行锁一致后，只复用满足全部条件的 sample：
 
 1. 旧状态为 `ok`。
-2. `trace.jsonl`、`trace_ACTF.json` 与 `trace_SFT.json` 都存在。
-3. 当前 Task Bundle digest 与旧 sample 一致。
-4. Context 没有使用 `capture=none`。
-5. User Simulator task 还必须有完整的 `conversation.json` 和 Simulator raw/ACTF/SFT。
+2. sample 的 request/task/model identity 与当前请求一致。
+3. `trace.jsonl` 含有效 message，ACTF schema 正确且 step ID 从 1 连续。
+4. `trace_SFT.json` 与当前 ACTF 的 canonical SFT 投影完全一致。
+5. 当前 Task Bundle digest 与旧 sample 一致，且 Context 没有使用 `capture=none`。
+6. 已记录的输出文件仍位于 `results/` 内，文件存在且大小一致。保存的 SHA-256 仍可用于
+   深度审计；Resume 为避免重新读取大文件，只做路径、存在性和大小检查。
+7. User Simulator task 还必须有有效的 `conversation.json`、participant info 和 Simulator
+   raw/ACTF/SFT。
+8. `--wire-trace full` 还要求双方的 `wire_trace.jsonl` 存在；同时启用 cache trace 时也要求
+   `cache_trace.jsonl` 存在。
 
-以下变化会导致重新运行：
+同一运行锁下，任一 sample 不满足完整性条件时只重跑该 sample。以下变化会导致运行锁
+不一致，需要使用新的 run name，而不是静默重跑并混入旧 run：
 
 - prompt、messages 或 User Simulator 配置变化
 - 输入内容、目录结构或声明变化
 - Context 内容、target 或 capture 变化
 - `output_dir` 变化
-- Runtime env、setup 或 thinking 变化
+- Runtime env、setup、模型配置、镜像或 thinking/轨迹策略变化
 
-模型变化会进入不同的 sample model 目录，不会覆盖原模型结果。
+同一个新 run 中的多个模型会进入不同 sample model 目录；已经创建锁后不能通过 Resume
+增删或重排模型，请为新的模型组合使用新 run name。
+
+旧版本创建、没有 `lock.json` 的 run 可以加 `--resume` 迁移。Roller 会写入当前锁，但因为
+无法证明旧执行配置相同，首次迁移会把已有 sample 全部重跑一次；后续才允许安全复用。
+迁移期间存在临时 `.legacy-resume-untrusted.json` 标记，只有所有 request 完成并生成 run
+级 SFT 后才删除；即使进程被强杀，下一次也不会误用尚未重采的旧 sample。
