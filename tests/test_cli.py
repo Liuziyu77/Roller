@@ -59,6 +59,12 @@ class CliTests(unittest.TestCase):
                 "20",
                 "--claude-max-thinking-tokens",
                 "4096",
+                "--claude-signature-recovery",
+                "prefer",
+                "--claude-signature-recovery-attempts",
+                "2",
+                "--claude-signature-recovery-max-tokens",
+                "12000",
                 "--claude-permission-mode",
                 "bypassPermissions",
             ]
@@ -69,6 +75,9 @@ class CliTests(unittest.TestCase):
         self.assertEqual(args.thinking, "high")
         self.assertEqual(args.claude_max_turns, 20)
         self.assertEqual(args.claude_max_thinking_tokens, 4096)
+        self.assertEqual(args.claude_signature_recovery, "prefer")
+        self.assertEqual(args.claude_signature_recovery_attempts, 2)
+        self.assertEqual(args.claude_signature_recovery_max_tokens, 12000)
 
     def test_claude_code_dry_run_normalizes_without_docker_or_secret(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

@@ -257,6 +257,27 @@ def _build_parser() -> argparse.ArgumentParser:
         help="optional MAX_THINKING_TOKENS value passed to Claude Code",
     )
     claude.add_argument(
+        "--claude-signature-recovery",
+        choices=("off", "fill", "prefer"),
+        default="off",
+        help=(
+            "experimental post-run replay of signed Claude thinking: 'fill' only "
+            "fills missing reasoning, 'prefer' replaces native summaries, 'off' disables"
+        ),
+    )
+    claude.add_argument(
+        "--claude-signature-recovery-attempts",
+        type=int,
+        default=1,
+        help="maximum replay attempts per signed thinking block (default: 1)",
+    )
+    claude.add_argument(
+        "--claude-signature-recovery-max-tokens",
+        type=int,
+        default=8192,
+        help="maximum visible tokens for each signature replay request (default: 8192)",
+    )
+    claude.add_argument(
         "--claude-permission-mode",
         choices=CLAUDE_PERMISSION_MODES,
         default="bypassPermissions",
@@ -454,6 +475,10 @@ def _collect(args: argparse.Namespace) -> int:
         claude_settings_fingerprint = hashlib.blake2b(
             claude_settings_path.read_bytes(), digest_size=16
         ).hexdigest()
+    if args.harness != "claude-code" and args.claude_signature_recovery != "off":
+        raise ValueError(
+            "--claude-signature-recovery is only valid with --harness claude-code"
+        )
 
     openclaw_config: OpenClawConfig | None = None
     codex_config: CodexConfig | None = None
@@ -533,6 +558,9 @@ def _collect(args: argparse.Namespace) -> int:
             permission_mode=args.claude_permission_mode,
             wire_trace_mode=args.wire_trace,
             keep_thinking=args.keep_thinking,
+            signature_recovery=args.claude_signature_recovery,
+            signature_recovery_attempts=args.claude_signature_recovery_attempts,
+            signature_recovery_max_tokens=args.claude_signature_recovery_max_tokens,
             keep_container_on_error=args.keep_container_on_error,
             docker_binary=args.docker_binary,
         )
@@ -633,6 +661,11 @@ def _collect(args: argparse.Namespace) -> int:
             "external_thinking": "off",
             "wire_trace": args.wire_trace,
             "keep_thinking": args.keep_thinking,
+            "signature_recovery": args.claude_signature_recovery,
+            "signature_recovery_attempts": args.claude_signature_recovery_attempts,
+            "signature_recovery_max_tokens": (
+                args.claude_signature_recovery_max_tokens
+            ),
             "pass_env_names": list(claude_code_config.pass_env),
         }
 
@@ -757,6 +790,13 @@ def _collect(args: argparse.Namespace) -> int:
                     "external_thinking": "off",
                     "wire_trace": args.wire_trace,
                     "keep_thinking": args.keep_thinking,
+                    "signature_recovery": args.claude_signature_recovery,
+                    "signature_recovery_attempts": (
+                        args.claude_signature_recovery_attempts
+                    ),
+                    "signature_recovery_max_tokens": (
+                        args.claude_signature_recovery_max_tokens
+                    ),
                     "pass_env_names": list(claude_code_config.pass_env),
                 }
             run_lock = build_run_lock(

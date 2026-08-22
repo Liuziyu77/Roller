@@ -238,6 +238,11 @@ Claude SDK 需要的 base URL。第四条 `messages` 会通过 `claude --continu
 session。Claude Code 当前不支持下一节的动态 User Simulator，也不支持
 `external/external_always`。
 
+如果 native session 含 `thinking.signature`，但 reasoning 为空或只有压缩 summary，可按需
+增加 `--claude-signature-recovery fill`（保守填空）或 `prefer`（优先恢复文本）。这是额外
+Anthropic 请求且结果为 best effort；批量采集建议先使用 `fill` 并检查每个 sample 的
+`signature_recovery.jsonl`。
+
 ## 5. 动态 User Simulator 案例
 
 [`tasks/user-simulator.jsonl`](tasks/user-simulator.jsonl) 中，另一个 OpenClaw Harness 扮演 HR。它不会使用预定义 `messages`，而是根据任务 Agent 当前版本的招聘广告逐轮补充要求，最终要求文件写入 `outputs/recruitment-ad.md`。

@@ -221,7 +221,9 @@ SFT 不要求训练后的模型继续调用内部 scratchpad 工具。转换器�
 
 Claude Code Harness 当前不实现 external thinking。`--harness claude-code` 只接受
 `--external-thinking off`，并从 Claude native session 导出服务实际返回的明文 thinking。
-该限制与 Anthropic Messages API 的调用和轨迹采集无关；见
+Claude 的可选 `--claude-signature-recovery fill|prefer` 是任务结束后的 provider-assisted
+signature replay，不注入 `deep_think` 工具，也不参与 Agent THINK/ACT 循环，因此不属于本章
+的 external thinking。该限制与 Anthropic Messages API 的调用和轨迹采集无关；见
 [Claude Code Harness 指南](claude-code-configuration.md)。
 
 ### `wire_trace.jsonl`

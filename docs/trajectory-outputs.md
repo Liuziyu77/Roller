@@ -14,6 +14,7 @@
 | 核对首个捕获到的组装后 system prompt | `trace_ACTF.json` 顶层 | 默认从 cache trace 提取并固化一次 |
 | 核对每次 system prompt 是否变化 | `--wire-trace full` 的 `cache_trace.jsonl` | 保留 OpenClaw 每次 LLM call 的诊断记录 |
 | 核对模型实际收到的请求历史和 tools | `--wire-trace full` 的 `wire_trace.jsonl` | 保存代理实际转发的每次 JSON 请求体 |
+| 审计 Claude signature 恢复 | `signature_recovery.jsonl` | 保存每个 signed block 的尝试、质量、usage 和恢复文本，不复制 signature |
 | 查看 Task Agent 交付文件 | `results/` | 只回收 task 声明的输出目录和额外 collect path |
 | 查看动态双方可见对话 | `conversation.json` | 不包含隐藏 reasoning、tool call 和 tool result |
 
@@ -41,6 +42,7 @@ Code 保留 native session 中的明文 thinking block。三种 Harness 成功 r
             ├── trace.jsonl
             ├── trace_ACTF.json
             ├── trace_SFT.json
+            ├── signature_recovery.jsonl  # Claude Code 显式开启 recovery 时存在
             ├── info.json
             └── results/                 # Task 输出含文件或目录时存在
 ```
@@ -60,6 +62,7 @@ OpenClaw 默认的 `actf` wire 模式会临时捕获 tools schema，写入 ACTF/
 ├── trace.jsonl
 ├── trace_ACTF.json
 ├── trace_SFT.json
+├── signature_recovery.jsonl       # Claude Code 显式开启 recovery 时存在
 ├── cache_trace.jsonl              # 仅 OpenClaw
 ├── wire_trace.jsonl
 ├── info.json
@@ -105,6 +108,8 @@ Harness session store ────────────────> trace.js
                                                 │
                                                 v
 trace.jsonl + Harness 可取得的 system/tools ──> trace_ACTF.json
+Claude signed block ──> 独立 provider replay ──> signature_recovery.jsonl
+                                              └─> ACTF reasoning（fill/prefer 成功时）
 trace_ACTF.json ────────────────────────────────> trace_SFT.json
 全部成功/Resume sample 的 trace_SFT.json ───────> run/sft.jsonl
 ```
@@ -168,7 +173,7 @@ Harness 私有 schema；它不是 `codex exec --json` 的终端展示流，也�
 
 Claude Code 内容来自 `$CLAUDE_CONFIG_DIR/projects` 的本 rollout 主 session 及其
 `subagents/*.jsonl`。Roller 按 timestamp 合并、按原生 `uuid` 去重，保留 user、assistant、
-thinking、`tool_use`、`tool_result`、usage 和 sidechain 字段。它不是
+thinking、signature、`tool_use`、`tool_result`、usage 和 sidechain 字段。它不是
 `claude --output-format=stream-json` 的终端流，也不是源文件的逐字节拼接。
 
 Sample `info.json.trajectory.raw_schema` 会分别标记 `openclaw-session-jsonl`、
@@ -225,6 +230,9 @@ ACTF 顶层保存 `schema_version`、`system_prompt`、完整 `tools`、`steps` 
 - Claude Code 将同一 `message.id` 的流式 native 事件合并，把明文
   `thinking/reasoning/analysis` 写入 `reasoning_content`，把 `tool_use_id` 与后续
   `tool_result` 关联。`redacted_thinking` 密文保留在 raw，但不会被猜测成明文。
+  显式启用 signature recovery 时，`fill` 只填 native 空值，`prefer` 用通过拒绝和最小长度
+  检查的 recovered text 替换 native summary；采用 recovery 的 step 在
+  `extra.reasoning_source` 标记来源。
   Wire 存在时 system/tools 来自 Anthropic request；否则 system 为 `""` 并根据实际
   `tool_use` 推导 permissive schema。
 
@@ -382,7 +390,26 @@ Claude Code 2.1.222 追加的 transport-only `beta=true` query 和 `anthropic-be
   连续，并结合 sample usage/request count 与运行日志确认完整性；
 - 多轮请求会重复历史，文件体积接近 O(N²)，只适合审计和调试。
 
-### 5.6 如何审计 context 压缩或改写
+### 5.6 `signature_recovery.jsonl`（Claude Code）
+
+仅 `--claude-signature-recovery fill|prefer` 生成。Roller 在原任务全部结束后读取 native
+`thinking.signature`，通过独立 Anthropic Messages 请求让 provider 解封并要求模型机械转录。
+这不是本地解密，也不修改 Claude Code session。每行保存：
+
+- native `message_id`、block index、模型和 sidechain 标记；
+- `status`、质量类别、native/signature/recovered 长度；
+- 每次尝试的状态、stop reason、token usage 和错误；
+- `recovered_reasoning`。
+
+文件不重复保存 signature 原值，也不保存 API Key。`status=ok` 仍不保证逐字还原；
+`rewrite_or_unverified/unverified` 必须在训练前抽样。`fill` 遇到已有 native reasoning 时记录
+`skipped_native` 且不产生额外模型调用。常见拒绝、短于 32 字符或只重复 visible answer 的
+响应不会投影到 ACTF/SFT。Recovery token 计入 sample usage 的
+`signature_recovery_*` 字段；额外请求的美元成本不包含在 Claude CLI 的 `cost_usd` 中。
+Recovery 是宿主机直连后处理，不写入 Claude Code `wire_trace.jsonl`；该 full wire 仍只表示
+原始 Agent rollout 的请求历史。
+
+### 5.7 如何审计 context 压缩或改写
 
 1. 使用 `--wire-trace full` 运行最小可复现 task；OpenClaw 同时保留默认
    `--cache-trace`。不要用默认 `actf` 代替 full，因为它不保存 messages/input。
@@ -401,7 +428,7 @@ Claude Code 2.1.222 追加的 transport-only `beta=true` query 和 `anthropic-be
 审计完成后应单独保护或删除 cache/wire 文件。它们可能包含重复的用户输入、system
 prompt、tool result、reasoning、文件内容和运行时注入信息。
 
-### 5.7 `results/`
+### 5.8 `results/`
 
 只有 task 输出目录中存在普通文件或目录时才创建。Roller：
 
@@ -413,7 +440,7 @@ prompt、tool result、reasoning、文件内容和运行时注入信息。
 
 `results/` 是 Agent 交付物，不属于对话训练数据，也不会写入 `sft.jsonl`。
 
-### 5.8 `conversation.json`
+### 5.9 `conversation.json`
 
 仅 User Simulator task 生成。它保存双方可见的 user/assistant 轮次、终止原因、待发送但
 未交付的 instruction、参与模型和时间，不复制双方隐藏 reasoning、tool call 或 tool
@@ -463,7 +490,20 @@ OpenClaw 仍要求 `--model-config` 中存在可代理 `baseUrl`；Codex 和 Cla
 
 Claude Code 当前只支持原生 thinking，`external/external_always` 会在 Docker 启动前被拒绝。
 
-### 6.3 Cache trace（OpenClaw）
+### 6.3 Claude signature recovery
+
+| 参数 | 额外调用 | ACTF/SFT reasoning | raw |
+| --- | --- | --- | --- |
+| `off`（默认） | 无 | native thinking/summary | 原样保留 |
+| `fill` | 只请求 native reasoning 为空的 signed block | 成功时填空，失败保持空 | 原样保留 |
+| `prefer` | 请求每个 signed block | 成功时替换 native summary，失败回退 native | 原样保留 |
+
+Recovery 是 task 完成后的独立调用，不进入 `--continue` history。它要求 `--keep-thinking`，并
+受 rollout `--timeout` 剩余预算约束。模式、尝试数、max tokens 会写入 run lock，Resume
+不能混用不同 recovery 配置。完整语义见
+[Claude Code Signature recovery](claude-code-configuration.md#5-signature-recovery实验性)。
+
+### 6.4 Cache trace（OpenClaw）
 
 | 参数 | ACTF/SFT system | `cache_trace.jsonl` |
 | --- | --- | --- |
@@ -563,6 +603,25 @@ roller collect \
 模型 API 的 messages/input。调试结束后优先保留 raw/ACTF/SFT；确认不再需要请求级审计
 时删除 full cache/wire，减少重复数据和敏感信息暴露。
 
+### Claude Code 填补缺失 reasoning
+
+```bash
+roller collect \
+  --harness claude-code \
+  --tasks tasks.jsonl \
+  --model claude-opus-4-8 \
+  --api-base http://your-api.example/v1/messages \
+  --api-key-env ROLLER_ANTHROPIC_KEY \
+  --thinking high \
+  --claude-signature-recovery fill \
+  --claude-signature-recovery-attempts 2 \
+  --timeout 1200 \
+  --output recovered-runs
+```
+
+批量训练优先从 `fill` 开始；只有明确接受重写风险、并会审计
+`signature_recovery.jsonl.quality` 时才使用 `prefer`。
+
 ## 9. 发布训练集前检查
 
 建议至少检查：
@@ -577,4 +636,6 @@ roller collect \
 8. 如果使用 `--no-keep-thinking`，确认 raw/full 诊断层不会被误当成已去除 thinking 的
    发布数据；
 9. 如果数据声明要复现模型可见 context，确认采集使用 `--wire-trace full`、wire `seq`
-   连续且请求数符合预期；不要用 ACTF/SFT 代替逐请求证据。
+   连续且请求数符合预期；不要用 ACTF/SFT 代替逐请求证据；
+10. 如果使用 Claude signature recovery，过滤 `status!=ok`，抽样核对
+    `rewrite_or_unverified/unverified`，并单独核算额外 API 成本。

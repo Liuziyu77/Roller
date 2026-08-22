@@ -174,6 +174,19 @@ Claude Code 默认保留 native session 中实际可见的 `thinking`、工具�
 `external/external_always` 和动态 User Simulator。镜像、effort、Anthropic endpoint、raw、
 wire、ACTF/SFT 说明见 [Claude Code Harness 指南](docs/claude-code-configuration.md)。
 
+Native session 只有压缩 summary 或空 thinking、但带有 `thinking.signature` 时，可以显式开启
+provider replay。`fill` 只填空值，`prefer` 用通过检查的恢复文本替换 native summary：
+
+```text
+--claude-signature-recovery fill
+--claude-signature-recovery-attempts 2
+--claude-signature-recovery-max-tokens 8192
+```
+
+这是任务结束后的独立、best-effort 调用，不污染 Claude Code session，也不是本地解密。
+恢复可能拒绝、改写或不完整，默认保持 `off`；详细质量与成本边界见
+[Signature recovery](docs/claude-code-configuration.md#5-signature-recovery实验性)。
+
 最小 external-always 验收可以在上述命令中去掉 `--thinking/--reasoning-summary`，并增加：
 
 ```text
@@ -330,6 +343,7 @@ files/product_summary/
     ├── trace.jsonl
     ├── trace_ACTF.json
     ├── trace_SFT.json
+    ├── signature_recovery.jsonl # Claude Code 显式开启 signature recovery 时存在
     ├── info.json
     └── results/                 # 可选
 ```
@@ -378,6 +392,7 @@ User Simulator rollout 还会增加 `conversation.json` 和 `user_simulator/`，
 | `--thinking LEVEL` | OpenClaw thinking、Codex reasoning effort 或 Claude Code effort；Harness 会校验不适用的档位 |
 | `--external-thinking MODE` | `off`（默认）、`external` 或 `external_always`；OpenClaw/Codex 使用 `deep_think` 构造显式 CoT，Claude Code 当前只接受 `off` |
 | `--keep-thinking` / `--no-keep-thinking` | 控制 ACTF/SFT 是否导出 thinking；OpenClaw 的关闭模式还会剥离后续请求历史，Codex/Claude Code raw 和 resume/continue 不受影响 |
+| `--claude-signature-recovery MODE` | Claude Code 实验性 signature replay：`off`（默认）、`fill` 或 `prefer`；成功文本进入 ACTF/SFT，raw 不改写 |
 | `--cache-trace` / `--no-cache-trace` | 是否记录每次组装的 system prompt；ACTF 固化首个有效值 |
 | `--wire-trace MODE` | `actf`（默认）、`full` 或 `off`；控制 tools schema 与请求体记录 |
 
@@ -401,7 +416,7 @@ roller collect --help
 | [轨迹可视化 Viewer](docs/viewer.md) | 启动方式、页面结构、懒加载、安全边界和缺失字段行为 |
 | [OpenClaw、模型与 API](docs/openclaw-configuration.md) | Docker、provider、API base、代理、搜索和常见问题 |
 | [Codex Harness 指南](docs/codex-configuration.md) | 镜像构建、API、reasoning、native raw、ACTF/SFT 和限制 |
-| [Claude Code Harness 指南](docs/claude-code-configuration.md) | 镜像构建、Anthropic API、thinking effort、native raw、wire 和 ACTF/SFT |
+| [Claude Code Harness 指南](docs/claude-code-configuration.md) | 镜像构建、Anthropic API、thinking effort、signature recovery、native raw、wire 和 ACTF/SFT |
 | [User Simulator 与动态对话](docs/user-simulator.md) | Conversation Manager、终止协议、资源占用和双方轨迹 |
 
 ## 🔒 安全边界
@@ -421,6 +436,7 @@ roller collect --help
 - OpenClaw adapter：[src/roller/harnesses/openclaw.py](src/roller/harnesses/openclaw.py)
 - Codex adapter：[src/roller/harnesses/codex.py](src/roller/harnesses/codex.py)
 - Claude Code adapter：[src/roller/harnesses/claude_code.py](src/roller/harnesses/claude_code.py)
+- Claude signature recovery：[src/roller/claude_signature_recovery.py](src/roller/claude_signature_recovery.py)
 - Conversation Manager：[src/roller/conversation.py](src/roller/conversation.py)
 - ACTF 转换：[src/roller/actf.py](src/roller/actf.py)、[src/roller/codex_actf.py](src/roller/codex_actf.py)、
   [src/roller/claude_code_actf.py](src/roller/claude_code_actf.py)
