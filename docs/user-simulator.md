@@ -184,12 +184,17 @@ samples/<task-agent-model>/<index>_<task>/
 
 `--retries N` 会重新执行整条动态 rollout，而不是只重试失败的一轮。这能避免复用与原对话状态不一致的 session。
 
-Instruction、Simulator model、thinking、`max_turns`、Task Agent 输入或 Context 发生变化时，Task Bundle digest 会变化。`--resume` 只会复用同时具备以下文件的成功 sample：
+Instruction、Simulator model、thinking、`max_turns`、Task Agent 输入或 Context 发生变化时，
+Task Bundle digest 会变化，run lock 检查会拒绝把新配置混入旧 run。锁一致后，`--resume`
+只会复用身份与 canonical 轨迹校验通过、并同时具备以下文件的成功 sample：
 
 - Task Agent 的 raw/ACTF/SFT；
 - `conversation.json`；
 - Simulator 的 raw/ACTF/SFT；
 - 与当前 task 和文件一致的 digest。
+
+`conversation.json` 和双方 participant `info.json` 也必须具有正确 schema 与成功状态。
+完整规则见 [文件、Task Bundle 与结果存储](task-bundle-and-storage.md#9-retry-与-resume)。
 
 ## 10. 当前边界
 

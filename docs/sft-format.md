@@ -128,6 +128,7 @@ trajectory conversion error。多模态 SFT 需要单独定义 content-block sch
 
 ```text
 <run>/
+├── lock.json
 ├── sft.jsonl
 └── samples/<model>/<index>_<task>/
     ├── trace.jsonl

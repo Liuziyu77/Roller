@@ -22,6 +22,12 @@ from roller.harnesses.openclaw import (
     OpenClawHarness,
     load_model_config,
 )
+from roller.run_lock import (
+    RUN_LOCK_SCHEMA,
+    build_run_lock,
+    complete_legacy_adoption,
+    ensure_run_lock,
+)
 from roller.storage import atomic_write_json, safe_component
 from roller.tasks import TaskFormatError, build_requests, load_tasks
 from roller.thinking import THINKING_LEVELS, normalize_thinking
@@ -176,7 +182,7 @@ def _deduplicate(values: Sequence[str]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(value for value in values if value))
 
 
-def _docker_preflight(binary: str) -> None:
+def _docker_preflight(binary: str, image: str) -> str:
     if shutil.which(binary) is None:
         raise RuntimeError(f"Docker executable not found: {binary}")
     try:
@@ -191,6 +197,23 @@ def _docker_preflight(binary: str) -> None:
     if result.returncode != 0:
         detail = (result.stderr or result.stdout).strip()
         raise RuntimeError(f"Docker daemon is unavailable: {detail}")
+    try:
+        inspected = subprocess.run(
+            [binary, "image", "inspect", image, "--format", "{{.Id}}"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise RuntimeError(f"Docker image preflight failed for {image}: {exc}") from exc
+    image_digest = inspected.stdout.strip()
+    if inspected.returncode != 0 or not image_digest:
+        detail = (inspected.stderr or inspected.stdout).strip()
+        raise RuntimeError(
+            f"Docker image is not available locally: {image}; pull or load it first"
+            + (f" ({detail})" if detail else "")
+        )
+    return image_digest
 
 
 def _run_name(value: str | None) -> str:
@@ -320,13 +343,25 @@ def _collect(args: argparse.Namespace) -> int:
         print(json.dumps(_dry_run_payload(args, requests), ensure_ascii=False, indent=2))
         return 0
 
-    _docker_preflight(args.docker_binary)
+    docker_image_digest = _docker_preflight(args.docker_binary, args.docker_image)
     output_root = Path(args.output).expanduser().resolve()
     run_dir = output_root / _run_name(args.run_name)
+    existing_run = run_dir.exists() and any(run_dir.iterdir())
     if run_dir.exists() and not args.resume:
         raise FileExistsError(f"run directory already exists; use --resume or another --run-name: {run_dir}")
-    run_dir.mkdir(parents=True, exist_ok=True)
+    output_root.mkdir(parents=True, exist_ok=True)
 
+    previous_info: dict[str, object] = {}
+    previous_info_path = run_dir / "info.json"
+    if args.resume and previous_info_path.is_file():
+        try:
+            candidate = json.loads(previous_info_path.read_text(encoding="utf-8"))
+            if isinstance(candidate, dict):
+                previous_info = candidate
+        except (OSError, json.JSONDecodeError):
+            previous_info = {}
+
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     run_info = {
         "schema_version": "roller.run/v1",
         "roller_version": __version__,
@@ -371,9 +406,17 @@ def _collect(args: argparse.Namespace) -> int:
                 "collect_paths": args.collect_path,
             },
         },
-        "started_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "state": "initializing",
+        "started_at": previous_info.get("started_at", now),
     }
-    atomic_write_json(run_dir / "info.json", run_info)
+    if args.resume and existing_run:
+        previous_count = previous_info.get("resume_count", 0)
+        run_info["last_resumed_at"] = now
+        run_info["resume_count"] = (
+            previous_count + 1
+            if isinstance(previous_count, int) and not isinstance(previous_count, bool)
+            else 1
+        )
 
     results: list[dict] | None = None
     with tempfile.TemporaryDirectory(prefix=".roller-bundle-", dir=output_root) as temporary:
@@ -381,13 +424,70 @@ def _collect(args: argparse.Namespace) -> int:
         try:
             bundles = bundle_store.prepare_all(tasks)
             requests = bundle_store.attach(requests, bundles)
+            run_dir.mkdir(parents=True, exist_ok=True)
+            run_lock = build_run_lock(
+                requests,
+                roller_version=__version__,
+                execution={
+                    "harness": args.harness,
+                    "task_schema": "roller.task/v1",
+                    "output_collection": "all",
+                    "openclaw": {
+                        "docker_image": args.docker_image,
+                        "docker_image_digest": docker_image_digest,
+                        "container_user": args.container_user,
+                        "network": args.network,
+                        "session_id": args.session_id,
+                        "search_provider": args.search_provider,
+                        # External CoT forces native provider reasoning off; lock the
+                        # effective behavior rather than an ignored requested level.
+                        "thinking": (
+                            "off" if args.external_thinking != "off" else args.thinking
+                        ),
+                        "external_thinking": args.external_thinking,
+                        "keep_thinking": args.keep_thinking,
+                        "cache_trace": args.cache_trace,
+                        "wire_trace": args.wire_trace,
+                        "pass_env_names": list(openclaw_config.pass_env),
+                        "collect_paths": list(args.collect_path),
+                        "set_image_model": args.set_image_model,
+                    },
+                },
+                model_config=model_config,
+            )
+            lock_decision = ensure_run_lock(
+                run_dir / "lock.json",
+                run_lock,
+                resume=args.resume,
+                existing_run=existing_run,
+            )
+            if lock_decision.legacy_run:
+                logger.warning(
+                    "legacy run has not completed trusted lock adoption; rerunning "
+                    "all samples before enabling resume"
+                )
+            configuration = run_info["configuration"]
+            if isinstance(configuration, dict):
+                configuration["resume_reuse_enabled"] = (
+                    lock_decision.reuse_existing_samples
+                )
+                openclaw_info = configuration.get("openclaw")
+                if isinstance(openclaw_info, dict):
+                    openclaw_info["docker_image_digest"] = docker_image_digest
+            run_info["lock"] = {
+                "path": "lock.json",
+                "schema_version": RUN_LOCK_SCHEMA,
+                "legacy_adopted": lock_decision.legacy_run,
+            }
+            atomic_write_json(run_dir / "info.json", run_info)
             collector = Collector(
                 CollectionConfig(
                     run_dir=run_dir,
                     parallel=args.parallel,
                     retries=args.retries,
-                    resume=args.resume,
+                    resume=lock_decision.reuse_existing_samples,
                     keep_aux_traces=args.wire_trace == "full",
+                    capture_cache_trace=args.cache_trace,
                     keep_thinking=args.keep_thinking,
                 ),
                 harness_factory=lambda slot: ConversationManager(
@@ -398,6 +498,8 @@ def _collect(args: argparse.Namespace) -> int:
                 ),
             )
             results = collector.collect(requests)
+            if lock_decision.legacy_run:
+                complete_legacy_adoption(run_dir / "lock.json")
         finally:
             bundle_store.cleanup_runtime()
     assert results is not None
