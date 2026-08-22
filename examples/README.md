@@ -1,8 +1,10 @@
 # Roller Examples
 
-这个目录提供一套可以直接 dry-run、替换模型后即可采集的最小案例。更完整的字段和运行机制放在 [Docs](../docs/README.md)，这里专注于“准备什么”和“执行什么”。
+[项目首页](../README.md) · [快速上手](../docs/getting-started.md) · [Task 格式](../docs/task-format.md) · [产物说明](../docs/trajectory-outputs.md)
 
-## 1. 目录结构
+本目录包含配置模板、task 和运行命令。安装、字段定义与轨迹语义由对应专题文档维护。
+
+## 目录内容
 
 ```text
 examples/
@@ -10,8 +12,8 @@ examples/
 │   └── api.env.example
 ├── json/
 │   ├── openclaw-models.json
-│   ├── openclaw-models-multimodal.json
-│   └── openclaw-models-reasoning.json
+│   ├── openclaw-models-reasoning.json
+│   └── openclaw-models-multimodal.json
 └── tasks/
     ├── tasks.jsonl
     ├── user-simulator.jsonl
@@ -24,104 +26,55 @@ examples/
                 └── MEMORY.md
 ```
 
-- `env/`：只放环境变量模板，不提交真实 Key。
-- `json/`：OpenClaw provider 与模型定义。
-- `tasks/`：Task 清单，以及它们各自依赖的文件包。
+## 一次性准备
 
-## 2. 准备 API
+先按照 [Getting Started](../docs/getting-started.md#1-准备运行环境) 安装 Roller，并准备至少一个 Harness 镜像。
 
-复制模板，填入自己的 OpenAI-compatible API base 与 Key：
+复制并编辑本地 API 环境文件：
 
 ```bash
 cp examples/env/api.env.example examples/env/api.env
-```
 
-```dotenv
-MY_PROXY_BASE_URL=https://api.example.com/v1
-MY_PROXY_API_KEY=replace-with-your-api-key
-ROLLER_CODEX_BASE_URL=https://api.example.com/v1
-ROLLER_CODEX_API_KEY=replace-with-your-api-key
-ROLLER_ANTHROPIC_BASE_URL=https://api.example.com/v1/messages
-ROLLER_ANTHROPIC_API_KEY=replace-with-your-api-key
-MY_CHAT_BASE_URL=https://chat-api.example.com/v1
-MY_CHAT_API_KEY=replace-with-your-api-key
-BRAVE_API_KEY=replace-with-your-brave-api-key
-```
-
-加载到当前 shell：
-
-```bash
 set -a
 source examples/env/api.env
 set +a
 ```
 
-`examples/env/api.env` 已被 Git 忽略。模型 JSON 通过 `${MY_PROXY_BASE_URL}` 和 `${MY_PROXY_API_KEY}` 读取值，真实凭证不需要进入仓库。
+`examples/env/api.env` 已被 Git 忽略。不要把真实 Key 写进 JSON、task 或命令行。
 
-自定义 API adapter、搜索变量与远程 Docker 设置见 [OpenClaw、模型与 API 配置](../docs/openclaw-configuration.md)。
+## 模型配置模板
 
-Codex 不使用 OpenClaw models JSON；服务需要兼容 Responses protocol。配置和镜像见
-[Codex Harness 指南](../docs/codex-configuration.md)。
+| 文件 | 用途 | 运行时 model ref |
+| --- | --- | --- |
+| `json/openclaw-models.json` | 最小文本模型 | `my-openai-proxy/my-model` |
+| `json/openclaw-models-reasoning.json` | GPT Responses 与 Chat Completions reasoning 示例 | `my-gpt-proxy/gpt-5.6-sol`、`my-chat-proxy/my-reasoning-model` |
+| `json/openclaw-models-multimodal.json` | 声明 `text` + `image` 输入能力 | `my-openai-proxy/my-multimodal-model` |
 
-Claude Code 也不使用 OpenClaw models JSON；服务需要兼容 Anthropic
-`/v1/messages`。配置、thinking 与镜像见
-[Claude Code Harness 指南](../docs/claude-code-configuration.md)。
+运行前必须把模板中的 base URL、环境变量和值域改成真实服务支持的配置：
 
-## 3. 配置模型
+- Responses API：`"api": "openai-responses"`；
+- Chat Completions：`"api": "openai-completions"`；
+- OpenClaw 的 `--model` 必须与 `providers.<name>` 和 `models[].id` 完全对应；
+- Codex 和 Claude Code 不读取这些 JSON，分别直接使用 Responses 和 Anthropic Messages API。
 
-文本模型模板 [`json/openclaw-models.json`](json/openclaw-models.json) 定义：
+完整规则见 [OpenClaw Harness 指南](../docs/openclaw-configuration.md#2-模型配置文件)。
 
-```text
-my-openai-proxy/my-model
-```
-
-在第一次运行前，把 JSON 中的 model `id`、`name` 和 `api` 改成服务端真实支持的值。示例默认使用 `openai-responses`；只支持 Chat Completions 的后端应改为 `openai-completions`。
-
-多模态模板 [`json/openclaw-models-multimodal.json`](json/openclaw-models-multimodal.json) 另外声明：
-
-```json
-{"input": ["text", "image"]}
-```
-
-它代表视觉输入/图像理解模型，不是文生图模型。后端本身也必须支持图像输入。
-
-Reasoning 模板
-[`json/openclaw-models-reasoning.json`](json/openclaw-models-reasoning.json) 同时展示：
-
-- GPT Responses provider：`my-gpt-proxy/gpt-5.6-sol`；
-- Chat Completions provider：`my-chat-proxy/my-reasoning-model`；
-- OpenClaw `2026.7.1` 的顶层 `thinkingLevelMap` 与
-  `compat.supportsReasoningEffort` 正确位置。
-
-采集时通过 `--thinking low|medium|high|xhigh|max` 选择模型实际支持的档位，并保持默认
-`--keep-thinking`。完整兼容边界见
-[OpenClaw、模型与 API 配置](../docs/openclaw-configuration.md#逻辑档位与-provider-effort)。
-
-## 4. 四个基础案例
+## 基础 Task 清单
 
 [`tasks/tasks.jsonl`](tasks/tasks.jsonl) 每行一条 task：
 
-| Task ID | 输入方式 | 预期行为 |
+| ID | 输入 | 验证点 |
 | --- | --- | --- |
-| `01_text_only` | 单轮文本 | 计算 `2+3`，只回复结果 |
-| `02_local_markdown` | 本地 Markdown | 读取项目名称，写入 `outputs/name.txt` |
-| `03_user_memory_context` | `USER.md` + `MEMORY.md` | 根据注入的偏好与记忆回答问题 |
-| `04_multi_turn` | 两条 `messages` | 在同一 session 中记住并复述校验词 |
+| `01_text_only` | 单轮文本 | 最小 prompt 与文本回复 |
+| `02_local_markdown` | `inputs/product-brief.md` | 读取文件并生成 `results/name.txt` |
+| `03_user_memory_context` | `USER.md` + `MEMORY.md` | Context 注入和 capture |
+| `04_multi_turn` | 两条 `messages` | 同一 Agent session 的预定义多轮 |
 
-文件案例的对应关系：
+这四条 task 可由三个 Harness 运行，是最适合做环境验收的一组数据。
 
-```text
-tasks.jsonl
-  └─ file_root: files/02_local_markdown
-       ├─ inputs/product-brief.md     # Agent 只读
-       └─ outputs/                    # 运行时创建，Agent 可写
-```
+## OpenClaw：基础采集
 
-输入不会被重命名；Agent 生成的 `outputs/name.txt` 会出现在该 sample 的 `results/name.txt`。宿主机 `file_root` 不会被 Agent 回写。
-
-### 4.1 先检查
-
-在仓库根目录执行：
+### 1. Dry-run
 
 ```bash
 roller collect \
@@ -132,9 +85,9 @@ roller collect \
   --dry-run
 ```
 
-Dry-run 会解析四条 task、检查所有依赖文件和路径，但不会启动 Docker，也不会创建 run。计划中的 turn 数应为 `1、1、1、2`。
+计划中的 turn 数应依次为 `1、1、1、2`。
 
-### 4.2 并行执行
+### 2. 正式运行
 
 ```bash
 roller collect \
@@ -144,27 +97,12 @@ roller collect \
   --parallel 4 \
   --timeout 600 \
   --output runs \
-  --run-name examples_text
+  --run-name examples-openclaw
 ```
 
-运行完成后检查：
+## Codex：运行相同 Task
 
-```text
-runs/examples_text/
-├── info.json
-└── samples/<model-safe-name>/
-    ├── 00000000_01_text_only/
-    ├── 00000001_02_local_markdown/
-    │   └── results/name.txt
-    ├── 00000002_03_user_memory_context/
-    └── 00000003_04_multi_turn/
-```
-
-Roller 会把 model ref 转成可用于文件系统的安全目录名；包含 `/` 等字符时会附加短 digest，因此程序应从 run `info.json` 的 sample 索引定位目录。每个 sample 的核心文件是 `trace.jsonl`、`trace_ACTF.json` 和 `info.json`。结果目录的完整结构见 [文件、Task Bundle 与结果存储](../docs/task-bundle-and-storage.md#6-run-与-sample)。
-
-### 4.3 用 Codex 运行相同任务
-
-构建 `roller-codex:0.149.0` 并加载上面的环境变量后：
+服务必须支持 Responses protocol，且本地已构建 `roller-codex:0.149.0`：
 
 ```bash
 roller collect \
@@ -178,17 +116,36 @@ roller collect \
   --parallel 2 \
   --timeout 900 \
   --output runs \
-  --run-name examples_codex
+  --run-name examples-codex
 ```
 
-第四条 `messages` 会通过 `codex exec resume --last` 延续 session。Codex 当前不支持下一节
-的动态 User Simulator。自定义 API 默认按 HTTP Responses streaming 连接；只有服务明确
-支持 Responses WebSocket 时才增加 `--codex-websockets`。
+第四条 task 会通过 `codex exec resume --last` 延续 session。镜像、API 和 reasoning 细节见 [Codex Harness 指南](../docs/codex-configuration.md)。
 
-### 4.4 用 Codex 采集显式 reasoning
+## Claude Code：运行相同 Task
 
-`external` 首次强制一次 `deep_think`，之后按需；`external_always` 在每个业务动作或最终
-回复前强制独立 THINK。以下命令只运行第一条基础 task，适合作为 API 和镜像的最小验收：
+服务必须支持 Anthropic `/v1/messages`，且本地已构建 `roller-claude-code:2.1.222`：
+
+```bash
+roller collect \
+  --harness claude-code \
+  --tasks examples/tasks/tasks.jsonl \
+  --model claude-sonnet-4-6-thinking \
+  --api-base "$ROLLER_ANTHROPIC_BASE_URL" \
+  --api-key-env ROLLER_ANTHROPIC_API_KEY \
+  --thinking high \
+  --parallel 2 \
+  --timeout 900 \
+  --output runs \
+  --run-name examples-claude-code
+```
+
+第四条 task 会通过 `claude --continue` 延续 session。镜像、endpoint、thinking 和 signature recovery 见 [Claude Code Harness 指南](../docs/claude-code-configuration.md)。
+
+## 进阶案例
+
+### External thinking
+
+以下命令只运行第一条 task，用 Codex 验收严格 THINK/ACT 交替：
 
 ```bash
 roller collect \
@@ -202,62 +159,25 @@ roller collect \
   --wire-trace full \
   --timeout 900 \
   --output runs \
-  --run-name examples_codex_external_always
+  --run-name examples-codex-external
 ```
 
-该模式必须保持默认 `--network host` 和 `--no-codex-websockets`。运行成功后：
+成功后，ACTF 保留 canonical `deep_think` call/result，SFT 则删除内部工具协议并把 thoughts 写入下一条 assistant 的 `reasoning_content`。完整验收方法见 [External Thinking](../docs/external-thinking.md#7-如何查看和验收)。
 
-- sample `info.json.runtime.external_thinking.validated` 为 `true`；
-- `wire_trace.jsonl` 的 `external_thinking_phase` 从 `think` 开始并按 THINK/ACT 交替；
-- `trace_ACTF.json` 保留 canonical `deep_think` call/result；
-- `trace_SFT.json` 不再包含 `deep_think`，其 thoughts 已进入下一条 assistant 的
-  `reasoning_content`。
+### Claude signature recovery
 
-完整协议和排错方法见 [External Thinking 指南](../docs/external-thinking.md)。
+Native session 存在 signed thinking、但 reasoning 为空时，可在 Claude Code 命令中增加：
 
-### 4.5 用 Claude Code 运行相同任务
-
-构建 `roller-claude-code:2.1.222` 并加载 Anthropic 环境变量后：
-
-```bash
-roller collect \
-  --harness claude-code \
-  --tasks examples/tasks/tasks.jsonl \
-  --model claude-sonnet-4-6-thinking \
-  --api-base "$ROLLER_ANTHROPIC_BASE_URL" \
-  --api-key-env ROLLER_ANTHROPIC_API_KEY \
-  --thinking high \
-  --parallel 2 \
-  --timeout 900 \
-  --output runs \
-  --run-name examples_claude_code
+```text
+--claude-signature-recovery fill
+--claude-signature-recovery-attempts 2
 ```
 
-`--api-base` 可以是 origin、`/v1` 或完整 `/v1/messages`，Roller 会规范化为
-Claude SDK 需要的 base URL。第四条 `messages` 会通过 `claude --continue` 延续同一
-session。Claude Code 当前不支持下一节的动态 User Simulator，也不支持
-`external/external_always`。
+`fill` 是推荐的保守模式；它只填空值。该功能会增加独立 provider 请求，结果为 best effort，正式训练前应检查 `signature_recovery.jsonl`。详见 [Signature recovery](../docs/claude-code-configuration.md#5-signature-recovery实验性)。
 
-如果 native session 含 `thinking.signature`，但 reasoning 为空或只有压缩 summary，可按需
-增加 `--claude-signature-recovery fill`（保守填空）或 `prefer`（优先恢复文本）。这是额外
-Anthropic 请求且结果为 best effort；批量采集建议先使用 `fill` 并检查每个 sample 的
-`signature_recovery.jsonl`。
+### 动态 User Simulator
 
-## 5. 动态 User Simulator 案例
-
-[`tasks/user-simulator.jsonl`](tasks/user-simulator.jsonl) 中，另一个 OpenClaw Harness 扮演 HR。它不会使用预定义 `messages`，而是根据任务 Agent 当前版本的招聘广告逐轮补充要求，最终要求文件写入 `outputs/recruitment-ad.md`。
-
-先做检查：
-
-```bash
-roller collect \
-  --tasks examples/tasks/user-simulator.jsonl \
-  --model-config examples/json/openclaw-models.json \
-  --parallel 1 \
-  --dry-run
-```
-
-实际执行：
+[`tasks/user-simulator.jsonl`](tasks/user-simulator.jsonl) 让另一个 OpenClaw Harness 扮演 HR，根据任务 Agent 当前草稿逐轮补充招聘需求：
 
 ```bash
 roller collect \
@@ -266,23 +186,21 @@ roller collect \
   --parallel 1 \
   --timeout 900 \
   --output runs \
-  --run-name example_user_simulator
+  --run-name examples-user-simulator
 ```
 
-示例省略了 `user_simulator.model`，所以 Simulator 跟随任务 Agent 使用 `my-openai-proxy/my-model`。需要模型分工时，在 `user_simulator` 中指定同一 models JSON 中的另一个 model ref。
+Task 已内置 `model: my-openai-proxy/my-model`。动态对话会额外生成 `conversation.json` 和 `user_simulator/` 轨迹；Codex 与 Claude Code 当前不支持此模式。详见 [User Simulator](../docs/user-simulator.md)。
 
-这个案例会多保存 `conversation.json` 和 `user_simulator/` 轨迹。调度协议、instruction 写法、终止原因和成本统计见 [User Simulator 与动态对话](../docs/user-simulator.md)。
+### 多模态输入
 
-## 6. 使用多模态模型
-
-准备一条包含本地图像输入的 task，然后使用多模态配置：
+使用 [`json/openclaw-models-multimodal.json`](json/openclaw-models-multimodal.json)，并在 task 的 `files.inputs` 中声明本地图像：
 
 ```json
 {
   "schema_version": "roller.task/v1",
   "id": "inspect_image",
   "file_root": "files/inspect_image",
-  "prompt": "查看 inputs/example.png，描述画面并把结果保存到 outputs/description.md。",
+  "prompt": "查看 inputs/example.png，把描述保存到 outputs/description.md。",
   "files": {
     "inputs": ["inputs/example.png"],
     "output_dir": "outputs"
@@ -297,15 +215,24 @@ roller collect \
   --model-config examples/json/openclaw-models-multimodal.json \
   --parallel 2 \
   --output runs \
-  --run-name examples_vision
+  --run-name examples-vision
 ```
 
-Task 中只声明本地文件；模型是否实际读取图像取决于 OpenClaw 版本、模型能力和 provider adapter。Roller 不会把普通文本模型自动变成多模态模型。
+模型配置声明能力不会让文本后端自动支持图像；服务与模型本身也必须支持对应协议下的视觉输入。
 
-## 7. 下一步
+## 验收与查看
 
-- 写自己的 task：[Task 格式参考](../docs/task-format.md)
-- 理解输入、Context 和 `results/`：[文件与存储](../docs/task-bundle-and-storage.md)
-- 连接自定义 API：[OpenClaw 配置](../docs/openclaw-configuration.md)
-- 使用 Codex CLI：[Codex Harness 指南](../docs/codex-configuration.md)
-- 设计动态用户：[User Simulator](../docs/user-simulator.md)
+以 OpenClaw run 为例：
+
+```bash
+roller view runs/examples-openclaw
+```
+
+重点检查：
+
+- `02_local_markdown` sample 是否包含 `results/name.txt`；
+- `04_multi_turn` 是否包含两条 user message；
+- 每个成功 sample 是否有 `trace.jsonl`、`trace_ACTF.json`、`trace_SFT.json` 和 `info.json`；
+- run 根目录 `sft.jsonl` 是否按 request 顺序汇总成功样本。
+
+下一步：编写自己的 [Task](../docs/task-format.md)，或阅读 [轨迹产出文件指南](../docs/trajectory-outputs.md) 选择训练、调试与审计所需的文件。

@@ -1,7 +1,10 @@
 # Claude Code Harness 指南
 
-本文说明如何构建 Roller 的 Claude Code 镜像、连接 Anthropic Messages API、控制
-thinking effort，以及理解 Claude Code native session、wire、ACTF 和 SFT 的信息边界。
+[文档中心](README.md) · [快速上手](getting-started.md) · [OpenClaw](openclaw-configuration.md) · [Codex](codex-configuration.md) · [CLI 参数](cli-reference.md)
+
+本页只说明 Claude Code 专属的镜像、Anthropic Messages API、thinking、signature recovery、native session 和排错。Task 字段见 [Task 格式参考](task-format.md)，所有 Harness 共用的产物语义见 [轨迹产出文件指南](trajectory-outputs.md)。
+
+> 快速定位：支持范围（第 1 节）· 镜像（第 2 节）· API（第 3 节）· thinking（第 4 节）· signature recovery（第 5 节）· native/ACTF/SFT/wire（第 8–9 节）· 排错（第 10 节）
 
 ## 1. 当前支持范围
 
@@ -171,7 +174,8 @@ Roller 不根据 token 数、最终文本或签名推测隐藏 reasoning。`--no
 
 ## 5. Signature recovery（实验性）
 
-参考https://github.com/5SSjw/open-open-reasoning， 某些 provider/模型会在 Claude Code native session 中保存 `thinking.signature`，但只给出压缩
+该实现参考 [open-open-reasoning](https://github.com/5SSjw/open-open-reasoning)。某些
+provider/模型会在 Claude Code native session 中保存 `thinking.signature`，但只给出压缩
 summary，甚至把 `thinking` 文本留空。Signature 本身是 provider 可解封的不透明载荷，Roller
 不能在本地解密。可显式启用第二次 Anthropic Messages 请求：把 signature 原样放回
 `assistant.thinking` block，再要求模型机械转录该 block 表示的 working。

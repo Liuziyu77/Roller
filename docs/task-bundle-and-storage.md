@@ -1,6 +1,8 @@
 # 文件、Task Bundle 与结果存储
 
-本文说明一条 task 从宿主机文件变成 Agent 工作区，再变成最终 sample 的完整过程。Task 字段本身见 [Task 格式参考](task-format.md)。
+[文档中心](README.md) · [Task 格式](task-format.md) · [轨迹产物](trajectory-outputs.md) · [SFT 格式](sft-format.md)
+
+本页说明一条 task 从宿主机文件变成 Agent 工作区，再变成最终 run/sample 的完整生命周期，并集中解释快照、Context capture、结果回收、retry 与 Resume。Task 字段本身见 [Task 格式参考](task-format.md)。
 
 ## 1. 文件生命周期
 
@@ -8,8 +10,8 @@ Roller 把文件分成四个阶段：
 
 1. **宿主机文件包**：`file_root` 下由用户维护的输入与 Context。
 2. **Task Bundle**：运行前构建的不可变快照，供同一 task 的所有模型使用。
-3. **Agent 工作区**：每个 rollout 独享的 `/tmp_workspace`。
-4. **Sample**：最终保留 raw trace、ACTF、info 和可选 `results/`。
+3. **Agent 工作区**：每个 rollout 独享；OpenClaw 使用 `/tmp_workspace`，Codex 与 Claude Code 使用 `/roller/workspace`。
+4. **Sample**：最终保留 raw、ACTF、SFT、info 和可选 `results/`。
 
 一组典型路径如下：
 
@@ -18,8 +20,8 @@ Roller 把文件分成四个阶段：
 | Task 清单 | `dataset/tasks.jsonl` |
 | `file_root` | `dataset/files/task_001/` |
 | 宿主机输入 | `dataset/files/task_001/inputs/brief.md` |
-| Agent 读取 | `/tmp_workspace/inputs/brief.md` |
-| Agent 写入 | `/tmp_workspace/outputs/report.md` |
+| Agent 读取 | `<workspace>/inputs/brief.md` |
+| Agent 写入 | `<workspace>/outputs/report.md` |
 | 最终结果 | `samples/<model>/00000000_task_001/results/report.md` |
 
 `file_root` 定义逻辑工作区关系，但 Roller 不会把 Agent 生成的文件直接写回它。每个 task/model rollout 都有自己的容器和 sample，因此并行模型不会覆盖彼此的输出。
@@ -56,7 +58,15 @@ Task Bundle 位于运行期临时目录，采集结束后删除。使用 `--resu
 
 Context 和普通输入的区别在于：普通输入只按路径提供；Context 还带有 `role` 与 `target`，由 Harness 放到能够被 Agent 识别的位置。
 
-OpenClaw adapter 会把 Context 复制到：
+不同 Harness 会把 Context 放到各自能够自动发现的位置：
+
+| Harness | 项目工作区 | 额外位置 |
+| --- | --- | --- |
+| OpenClaw | `/tmp_workspace/<target>` | `/root/<target>` |
+| Codex | `/roller/workspace/<target>` | `role=skill` 还会复制到隔离的 `$HOME/.agents/skills/` |
+| Claude Code | `/roller/workspace/<target>` | `role=skill` 还会复制到隔离的 `$CLAUDE_CONFIG_DIR/skills/` |
+
+OpenClaw 的具体路径为：
 
 ```text
 /root/<target>
@@ -79,7 +89,15 @@ OpenClaw adapter 会把 Context 复制到：
 
 ## 4. Agent 工作区
 
-每个 OpenClaw rollout 都使用独立容器和 `/tmp_workspace`：
+每个 rollout 都使用独立容器和隔离的 Harness home/session，不会读取宿主机的 Agent 登录态或历史。工作目录如下：
+
+| Harness | 工作目录 | 自动发现的项目指令 |
+| --- | --- | --- |
+| OpenClaw | `/tmp_workspace` | `AGENTS.md` 及 OpenClaw Context 文件 |
+| Codex | `/roller/workspace` | `AGENTS.md` |
+| Claude Code | `/roller/workspace` | 建议把项目指令 target 设为 `CLAUDE.md` |
+
+以 OpenClaw 为例：
 
 ```text
 /tmp_workspace/
@@ -90,7 +108,7 @@ OpenClaw adapter 会把 Context 复制到：
 └── outputs/                   # 默认可写输出目录
 ```
 
-输入文件按各自 source 路径只读挂载。Context 在运行前注入。`runtime.setup` 随后在 `/tmp_workspace` 执行，最后才开始 Agent 对话。
+输入文件按各自 source 路径只读挂载，Context 在运行前注入。`runtime.setup` 随后在上表对应的工作目录执行，最后才开始 Agent 对话。
 
 `/roller/task/outputs` 是 task `output_dir` 的稳定别名。即使 task 使用 `deliverables/final`，该别名仍指向当前可回收目录。
 
@@ -164,8 +182,8 @@ Run `lock.json` 是脱敏后的可复现运行锁。它直接保存需要比较�
 Task Bundle 已有的内容 digest，不为小型配置再计算一层无意义的 hash。锁定内容包括：
 
 - request 顺序、task/model、timeout 和 Task Bundle/input/context digest；
-- OpenClaw 镜像引用与本机解析出的 image ID；
-- 模型配置内容，以及 thinking、wire trace、cache trace、容器与输出等语义选项。
+- 所选 Harness 的镜像引用与本机解析出的 image ID；
+- 对应 Harness 的模型/API 配置，以及 thinking、wire trace、容器与输出等语义选项。
 
 API Key、token 等 credential 被替换为 `<redacted>`；URL 中的 userinfo 和 fragment 被
 移除，敏感 query value 被替换，但 `api-version` 等非敏感 query 会保留用于一致性比较。

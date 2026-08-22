@@ -1,5 +1,7 @@
 # User Simulator 与动态对话
 
+[文档中心](README.md) · [Task 格式](task-format.md) · [示例](../examples/README.md#动态-user-simulator) · [产物说明](trajectory-outputs.md)
+
 User Simulator 是一个独立运行的 Harness，用模型扮演用户。它不会提前生成完整对话，而是在任务 Agent 完成当前指令后读取截至当前轮的完整上下文，再决定提出新要求或结束任务。
 
 这种模式适合收集需求逐步暴露、反复修改和协作交付的轨迹，例如招聘广告、需求访谈、客服对话、教学辅导和交互式代码评审。
@@ -149,7 +151,7 @@ roller collect \
   --run-name user_simulator_hr
 ```
 
-`--parallel N` 仍表示同时执行 N 条 rollout。每条动态 rollout 会同时占用两个容器，并产生两组模型调用和两份轨迹。端口规划见 [OpenClaw 配置](openclaw-configuration.md#6-并行容器与端口)。
+`--parallel N` 仍表示同时执行 N 条 rollout。每条动态 rollout 会同时占用两个容器，并产生两组模型调用和两份轨迹。端口规划见 [OpenClaw 配置](openclaw-configuration.md#7-并行容器与端口)。
 
 ## 8. 保存与使用轨迹
 

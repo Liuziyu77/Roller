@@ -110,28 +110,22 @@ def _build_parser() -> argparse.ArgumentParser:
         default="INFO",
     )
 
-    openclaw = collect.add_argument_group("OpenClaw")
-    openclaw.add_argument(
+    runtime = collect.add_argument_group("Harness runtime and trajectory")
+    runtime.add_argument(
         "--docker-image",
         help=(
             "harness image; defaults to the corresponding ROLLER_*_IMAGE "
             "environment variable or Roller's pinned Harness image"
         ),
     )
-    openclaw.add_argument(
+    runtime.add_argument(
         "--container-user",
         default="0",
         help="Docker user for the disposable task container (default: root); use 'image' for the image default",
     )
-    openclaw.add_argument("--docker-binary", default="docker")
-    openclaw.add_argument("--model-config", help="OpenClaw models JSON; supports ${ENV_NAME}")
-    openclaw.add_argument("--gateway-port", type=int, default=18789)
-    openclaw.add_argument("--gateway-port-step", type=int, default=10)
-    openclaw.add_argument("--gateway-startup-timeout", type=float, default=30.0)
-    openclaw.add_argument("--network", default="host")
-    openclaw.add_argument("--session-id", default="roller")
-    openclaw.add_argument("--search-provider")
-    openclaw.add_argument(
+    runtime.add_argument("--docker-binary", default="docker")
+    runtime.add_argument("--network", default="host")
+    runtime.add_argument(
         "--thinking",
         type=normalize_thinking,
         choices=THINKING_LEVELS,
@@ -141,7 +135,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "applies its own validation and effort mapping"
         ),
     )
-    openclaw.add_argument(
+    runtime.add_argument(
         "--external-thinking",
         choices=("off", "external", "external_always"),
         default="off",
@@ -151,13 +145,44 @@ def _build_parser() -> argparse.ArgumentParser:
             "with deep_think; Claude Code currently accepts only 'off'"
         ),
     )
-    openclaw.add_argument(
+    runtime.add_argument(
         "--pass-env",
         action="append",
         default=[],
         metavar="NAME",
         help="additional host environment variable to pass into the Harness container",
     )
+    runtime.add_argument(
+        "--wire-trace",
+        choices=("off", "actf", "full"),
+        default="actf",
+        help=(
+            "wire-level recording through a local reverse proxy: 'actf' (default) embeds "
+            "the tools schema into trace_ACTF.json and keeps no extra file, 'full' "
+            "additionally saves wire_trace.jsonl with every request body, 'off' disables "
+            "(OpenClaw uses model-config baseUrl; Codex uses --api-base; external "
+            "thinking always uses an internal protocol proxy)"
+        ),
+    )
+    runtime.add_argument(
+        "--keep-thinking",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "keep visible reasoning in ACTF/SFT. For OpenClaw, --no-keep-thinking also "
+            "strips reasoning from request history at the wire layer; for Codex and "
+            "Claude Code it controls export and leaves native raw/resume context unchanged"
+        ),
+    )
+    runtime.add_argument("--keep-container-on-error", action="store_true")
+
+    openclaw = collect.add_argument_group("OpenClaw")
+    openclaw.add_argument("--model-config", help="OpenClaw models JSON; supports ${ENV_NAME}")
+    openclaw.add_argument("--gateway-port", type=int, default=18789)
+    openclaw.add_argument("--gateway-port-step", type=int, default=10)
+    openclaw.add_argument("--gateway-startup-timeout", type=float, default=30.0)
+    openclaw.add_argument("--session-id", default="roller")
+    openclaw.add_argument("--search-provider")
     openclaw.add_argument(
         "--collect-path",
         action="append",
@@ -176,36 +201,9 @@ def _build_parser() -> argparse.ArgumentParser:
         default=True,
         help="record the assembled system prompt per LLM call (diagnostics.cacheTrace)",
     )
-    openclaw.add_argument(
-        "--wire-trace",
-        choices=("off", "actf", "full"),
-        default="actf",
-        help=(
-            "wire-level recording through a local reverse proxy: 'actf' (default) embeds "
-            "the tools schema into trace_ACTF.json and keeps no extra file, 'full' "
-            "additionally saves wire_trace.jsonl with every request body, 'off' disables "
-            "(OpenClaw uses model-config baseUrl; Codex uses --api-base; external "
-            "thinking always uses an internal protocol proxy)"
-        ),
-    )
-    openclaw.add_argument(
-        "--keep-thinking",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help=(
-            "keep visible reasoning in ACTF/SFT. For OpenClaw, --no-keep-thinking also "
-            "strips reasoning from request history at the wire layer; for Codex and "
-            "Claude Code it controls export and leaves native raw/resume context unchanged"
-        ),
-    )
-    openclaw.add_argument("--keep-container-on-error", action="store_true")
 
-    codex = collect.add_argument_group("Codex")
-    codex.add_argument(
-        "--codex-config",
-        help="optional Codex config.toml copied into the disposable container",
-    )
-    codex.add_argument(
+    api = collect.add_argument_group("Codex and Claude Code API")
+    api.add_argument(
         "--api-base",
         "--anthropic-base-url",
         dest="api_base",
@@ -214,12 +212,18 @@ def _build_parser() -> argparse.ArgumentParser:
             "full /v1/messages endpoint for Claude Code; defaults to the Harness env"
         ),
     )
-    codex.add_argument(
+    api.add_argument(
         "--api-key-env",
         help=(
             "host environment variable containing the model API key; defaults to "
             "OPENAI_API_KEY for Codex and ANTHROPIC_API_KEY for Claude Code"
         ),
+    )
+
+    codex = collect.add_argument_group("Codex")
+    codex.add_argument(
+        "--codex-config",
+        help="optional Codex config.toml copied into the disposable container",
     )
     codex.add_argument(
         "--reasoning-summary",

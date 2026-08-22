@@ -1,6 +1,10 @@
-# OpenClaw、模型与 API 配置
+# OpenClaw Harness 指南
 
-本文说明 Roller 如何启动 OpenClaw、连接自定义模型服务，以及传递搜索与代理配置。Task 和文件声明分别见 [Task 格式参考](task-format.md) 与 [文件、Task Bundle 与结果存储](task-bundle-and-storage.md)。
+[文档中心](README.md) · [快速上手](getting-started.md) · [Codex](codex-configuration.md) · [Claude Code](claude-code-configuration.md) · [CLI 参数](cli-reference.md)
+
+本页只说明 OpenClaw 专属的镜像、模型 provider、API adapter、thinking、搜索、gateway 和排错。Task 字段见 [Task 格式参考](task-format.md)，所有 Harness 共用的产物语义见 [轨迹产出文件指南](trajectory-outputs.md)。
+
+> 快速定位：镜像与 Docker（第 1 节）· provider JSON（第 2–4 节）· reasoning/wire（第 5 节）· 并行端口（第 7 节）· 参数速查与排错（第 8–10 节）
 
 ## 1. 运行要求
 
