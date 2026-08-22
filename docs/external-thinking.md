@@ -2,7 +2,7 @@
 
 [文档中心](README.md) · [OpenClaw](openclaw-configuration.md) · [Codex](codex-configuration.md) · [SFT 格式](sft-format.md)
 
-参考 https://github.com/can1357/oh-my-pi，Roller 为 OpenClaw 和 Codex 实现了类似的
+参考 https://github.com/can1357/oh-my-pi， Roller 为 OpenClaw 和 Codex 实现了类似的
 `external` 与 `external_always` 模式：关闭 provider 原生 reasoning，把模型明确生成的
 中间推理保存进 `deep_think` 工具参数，再在专用 SFT 中标准化为
 `reasoning_content`。
