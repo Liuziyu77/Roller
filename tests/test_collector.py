@@ -79,6 +79,25 @@ class FakeHarness(Harness):
                 "request_count": 1,
             }
             metadata = {"slot": self.slot}
+            if self.state.get("signature_recovery"):
+                (output_dir / "signature_recovery.jsonl").write_text(
+                    json.dumps(
+                        {
+                            "schema_version": "roller.claude-signature-recovery/v1",
+                            "message_id": "msg-1",
+                            "status": "ok",
+                            "recovered_reasoning": "working",
+                        }
+                    )
+                    + "\n",
+                    encoding="utf-8",
+                )
+                metadata["signature_recovery"] = {
+                    "mode": "fill",
+                    "candidate_count": 1,
+                    "recovered_count": 1,
+                    "artifact": "signature_recovery.jsonl",
+                }
             if self.state.get("record_output"):
                 artifact = output_dir / "results" / "artifact.txt"
                 artifact.parent.mkdir(parents=True, exist_ok=True)
@@ -247,6 +266,29 @@ class CollectorTests(unittest.TestCase):
             self.assertEqual(result[0]["status"], "ok")
             self.assertEqual(state["calls"][("task-0", "provider/model")], 2)
             self.assertTrue(wire_trace.is_file())
+
+    def test_resume_reruns_recovery_sample_when_artifact_is_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            run_dir = Path(temporary) / "run"
+            state = self._state()
+            state["signature_recovery"] = True
+            requests = make_requests()[:1]
+            Collector(
+                CollectionConfig(run_dir=run_dir),
+                lambda slot: FakeHarness(state, slot),
+            ).collect(requests)
+            sample = next((run_dir / "samples").glob("*/*"))
+            recovery = sample / "signature_recovery.jsonl"
+            recovery.unlink()
+
+            result = Collector(
+                CollectionConfig(run_dir=run_dir, resume=True),
+                lambda slot: FakeHarness(state, slot),
+            ).collect(requests)
+
+            self.assertEqual(result[0]["status"], "ok")
+            self.assertEqual(state["calls"][("task-0", "provider/model")], 2)
+            self.assertTrue(recovery.is_file())
 
     def test_interruption_checkpoints_completed_samples_and_partial_sft(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

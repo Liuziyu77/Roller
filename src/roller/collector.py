@@ -122,6 +122,7 @@ class Collector:
             "trace.jsonl",
             "trace_ACTF.json",
             "trace_SFT.json",
+            "signature_recovery.jsonl",
             "info.json",
             "results",
             "conversation.json",

@@ -312,8 +312,13 @@ def claude_code_events_to_actf(
     system_prompt: str = "",
     tools: list[dict[str, Any]] | None = None,
     keep_thinking: bool = True,
+    recovered_reasoning: Mapping[str, str] | None = None,
+    signature_recovery_mode: str = "off",
 ) -> dict[str, Any]:
     """Convert Claude Code user/assistant session events to ``ACTF_v1.0``."""
+
+    if signature_recovery_mode not in {"off", "fill", "prefer"}:
+        raise ValueError("Claude signature recovery mode must be off|fill|prefer")
 
     raw_rows = list(events)
     seen_uuids: set[str] = set()
@@ -490,6 +495,22 @@ def claude_code_events_to_actf(
             )
             pending_user_time = pending_user_time or timestamp
 
+    if keep_thinking and recovered_reasoning and signature_recovery_mode != "off":
+        for message_id, recovered in recovered_reasoning.items():
+            if not isinstance(recovered, str) or not recovered:
+                continue
+            turn = turns_by_message_id.get(message_id)
+            if turn is None:
+                continue
+            assistant = turn["assistant_content"]
+            native = assistant["reasoning_content"]
+            if signature_recovery_mode == "fill" and native:
+                continue
+            assistant["reasoning_content"] = recovered
+            turn["extra"]["reasoning_source"] = "signature_recovery"
+            turn["extra"]["native_reasoning_chars"] = len(native)
+            turn["extra"]["signature_recovery_mode"] = signature_recovery_mode
+
     steps: list[dict[str, Any]] = []
     for turn in turns:
         assistant = turn["assistant_content"]
@@ -539,6 +560,8 @@ def convert_claude_code_trace(
     user_messages: Iterable[str] | None = None,
     wire_trace: Path | None = None,
     keep_thinking: bool = True,
+    recovered_reasoning: Mapping[str, str] | None = None,
+    signature_recovery_mode: str = "off",
 ) -> dict[str, Any]:
     system_prompt = ""
     tools = None
@@ -550,6 +573,8 @@ def convert_claude_code_trace(
         system_prompt=system_prompt,
         tools=tools,
         keep_thinking=keep_thinking,
+        recovered_reasoning=recovered_reasoning,
+        signature_recovery_mode=signature_recovery_mode,
     )
     atomic_write_json(destination, trajectory)
     return trajectory
