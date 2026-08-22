@@ -39,6 +39,8 @@ cp examples/env/api.env.example examples/env/api.env
 ```dotenv
 MY_PROXY_BASE_URL=https://api.example.com/v1
 MY_PROXY_API_KEY=replace-with-your-api-key
+ROLLER_CODEX_BASE_URL=https://api.example.com/v1
+ROLLER_CODEX_API_KEY=replace-with-your-api-key
 MY_CHAT_BASE_URL=https://chat-api.example.com/v1
 MY_CHAT_API_KEY=replace-with-your-api-key
 BRAVE_API_KEY=replace-with-your-brave-api-key
@@ -55,6 +57,9 @@ set +a
 `examples/env/api.env` 已被 Git 忽略。模型 JSON 通过 `${MY_PROXY_BASE_URL}` 和 `${MY_PROXY_API_KEY}` 读取值，真实凭证不需要进入仓库。
 
 自定义 API adapter、搜索变量与远程 Docker 设置见 [OpenClaw、模型与 API 配置](../docs/openclaw-configuration.md)。
+
+Codex 不使用 OpenClaw models JSON；服务需要兼容 Responses protocol。配置和镜像见
+[Codex Harness 指南](../docs/codex-configuration.md)。
 
 ## 3. 配置模型
 
@@ -151,6 +156,59 @@ runs/examples_text/
 
 Roller 会把 model ref 转成可用于文件系统的安全目录名；包含 `/` 等字符时会附加短 digest，因此程序应从 run `info.json` 的 sample 索引定位目录。每个 sample 的核心文件是 `trace.jsonl`、`trace_ACTF.json` 和 `info.json`。结果目录的完整结构见 [文件、Task Bundle 与结果存储](../docs/task-bundle-and-storage.md#6-run-与-sample)。
 
+### 4.3 用 Codex 运行相同任务
+
+构建 `roller-codex:0.149.0` 并加载上面的环境变量后：
+
+```bash
+roller collect \
+  --harness codex \
+  --tasks examples/tasks/tasks.jsonl \
+  --model gpt-5.6-sol \
+  --api-base "$ROLLER_CODEX_BASE_URL" \
+  --api-key-env ROLLER_CODEX_API_KEY \
+  --thinking high \
+  --reasoning-summary detailed \
+  --parallel 2 \
+  --timeout 900 \
+  --output runs \
+  --run-name examples_codex
+```
+
+第四条 `messages` 会通过 `codex exec resume --last` 延续 session。Codex 当前不支持下一节
+的动态 User Simulator。自定义 API 默认按 HTTP Responses streaming 连接；只有服务明确
+支持 Responses WebSocket 时才增加 `--codex-websockets`。
+
+### 4.4 用 Codex 采集显式 reasoning
+
+`external` 首次强制一次 `deep_think`，之后按需；`external_always` 在每个业务动作或最终
+回复前强制独立 THINK。以下命令只运行第一条基础 task，适合作为 API 和镜像的最小验收：
+
+```bash
+roller collect \
+  --harness codex \
+  --tasks examples/tasks/tasks.jsonl \
+  --limit 1 \
+  --model gpt-5.6-sol \
+  --api-base "$ROLLER_CODEX_BASE_URL" \
+  --api-key-env ROLLER_CODEX_API_KEY \
+  --external-thinking external_always \
+  --wire-trace full \
+  --timeout 900 \
+  --output runs \
+  --run-name examples_codex_external_always
+```
+
+该模式必须保持默认 `--network host` 和 `--no-codex-websockets`。运行成功后：
+
+- sample `info.json.runtime.external_thinking.validated` 为 `true`；
+- `wire_trace.jsonl` 的 `external_thinking_phase` 从 `think` 开始并按 THINK/ACT 交替；
+- `trace_ACTF.json` 保留 canonical `deep_think` call/result；
+- `trace_SFT.json` 不再包含 `deep_think`，其 thoughts 已进入下一条 assistant 的
+  `reasoning_content`。
+
+完整协议和排错方法见 [External Thinking 指南](../docs/external-thinking.md)。
+
 ## 5. 动态 User Simulator 案例
 
 [`tasks/user-simulator.jsonl`](tasks/user-simulator.jsonl) 中，另一个 OpenClaw Harness 扮演 HR。它不会使用预定义 `messages`，而是根据任务 Agent 当前版本的招聘广告逐轮补充要求，最终要求文件写入 `outputs/recruitment-ad.md`。
@@ -215,4 +273,5 @@ Task 中只声明本地文件；模型是否实际读取图像取决于 OpenClaw
 - 写自己的 task：[Task 格式参考](../docs/task-format.md)
 - 理解输入、Context 和 `results/`：[文件与存储](../docs/task-bundle-and-storage.md)
 - 连接自定义 API：[OpenClaw 配置](../docs/openclaw-configuration.md)
+- 使用 Codex CLI：[Codex Harness 指南](../docs/codex-configuration.md)
 - 设计动态用户：[User Simulator](../docs/user-simulator.md)

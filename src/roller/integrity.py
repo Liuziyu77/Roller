@@ -21,7 +21,9 @@ def _json_object(path: Path) -> dict[str, Any]:
     return value
 
 
-def _has_message_event(path: Path) -> bool:
+def _has_json_event(path: Path) -> bool:
+    """Return whether a harness-native JSONL trace contains one JSON object."""
+
     try:
         with path.open("r", encoding="utf-8", errors="replace") as source:
             for line in source:
@@ -29,11 +31,7 @@ def _has_message_event(path: Path) -> bool:
                     event = json.loads(line)
                 except json.JSONDecodeError:
                     continue
-                if (
-                    isinstance(event, dict)
-                    and event.get("type") == "message"
-                    and isinstance(event.get("message"), dict)
-                ):
+                if isinstance(event, dict):
                     return True
     except OSError as exc:
         raise ValueError(f"{path.name} cannot be read: {exc}") from exc
@@ -107,8 +105,8 @@ def _validate_trajectory_files(
         raise ValueError("required full-mode wire_trace.jsonl is missing")
     if require_cache_trace and not (base / "cache_trace.jsonl").is_file():
         raise ValueError("required full-mode cache_trace.jsonl is missing")
-    if not _has_message_event(raw_path):
-        raise ValueError("trace.jsonl contains no valid message event")
+    if not _has_json_event(raw_path):
+        raise ValueError("trace.jsonl contains no valid JSON object event")
 
     actf = _json_object(actf_path)
     if actf.get("schema_version") != "ACTF_v1.0":

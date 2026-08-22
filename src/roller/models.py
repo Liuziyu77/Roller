@@ -112,6 +112,7 @@ class HarnessResult:
     error: str | None = None
     usage: dict[str, Any] = field(default_factory=dict)
     trace_path: str | None = None
+    trajectory_path: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
     @classmethod

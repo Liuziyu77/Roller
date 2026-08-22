@@ -186,6 +186,25 @@ class ViewerTests(unittest.TestCase):
         self.assertEqual(rollout["status"], "skipped")
         self.assertEqual(source.run_summary()["status_counts"]["skipped"], 1)
 
+    def test_projects_codex_reasoning_configuration(self) -> None:
+        info_path = self.root / "info.json"
+        run_info = json.loads(info_path.read_text(encoding="utf-8"))
+        run_info["configuration"]["harness"] = "codex"
+        run_info["configuration"]["codex"] = {
+            "reasoning_effort": "high",
+            "reasoning_summary": "detailed",
+            "keep_thinking": True,
+            "supports_websockets": False,
+        }
+        write_json(info_path, run_info)
+
+        configuration = RollerRun(self.root).run_summary()["configuration"]
+
+        self.assertEqual(configuration["harness"], "codex")
+        self.assertEqual(configuration["thinking"], "high")
+        self.assertEqual(configuration["reasoning_summary"], "detailed")
+        self.assertTrue(configuration["keep_thinking"])
+
     def test_projects_actf_summaries_and_truncates_large_step_fields(self) -> None:
         source = RollerRun(self.root)
         rollout = source.list_tasks(model="provider/model-a")["items"][0]["rollouts"][0]

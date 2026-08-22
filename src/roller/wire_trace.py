@@ -22,6 +22,7 @@ from urllib import request as urllib_request
 from urllib.parse import urlsplit
 
 from roller.external_thinking import (
+    CodexExternalThinkingController,
     ExternalThinkingController,
     normalize_external_thinking_mode,
 )
@@ -373,6 +374,7 @@ class WireTraceProxy:
         strip_thinking: bool = False,
         normalize_reasoning_replay: bool = False,
         external_thinking_mode: str = "off",
+        external_thinking_transport: str = "function",
     ) -> None:
         if mode not in ("tools", "full"):
             raise ValueError(f"unknown wire trace mode: {mode}")
@@ -388,11 +390,20 @@ class WireTraceProxy:
         normalized_external_mode = normalize_external_thinking_mode(
             external_thinking_mode
         )
-        self.external_thinking_controller = (
-            ExternalThinkingController(normalized_external_mode)
-            if normalized_external_mode != "off"
-            else None
-        )
+        if external_thinking_transport not in {"function", "codex_mcp"}:
+            raise ValueError(
+                "external thinking transport must be function|codex_mcp"
+            )
+        if normalized_external_mode == "off":
+            self.external_thinking_controller = None
+        elif external_thinking_transport == "codex_mcp":
+            self.external_thinking_controller = CodexExternalThinkingController(
+                normalized_external_mode
+            )
+        else:
+            self.external_thinking_controller = ExternalThinkingController(
+                normalized_external_mode
+            )
         self.timeout_seconds = timeout_seconds
         self._lock = threading.Lock()
         self._seq = 0

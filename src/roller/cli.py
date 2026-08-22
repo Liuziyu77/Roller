@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import logging
 import os
@@ -15,8 +16,15 @@ from roller.collector import CollectionConfig, Collector
 from roller.bundles import BundlePolicy, TaskBundleStore
 from roller.conversation import ConversationManager
 from roller.external_thinking import validate_external_thinking_provider
+from roller.harnesses.codex import (
+    COMMON_ENV_NAMES as CODEX_COMMON_ENV_NAMES,
+    DEFAULT_CODEX_IMAGE,
+    CodexConfig,
+    CodexHarness,
+    redact_api_base,
+)
 from roller.harnesses.openclaw import (
-    COMMON_ENV_NAMES,
+    COMMON_ENV_NAMES as OPENCLAW_COMMON_ENV_NAMES,
     DEFAULT_OPENCLAW_IMAGE,
     OpenClawConfig,
     OpenClawHarness,
@@ -58,7 +66,9 @@ def _build_parser() -> argparse.ArgumentParser:
         default=[],
         help="model identifier; repeat to run every task on multiple models",
     )
-    collect.add_argument("--harness", choices=("openclaw",), default="openclaw")
+    collect.add_argument(
+        "--harness", choices=("openclaw", "codex"), default="openclaw"
+    )
     collect.add_argument("--prompt-key", default="prompt")
     collect.add_argument("--id-key", default="id")
     collect.add_argument("--workspace", help="default host workspace copied into each container")
@@ -92,7 +102,10 @@ def _build_parser() -> argparse.ArgumentParser:
     openclaw = collect.add_argument_group("OpenClaw")
     openclaw.add_argument(
         "--docker-image",
-        default=os.environ.get("ROLLER_OPENCLAW_IMAGE", DEFAULT_OPENCLAW_IMAGE),
+        help=(
+            "harness image; defaults to ROLLER_OPENCLAW_IMAGE/the official "
+            "OpenClaw image or ROLLER_CODEX_IMAGE/roller-codex:0.149.0"
+        ),
     )
     openclaw.add_argument(
         "--container-user",
@@ -113,8 +126,8 @@ def _build_parser() -> argparse.ArgumentParser:
         choices=THINKING_LEVELS,
         metavar="LEVEL",
         help=(
-            "OpenClaw logical thinking level; 'none' is accepted as an alias for 'off', "
-            "and model/provider support is validated by OpenClaw"
+            "Harness reasoning/thinking level; 'none' aliases 'off'. OpenClaw and "
+            "Codex apply harness-specific validation"
         ),
     )
     openclaw.add_argument(
@@ -122,8 +135,9 @@ def _build_parser() -> argparse.ArgumentParser:
         choices=("off", "external", "external_always"),
         default="off",
         help=(
-            "tool-based CoT for OpenAI Responses: external forces the first "
-            "deep_think call; external_always pairs every action with deep_think"
+            "tool-based CoT for OpenAI Responses in OpenClaw or Codex: external "
+            "forces the first deep_think call; external_always pairs every action "
+            "with deep_think"
         ),
     )
     openclaw.add_argument(
@@ -131,7 +145,7 @@ def _build_parser() -> argparse.ArgumentParser:
         action="append",
         default=[],
         metavar="NAME",
-        help="additional host environment variable to pass into OpenClaw",
+        help="additional host environment variable to pass into the Harness container",
     )
     openclaw.add_argument(
         "--collect-path",
@@ -159,8 +173,8 @@ def _build_parser() -> argparse.ArgumentParser:
             "wire-level recording through a local reverse proxy: 'actf' (default) embeds "
             "the tools schema into trace_ACTF.json and keeps no extra file, 'full' "
             "additionally saves wire_trace.jsonl with every request body, 'off' disables "
-            "(the selected provider needs a model-config baseUrl; without one, actf "
-            "falls back to tools=null while full fails)"
+            "(OpenClaw uses model-config baseUrl; Codex uses --api-base; external "
+            "thinking always uses an internal protocol proxy)"
         ),
     )
     openclaw.add_argument(
@@ -168,13 +182,47 @@ def _build_parser() -> argparse.ArgumentParser:
         action=argparse.BooleanOptionalAction,
         default=True,
         help=(
-            "for thinking models: keep reasoning content in the trajectory AND in the "
-            "context of subsequent requests. --no-keep-thinking blanks reasoning_content "
-            "in trace_ACTF.json and strips reasoning from request history at the wire "
-            "layer (OpenClaw itself keeps it and has no config switch)"
+            "keep visible reasoning in ACTF/SFT. For OpenClaw, --no-keep-thinking also "
+            "strips reasoning from request history at the wire layer; for Codex it only "
+            "controls export and leaves native raw/resume context unchanged"
         ),
     )
     openclaw.add_argument("--keep-container-on-error", action="store_true")
+
+    codex = collect.add_argument_group("Codex")
+    codex.add_argument(
+        "--codex-config",
+        help="optional Codex config.toml copied into the disposable container",
+    )
+    codex.add_argument(
+        "--api-base",
+        default=os.environ.get("OPENAI_BASE_URL"),
+        help="OpenAI-compatible API base URL for Codex (or OPENAI_BASE_URL)",
+    )
+    codex.add_argument(
+        "--api-key-env",
+        default="OPENAI_API_KEY",
+        help="host environment variable containing the Codex API key",
+    )
+    codex.add_argument(
+        "--reasoning-summary",
+        choices=("auto", "concise", "detailed", "none"),
+        help="Codex model_reasoning_summary override",
+    )
+    codex.add_argument(
+        "--codex-web-search",
+        choices=("disabled", "cached", "live"),
+        default="disabled",
+    )
+    codex.add_argument(
+        "--codex-websockets",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "allow the custom Codex provider to use Responses WebSockets; "
+            "disabled by default for OpenAI-compatible HTTP proxies"
+        ),
+    )
     return parser
 
 
@@ -216,11 +264,11 @@ def _docker_preflight(binary: str, image: str) -> str:
     return image_digest
 
 
-def _run_name(value: str | None) -> str:
+def _run_name(harness: str, value: str | None) -> str:
     if value:
         return safe_component(value, max_length=100)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    return f"openclaw_{timestamp}"
+    return f"{harness}_{timestamp}"
 
 
 def _dry_run_payload(args: argparse.Namespace, requests: list) -> dict:
@@ -278,6 +326,12 @@ def _collect(args: argparse.Namespace) -> int:
         raise ValueError("--start-index cannot be negative")
     if args.limit is not None and args.limit <= 0:
         raise ValueError("--limit must be greater than zero")
+    if args.docker_image is None:
+        args.docker_image = (
+            os.environ.get("ROLLER_CODEX_IMAGE", DEFAULT_CODEX_IMAGE)
+            if args.harness == "codex"
+            else os.environ.get("ROLLER_OPENCLAW_IMAGE", DEFAULT_OPENCLAW_IMAGE)
+        )
     bundle_policy = BundlePolicy(
         max_file_bytes=args.max_input_file_bytes,
         max_task_input_bytes=args.max_task_input_bytes,
@@ -298,43 +352,89 @@ def _collect(args: argparse.Namespace) -> int:
     requests = build_requests(tasks, args.model, args.timeout)
     if not requests:
         raise TaskFormatError("task list contains no tasks")
+    if args.harness == "codex" and any(
+        request.task.user_simulator is not None for request in requests
+    ):
+        raise TaskFormatError(
+            "Codex harness does not yet support user_simulator tasks; use predefined "
+            "messages or --harness openclaw"
+        )
 
     model_config = None
     model_config_path: Path | None = None
     if args.model_config:
+        if args.harness != "openclaw":
+            raise ValueError("--model-config is only valid with --harness openclaw")
         model_config_path = Path(args.model_config).expanduser().resolve()
         if not model_config_path.is_file():
             raise FileNotFoundError(f"model config not found: {model_config_path}")
         model_config = load_model_config(model_config_path)
 
-    for request in requests:
-        validate_external_thinking_provider(
-            model_config,
-            request.model,
-            args.external_thinking,
-        )
+    codex_config_path: Path | None = None
+    codex_config_digest: str | None = None
+    if args.codex_config:
+        if args.harness != "codex":
+            raise ValueError("--codex-config is only valid with --harness codex")
+        codex_config_path = Path(args.codex_config).expanduser().resolve()
+        if not codex_config_path.is_file():
+            raise FileNotFoundError(f"Codex config not found: {codex_config_path}")
+        codex_config_digest = hashlib.sha256(codex_config_path.read_bytes()).hexdigest()
 
-    openclaw_config = OpenClawConfig(
-        docker_image=args.docker_image,
-        container_user=None if args.container_user == "image" else args.container_user,
-        gateway_port_start=args.gateway_port,
-        gateway_port_step=args.gateway_port_step,
-        gateway_startup_timeout=args.gateway_startup_timeout,
-        network=args.network,
-        session_id=args.session_id,
-        model_config=model_config,
-        pass_env=_deduplicate((*COMMON_ENV_NAMES, *args.pass_env)),
-        search_provider=args.search_provider,
-        thinking=args.thinking,
-        external_thinking=args.external_thinking,
-        capture_cache_trace=args.cache_trace,
-        wire_trace_mode=args.wire_trace,
-        keep_thinking=args.keep_thinking,
-        collect_paths=tuple(args.collect_path),
-        keep_container_on_error=args.keep_container_on_error,
-        set_image_model=args.set_image_model,
-        docker_binary=args.docker_binary,
-    )
+    openclaw_config: OpenClawConfig | None = None
+    codex_config: CodexConfig | None = None
+    if args.harness == "openclaw":
+        for request in requests:
+            validate_external_thinking_provider(
+                model_config,
+                request.model,
+                args.external_thinking,
+            )
+        openclaw_config = OpenClawConfig(
+            docker_image=args.docker_image,
+            container_user=(
+                None if args.container_user == "image" else args.container_user
+            ),
+            gateway_port_start=args.gateway_port,
+            gateway_port_step=args.gateway_port_step,
+            gateway_startup_timeout=args.gateway_startup_timeout,
+            network=args.network,
+            session_id=args.session_id,
+            model_config=model_config,
+            pass_env=_deduplicate((*OPENCLAW_COMMON_ENV_NAMES, *args.pass_env)),
+            search_provider=args.search_provider,
+            thinking=args.thinking,
+            external_thinking=args.external_thinking,
+            capture_cache_trace=args.cache_trace,
+            wire_trace_mode=args.wire_trace,
+            keep_thinking=args.keep_thinking,
+            collect_paths=tuple(args.collect_path),
+            keep_container_on_error=args.keep_container_on_error,
+            set_image_model=args.set_image_model,
+            docker_binary=args.docker_binary,
+        )
+    else:
+        if args.collect_path:
+            raise ValueError("--collect-path is only valid with --harness openclaw")
+        codex_config = CodexConfig(
+            docker_image=args.docker_image,
+            container_user=(
+                None if args.container_user == "image" else args.container_user
+            ),
+            network=args.network,
+            config_path=codex_config_path,
+            api_base=args.api_base,
+            api_key_env=args.api_key_env,
+            pass_env=_deduplicate((*CODEX_COMMON_ENV_NAMES, *args.pass_env)),
+            reasoning_effort=args.thinking,
+            reasoning_summary=args.reasoning_summary,
+            web_search=args.codex_web_search,
+            supports_websockets=args.codex_websockets,
+            external_thinking=args.external_thinking,
+            wire_trace_mode=args.wire_trace,
+            keep_thinking=args.keep_thinking,
+            keep_container_on_error=args.keep_container_on_error,
+            docker_binary=args.docker_binary,
+        )
 
     if args.dry_run:
         # Exercise all path, hash, collision and size checks without leaving a run directory.
@@ -345,7 +445,7 @@ def _collect(args: argparse.Namespace) -> int:
 
     docker_image_digest = _docker_preflight(args.docker_binary, args.docker_image)
     output_root = Path(args.output).expanduser().resolve()
-    run_dir = output_root / _run_name(args.run_name)
+    run_dir = output_root / _run_name(args.harness, args.run_name)
     existing_run = run_dir.exists() and any(run_dir.iterdir())
     if run_dir.exists() and not args.resume:
         raise FileExistsError(f"run directory already exists; use --resume or another --run-name: {run_dir}")
@@ -362,6 +462,48 @@ def _collect(args: argparse.Namespace) -> int:
             previous_info = {}
 
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    harness_configuration: dict[str, object]
+    if args.harness == "openclaw":
+        assert openclaw_config is not None
+        harness_configuration = {
+            "docker_image": args.docker_image,
+            "container_user": args.container_user,
+            "model_config_path": (
+                str(model_config_path) if model_config_path else None
+            ),
+            "gateway_port_start": args.gateway_port,
+            "gateway_port_step": args.gateway_port_step,
+            "network": args.network,
+            "session_id": args.session_id,
+            "search_provider": args.search_provider,
+            "thinking": args.thinking,
+            "external_thinking": args.external_thinking,
+            "keep_thinking": args.keep_thinking,
+            "cache_trace": args.cache_trace,
+            "wire_trace": args.wire_trace,
+            "pass_env_names": list(openclaw_config.pass_env),
+            "collect_paths": args.collect_path,
+        }
+    else:
+        assert codex_config is not None
+        harness_configuration = {
+            "docker_image": args.docker_image,
+            "container_user": args.container_user,
+            "config_path": str(codex_config_path) if codex_config_path else None,
+            "config_sha256": codex_config_digest,
+            "network": args.network,
+            "api_base": redact_api_base(args.api_base) if args.api_base else None,
+            "api_key_env": args.api_key_env,
+            "reasoning_effort": args.thinking,
+            "reasoning_summary": args.reasoning_summary,
+            "external_thinking": args.external_thinking,
+            "wire_trace": args.wire_trace,
+            "keep_thinking": args.keep_thinking,
+            "web_search": args.codex_web_search,
+            "supports_websockets": args.codex_websockets,
+            "pass_env_names": list(codex_config.pass_env),
+        }
+
     run_info = {
         "schema_version": "roller.run/v1",
         "roller_version": __version__,
@@ -382,29 +524,15 @@ def _collect(args: argparse.Namespace) -> int:
                 "user_simulator_tasks": sum(
                     task.user_simulator is not None for task in tasks
                 ),
-                "simulator_gateway_slot_offset": args.parallel,
+                "simulator_gateway_slot_offset": (
+                    args.parallel if args.harness == "openclaw" else None
+                ),
             },
             "bundle_policy": {
                 "max_input_file_bytes": args.max_input_file_bytes,
                 "max_task_input_bytes": args.max_task_input_bytes,
             },
-            "openclaw": {
-                "docker_image": args.docker_image,
-                "container_user": args.container_user,
-                "model_config_path": str(model_config_path) if model_config_path else None,
-                "gateway_port_start": args.gateway_port,
-                "gateway_port_step": args.gateway_port_step,
-                "network": args.network,
-                "session_id": args.session_id,
-                "search_provider": args.search_provider,
-                "thinking": args.thinking,
-                "external_thinking": args.external_thinking,
-                "keep_thinking": args.keep_thinking,
-                "cache_trace": args.cache_trace,
-                "wire_trace": args.wire_trace,
-                "pass_env_names": list(openclaw_config.pass_env),
-                "collect_paths": args.collect_path,
-            },
+            args.harness: harness_configuration,
         },
         "state": "initializing",
         "started_at": previous_info.get("started_at", now),
@@ -425,6 +553,52 @@ def _collect(args: argparse.Namespace) -> int:
             bundles = bundle_store.prepare_all(tasks)
             requests = bundle_store.attach(requests, bundles)
             run_dir.mkdir(parents=True, exist_ok=True)
+            if args.harness == "openclaw":
+                assert openclaw_config is not None
+                harness_execution: dict[str, object] = {
+                    "docker_image": args.docker_image,
+                    "docker_image_digest": docker_image_digest,
+                    "container_user": args.container_user,
+                    "network": args.network,
+                    "session_id": args.session_id,
+                    "search_provider": args.search_provider,
+                    "thinking": (
+                        "off" if args.external_thinking != "off" else args.thinking
+                    ),
+                    "external_thinking": args.external_thinking,
+                    "keep_thinking": args.keep_thinking,
+                    "cache_trace": args.cache_trace,
+                    "wire_trace": args.wire_trace,
+                    "pass_env_names": list(openclaw_config.pass_env),
+                    "collect_paths": list(args.collect_path),
+                    "set_image_model": args.set_image_model,
+                }
+            else:
+                assert codex_config is not None
+                harness_execution = {
+                    "docker_image": args.docker_image,
+                    "docker_image_digest": docker_image_digest,
+                    "container_user": args.container_user,
+                    "network": args.network,
+                    "config_path": (
+                        str(codex_config_path) if codex_config_path else None
+                    ),
+                    "config_sha256": codex_config_digest,
+                    "api_base": (
+                        redact_api_base(args.api_base) if args.api_base else None
+                    ),
+                    "api_key_env": args.api_key_env,
+                    "reasoning_effort": (
+                        "off" if args.external_thinking != "off" else args.thinking
+                    ),
+                    "reasoning_summary": args.reasoning_summary,
+                    "external_thinking": args.external_thinking,
+                    "wire_trace": args.wire_trace,
+                    "keep_thinking": args.keep_thinking,
+                    "web_search": args.codex_web_search,
+                    "supports_websockets": args.codex_websockets,
+                    "pass_env_names": list(codex_config.pass_env),
+                }
             run_lock = build_run_lock(
                 requests,
                 roller_version=__version__,
@@ -432,28 +606,9 @@ def _collect(args: argparse.Namespace) -> int:
                     "harness": args.harness,
                     "task_schema": "roller.task/v1",
                     "output_collection": "all",
-                    "openclaw": {
-                        "docker_image": args.docker_image,
-                        "docker_image_digest": docker_image_digest,
-                        "container_user": args.container_user,
-                        "network": args.network,
-                        "session_id": args.session_id,
-                        "search_provider": args.search_provider,
-                        # External CoT forces native provider reasoning off; lock the
-                        # effective behavior rather than an ignored requested level.
-                        "thinking": (
-                            "off" if args.external_thinking != "off" else args.thinking
-                        ),
-                        "external_thinking": args.external_thinking,
-                        "keep_thinking": args.keep_thinking,
-                        "cache_trace": args.cache_trace,
-                        "wire_trace": args.wire_trace,
-                        "pass_env_names": list(openclaw_config.pass_env),
-                        "collect_paths": list(args.collect_path),
-                        "set_image_model": args.set_image_model,
-                    },
+                    args.harness: harness_execution,
                 },
-                model_config=model_config,
+                model_config=model_config if args.harness == "openclaw" else None,
             )
             lock_decision = ensure_run_lock(
                 run_dir / "lock.json",
@@ -471,31 +626,39 @@ def _collect(args: argparse.Namespace) -> int:
                 configuration["resume_reuse_enabled"] = (
                     lock_decision.reuse_existing_samples
                 )
-                openclaw_info = configuration.get("openclaw")
-                if isinstance(openclaw_info, dict):
-                    openclaw_info["docker_image_digest"] = docker_image_digest
+                harness_info = configuration.get(args.harness)
+                if isinstance(harness_info, dict):
+                    harness_info["docker_image_digest"] = docker_image_digest
             run_info["lock"] = {
                 "path": "lock.json",
                 "schema_version": RUN_LOCK_SCHEMA,
                 "legacy_adopted": lock_decision.legacy_run,
             }
             atomic_write_json(run_dir / "info.json", run_info)
+            keep_aux_traces = args.wire_trace == "full"
+            if args.harness == "openclaw":
+                assert openclaw_config is not None
+                harness_factory = lambda slot: ConversationManager(
+                    OpenClawHarness(openclaw_config, slot),
+                    OpenClawHarness(openclaw_config, slot + args.parallel),
+                    keep_aux_traces=keep_aux_traces,
+                )
+            else:
+                assert codex_config is not None
+                harness_factory = lambda slot: CodexHarness(codex_config, slot)
             collector = Collector(
                 CollectionConfig(
                     run_dir=run_dir,
                     parallel=args.parallel,
                     retries=args.retries,
                     resume=lock_decision.reuse_existing_samples,
-                    keep_aux_traces=args.wire_trace == "full",
-                    capture_cache_trace=args.cache_trace,
+                    keep_aux_traces=keep_aux_traces,
+                    capture_cache_trace=(
+                        args.cache_trace if args.harness == "openclaw" else False
+                    ),
                     keep_thinking=args.keep_thinking,
                 ),
-                harness_factory=lambda slot: ConversationManager(
-                    OpenClawHarness(openclaw_config, slot),
-                    OpenClawHarness(openclaw_config, slot + args.parallel),
-                    keep_thinking=args.keep_thinking,
-                    keep_aux_traces=args.wire_trace == "full",
-                ),
+                harness_factory=harness_factory,
             )
             results = collector.collect(requests)
             if lock_decision.legacy_run:

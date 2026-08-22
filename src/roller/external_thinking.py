@@ -17,6 +17,10 @@ from urllib.parse import urlsplit
 EXTERNAL_THINKING_MODES = ("off", "external", "external_always")
 DEEP_THINK_TOOL_NAME = "deep_think"
 DEEP_THINK_RESULT = "------"
+CODEX_DEEP_THINK_SERVER_NAME = "roller_external_thinking"
+CODEX_DEEP_THINK_TOOL_HANDLE = (
+    f"mcp__{CODEX_DEEP_THINK_SERVER_NAME}__{DEEP_THINK_TOOL_NAME}"
+)
 
 DEEP_THINK_TOOL = {
     "type": "function",
@@ -100,6 +104,51 @@ logical turn. Act on it now: either call the available business tools (parallel
 calls are allowed when the thought planned a batch) or provide the user-facing
 answer. Do not repeat or expose the scratchpad, and do not return an empty
 response. The deep_think tool is intentionally unavailable in this phase."""
+
+CODEX_EXTERNAL_THINKING_INSTRUCTIONS = f"""Solve the user's task carefully.
+
+# External reasoning protocol
+Native provider reasoning is disabled. Put detailed reasoning in the local
+deep_think MCP tool. Codex exposes that tool inside the custom exec action as
+`tools.{CODEX_DEEP_THINK_TOOL_HANDLE}`.
+
+Required calls:
+- Call deep_think before the first business action of the turn.
+- Call it again before an expensive-to-undo action and before the final answer.
+
+Every deep_think call MUST be an isolated exec response: call exactly
+`tools.{CODEX_DEEP_THINK_TOOL_HANDLE}({{thoughts: "..."}})`, pass its returned
+content to `text(...)`, and call no other nested tool in that exec response.
+Do not search ALL_TOOLS for the tool, do not use a computed tool name, and do
+not combine deep_think with a business action.
+
+In thoughts, restate the task and constraints, split it into ordered
+sub-problems, resolve relevant cases, and check the most plausible error. After
+the placeholder result returns, use business tools in a later response, call
+deep_think again only for materially new state, or provide the final answer.
+Do not repeat the scratchpad in the final answer."""
+
+CODEX_EXTERNAL_ALWAYS_THINK_INSTRUCTIONS = f"""Solve the user's task carefully.
+
+# THINK phase
+Native provider reasoning is disabled. This response MUST contain exactly one
+custom exec action and no user-facing text. In that exec, directly call exactly
+`tools.{CODEX_DEEP_THINK_TOOL_HANDLE}({{thoughts: "..."}})`, pass its returned
+content to `text(...)`, and call no other nested tool. Do not search ALL_TOOLS,
+use a computed tool name, or perform a business action in this response.
+
+Use thoughts to identify the task and constraints, reason from the newest user
+message or tool result, choose the smallest sufficient next business action or
+final answer, and check the most plausible error. Preserve every exact value
+the following ACT response needs. Do not discuss this protocol in thoughts."""
+
+CODEX_EXTERNAL_ALWAYS_ACT_INSTRUCTIONS = """Solve the user's task carefully.
+
+# ACT phase
+The immediately preceding deep_think call contains the reasoning for this
+logical step. Do not call deep_think in this response. Execute the planned
+business tools or provide the final answer, and do not return an empty
+response."""
 
 
 def normalize_external_thinking_mode(value: str | None) -> str:
@@ -287,6 +336,142 @@ class ExternalThinkingController:
         return body, phase
 
 
+def _serialized_text(value: Any) -> str:
+    if isinstance(value, str):
+        return value
+    try:
+        return json.dumps(value, ensure_ascii=False)
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def _codex_deep_think_calls(body: Mapping[str, Any]) -> list[tuple[int, str]]:
+    items = body.get("input")
+    if not isinstance(items, list):
+        return []
+    outputs = {
+        item.get("call_id"): _serialized_text(item.get("output"))
+        for item in items
+        if isinstance(item, Mapping)
+        and item.get("type") == "custom_tool_call_output"
+        and isinstance(item.get("call_id"), str)
+    }
+    calls: list[tuple[int, str]] = []
+    for index, item in enumerate(items):
+        if not isinstance(item, Mapping) or item.get("type") != "custom_tool_call":
+            continue
+        call_id = item.get("call_id")
+        source = item.get("input")
+        if not isinstance(call_id, str) or not isinstance(source, str):
+            continue
+        output = outputs.get(call_id, "")
+        # A model can emit the correct JavaScript but still fail before the MCP
+        # call completes.  Codex only creates the next Responses request after
+        # the custom-tool output is available, so the placeholder is the
+        # retry-safe evidence that this THINK phase actually succeeded.
+        if DEEP_THINK_RESULT in output:
+            calls.append((index, call_id))
+    return calls
+
+
+def _restrict_codex_to_exec(body: dict[str, Any]) -> None:
+    items = body.get("input")
+    if not isinstance(items, list):
+        raise ValueError("Codex external thinking requires a Responses input array")
+    found = False
+    for item in items:
+        if not isinstance(item, dict) or item.get("type") != "additional_tools":
+            continue
+        namespaces = item.get("tools")
+        if not isinstance(namespaces, list):
+            continue
+        retained: list[dict[str, Any]] = []
+        for namespace in namespaces:
+            if (
+                not isinstance(namespace, dict)
+                or namespace.get("type") != "namespace"
+                or namespace.get("name") != "functions"
+            ):
+                continue
+            tools = namespace.get("tools")
+            if not isinstance(tools, list):
+                continue
+            exec_tools = [
+                tool
+                for tool in tools
+                if isinstance(tool, dict)
+                and tool.get("type") == "custom"
+                and tool.get("name") == "exec"
+            ]
+            if exec_tools:
+                retained.append({**namespace, "tools": exec_tools})
+                found = True
+        item["tools"] = retained
+    if not found:
+        raise ValueError(
+            "Codex external thinking requires the programmatic custom exec tool"
+        )
+
+
+class CodexExternalThinkingController:
+    """Rewrite Codex 0.149 Responses requests for explicit MCP reasoning."""
+
+    def __init__(self, mode: str) -> None:
+        self.mode = normalize_external_thinking_mode(mode)
+
+    @staticmethod
+    def _disable_native_reasoning(body: dict[str, Any]) -> None:
+        ExternalThinkingController._disable_native_reasoning(body)
+
+    @staticmethod
+    def _phase_for_external_always(body: dict[str, Any]) -> str:
+        deep_calls = _codex_deep_think_calls(body)
+        items = body.get("input")
+        if not isinstance(items, list) or not deep_calls:
+            return "think"
+        last_deep_index, _call_id = deep_calls[-1]
+        last_user = _last_user_index(body)
+        if last_user > last_deep_index:
+            return "think"
+        later_business_call = any(
+            isinstance(item, Mapping)
+            and item.get("type") in {"custom_tool_call", "function_call"}
+            and index > last_deep_index
+            for index, item in enumerate(items)
+        )
+        return "think" if later_business_call else "act"
+
+    def rewrite_request(self, body: Any) -> tuple[Any, str | None]:
+        if self.mode == "off":
+            return body, None
+        if not isinstance(body, dict) or not isinstance(body.get("input"), list):
+            raise ValueError("Codex external thinking requires a Responses request")
+
+        self._disable_native_reasoning(body)
+        body["store"] = False
+        body["parallel_tool_calls"] = False
+
+        if self.mode == "external":
+            already_thought = bool(_codex_deep_think_calls(body))
+            body["instructions"] = CODEX_EXTERNAL_THINKING_INSTRUCTIONS
+            if already_thought:
+                body["tool_choice"] = "auto"
+                return body, "optional"
+            _restrict_codex_to_exec(body)
+            body["tool_choice"] = "required"
+            return body, "think"
+
+        phase = self._phase_for_external_always(body)
+        if phase == "think":
+            body["instructions"] = CODEX_EXTERNAL_ALWAYS_THINK_INSTRUCTIONS
+            _restrict_codex_to_exec(body)
+            body["tool_choice"] = "required"
+        else:
+            body["instructions"] = CODEX_EXTERNAL_ALWAYS_ACT_INSTRUCTIONS
+            body["tool_choice"] = "auto"
+        return body, phase
+
+
 @dataclass(frozen=True)
 class ExternalThinkingTraceStats:
     mode: str
@@ -377,6 +562,121 @@ def validate_external_thinking_trace(
         elif any(call.get("name") == DEEP_THINK_TOOL_NAME for call in calls):
             raise ValueError("external_always ACT response must not call deep_think")
         elif not text and not calls:
+            raise ValueError(
+                "external_always ACT response returned neither a tool call nor text"
+            )
+    return ExternalThinkingTraceStats(
+        normalized,
+        deep_think_calls,
+        len(messages) // 2,
+    )
+
+
+def validate_external_thinking_trajectory(
+    trajectory: Mapping[str, Any],
+    mode: str,
+    *,
+    require_isolated_deep_think: bool = False,
+) -> ExternalThinkingTraceStats:
+    """Validate external-CoT ordering in an ACTF trajectory.
+
+    Codex exposes local MCP calls through its programmatic ``exec`` transport.
+    Its native session converter projects those wrappers back to canonical
+    ``deep_think`` calls before this validator runs.
+    """
+
+    normalized = normalize_external_thinking_mode(mode)
+    if normalized == "off":
+        return ExternalThinkingTraceStats(normalized, 0, 0)
+    raw_steps = trajectory.get("steps")
+    if not isinstance(raw_steps, list) or not raw_steps:
+        raise ValueError("external thinking trajectory contains no assistant steps")
+
+    messages: list[tuple[str, list[dict[str, Any]], Mapping[str, Any]]] = []
+    for index, step in enumerate(raw_steps):
+        assistant = step.get("assistant_content") if isinstance(step, Mapping) else None
+        if not isinstance(assistant, Mapping):
+            raise ValueError(f"external thinking step {index + 1} has no assistant content")
+        content = assistant.get("content")
+        calls = assistant.get("tool_calls")
+        text = content if isinstance(content, str) else ""
+        normalized_calls = (
+            [dict(call) for call in calls if isinstance(call, Mapping)]
+            if isinstance(calls, list)
+            else []
+        )
+        messages.append((text, normalized_calls, step))
+
+    def validate_codex_result(
+        step: Mapping[str, Any], call: Mapping[str, Any]
+    ) -> None:
+        if not require_isolated_deep_think:
+            return
+        call_id = call.get("id")
+        observations = step.get("observation")
+        matches = (
+            [
+                observation
+                for observation in observations
+                if isinstance(observation, Mapping)
+                and observation.get("toolCallId", observation.get("tool_call_id"))
+                == call_id
+            ]
+            if isinstance(observations, list)
+            else []
+        )
+        if len(matches) != 1:
+            raise ValueError(
+                "Codex deep_think call must have exactly one matching result"
+            )
+        observation = matches[0]
+        if observation.get("isError") is True:
+            raise ValueError("Codex deep_think call returned an error")
+        if DEEP_THINK_RESULT not in _serialized_text(observation.get("content")):
+            raise ValueError(
+                "Codex deep_think call did not return the expected placeholder"
+            )
+
+    deep_think_calls = 0
+    if normalized == "external":
+        first_text, first_calls, _first_step = messages[0]
+        first_thinks = [
+            call for call in first_calls if call.get("name") == DEEP_THINK_TOOL_NAME
+        ]
+        if len(first_thinks) != 1:
+            raise ValueError("external mode first response must call deep_think exactly once")
+        for text, calls, step in messages:
+            thinks = [
+                call for call in calls if call.get("name") == DEEP_THINK_TOOL_NAME
+            ]
+            if require_isolated_deep_think and thinks and (
+                text.strip() or len(calls) != 1 or len(thinks) != 1
+            ):
+                raise ValueError(
+                    "Codex deep_think response must be isolated from text and business tools"
+                )
+            for call in thinks:
+                _validate_deep_think_call(call)
+                validate_codex_result(step, call)
+                deep_think_calls += 1
+        return ExternalThinkingTraceStats(normalized, deep_think_calls, 0)
+
+    if len(messages) % 2:
+        raise ValueError("external_always trajectory ended with an unpaired THINK response")
+    for index, (text, calls, step) in enumerate(messages):
+        if index % 2 == 0:
+            if text.strip():
+                raise ValueError("external_always THINK response produced user-facing text")
+            if len(calls) != 1 or calls[0].get("name") != DEEP_THINK_TOOL_NAME:
+                raise ValueError(
+                    "external_always THINK response must call deep_think exactly once"
+                )
+            _validate_deep_think_call(calls[0])
+            validate_codex_result(step, calls[0])
+            deep_think_calls += 1
+        elif any(call.get("name") == DEEP_THINK_TOOL_NAME for call in calls):
+            raise ValueError("external_always ACT response must not call deep_think")
+        elif not text.strip() and not calls:
             raise ValueError(
                 "external_always ACT response returned neither a tool call nor text"
             )
