@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from roller.actf import convert_openclaw_trace
 from roller.collector import CollectionConfig, Collector
 from roller.conversation import (
     ConversationManager,
@@ -61,6 +62,12 @@ class FakeInteractiveSession(InteractiveSession):
             "\n".join(json.dumps(event) for event in events) + "\n",
             encoding="utf-8",
         )
+        trajectory = rollout / "trace_ACTF.json"
+        convert_openclaw_trace(
+            trace,
+            trajectory,
+            user_messages=self.sent,
+        )
         count = len(self.replies)
         return HarnessResult(
             status=status,
@@ -76,6 +83,7 @@ class FakeInteractiveSession(InteractiveSession):
                 "request_count": count,
             },
             trace_path="rollout/trace.jsonl",
+            trajectory_path="rollout/trace_ACTF.json",
             metadata={"output_collection": None, "provenance": {}},
         )
 
@@ -116,10 +124,8 @@ class ConversationManagerTests(unittest.TestCase):
                 ConversationManager._archive_simulator(
                     Path(temporary),
                     result,
-                    ["prompt"],
                     "provider/model",
                     "openclaw",
-                    keep_thinking=True,
                     keep_aux_traces=False,
                 )
 
@@ -174,16 +180,23 @@ class ConversationManagerTests(unittest.TestCase):
                 elapsed_seconds=0.01,
                 usage={},
                 trace_path="trace.jsonl",
+                trajectory_path="source_ACTF.json",
                 metadata={},
+            )
+            convert_openclaw_trace(
+                raw_path,
+                simulator_dir / "source_ACTF.json",
+                user_messages=["prompt"],
+                cache_trace=simulator_dir / "cache_trace.jsonl",
+                tools=[{"type": "function", "function": {"name": "read"}}],
+                keep_thinking=False,
             )
 
             ConversationManager._archive_simulator(
                 simulator_dir,
                 result,
-                ["prompt"],
                 "provider/model",
                 "openclaw",
-                keep_thinking=False,
                 keep_aux_traces=False,
             )
 

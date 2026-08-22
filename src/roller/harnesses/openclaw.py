@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 from urllib.parse import urlsplit, urlunsplit
 
+from roller.actf import convert_openclaw_trace
 from roller.artifacts import ArtifactCollectionResult, collect_output_directory
 from roller.external_thinking import (
     normalize_external_thinking_mode,
@@ -24,12 +25,18 @@ from roller.external_thinking import (
     validate_external_thinking_trace,
 )
 from roller.harnesses.base import InteractiveHarness, InteractiveSession, TurnResult
+from roller.harnesses.docker import DockerRuntime
 from roller.models import HarnessResult, RunRequest
 from roller.storage import safe_component
 from roller.thinking import normalize_thinking, resolve_thinking
 from roller.usage import ZERO_USAGE, extract_openclaw_usage
 from roller.version import __version__
-from roller.wire_trace import WireTraceProxy, redact_jsonl_file, rewrite_model_config
+from roller.wire_trace import (
+    WireTraceProxy,
+    extract_wire_tools,
+    redact_jsonl_file,
+    rewrite_model_config,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -192,41 +199,6 @@ def _model_base_urls(value: Any) -> list[str]:
         for item in value:
             urls.extend(_model_base_urls(item))
     return list(dict.fromkeys(urls))
-
-
-class DockerRuntime:
-    """Small subprocess boundary that is replaceable in tests."""
-
-    def __init__(self, binary: str = "docker") -> None:
-        self.binary = binary
-
-    def run(self, args: Sequence[str], timeout: float | None = None) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(
-            [self.binary, *args],
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-
-    def popen(self, args: Sequence[str], log_path: Path, append: bool = False) -> subprocess.Popen[str]:
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        log_file = log_path.open("a" if append else "w", encoding="utf-8")
-        process = subprocess.Popen(
-            [self.binary, *args],
-            stdout=log_file,
-            stderr=subprocess.STDOUT,
-            text=True,
-        )
-        process._roller_log_file = log_file  # type: ignore[attr-defined]
-        return process
-
-    @staticmethod
-    def close_log(process: subprocess.Popen[str] | None) -> None:
-        if process is None:
-            return
-        log_file = getattr(process, "_roller_log_file", None)
-        if log_file is not None and not log_file.closed:
-            log_file.close()
 
 
 @dataclass(frozen=True)
@@ -1335,6 +1307,7 @@ class OpenClawSession(InteractiveSession):
         if self._finished is not None:
             return self._finished
         trace_path: Path | None = None
+        trajectory_path: Path | None = None
         legacy_records: list[dict[str, Any]] = []
         artifact_result: ArtifactCollectionResult | None = None
         output_copy_error: str | None = None
@@ -1411,6 +1384,31 @@ class OpenClawSession(InteractiveSession):
                 self.harness.runtime.close_log(self.gateway_process)
         finally:
             self.harness._stop_wire_proxy()
+
+        if trace_path is not None:
+            try:
+                cache_trace_path = self.output_dir / "cache_trace.jsonl"
+                wire_trace_path = self.output_dir / "wire_trace.jsonl"
+                trajectory_path = self.output_dir / "rollout" / "trace_ACTF.json"
+                convert_openclaw_trace(
+                    trace_path,
+                    trajectory_path,
+                    user_messages=self.messages,
+                    cache_trace=(
+                        cache_trace_path if cache_trace_path.is_file() else None
+                    ),
+                    tools=(
+                        extract_wire_tools(wire_trace_path)
+                        if wire_trace_path.is_file()
+                        else None
+                    ),
+                    keep_thinking=self.harness.config.keep_thinking,
+                )
+            except Exception as exc:
+                trajectory_path = None
+                if status == "ok":
+                    status = "error"
+                    error = f"OpenClaw trajectory conversion failed: {exc}"
 
         if status == "ok" and trace_path is None:
             status = "error"
@@ -1509,7 +1507,13 @@ class OpenClawSession(InteractiveSession):
                 if trace_path is not None
                 else None
             ),
+            trajectory_path=(
+                trajectory_path.relative_to(self.output_dir).as_posix()
+                if trajectory_path is not None
+                else None
+            ),
             metadata={
+                "raw_trace_schema": "openclaw-session-jsonl",
                 "openclaw_version": self.version,
                 "gateway_port": self.harness.gateway_port,
                 "container": (

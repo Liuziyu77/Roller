@@ -1,0 +1,45 @@
+from __future__ import annotations
+
+import subprocess
+from pathlib import Path
+from typing import Sequence
+
+
+class DockerRuntime:
+    """Small Docker subprocess boundary that is replaceable in tests."""
+
+    def __init__(self, binary: str = "docker") -> None:
+        self.binary = binary
+
+    def run(
+        self, args: Sequence[str], timeout: float | None = None
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [self.binary, *args],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+
+    def popen(
+        self, args: Sequence[str], log_path: Path, append: bool = False
+    ) -> subprocess.Popen[str]:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_file = log_path.open("a" if append else "w", encoding="utf-8")
+        process = subprocess.Popen(
+            [self.binary, *args],
+            stdin=subprocess.DEVNULL,
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        process._roller_log_file = log_file  # type: ignore[attr-defined]
+        return process
+
+    @staticmethod
+    def close_log(process: subprocess.Popen[str] | None) -> None:
+        if process is None:
+            return
+        log_file = getattr(process, "_roller_log_file", None)
+        if log_file is not None and not log_file.closed:
+            log_file.close()

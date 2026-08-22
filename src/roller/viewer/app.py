@@ -253,6 +253,8 @@ class RollerRun:
                     models.add(item["model"])
                 tasks.add(item["task_id"])
             configuration = _mapping(self._run_info.get("configuration"))
+            harness_name = _string(configuration.get("harness"))
+            harness_configuration = _mapping(configuration.get(harness_name))
             progress = _mapping(self._run_info.get("summary"))
             return {
                 "schema_version": "roller.viewer.run/v1",
@@ -275,14 +277,20 @@ class RollerRun:
                 "models": sorted(models),
                 "usage": _mapping(_mapping(self._run_info.get("summary")).get("usage")),
                 "configuration": {
-                    "harness": configuration.get("harness"),
+                    "harness": harness_name,
                     "trajectory_count": configuration.get("trajectory_count"),
-                    "thinking": _mapping(configuration.get("openclaw")).get("thinking"),
-                    "external_thinking": _mapping(configuration.get("openclaw")).get(
-                        "external_thinking"
+                    "thinking": harness_configuration.get(
+                        "thinking", harness_configuration.get("reasoning_effort")
                     ),
-                    "keep_thinking": _mapping(configuration.get("openclaw")).get(
-                        "keep_thinking"
+                    "external_thinking": harness_configuration.get(
+                        "external_thinking", "off"
+                    ),
+                    "keep_thinking": harness_configuration.get("keep_thinking"),
+                    "reasoning_summary": harness_configuration.get(
+                        "reasoning_summary"
+                    ),
+                    "supports_websockets": harness_configuration.get(
+                        "supports_websockets"
                     ),
                 },
             }

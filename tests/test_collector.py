@@ -7,6 +7,7 @@ import time
 import unittest
 from pathlib import Path
 
+from roller.actf import convert_openclaw_trace
 from roller.collector import CollectionConfig, Collector
 from roller.harnesses.base import Harness
 from roller.models import HarnessResult, RunRequest, Task, TaskBundle
@@ -62,6 +63,12 @@ class FakeHarness(Harness):
                 + "\n",
                 encoding="utf-8",
             )
+            trajectory = output_dir / "trajectory.json"
+            convert_openclaw_trace(
+                trace,
+                trajectory,
+                user_messages=request.task.prompts,
+            )
             usage = {
                 "input_tokens": 1,
                 "output_tokens": 2,
@@ -85,6 +92,7 @@ class FakeHarness(Harness):
                 elapsed_seconds=0.01,
                 usage=usage,
                 trace_path=str(trace),
+                trajectory_path=str(trajectory),
                 metadata=metadata,
             )
         finally:

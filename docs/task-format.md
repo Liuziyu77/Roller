@@ -281,15 +281,16 @@ OpenClaw adapter 会把 Context 注入 `/root/<target>` 与 `/tmp_workspace/<tar
 | --- | --- |
 | `env` | Task 强制依赖的宿主机环境变量名；缺失或为空时 task 失败 |
 | `setup` | Agent 启动前在 `/tmp_workspace` 执行的 shell 命令 |
-| `thinking` | 覆盖本 task 的 OpenClaw thinking 设置；可用值见 [Thinking 配置](openclaw-configuration.md#5-thinkingsystem-prompt-与-wire-trace) |
+| `thinking` | 覆盖本 task 的 Harness reasoning/thinking 设置；OpenClaw 见 [Thinking 配置](openclaw-configuration.md#5-thinkingsystem-prompt-与-wire-trace)，Codex 见 [Reasoning 配置](codex-configuration.md#4-reasoning-配置) |
 
 `env` 和 `setup` 都接受单个字符串或字符串数组。Task 作者应把 setup 当作可执行代码管理，只运行可信数据集中的命令。
 
 `thinking` 的 Roller schema 接受 `off/minimal/low/medium/high/xhigh/adaptive/max/ultra`；
-`none` 会规范化为 `off`。这是 OpenClaw 的逻辑档位，实际能否使用还由运行时版本和 model
-profile 决定：默认 OpenClaw `2026.7.1` 支持到 `max`，会在调用前拒绝 `ultra`。task 中的值
-优先于 CLI `--thinking`，非法值会在启动 Docker 前报错。User Simulator 的 `thinking` 使用
-同一组值和校验。
+`none` 会规范化为 `off`。task 中的值优先于 CLI `--thinking`。OpenClaw `2026.7.1` 支持
+到 `max` 并拒绝 `ultra`；Codex 把有效档位映射到 `model_reasoning_effort`，拒绝
+OpenClaw 专用 `adaptive` 和没有通用等价语义的 `off`；默认 Codex 0.149.0 镜像支持
+`minimal/low/medium/high/xhigh`，不支持 `max/ultra`。最终可用档位仍由 Harness 版本、model
+和 provider 共同校验。User Simulator 当前只支持 OpenClaw。
 
 ## 9. 路径与格式校验
 

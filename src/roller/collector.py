@@ -11,14 +11,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterator
 
-from roller.actf import convert_openclaw_trace
 from roller.external_thinking import external_thinking_mode_from_metadata
 from roller.harnesses.base import Harness
 from roller.integrity import validate_resumable_sample
 from roller.models import HarnessResult, RunRequest
 from roller.sft import write_sft
 from roller.storage import atomic_write_json, safe_component, write_jsonl
-from roller.wire_trace import extract_wire_tools
 
 logger = logging.getLogger(__name__)
 HarnessFactory = Callable[[int], Harness]
@@ -151,30 +149,28 @@ class Collector:
     ) -> dict[str, Any]:
         metadata = final.metadata if isinstance(final.metadata, dict) else {}
         trace_source = self._trace_source(sample_dir, final.trace_path)
+        trajectory_source = self._trace_source(sample_dir, final.trajectory_path)
         trace_path = sample_dir / "trace.jsonl"
         actf_path = sample_dir / "trace_ACTF.json"
         sft_path = sample_dir / "trace_SFT.json"
         if trace_source is None and final.status == "ok":
             final.status = "error"
             final.error = "harness finished but no raw trace was found"
-        elif trace_source is not None:
+        elif trajectory_source is None and final.status == "ok":
+            final.status = "error"
+            final.error = "harness finished but no canonical ACTF trajectory was found"
+
+        if trace_source is not None:
             if trace_source.resolve() != trace_path.resolve():
                 shutil.copy2(trace_source, trace_path)
+
+        if trajectory_source is not None:
+            if trajectory_source.resolve() != actf_path.resolve():
+                shutil.copy2(trajectory_source, actf_path)
             try:
-                cache_trace_path = sample_dir / "cache_trace.jsonl"
-                wire_trace_path = sample_dir / "wire_trace.jsonl"
-                trajectory = convert_openclaw_trace(
-                    trace_path,
-                    actf_path,
-                    user_messages=request.task.prompts,
-                    cache_trace=cache_trace_path if cache_trace_path.is_file() else None,
-                    tools=(
-                        extract_wire_tools(wire_trace_path)
-                        if wire_trace_path.is_file()
-                        else None
-                    ),
-                    keep_thinking=self.config.keep_thinking,
-                )
+                trajectory = json.loads(actf_path.read_text(encoding="utf-8"))
+                if not isinstance(trajectory, dict):
+                    raise ValueError("canonical ACTF trajectory must be a JSON object")
                 write_sft(
                     sft_path,
                     trajectory,
@@ -223,6 +219,7 @@ class Collector:
             },
             "trajectory": {
                 "raw": "trace.jsonl" if trace_path.is_file() else None,
+                "raw_schema": metadata.get("raw_trace_schema"),
                 "actf": "trace_ACTF.json" if actf_path.is_file() else None,
                 "actf_schema": "ACTF_v1.0" if actf_path.is_file() else None,
                 "sft": "trace_SFT.json" if sft_path.is_file() else None,

@@ -4,10 +4,38 @@ import subprocess
 import unittest
 from unittest.mock import patch
 
-from roller.cli import _docker_preflight
+from roller.cli import _build_parser, _docker_preflight
 
 
 class CliTests(unittest.TestCase):
+    def test_parser_accepts_codex_harness_options(self) -> None:
+        args = _build_parser().parse_args(
+            [
+                "collect",
+                "--tasks",
+                "tasks.jsonl",
+                "--harness",
+                "codex",
+                "--api-key-env",
+                "ROLLER_CODEX_KEY",
+                "--api-base",
+                "http://example.test/v1",
+                "--thinking",
+                "xhigh",
+                "--reasoning-summary",
+                "detailed",
+                "--external-thinking",
+                "external_always",
+                "--codex-websockets",
+            ]
+        )
+        self.assertEqual(args.harness, "codex")
+        self.assertEqual(args.api_key_env, "ROLLER_CODEX_KEY")
+        self.assertEqual(args.thinking, "xhigh")
+        self.assertEqual(args.reasoning_summary, "detailed")
+        self.assertEqual(args.external_thinking, "external_always")
+        self.assertTrue(args.codex_websockets)
+
     @patch("roller.cli.subprocess.run")
     @patch("roller.cli.shutil.which", return_value="/usr/bin/docker")
     def test_docker_preflight_returns_resolved_image_id(self, _which, run) -> None:
