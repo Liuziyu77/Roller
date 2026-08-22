@@ -254,6 +254,10 @@ model 使用顶层 `thinkingLevelMap` 把逻辑档位映射为服务值；Chat C
 
 后端必须真实返回 reasoning 内容。Chat Completions 通常通过流式 `reasoning_content`（也兼容 `reasoning` 和 `reasoning_text`），Responses API 通过 reasoning items。仅在 usage 中报告 `reasoning_tokens`、但不返回 summary/content 时，没有可写入轨迹的文本。
 
+对 Qwen、GLM 等能够返回明文 reasoning 的开源模型，默认 `--keep-thinking` 会把该文本保留到
+ACTF/SFT `reasoning_content`，无需启用 external thinking。External thinking 主要用于
+`gpt-5.6-sol` 等只暴露压缩 reasoning summary 的 GPT reasoning 模型。
+
 对于通过 Responses API 暴露压缩 reasoning summary 的 GPT reasoning 模型，应使用：
 
 ```json

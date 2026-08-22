@@ -174,6 +174,10 @@ Codex native session 可能保存明文 `response_item.reasoning.content`、可�
 选择 `none` 时没有 summary 是预期行为，但若服务另行返回明文 content，Roller 仍会按
 `--keep-thinking` 保存它。
 
+开源 Responses 模型如果返回明文 reasoning content，默认 `--keep-thinking` 会直接将其投影到
+ACTF/SFT `reasoning_content`。External thinking 主要用于 `gpt-5.6-sol` 等只暴露压缩
+summary 的 GPT reasoning 模型。
+
 `--no-keep-thinking` 会在 native raw→ACTF 时清空 `reasoning_content`。Codex native
 `trace.jsonl` 仍保持原样，而且该选项目前不改写 Codex 自己用于后续 `resume` 的上下文；
 因此它是导出控制，不是 raw 脱敏或双向 context 剥离开关。

@@ -62,6 +62,16 @@
 | Wire request capture | 是 | 是 | 是 |
 | Harness 专属指南 | [打开](openclaw-configuration.md) | [打开](codex-configuration.md) | [打开](claude-code-configuration.md) |
 
+## CoT 路径选择
+
+| 场景 | 推荐配置 |
+| --- | --- |
+| GPT reasoning 系列（如 `gpt-5.6-sol`）需要比压缩 summary 更完整的显式 CoT | OpenClaw/Codex `--external-thinking external|external_always` |
+| Claude 系列（如 Claude Opus 4.8，示例 ID `claude-opus-4-8`）存在 signed thinking | Claude Code `--claude-signature-recovery fill|prefer` |
+| Qwen、GLM 等开源模型的 API 返回明文 reasoning | 默认 `--keep-thinking`，直接写入 ACTF/SFT `reasoning_content` |
+
+第三种路径要求后端返回明文 `reasoning_content`、`reasoning` 或 `reasoning_text`。Reasoning token 数本身不能转换成 CoT。
+
 ## 核心概念
 
 | 名词 | 含义 |

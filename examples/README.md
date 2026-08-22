@@ -145,7 +145,8 @@ roller collect \
 
 ### External thinking
 
-以下命令只运行第一条 task，用 Codex 验收严格 THINK/ACT 交替：
+External thinking 推荐用于 `gpt-5.6-sol` 等 GPT reasoning 模型，以显式工具参数代替原生
+压缩 summary。以下命令只运行第一条 task，用 Codex 验收严格 THINK/ACT 交替：
 
 ```bash
 roller collect \
@@ -166,7 +167,8 @@ roller collect \
 
 ### Claude signature recovery
 
-Native session 存在 signed thinking、但 reasoning 为空时，可在 Claude Code 命令中增加：
+Claude 系列（如 Claude Opus 4.8，示例 ID `claude-opus-4-8`）的 native session 存在
+signed thinking、但 reasoning 为空时，可在 Claude Code 命令中增加：
 
 ```text
 --claude-signature-recovery fill

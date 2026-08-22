@@ -160,6 +160,10 @@ Signature recovery 必须同时保持 `--keep-thinking`。它是任务结束后�
 
 ## 8. External thinking
 
+该选项主要面向 `gpt-5.6-sol` 等 GPT reasoning 模型。Qwen、GLM 等开源模型的 API 返回
+明文 reasoning 时，保持默认 `--keep-thinking`，无需使用 external thinking。Claude signed
+thinking 使用 `--claude-signature-recovery`，不使用本选项。
+
 ```text
 --external-thinking off|external|external_always
 ```

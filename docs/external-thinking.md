@@ -2,10 +2,15 @@
 
 [文档中心](README.md) · [OpenClaw](openclaw-configuration.md) · [Codex](codex-configuration.md) · [SFT 格式](sft-format.md)
 
-参考 https://github.com/can1357/oh-my-pi， Roller 为 OpenClaw 和 Codex 实现了类似的
+Roller 参考 [oh-my-pi](https://github.com/can1357/oh-my-pi)，为 OpenClaw 和 Codex 实现了
 `external` 与 `external_always` 模式：关闭 provider 原生 reasoning，把模型明确生成的
 中间推理保存进 `deep_think` 工具参数，再在专用 SFT 中标准化为
 `reasoning_content`。
+
+该模式主要用于 GPT reasoning 系列，例如 `gpt-5.6-sol`：这类模型的原生 Responses
+reasoning 通常只向客户端提供压缩 summary。Qwen、GLM 等开源模型如果已经通过 API 返回
+明文 `reasoning_content`、`reasoning` 或 `reasoning_text`，保持默认 `--keep-thinking`
+即可保留 CoT，不需要启用 external thinking。
 
 ## 1. 为什么需要它
 
