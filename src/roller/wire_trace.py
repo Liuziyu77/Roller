@@ -17,9 +17,9 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 from urllib import request as urllib_request
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from roller.external_thinking import (
     CodexExternalThinkingController,
@@ -212,6 +212,16 @@ class _ProxyHandler(BaseHTTPRequestHandler):
             "method": self.command,
             "path": self.path,
         }
+        upstream_path = proxy.forward_path(self.path)
+        if upstream_path != self.path:
+            entry["upstream_path"] = upstream_path
+        dropped_headers = sorted(
+            name
+            for name in self.headers
+            if name.lower() in proxy.drop_request_headers
+        )
+        if dropped_headers:
+            entry["dropped_request_headers"] = dropped_headers
         parsed: dict[str, Any] | None = None
         if body:
             try:
@@ -280,10 +290,15 @@ class _ProxyHandler(BaseHTTPRequestHandler):
         except Exception:
             pass
         self.close_connection = True
-        url = proxy.upstream_origin + self.path
+        url = proxy.upstream_origin + proxy.forward_path(self.path)
         outgoing = urllib_request.Request(url, data=body, method=self.command)
         for key, value in self.headers.items():
-            if key.lower() not in HOP_BY_HOP_HEADERS and key.lower() != "host":
+            normalized_key = key.lower()
+            if (
+                normalized_key not in HOP_BY_HOP_HEADERS
+                and normalized_key != "host"
+                and normalized_key not in proxy.drop_request_headers
+            ):
                 outgoing.add_header(key, value)
         try:
             response = urllib_request.urlopen(outgoing, timeout=proxy.timeout_seconds)
@@ -375,6 +390,8 @@ class WireTraceProxy:
         normalize_reasoning_replay: bool = False,
         external_thinking_mode: str = "off",
         external_thinking_transport: str = "function",
+        drop_query_parameters: Sequence[str] = (),
+        drop_request_headers: Sequence[str] = (),
     ) -> None:
         if mode not in ("tools", "full"):
             raise ValueError(f"unknown wire trace mode: {mode}")
@@ -387,6 +404,10 @@ class WireTraceProxy:
         self.mode = mode
         self.strip_thinking = strip_thinking
         self.normalize_reasoning_replay = normalize_reasoning_replay
+        self.drop_query_parameters = frozenset(drop_query_parameters)
+        self.drop_request_headers = frozenset(
+            name.strip().lower() for name in drop_request_headers if name.strip()
+        )
         normalized_external_mode = normalize_external_thinking_mode(
             external_thinking_mode
         )
@@ -445,6 +466,21 @@ class WireTraceProxy:
         return urlsplit(current).netloc == urlsplit(
             f"{self.upstream_origin}{self.base_path}"
         ).netloc and urlsplit(current).path.rstrip("/") == self.base_path
+
+    def forward_path(self, path: str) -> str:
+        """Return the upstream request target after scoped compatibility rewrites."""
+
+        if not self.drop_query_parameters:
+            return path
+        parts = urlsplit(path)
+        query = urlencode(
+            [
+                (name, value)
+                for name, value in parse_qsl(parts.query, keep_blank_values=True)
+                if name not in self.drop_query_parameters
+            ]
+        )
+        return urlunsplit(("", "", parts.path, query, ""))
 
     def next_seq(self) -> int:
         with self._lock:

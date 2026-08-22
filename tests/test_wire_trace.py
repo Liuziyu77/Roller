@@ -8,12 +8,30 @@ from pathlib import Path
 from roller.wire_trace import (
     REDACTED_VALUE,
     _ProxyHandler,
+    WireTraceProxy,
     extract_wire_tools,
     redact_jsonl_file,
     redact_sensitive_values,
     normalize_chat_completion_reasoning_response,
     strip_thinking_from_body,
 )
+
+
+class ForwardPathTests(unittest.TestCase):
+    def test_drops_only_scoped_query_parameters(self) -> None:
+        proxy = WireTraceProxy(
+            "http://example.test",
+            Path("/tmp/unused-wire.jsonl"),
+            drop_query_parameters=("beta",),
+            drop_request_headers=("Anthropic-Beta",),
+        )
+
+        self.assertEqual(
+            proxy.forward_path("/v1/messages?beta=true&api-version=2026-01-01"),
+            "/v1/messages?api-version=2026-01-01",
+        )
+        self.assertEqual(proxy.forward_path("/v1/models"), "/v1/models")
+        self.assertEqual(proxy.drop_request_headers, {"anthropic-beta"})
 
 
 class StripThinkingTests(unittest.TestCase):

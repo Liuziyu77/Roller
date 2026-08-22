@@ -94,3 +94,68 @@ def extract_codex_usage(trace_path: Path) -> dict[str, int | float]:
         total_tokens = totals["input_tokens"] + totals["output_tokens"]
     totals["total_tokens"] = total_tokens
     return totals
+
+
+def extract_claude_code_usage(
+    trace_path: Path,
+    stream_path: Path | None = None,
+) -> dict[str, int | float]:
+    """Sum final per-message usage from a Claude Code native session trace."""
+
+    totals = dict(ZERO_USAGE)
+    if not trace_path.is_file():
+        return totals
+
+    usage_by_message: dict[str, dict[str, Any]] = {}
+    anonymous_usage: list[dict[str, Any]] = []
+    with trace_path.open("r", encoding="utf-8", errors="replace") as stream:
+        for raw_line in stream:
+            try:
+                event = json.loads(raw_line)
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if not isinstance(event, dict) or event.get("type") != "assistant":
+                continue
+            message = event.get("message")
+            if not isinstance(message, dict):
+                continue
+            usage = message.get("usage")
+            if not isinstance(usage, dict):
+                continue
+            message_id = message.get("id")
+            if isinstance(message_id, str) and message_id:
+                usage_by_message[message_id] = usage
+            else:
+                anonymous_usage.append(usage)
+
+    usages = [*usage_by_message.values(), *anonymous_usage]
+    totals["request_count"] = len(usages)
+    for usage in usages:
+        input_tokens = _number(usage.get("input_tokens"))
+        output_tokens = _number(usage.get("output_tokens"))
+        cache_read = _number(usage.get("cache_read_input_tokens"))
+        cache_write = _number(usage.get("cache_creation_input_tokens"))
+        totals["input_tokens"] += input_tokens
+        totals["output_tokens"] += output_tokens
+        totals["cache_read_tokens"] += cache_read
+        totals["cache_write_tokens"] += cache_write
+        totals["total_tokens"] += (
+            input_tokens + output_tokens + cache_read + cache_write
+        )
+
+    if stream_path is not None and stream_path.is_file():
+        total_cost = 0.0
+        with stream_path.open("r", encoding="utf-8", errors="replace") as stream:
+            for raw_line in stream:
+                try:
+                    event = json.loads(raw_line)
+                except (json.JSONDecodeError, TypeError):
+                    continue
+                if not isinstance(event, dict) or event.get("type") != "result":
+                    continue
+                cost = event.get("total_cost_usd")
+                if isinstance(cost, (int, float)) and not isinstance(cost, bool):
+                    total_cost += float(cost)
+        totals["cost_usd"] = total_cost
+    totals["cost_usd"] = round(float(totals["cost_usd"]), 6)
+    return totals

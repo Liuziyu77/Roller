@@ -4,7 +4,7 @@
   <p><strong>面向多模型与多 Harness 的 Agent 轨迹采集框架</strong></p>
   <p>
     <img alt="Python 3.10+" src="https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white">
-    <img alt="OpenClaw and Codex Harnesses" src="https://img.shields.io/badge/Harness-OpenClaw%20%7C%20Codex-6F42C1">
+    <img alt="OpenClaw, Codex, and Claude Code Harnesses" src="https://img.shields.io/badge/Harness-OpenClaw%20%7C%20Codex%20%7C%20Claude_Code-6F42C1">
     <img alt="ACTF v1.0" src="https://img.shields.io/badge/Trace-ACTF__v1.0-00A67E">
     <a href="LICENSE"><img alt="Apache 2.0 License" src="https://img.shields.io/badge/License-Apache--2.0-D22128"></a>
   </p>
@@ -12,7 +12,7 @@
 
 Roller 把 task 清单与模型列表展开成独立 rollout，在隔离的 Docker 环境中并行运行 Agent Harness，并把每次执行整理成可复用的轨迹样本。每个样本保留 Harness raw、`ACTF_v1.0`、标准化 SFT、运行信息，以及 Agent 明确写入输出目录的文件。
 
-当前支持 **OpenClaw** 和 **Codex CLI**。Task、文件管理与结果格式不依赖具体 benchmark；动态 User Simulator 当前使用 OpenClaw。
+当前支持 **OpenClaw**、**Codex CLI** 和 **Claude Code**。Task、文件管理与结果格式不依赖具体 benchmark；动态 User Simulator 当前使用 OpenClaw。
 
 ## ✨ 核心能力
 
@@ -61,6 +61,16 @@ docker build -f docker/codex/Dockerfile -t roller-codex:0.149.0 .
 docker run --rm roller-codex:0.149.0 codex --version
 
 export ROLLER_CODEX_IMAGE=roller-codex:0.149.0
+```
+
+Claude Code 可以复用同一个 Node 22 基础镜像归档，无需另行下载基础镜像：
+
+```bash
+docker load -i /path/to/node-22-bookworm-slim-linux-amd64.tar.gz
+docker build -f docker/claude-code/Dockerfile -t roller-claude-code:2.1.222 .
+docker run --rm roller-claude-code:2.1.222 claude --version
+
+export ROLLER_CLAUDE_CODE_IMAGE=roller-claude-code:2.1.222
 ```
 
 ### 2. 配置模型 API
@@ -140,6 +150,29 @@ roller collect \
 WebSocket，Roller 会自动注入本地 MCP `deep_think`，无需修改镜像或 Codex config。镜像、
 effort、reasoning 保存和原生 session 说明见
 [Codex Harness 指南](docs/codex-configuration.md)。
+
+Claude Code 直接调用 Anthropic Messages API。`--api-base` 既接受 API origin，也接受完整
+`/v1/messages` endpoint；Roller 会把它规范化为 Claude SDK 使用的 base URL：
+
+```bash
+export ROLLER_ANTHROPIC_KEY='...'
+
+roller collect \
+  --harness claude-code \
+  --tasks examples/tasks/tasks.jsonl \
+  --model claude-sonnet-4-6-thinking \
+  --api-base http://your-api.example/v1/messages \
+  --api-key-env ROLLER_ANTHROPIC_KEY \
+  --thinking high \
+  --parallel 2 \
+  --output runs \
+  --run-name claude-code-demo
+```
+
+Claude Code 默认保留 native session 中实际可见的 `thinking`、工具调用、工具结果和 usage；
+预定义多轮使用 `--continue` 延续同一 session。当前不支持 Claude Code 的
+`external/external_always` 和动态 User Simulator。镜像、effort、Anthropic endpoint、raw、
+wire、ACTF/SFT 说明见 [Claude Code Harness 指南](docs/claude-code-configuration.md)。
 
 最小 external-always 验收可以在上述命令中去掉 `--thinking/--reasoning-summary`，并增加：
 
@@ -302,8 +335,8 @@ files/product_summary/
 ```
 
 - `trace.jsonl`：Harness-native session 事件。OpenClaw 通过 transcript SDK 导出；Codex
-  保存 `$CODEX_HOME/sessions` 中的原生 rollout JSONL。Roller 不做训练清洗，但它不是模型
-  请求体或上游响应的逐字副本。
+  保存 `$CODEX_HOME/sessions` 中的原生 rollout；Claude Code 合并本 rollout 的主
+  session 和 subagent native JSONL。Roller 不做训练清洗，但它不是模型请求体或上游响应的逐字副本。
 - `trace_ACTF.json`：转换后的 `ACTF_v1.0` 轨迹，顶层固化捕获到的首个组装后 system prompt 和 tools schema，并按 step 保存 reasoning。
 - `trace_SFT.json`：只包含 `messages` 和 `tools` 的标准化训练样本；assistant 固定包含 `reasoning_content`、`content` 和 `tool_calls`。
 - `sft.jsonl`：按 request 顺序汇总所有成功 task Agent 的 `trace_SFT.json`，每行一个样本。
@@ -339,12 +372,12 @@ User Simulator rollout 还会增加 `conversation.json` 和 `user_simulator/`，
 | `--run-name NAME` | 本次 run 的目录名 |
 | `--resume` | 在运行锁一致时，校验并跳过完整的成功 sample；损坏 sample 自动重跑 |
 | `--dry-run` | 只校验并打印计划 |
-| `--harness NAME` | `openclaw`（默认）或 `codex` |
-| `--docker-image IMAGE` | Harness 镜像；默认分别使用 OpenClaw 官方镜像或 `roller-codex:0.149.0` |
+| `--harness NAME` | `openclaw`（默认）、`codex` 或 `claude-code` |
+| `--docker-image IMAGE` | Harness 镜像；默认使用对应的 OpenClaw、`roller-codex:0.149.0` 或 `roller-claude-code:2.1.222` |
 | `--container-user USER` | 一次性 task 容器用户；默认 `0`，`image` 表示沿用镜像默认用户 |
-| `--thinking LEVEL` | OpenClaw thinking 或 Codex `model_reasoning_effort`；Harness 会校验不适用的档位 |
-| `--external-thinking MODE` | `off`（默认）、`external` 或 `external_always`；使用 `deep_think` 工具构造显式 CoT |
-| `--keep-thinking` / `--no-keep-thinking` | 控制 ACTF/SFT 是否导出 thinking；OpenClaw 的关闭模式还会剥离后续请求历史，Codex raw/resume 不受影响 |
+| `--thinking LEVEL` | OpenClaw thinking、Codex reasoning effort 或 Claude Code effort；Harness 会校验不适用的档位 |
+| `--external-thinking MODE` | `off`（默认）、`external` 或 `external_always`；OpenClaw/Codex 使用 `deep_think` 构造显式 CoT，Claude Code 当前只接受 `off` |
+| `--keep-thinking` / `--no-keep-thinking` | 控制 ACTF/SFT 是否导出 thinking；OpenClaw 的关闭模式还会剥离后续请求历史，Codex/Claude Code raw 和 resume/continue 不受影响 |
 | `--cache-trace` / `--no-cache-trace` | 是否记录每次组装的 system prompt；ACTF 固化首个有效值 |
 | `--wire-trace MODE` | `actf`（默认）、`full` 或 `off`；控制 tools schema 与请求体记录 |
 
@@ -368,6 +401,7 @@ roller collect --help
 | [轨迹可视化 Viewer](docs/viewer.md) | 启动方式、页面结构、懒加载、安全边界和缺失字段行为 |
 | [OpenClaw、模型与 API](docs/openclaw-configuration.md) | Docker、provider、API base、代理、搜索和常见问题 |
 | [Codex Harness 指南](docs/codex-configuration.md) | 镜像构建、API、reasoning、native raw、ACTF/SFT 和限制 |
+| [Claude Code Harness 指南](docs/claude-code-configuration.md) | 镜像构建、Anthropic API、thinking effort、native raw、wire 和 ACTF/SFT |
 | [User Simulator 与动态对话](docs/user-simulator.md) | Conversation Manager、终止协议、资源占用和双方轨迹 |
 
 ## 🔒 安全边界
@@ -386,8 +420,10 @@ roller collect --help
 - Harness 接口：[src/roller/harnesses/base.py](src/roller/harnesses/base.py)
 - OpenClaw adapter：[src/roller/harnesses/openclaw.py](src/roller/harnesses/openclaw.py)
 - Codex adapter：[src/roller/harnesses/codex.py](src/roller/harnesses/codex.py)
+- Claude Code adapter：[src/roller/harnesses/claude_code.py](src/roller/harnesses/claude_code.py)
 - Conversation Manager：[src/roller/conversation.py](src/roller/conversation.py)
-- ACTF 转换：[src/roller/actf.py](src/roller/actf.py)、[src/roller/codex_actf.py](src/roller/codex_actf.py)
+- ACTF 转换：[src/roller/actf.py](src/roller/actf.py)、[src/roller/codex_actf.py](src/roller/codex_actf.py)、
+  [src/roller/claude_code_actf.py](src/roller/claude_code_actf.py)
 
 运行测试：
 

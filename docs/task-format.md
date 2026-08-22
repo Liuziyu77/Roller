@@ -281,7 +281,7 @@ OpenClaw adapter 会把 Context 注入 `/root/<target>` 与 `/tmp_workspace/<tar
 | --- | --- |
 | `env` | Task 强制依赖的宿主机环境变量名；缺失或为空时 task 失败 |
 | `setup` | Agent 启动前在 `/tmp_workspace` 执行的 shell 命令 |
-| `thinking` | 覆盖本 task 的 Harness reasoning/thinking 设置；OpenClaw 见 [Thinking 配置](openclaw-configuration.md#5-thinkingsystem-prompt-与-wire-trace)，Codex 见 [Reasoning 配置](codex-configuration.md#4-reasoning-配置) |
+| `thinking` | 覆盖本 task 的 Harness reasoning/thinking 设置；OpenClaw 见 [Thinking 配置](openclaw-configuration.md#5-thinkingsystem-prompt-与-wire-trace)，Codex 见 [Reasoning 配置](codex-configuration.md#4-reasoning-配置)，Claude Code 见 [Thinking 与 effort](claude-code-configuration.md#4-thinking-与-effort) |
 
 `env` 和 `setup` 都接受单个字符串或字符串数组。Task 作者应把 setup 当作可执行代码管理，只运行可信数据集中的命令。
 
@@ -289,8 +289,10 @@ OpenClaw adapter 会把 Context 注入 `/root/<target>` 与 `/tmp_workspace/<tar
 `none` 会规范化为 `off`。task 中的值优先于 CLI `--thinking`。OpenClaw `2026.7.1` 支持
 到 `max` 并拒绝 `ultra`；Codex 把有效档位映射到 `model_reasoning_effort`，拒绝
 OpenClaw 专用 `adaptive` 和没有通用等价语义的 `off`；默认 Codex 0.149.0 镜像支持
-`minimal/low/medium/high/xhigh`，不支持 `max/ultra`。最终可用档位仍由 Harness 版本、model
-和 provider 共同校验。User Simulator 当前只支持 OpenClaw。
+`minimal/low/medium/high/xhigh`，不支持 `max/ultra`。Claude Code 2.1.222 接受
+`low/medium/high/xhigh/max/ultracode`，Roller 将 `ultra` 映射为 `ultracode`，拒绝
+`off/minimal/adaptive`。最终可用档位仍由 Harness 版本、model 和 provider 共同校验。
+User Simulator 当前只支持 OpenClaw；Codex 和 Claude Code 使用预定义 `prompt/messages`。
 
 ## 9. 路径与格式校验
 

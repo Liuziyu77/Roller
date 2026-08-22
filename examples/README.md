@@ -41,6 +41,8 @@ MY_PROXY_BASE_URL=https://api.example.com/v1
 MY_PROXY_API_KEY=replace-with-your-api-key
 ROLLER_CODEX_BASE_URL=https://api.example.com/v1
 ROLLER_CODEX_API_KEY=replace-with-your-api-key
+ROLLER_ANTHROPIC_BASE_URL=https://api.example.com/v1/messages
+ROLLER_ANTHROPIC_API_KEY=replace-with-your-api-key
 MY_CHAT_BASE_URL=https://chat-api.example.com/v1
 MY_CHAT_API_KEY=replace-with-your-api-key
 BRAVE_API_KEY=replace-with-your-brave-api-key
@@ -60,6 +62,10 @@ set +a
 
 Codex 不使用 OpenClaw models JSON；服务需要兼容 Responses protocol。配置和镜像见
 [Codex Harness 指南](../docs/codex-configuration.md)。
+
+Claude Code 也不使用 OpenClaw models JSON；服务需要兼容 Anthropic
+`/v1/messages`。配置、thinking 与镜像见
+[Claude Code Harness 指南](../docs/claude-code-configuration.md)。
 
 ## 3. 配置模型
 
@@ -208,6 +214,29 @@ roller collect \
   `reasoning_content`。
 
 完整协议和排错方法见 [External Thinking 指南](../docs/external-thinking.md)。
+
+### 4.5 用 Claude Code 运行相同任务
+
+构建 `roller-claude-code:2.1.222` 并加载 Anthropic 环境变量后：
+
+```bash
+roller collect \
+  --harness claude-code \
+  --tasks examples/tasks/tasks.jsonl \
+  --model claude-sonnet-4-6-thinking \
+  --api-base "$ROLLER_ANTHROPIC_BASE_URL" \
+  --api-key-env ROLLER_ANTHROPIC_API_KEY \
+  --thinking high \
+  --parallel 2 \
+  --timeout 900 \
+  --output runs \
+  --run-name examples_claude_code
+```
+
+`--api-base` 可以是 origin、`/v1` 或完整 `/v1/messages`，Roller 会规范化为
+Claude SDK 需要的 base URL。第四条 `messages` 会通过 `claude --continue` 延续同一
+session。Claude Code 当前不支持下一节的动态 User Simulator，也不支持
+`external/external_always`。
 
 ## 5. 动态 User Simulator 案例
 
