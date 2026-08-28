@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -52,7 +54,7 @@ class ExampleFilesTests(unittest.TestCase):
 
     def test_custom_api_example_expands_environment_placeholders(self) -> None:
         config = load_model_config(
-            self.examples_root / "json" / "openclaw-models.json",
+            self.examples_root / "config" / "openclaw" / "models.json",
             {
                 "MY_PROXY_BASE_URL": "https://proxy.example/v1",
                 "MY_PROXY_API_KEY": "secret",
@@ -69,7 +71,10 @@ class ExampleFilesTests(unittest.TestCase):
         )
 
         multimodal = load_model_config(
-            self.examples_root / "json" / "openclaw-models-multimodal.json",
+            self.examples_root
+            / "config"
+            / "openclaw"
+            / "models-multimodal.json",
             {
                 "MY_PROXY_BASE_URL": "https://proxy.example/v1",
                 "MY_PROXY_API_KEY": "secret",
@@ -78,6 +83,29 @@ class ExampleFilesTests(unittest.TestCase):
         multimodal_model = multimodal["providers"]["my-openai-proxy"]["models"][0]
         self.assertEqual(multimodal_model["id"], "my-multimodal-model")
         self.assertEqual(multimodal_model["input"], ["text", "image"])
+
+    def test_native_harness_config_examples_are_safe_and_parseable(self) -> None:
+        codex_path = (
+            self.examples_root / "config" / "codex" / "config.toml.example"
+        )
+        codex_config = tomllib.loads(codex_path.read_text(encoding="utf-8"))
+        self.assertEqual(codex_config, {"model_verbosity": "medium"})
+
+        claude_path = (
+            self.examples_root
+            / "config"
+            / "claude-code"
+            / "settings.json.example"
+        )
+        claude_settings = json.loads(claude_path.read_text(encoding="utf-8"))
+        self.assertFalse(claude_settings["includeCoAuthoredBy"])
+
+        combined = codex_path.read_text(encoding="utf-8") + claude_path.read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn("apiKey", combined)
+        self.assertNotIn("API_KEY", combined)
+        self.assertNotIn('"hooks"', combined)
 
     def test_user_simulator_example_is_an_independent_dynamic_task(self) -> None:
         tasks = load_tasks(

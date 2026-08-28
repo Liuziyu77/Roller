@@ -129,12 +129,14 @@ Codex CLI 使用 Responses 风格的 agentic API。`curl /v1/chat/completions` �
 tool call 和 tool result。若需要特殊 model provider、MCP 或其他 Codex 配置，可以提供：
 
 ```bash
-roller collect ... --codex-config /path/to/config.toml
+roller collect ... \
+  --codex-config examples/config/codex/config.toml.example
 ```
 
 该文件原样复制到 rollout 容器的 `$CODEX_HOME/config.toml`。Resume 锁保存配置内容的
 SHA-256，而不把可能含密钥的 TOML 内容复制进 run；显式 CLI 的 API base、model、effort、
-summary 和 web-search 设置仍覆盖对应运行项。
+summary 和 web-search 设置仍覆盖对应运行项。仓库示例设置了 Roller 未覆盖的
+`model_verbosity`，并提供一个默认注释掉的 MCP server 模板；不要在其中保存 API Key。
 
 ## 4. Reasoning 配置
 

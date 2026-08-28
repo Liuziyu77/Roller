@@ -143,7 +143,7 @@ Task Agent 与 Simulator 共用 `--model-config` 中的 provider 列表，但可
 ```bash
 roller collect \
   --tasks examples/tasks/user-simulator.jsonl \
-  --model-config examples/json/openclaw-models.json \
+  --model-config examples/config/openclaw/models.json \
   --docker-image your-openclaw-image:tag \
   --parallel 2 \
   --timeout 900 \

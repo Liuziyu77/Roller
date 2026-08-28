@@ -124,7 +124,7 @@ OpenClaw 通过 `--model-config` 读取 provider 与 model：
 - Responses 服务使用 `openai-responses`；只有 `/v1/chat/completions` 的服务使用 `openai-completions`；
 - `baseUrl` 通常写到 `/v1`，不要把 `/chat/completions` 当作 base URL。
 
-仓库模板位于 [`examples/json/openclaw-models.json`](../examples/json/openclaw-models.json)。Reasoning 和多模态模板见 [Examples](../examples/README.md#模型配置模板)。
+仓库模板位于 [`examples/config/openclaw/models.json`](../examples/config/openclaw/models.json)。Reasoning、多模态和 Harness 原生配置模板见 [Examples](../examples/README.md#harness-配置模板)。
 
 ### Codex 配置
 
@@ -175,7 +175,7 @@ Claude Code 也不读取 OpenClaw model JSON。它直接使用：
 roller collect \
   --tasks examples/tasks/tasks.jsonl \
   --model my-openai-proxy/my-model \
-  --model-config examples/json/openclaw-models.json \
+  --model-config examples/config/openclaw/models.json \
   --parallel 4 \
   --dry-run
 ```
@@ -196,7 +196,7 @@ Dry-run 会：
 roller collect \
   --tasks examples/tasks/tasks.jsonl \
   --model my-openai-proxy/my-model \
-  --model-config examples/json/openclaw-models.json \
+  --model-config examples/config/openclaw/models.json \
   --parallel 4 \
   --retries 1 \
   --timeout 600 \
