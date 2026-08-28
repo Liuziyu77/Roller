@@ -78,7 +78,8 @@ def _build_parser() -> argparse.ArgumentParser:
     collect.add_argument(
         "--harness",
         choices=("openclaw", "codex", "claude-code"),
-        default="openclaw",
+        default=None,
+        help="default/override task-agent harness (task 'harness' is used when omitted)",
     )
     collect.add_argument("--prompt-key", default="prompt")
     collect.add_argument("--id-key", default="id")
@@ -118,6 +119,9 @@ def _build_parser() -> argparse.ArgumentParser:
             "environment variable or Roller's pinned Harness image"
         ),
     )
+    runtime.add_argument("--openclaw-image", help="OpenClaw image override (for mixed Harness runs)")
+    runtime.add_argument("--codex-image", help="Codex image override (for mixed Harness runs)")
+    runtime.add_argument("--claude-code-image", help="Claude Code image override (for mixed Harness runs)")
     runtime.add_argument(
         "--container-user",
         default="0",
@@ -212,6 +216,8 @@ def _build_parser() -> argparse.ArgumentParser:
             "full /v1/messages endpoint for Claude Code; defaults to the Harness env"
         ),
     )
+    api.add_argument("--codex-api-base", help="Codex-only API base override (for mixed Harness runs)")
+    api.add_argument("--claude-api-base", help="Claude Code-only API base override (for mixed Harness runs)")
     api.add_argument(
         "--api-key-env",
         help=(
@@ -219,6 +225,8 @@ def _build_parser() -> argparse.ArgumentParser:
             "OPENAI_API_KEY for Codex and ANTHROPIC_API_KEY for Claude Code"
         ),
     )
+    api.add_argument("--codex-api-key-env", help="Codex-only API key environment variable")
+    api.add_argument("--claude-api-key-env", help="Claude Code-only API key environment variable")
 
     codex = collect.add_argument_group("Codex")
     codex.add_argument(
@@ -335,9 +343,14 @@ def _run_name(harness: str, value: str | None) -> str:
 
 
 def _dry_run_payload(args: argparse.Namespace, requests: list) -> dict:
+    cli_harness = args._cli_harness if hasattr(args, "_cli_harness") else args.harness
+    agent_harnesses = {
+        cli_harness or getattr(request.task, "harness", "openclaw")
+        for request in requests
+    }
     return {
         "dry_run": True,
-        "harness": args.harness,
+        "harness": next(iter(agent_harnesses)) if len(agent_harnesses) == 1 else "mixed",
         "docker_image": args.docker_image,
         "tasks": len({request.task.id for request in requests}),
         "models": list(dict.fromkeys(request.model for request in requests)),
@@ -348,6 +361,7 @@ def _dry_run_payload(args: argparse.Namespace, requests: list) -> dict:
             {
                 "request_index": request.index,
                 "task_id": request.task.id,
+                "harness": cli_harness or request.task.harness,
                 "model": request.model,
                 "turns": (
                     {
@@ -389,28 +403,6 @@ def _collect(args: argparse.Namespace) -> int:
         raise ValueError("--start-index cannot be negative")
     if args.limit is not None and args.limit <= 0:
         raise ValueError("--limit must be greater than zero")
-    if args.api_base is None:
-        if args.harness == "codex":
-            args.api_base = os.environ.get("OPENAI_BASE_URL")
-        elif args.harness == "claude-code":
-            args.api_base = os.environ.get("ANTHROPIC_BASE_URL")
-    if args.api_key_env is None:
-        args.api_key_env = (
-            "ANTHROPIC_API_KEY"
-            if args.harness == "claude-code"
-            else "OPENAI_API_KEY"
-        )
-    if args.docker_image is None:
-        defaults = {
-            "openclaw": os.environ.get(
-                "ROLLER_OPENCLAW_IMAGE", DEFAULT_OPENCLAW_IMAGE
-            ),
-            "codex": os.environ.get("ROLLER_CODEX_IMAGE", DEFAULT_CODEX_IMAGE),
-            "claude-code": os.environ.get(
-                "ROLLER_CLAUDE_CODE_IMAGE", DEFAULT_CLAUDE_CODE_IMAGE
-            ),
-        }
-        args.docker_image = defaults[args.harness]
     bundle_policy = BundlePolicy(
         max_file_bytes=args.max_input_file_bytes,
         max_task_input_bytes=args.max_task_input_bytes,
@@ -431,14 +423,54 @@ def _collect(args: argparse.Namespace) -> int:
     requests = build_requests(tasks, args.model, args.timeout)
     if not requests:
         raise TaskFormatError("task list contains no tasks")
-    if args.harness != "openclaw" and any(
-        request.task.user_simulator is not None for request in requests
-    ):
-        raise TaskFormatError(
-            f"{args.harness} harness does not yet support user_simulator tasks; "
-            "use predefined messages or --harness openclaw"
+
+    agent_harnesses = {
+        args.harness or getattr(request.task, "harness", "openclaw")
+        for request in requests
+    }
+    simulator_harnesses = {
+        request.task.user_simulator.harness
+        for request in requests
+        if request.task.user_simulator is not None
+    }
+    selected_harnesses = agent_harnesses | simulator_harnesses
+    cli_harness = args.harness
+    args._cli_harness = cli_harness
+    # Resolve the historical global default after loading tasks.  This keeps
+    # ``--harness`` backward compatible while allowing a task-level harness.
+    args.harness = next(iter(agent_harnesses))
+    requested_api_base = args.api_base
+    if args.api_base is None:
+        if selected_harnesses == {"codex"}:
+            args.api_base = os.environ.get("OPENAI_BASE_URL")
+        elif selected_harnesses == {"claude-code"}:
+            args.api_base = os.environ.get("ANTHROPIC_BASE_URL")
+    codex_api_base = args.codex_api_base or requested_api_base or os.environ.get("OPENAI_BASE_URL")
+    claude_api_base = args.claude_api_base or requested_api_base or os.environ.get("ANTHROPIC_BASE_URL")
+    requested_api_key_env = args.api_key_env
+    if args.api_key_env is None:
+        args.api_key_env = (
+            "ANTHROPIC_API_KEY" if selected_harnesses == {"claude-code"}
+            else "OPENAI_API_KEY"
         )
-    if args.harness == "claude-code" and args.external_thinking != "off":
+    codex_api_key_env = args.codex_api_key_env or requested_api_key_env or "OPENAI_API_KEY"
+    claude_api_key_env = args.claude_api_key_env or requested_api_key_env or "ANTHROPIC_API_KEY"
+    defaults = {
+        "openclaw": os.environ.get("ROLLER_OPENCLAW_IMAGE", DEFAULT_OPENCLAW_IMAGE),
+        "codex": os.environ.get("ROLLER_CODEX_IMAGE", DEFAULT_CODEX_IMAGE),
+        "claude-code": os.environ.get("ROLLER_CLAUDE_CODE_IMAGE", DEFAULT_CLAUDE_CODE_IMAGE),
+    }
+    image_overrides = {
+        "openclaw": args.openclaw_image,
+        "codex": args.codex_image,
+        "claude-code": args.claude_code_image,
+    }
+    images = {
+        name: (image_overrides[name] or args.docker_image or defaults[name])
+        for name in selected_harnesses
+    }
+    args.docker_image = args.docker_image or images[args.harness]
+    if "claude-code" in selected_harnesses and args.external_thinking != "off":
         raise ValueError(
             "Claude Code external thinking is not implemented; use "
             "--external-thinking off"
@@ -447,8 +479,8 @@ def _collect(args: argparse.Namespace) -> int:
     model_config = None
     model_config_path: Path | None = None
     if args.model_config:
-        if args.harness != "openclaw":
-            raise ValueError("--model-config is only valid with --harness openclaw")
+        if "openclaw" not in selected_harnesses:
+            raise ValueError("--model-config is only valid when an OpenClaw participant is selected")
         model_config_path = Path(args.model_config).expanduser().resolve()
         if not model_config_path.is_file():
             raise FileNotFoundError(f"model config not found: {model_config_path}")
@@ -457,8 +489,8 @@ def _collect(args: argparse.Namespace) -> int:
     codex_config_path: Path | None = None
     codex_config_digest: str | None = None
     if args.codex_config:
-        if args.harness != "codex":
-            raise ValueError("--codex-config is only valid with --harness codex")
+        if "codex" not in selected_harnesses:
+            raise ValueError("--codex-config is only valid when a Codex participant is selected")
         codex_config_path = Path(args.codex_config).expanduser().resolve()
         if not codex_config_path.is_file():
             raise FileNotFoundError(f"Codex config not found: {codex_config_path}")
@@ -467,10 +499,8 @@ def _collect(args: argparse.Namespace) -> int:
     claude_settings_path: Path | None = None
     claude_settings_fingerprint: str | None = None
     if args.claude_settings:
-        if args.harness != "claude-code":
-            raise ValueError(
-                "--claude-settings is only valid with --harness claude-code"
-            )
+        if "claude-code" not in selected_harnesses:
+            raise ValueError("--claude-settings is only valid when a Claude Code participant is selected")
         claude_settings_path = Path(args.claude_settings).expanduser().resolve()
         if not claude_settings_path.is_file():
             raise FileNotFoundError(
@@ -479,23 +509,24 @@ def _collect(args: argparse.Namespace) -> int:
         claude_settings_fingerprint = hashlib.blake2b(
             claude_settings_path.read_bytes(), digest_size=16
         ).hexdigest()
-    if args.harness != "claude-code" and args.claude_signature_recovery != "off":
+    if "claude-code" not in selected_harnesses and args.claude_signature_recovery != "off":
         raise ValueError(
-            "--claude-signature-recovery is only valid with --harness claude-code"
+            "--claude-signature-recovery is only valid when a Claude Code participant is selected"
         )
 
     openclaw_config: OpenClawConfig | None = None
     codex_config: CodexConfig | None = None
     claude_code_config: ClaudeCodeConfig | None = None
-    if args.harness == "openclaw":
+    if "openclaw" in selected_harnesses:
         for request in requests:
-            validate_external_thinking_provider(
-                model_config,
-                request.model,
-                args.external_thinking,
-            )
+            agent_harness = cli_harness or request.task.harness
+            if agent_harness == "openclaw":
+                validate_external_thinking_provider(model_config, request.model, args.external_thinking)
+            spec = request.task.user_simulator
+            if spec is not None and spec.harness == "openclaw":
+                validate_external_thinking_provider(model_config, spec.model or request.model, args.external_thinking)
         openclaw_config = OpenClawConfig(
-            docker_image=args.docker_image,
+            docker_image=images["openclaw"],
             container_user=(
                 None if args.container_user == "image" else args.container_user
             ),
@@ -517,18 +548,18 @@ def _collect(args: argparse.Namespace) -> int:
             set_image_model=args.set_image_model,
             docker_binary=args.docker_binary,
         )
-    elif args.harness == "codex":
-        if args.collect_path:
-            raise ValueError("--collect-path is only valid with --harness openclaw")
+    if "codex" in selected_harnesses:
+        if args.collect_path and "openclaw" not in selected_harnesses:
+            raise ValueError("--collect-path requires an OpenClaw participant")
         codex_config = CodexConfig(
-            docker_image=args.docker_image,
+            docker_image=images["codex"],
             container_user=(
                 None if args.container_user == "image" else args.container_user
             ),
             network=args.network,
             config_path=codex_config_path,
-            api_base=args.api_base,
-            api_key_env=args.api_key_env,
+            api_base=codex_api_base,
+            api_key_env=codex_api_key_env,
             pass_env=_deduplicate((*CODEX_COMMON_ENV_NAMES, *args.pass_env)),
             reasoning_effort=args.thinking,
             reasoning_summary=args.reasoning_summary,
@@ -540,19 +571,19 @@ def _collect(args: argparse.Namespace) -> int:
             keep_container_on_error=args.keep_container_on_error,
             docker_binary=args.docker_binary,
         )
-    else:
-        if args.collect_path:
-            raise ValueError("--collect-path is only valid with --harness openclaw")
+    if "claude-code" in selected_harnesses:
+        if args.collect_path and "openclaw" not in selected_harnesses:
+            raise ValueError("--collect-path requires an OpenClaw participant")
         claude_code_config = ClaudeCodeConfig(
-            docker_image=args.docker_image,
+            docker_image=images["claude-code"],
             container_user=(
                 None if args.container_user == "image" else args.container_user
             ),
             network=args.network,
             settings_path=claude_settings_path,
             settings_fingerprint=claude_settings_fingerprint,
-            api_base=args.api_base,
-            api_key_env=args.api_key_env,
+            api_base=claude_api_base,
+            api_key_env=claude_api_key_env,
             pass_env=_deduplicate(
                 (*CLAUDE_CODE_COMMON_ENV_NAMES, *args.pass_env)
             ),
@@ -569,11 +600,11 @@ def _collect(args: argparse.Namespace) -> int:
             docker_binary=args.docker_binary,
         )
         for request in requests:
-            claude_effort(
-                resolve_thinking(
-                    request.task.thinking, claude_code_config.reasoning_effort
-                )
-            )
+            if (cli_harness or request.task.harness) == "claude-code":
+                claude_effort(resolve_thinking(request.task.thinking, claude_code_config.reasoning_effort))
+            spec = request.task.user_simulator
+            if spec is not None and spec.harness == "claude-code":
+                claude_effort(resolve_thinking(spec.thinking, claude_code_config.reasoning_effort))
 
     if args.dry_run:
         # Exercise all path, hash, collision and size checks without leaving a run directory.
@@ -582,9 +613,14 @@ def _collect(args: argparse.Namespace) -> int:
         print(json.dumps(_dry_run_payload(args, requests), ensure_ascii=False, indent=2))
         return 0
 
-    docker_image_digest = _docker_preflight(args.docker_binary, args.docker_image)
+    docker_image_digests = {
+        harness: _docker_preflight(args.docker_binary, image)
+        for harness, image in images.items()
+    }
+    docker_image_digest = docker_image_digests[args.harness]
+    run_label = next(iter(agent_harnesses)) if len(agent_harnesses) == 1 else "mixed"
     output_root = Path(args.output).expanduser().resolve()
-    run_dir = output_root / _run_name(args.harness, args.run_name)
+    run_dir = output_root / _run_name(run_label, args.run_name)
     existing_run = run_dir.exists() and any(run_dir.iterdir())
     if run_dir.exists() and not args.resume:
         raise FileExistsError(f"run directory already exists; use --resume or another --run-name: {run_dir}")
@@ -601,11 +637,10 @@ def _collect(args: argparse.Namespace) -> int:
             previous_info = {}
 
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    harness_configuration: dict[str, object]
-    if args.harness == "openclaw":
-        assert openclaw_config is not None
-        harness_configuration = {
-            "docker_image": args.docker_image,
+    harness_configurations: dict[str, dict[str, object]] = {}
+    if openclaw_config is not None:
+        harness_configurations["openclaw"] = {
+            "docker_image": images["openclaw"],
             "container_user": args.container_user,
             "model_config_path": (
                 str(model_config_path) if model_config_path else None
@@ -623,16 +658,15 @@ def _collect(args: argparse.Namespace) -> int:
             "pass_env_names": list(openclaw_config.pass_env),
             "collect_paths": args.collect_path,
         }
-    elif args.harness == "codex":
-        assert codex_config is not None
-        harness_configuration = {
-            "docker_image": args.docker_image,
+    if codex_config is not None:
+        harness_configurations["codex"] = {
+            "docker_image": images["codex"],
             "container_user": args.container_user,
             "config_path": str(codex_config_path) if codex_config_path else None,
             "config_sha256": codex_config_digest,
             "network": args.network,
-            "api_base": redact_api_base(args.api_base) if args.api_base else None,
-            "api_key_env": args.api_key_env,
+            "api_base": redact_api_base(codex_api_base) if codex_api_base else None,
+            "api_key_env": codex_api_key_env,
             "reasoning_effort": args.thinking,
             "reasoning_summary": args.reasoning_summary,
             "external_thinking": args.external_thinking,
@@ -642,10 +676,9 @@ def _collect(args: argparse.Namespace) -> int:
             "supports_websockets": args.codex_websockets,
             "pass_env_names": list(codex_config.pass_env),
         }
-    else:
-        assert claude_code_config is not None
-        harness_configuration = {
-            "docker_image": args.docker_image,
+    if claude_code_config is not None:
+        harness_configurations["claude-code"] = {
+            "docker_image": images["claude-code"],
             "container_user": args.container_user,
             "settings_path": (
                 str(claude_settings_path) if claude_settings_path else None
@@ -653,11 +686,11 @@ def _collect(args: argparse.Namespace) -> int:
             "settings_fingerprint": claude_settings_fingerprint,
             "network": args.network,
             "api_base": (
-                redact_anthropic_base_url(claude_code_config.api_base)
-                if claude_code_config.api_base
+                redact_anthropic_base_url(claude_api_base)
+                if claude_api_base
                 else None
             ),
-            "api_key_env": args.api_key_env,
+            "api_key_env": claude_api_key_env,
             "reasoning_effort": args.thinking,
             "max_thinking_tokens": args.claude_max_thinking_tokens,
             "max_turns": args.claude_max_turns,
@@ -677,7 +710,9 @@ def _collect(args: argparse.Namespace) -> int:
         "schema_version": "roller.run/v1",
         "roller_version": __version__,
         "configuration": {
-            "harness": args.harness,
+            "harness": run_label,
+            "agent_harnesses": sorted(agent_harnesses),
+            "simulator_harnesses": sorted(simulator_harnesses),
             "tasks": str(tasks_path),
             "models": args.model,
             "trajectory_count": len(requests),
@@ -694,14 +729,14 @@ def _collect(args: argparse.Namespace) -> int:
                     task.user_simulator is not None for task in tasks
                 ),
                 "simulator_gateway_slot_offset": (
-                    args.parallel if args.harness == "openclaw" else None
+                    args.parallel if "openclaw" in simulator_harnesses else None
                 ),
             },
             "bundle_policy": {
                 "max_input_file_bytes": args.max_input_file_bytes,
                 "max_task_input_bytes": args.max_task_input_bytes,
             },
-            args.harness: harness_configuration,
+            **harness_configurations,
         },
         "state": "initializing",
         "started_at": previous_info.get("started_at", now),
@@ -807,10 +842,19 @@ def _collect(args: argparse.Namespace) -> int:
                 requests,
                 roller_version=__version__,
                 execution={
-                    "harness": args.harness,
+                    "harness": run_label,
+                    "agent_harnesses": sorted(agent_harnesses),
+                    "simulator_harnesses": sorted(simulator_harnesses),
                     "task_schema": "roller.task/v1",
                     "output_collection": "all",
-                    args.harness: harness_execution,
+                    **{
+                        name: {
+                            **payload,
+                            "docker_image": images[name],
+                            "docker_image_digest": docker_image_digests[name],
+                        }
+                        for name, payload in harness_configurations.items()
+                    },
                 },
                 model_config=model_config if args.harness == "openclaw" else None,
             )
@@ -840,20 +884,30 @@ def _collect(args: argparse.Namespace) -> int:
             }
             atomic_write_json(run_dir / "info.json", run_info)
             keep_aux_traces = args.wire_trace == "full"
-            if args.harness == "openclaw":
-                assert openclaw_config is not None
-                harness_factory = lambda slot: ConversationManager(
-                    OpenClawHarness(openclaw_config, slot),
-                    OpenClawHarness(openclaw_config, slot + args.parallel),
-                    keep_aux_traces=keep_aux_traces,
-                )
-            elif args.harness == "codex":
-                assert codex_config is not None
-                harness_factory = lambda slot: CodexHarness(codex_config, slot)
-            else:
+
+            def make_harness(name: str, slot: int):
+                if name == "openclaw":
+                    assert openclaw_config is not None
+                    return OpenClawHarness(openclaw_config, slot)
+                if name == "codex":
+                    assert codex_config is not None
+                    return CodexHarness(codex_config, slot)
                 assert claude_code_config is not None
-                harness_factory = lambda slot: ClaudeCodeHarness(
-                    claude_code_config, slot
+                return ClaudeCodeHarness(claude_code_config, slot)
+
+            def harness_factory(slot: int, request):
+                agent = make_harness(cli_harness or request.task.harness, slot)
+                spec = request.task.user_simulator
+                if spec is None:
+                    return agent
+                simulator_slot = (
+                    slot + args.parallel if spec.harness == "openclaw" else slot
+                )
+                simulator = make_harness(spec.harness, simulator_slot)
+                return ConversationManager(
+                    agent,
+                    simulator,
+                    keep_aux_traces=keep_aux_traces,
                 )
             collector = Collector(
                 CollectionConfig(
@@ -863,7 +917,7 @@ def _collect(args: argparse.Namespace) -> int:
                     resume=lock_decision.reuse_existing_samples,
                     keep_aux_traces=keep_aux_traces,
                     capture_cache_trace=(
-                        args.cache_trace if args.harness == "openclaw" else False
+                        args.cache_trace if "openclaw" in selected_harnesses else False
                     ),
                     keep_thinking=args.keep_thinking,
                 ),

@@ -56,7 +56,7 @@
 | API 协议 | Responses / Chat Completions | Responses | Anthropic Messages |
 | 模型配置入口 | `--model-config` | `--api-base` + `--api-key-env` | `--api-base` + `--api-key-env` |
 | 单轮 / 预定义多轮 | 是 / 是 | 是 / 是 | 是 / 是 |
-| 动态 User Simulator | 是 | 否 | 否 |
+| 动态 User Simulator | 是 | 是 | 是 |
 | External thinking | 是 | 是 | 否 |
 | Signature recovery | 否 | 否 | 实验性 |
 | Wire request capture | 是 | 是 | 是 |

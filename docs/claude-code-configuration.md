@@ -18,6 +18,8 @@ Claude Code Harness 支持：
 - 明文 `thinking/reasoning/analysis`、文本、多个 `tool_use`、`tool_result` 和 usage 转换；
 - `ACTF_v1.0`、单条 SFT、run 级 `sft.jsonl` 和 Viewer；
 - `--wire-trace actf|full|off`；
+- 动态 User Simulator 和 Task Agent；两者可使用不同 model，Simulator 通过
+  `user_simulator.harness` 独立选择 Harness；
 - Claude Code `settings.json`、`--max-turns`、`MAX_THINKING_TOKENS` 和 permission mode；
 - 显式开启的 `thinking.signature` provider replay，把 best-effort 恢复文本投影到 ACTF/SFT。
 
@@ -25,8 +27,6 @@ Claude Code Harness 支持：
 
 - `external` / `external_always`；Claude Code 运行必须使用
   `--external-thinking off`，也是默认值；
-- 以 Claude Code 作为动态 User Simulator 或动态任务 Agent；包含 `user_simulator` 的 task
-  会在启动 Docker 前被拒绝；
 - 只有 OpenAI Chat Completions/Responses、没有 Anthropic `/v1/messages` 的 API；
 - 在本地解密 Anthropic `redacted_thinking`/`thinking.signature`。密文始终保留在 raw；可选
   recovery 是把 signature 发回 provider 请求其解封和转录，不是客户端密码学解密。

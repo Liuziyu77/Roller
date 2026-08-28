@@ -115,7 +115,19 @@ def build_run_lock(
                 "source_index": request.task.source_index,
                 "task_id": request.task.id,
                 "model": request.model,
+                "task_harness": getattr(request.task, "harness", "openclaw"),
                 "timeout_seconds": request.timeout_seconds,
+                "user_simulator": (
+                    {
+                        "harness": request.task.user_simulator.harness,
+                        "model": request.task.user_simulator.model,
+                        "instruction": request.task.user_simulator.instruction,
+                        "max_turns": request.task.user_simulator.max_turns,
+                        "thinking": request.task.user_simulator.thinking,
+                    }
+                    if request.task.user_simulator is not None
+                    else None
+                ),
                 "task_bundle": {
                     "manifest_digest": request.bundle.manifest_digest,
                     "input_tree_digest": request.bundle.input_tree_digest,

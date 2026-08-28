@@ -83,6 +83,9 @@ class Task:
     setup_commands: tuple[str, ...] = ()
     thinking: str | None = None
     user_simulator: UserSimulatorSpec | None = None
+    # Harness used by the task agent.  Kept at the end for positional
+    # constructor compatibility with earlier Roller releases.
+    harness: str = "openclaw"
 
     def __post_init__(self) -> None:
         object.__setattr__(

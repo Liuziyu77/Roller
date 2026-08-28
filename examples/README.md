@@ -206,7 +206,7 @@ roller collect \
   --run-name examples-user-simulator
 ```
 
-Task 已内置 `model: my-openai-proxy/my-model`。动态对话会额外生成 `conversation.json` 和 `user_simulator/` 轨迹；Codex 与 Claude Code 当前不支持此模式。详见 [User Simulator](../docs/user-simulator.md)。
+Task 已内置 `model: my-openai-proxy/my-model`。动态对话会额外生成 `conversation.json` 和 `user_simulator/` 轨迹；Task Agent 与 Simulator 可在各自字段中选择 OpenClaw、Codex 或 Claude Code。详见 [User Simulator](../docs/user-simulator.md)。
 
 ### 多模态输入
 
