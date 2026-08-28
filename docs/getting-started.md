@@ -26,7 +26,7 @@ docker version
 
 ## 2. 选择 Harness 与镜像
 
-OpenClaw 同时兼容 Responses 与 Chat Completions，也是当前唯一支持动态 User Simulator 的 Harness，适合作为首次环境验证。
+OpenClaw 同时兼容 Responses 与 Chat Completions，适合作为首次环境验证。动态 User Simulator 可与 OpenClaw、Codex 或 Claude Code 任意组合。
 
 | Harness | API 要求 | 默认镜像 | 准备方式 |
 | --- | --- | --- | --- |
@@ -299,7 +299,7 @@ roller collect \
   --run-name claude-code-quickstart
 ```
 
-不要把 OpenClaw 的 `--model-config` 传给这两个 Harness。Codex 与 Claude Code 当前只支持 `prompt` 和预定义 `messages`，遇到 `user_simulator` task 会在启动 Docker 前拒绝。
+不要把 OpenClaw 的 `--model-config` 传给不含 OpenClaw participant 的运行。Codex 与 Claude Code 同样支持 `prompt`、预定义 `messages` 以及动态 `user_simulator`；Simulator 的 Harness/model 可在 task 的 `user_simulator` 对象中独立指定。
 
 ## 10. 下一步
 

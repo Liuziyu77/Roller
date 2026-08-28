@@ -54,9 +54,9 @@ Codex 路径要求：
 - Codex 必须启用当前镜像提供的 programmatic `exec` custom tool。Roller 的默认命令已启用，
   无需用户另写 MCP 配置。
 
-`--external-thinking` 是一次 collect run 的全局设置。OpenClaw User Simulator rollout 中，
-task Agent 与 Simulator 都会继承该模式；如果双方选择了不同模型，则两个 provider 都必须
-满足上述 Responses 条件。Codex 当前不支持 User Simulator task。
+`--external-thinking` 是一次 collect run 的全局设置。动态 rollout 中，Task Agent 与
+Simulator 都会继承该模式；如果双方选择了不同模型，则相应 provider 都必须满足上述
+协议条件。Claude Code 仍必须使用 `--external-thinking off`。
 
 ## 3. 命令
 

@@ -255,6 +255,17 @@ class RollerRun:
             configuration = _mapping(self._run_info.get("configuration"))
             harness_name = _string(configuration.get("harness"))
             harness_configuration = _mapping(configuration.get(harness_name))
+            if harness_name == "mixed":
+                # Mixed task-agent runs retain one config block per Harness;
+                # use the first agent block for legacy scalar fields while
+                # exposing the complete participant list below.
+                agent_names = configuration.get("agent_harnesses")
+                if isinstance(agent_names, list):
+                    for name in agent_names:
+                        candidate = _mapping(configuration.get(name))
+                        if candidate:
+                            harness_configuration = candidate
+                            break
             progress = _mapping(self._run_info.get("summary"))
             return {
                 "schema_version": "roller.viewer.run/v1",
@@ -278,6 +289,8 @@ class RollerRun:
                 "usage": _mapping(_mapping(self._run_info.get("summary")).get("usage")),
                 "configuration": {
                     "harness": harness_name,
+                    "agent_harnesses": configuration.get("agent_harnesses", []),
+                    "simulator_harnesses": configuration.get("simulator_harnesses", []),
                     "trajectory_count": configuration.get("trajectory_count"),
                     "thinking": harness_configuration.get(
                         "thinking", harness_configuration.get("reasoning_effort")

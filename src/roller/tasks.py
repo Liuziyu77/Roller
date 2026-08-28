@@ -10,6 +10,7 @@ from roller.models import ContextFile, InputFile, RunRequest, Task, UserSimulato
 from roller.thinking import normalize_thinking
 
 TASK_SCHEMA_V1 = "roller.task/v1"
+HARNESS_NAMES = ("openclaw", "codex", "claude-code")
 CAPTURE_POLICIES = {"full", "hash", "none"}
 DEFAULT_CONTEXT_TARGETS = {
     "user": "USER.md",
@@ -24,6 +25,16 @@ GLOB_MARKERS = re.compile(r"[*?[]")
 
 class TaskFormatError(ValueError):
     pass
+
+
+def _parse_harness(value: Any, index: int, field_name: str) -> str:
+    if value is None:
+        return "openclaw"
+    if not isinstance(value, str) or value.strip() not in HARNESS_NAMES:
+        raise TaskFormatError(
+            f"task {index}: {field_name} must be one of {', '.join(HARNESS_NAMES)}"
+        )
+    return value.strip()
 
 
 def _string_list(value: Any, field_name: str, index: int) -> tuple[str, ...]:
@@ -68,11 +79,7 @@ def _parse_user_simulator(value: Any, index: int) -> UserSimulatorSpec | None:
         raise TaskFormatError(
             f"task {index}: user_simulator.instruction must be a non-empty string"
         )
-    harness = value.get("harness", "openclaw")
-    if harness != "openclaw":
-        raise TaskFormatError(
-            f"task {index}: unsupported user_simulator.harness {harness!r}"
-        )
+    harness = _parse_harness(value.get("harness"), index, "user_simulator.harness")
     model = value.get("model")
     if model is not None and (not isinstance(model, str) or not model.strip()):
         raise TaskFormatError(
@@ -454,7 +461,50 @@ def load_tasks(
         _validate_input_context_paths(inputs, context_files, index)
         _validate_output_context_paths(output_dir, context_files, index)
 
-        model = row.get("model")
+        task_agent_value = row.get("task_agent")
+        agent_alias_value = row.get("agent")
+        if task_agent_value is not None and agent_alias_value is not None:
+            if task_agent_value != agent_alias_value:
+                raise TaskFormatError(
+                    f"task {index}: 'task_agent' and 'agent' declarations must match"
+                )
+        agent_object = (
+            task_agent_value if task_agent_value is not None else agent_alias_value
+        )
+        if agent_object is not None and not isinstance(agent_object, dict):
+            raise TaskFormatError(f"task {index}: task_agent must be an object")
+        task_harness_value = row.get("harness")
+        agent_harness_value = row.get("agent_harness")
+        if isinstance(agent_object, dict):
+            object_harness = agent_object.get("harness")
+            if object_harness is not None:
+                for existing in (task_harness_value, agent_harness_value):
+                    if existing is not None and existing != object_harness:
+                        raise TaskFormatError(
+                            f"task {index}: task-agent harness declarations must match"
+                        )
+                task_harness_value = object_harness
+            object_model = agent_object.get("model")
+        else:
+            object_model = None
+        if task_harness_value is not None and agent_harness_value is not None:
+            if task_harness_value != agent_harness_value:
+                raise TaskFormatError(
+                    f"task {index}: 'harness' and 'agent_harness' must match when both are set"
+                )
+        task_harness = _parse_harness(
+            task_harness_value if task_harness_value is not None else agent_harness_value,
+            index,
+            "harness",
+        )
+
+        model = row.get("model", object_model)
+        if model is None:
+            model = object_model
+        elif object_model is not None and model != object_model:
+            raise TaskFormatError(
+                f"task {index}: task-agent model declarations must match"
+            )
         if model is not None and (not isinstance(model, str) or not model.strip()):
             raise TaskFormatError(f"task {index}: model must be a non-empty string")
         runtime = row.get("runtime", {})
@@ -480,6 +530,7 @@ def load_tasks(
                 output_dir=output_dir,
                 legacy_workspace=legacy_workspace,
                 workspace=workspace,
+                harness=task_harness,
                 model=model.strip() if isinstance(model, str) else None,
                 env_names=_string_list(runtime.get("env", row.get("env")), "runtime.env", index),
                 setup_commands=_string_list(
