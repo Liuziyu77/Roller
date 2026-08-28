@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import inspect
 import logging
 import queue
 import shutil
@@ -19,7 +20,9 @@ from roller.sft import write_sft
 from roller.storage import atomic_write_json, safe_component, write_jsonl
 
 logger = logging.getLogger(__name__)
-HarnessFactory = Callable[[int], Harness]
+# New factories may inspect the request to select a task-level harness.  The
+# one-argument form remains supported for downstream callers and older tests.
+HarnessFactory = Callable[..., Harness]
 RUN_CHECKPOINT_RESULT_INTERVAL = 25
 RUN_CHECKPOINT_TIME_INTERVAL_SECONDS = 30.0
 
@@ -50,6 +53,32 @@ class Collector:
         self.config = config
         self.harness_factory = harness_factory
         self.run_dir = config.run_dir.expanduser().resolve()
+        try:
+            parameters = list(inspect.signature(harness_factory).parameters.values())
+            positional = [
+                parameter
+                for parameter in parameters
+                if parameter.kind
+                in {inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD}
+            ]
+            self._factory_accepts_request = any(
+                parameter.kind == inspect.Parameter.VAR_POSITIONAL
+                for parameter in parameters
+            ) or len(positional) >= 2
+            self._factory_request_keyword = (
+                not self._factory_accepts_request
+                and any(parameter.kind == inspect.Parameter.VAR_KEYWORD for parameter in parameters)
+            )
+        except (TypeError, ValueError):
+            self._factory_accepts_request = True
+            self._factory_request_keyword = False
+
+    def _make_harness(self, worker_slot: int, request: RunRequest) -> Harness:
+        if self._factory_accepts_request:
+            return self.harness_factory(worker_slot, request)
+        if self._factory_request_keyword:
+            return self.harness_factory(worker_slot, request=request)
+        return self.harness_factory(worker_slot)
 
     def _sample_dir(self, request: RunRequest) -> Path:
         model_dir = safe_component(request.model)
@@ -261,7 +290,7 @@ class Collector:
         final = HarnessResult.error_result("harness did not run")
         harness_name = "unknown"
         for attempt in range(1, self.config.retries + 2):
-            harness = self.harness_factory(worker_slot)
+            harness = self._make_harness(worker_slot, request)
             harness_name = getattr(harness, "name", "unknown")
             attempt_start = time.perf_counter()
             try:

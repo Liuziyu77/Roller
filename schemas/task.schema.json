@@ -12,6 +12,33 @@
       "minLength": 1,
       "description": "Task workspace root for relative input/context sources and output_dir; itself relative to the task-list directory"
     },
+    "harness": {
+      "enum": ["openclaw", "codex", "claude-code"],
+      "default": "openclaw",
+      "description": "Harness used by the Task Agent; --harness can override it for a collection run"
+    },
+    "agent_harness": {
+      "enum": ["openclaw", "codex", "claude-code"],
+      "description": "Explicit alias for the Task Agent harness"
+    },
+    "task_agent": {
+      "type": "object",
+      "properties": {
+        "harness": {"enum": ["openclaw", "codex", "claude-code"]},
+        "model": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": true,
+      "description": "Optional explicit Task Agent harness/model declaration"
+    },
+    "agent": {
+      "type": "object",
+      "properties": {
+        "harness": {"enum": ["openclaw", "codex", "claude-code"]},
+        "model": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": true,
+      "description": "Compatibility alias for task_agent"
+    },
     "prompt": {"type": "string", "minLength": 1},
     "question": {"type": "string", "minLength": 1},
     "messages": {
@@ -41,7 +68,7 @@
           "minLength": 1,
           "description": "Fixed persona and goal prompt given to the User Simulator on every turn"
         },
-        "harness": {"const": "openclaw", "default": "openclaw"},
+        "harness": {"enum": ["openclaw", "codex", "claude-code"], "default": "openclaw"},
         "model": {
           "type": "string",
           "minLength": 1,

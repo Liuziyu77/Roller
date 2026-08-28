@@ -16,12 +16,12 @@ Codex Harness 支持：
 - 并行、retry、run lock、Resume 完整性检查；
 - Codex native session JSONL、`ACTF_v1.0`、单条 SFT 和 run 级 `sft.jsonl`；
 - `external` / `external_always` 显式 CoT，以及 request-side `--wire-trace full`；
+- 动态 User Simulator 和 Task Agent；Simulator 可通过 `user_simulator.harness`
+  独立选择并使用不同 model；
 - Viewer 展示可见 reasoning、工具调用、工具结果和最终回复。
 
 当前不支持：
 
-- 以 Codex 作为动态 User Simulator 或动态任务 Agent；包含 `user_simulator` 的 task 会在
-  启动 Docker 前被拒绝；
 - OpenClaw 专属的 cache trace；
 - 从 native session 恢复未公开或加密的完整内部 reasoning；
 - 仅提供 Chat Completions、没有 Codex 所需 Responses 接口的模型服务。
@@ -325,9 +325,11 @@ CLI 在产生有效模型事件前退出，或所用 Codex 版本的 native even
 sample 保留的错误和 `--keep-container-on-error` 容器，再核对 `codex_version`；升级 CLI 时要
 同步更新转换器测试。
 
-### User Simulator 被拒绝
+### User Simulator
 
-这是当前显式限制。先用 `prompt`/`messages` 采集 Codex；动态双方对话继续使用 OpenClaw。
+Codex 可作为 Task Agent 或 User Simulator。Task Agent 在 task 顶层设置
+`"harness": "codex"`，Simulator 则在 `user_simulator.harness` 设置；两者的
+`model` 也可以分别指定。动态 session 使用 Codex 的 `resume --last` 保持上下文。
 
 ### external thinking 报 programmatic custom exec 缺失
 

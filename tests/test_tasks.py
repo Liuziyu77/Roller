@@ -74,6 +74,48 @@ class TaskLoadingTests(unittest.TestCase):
             with self.assertRaisesRegex(TaskFormatError, "cannot be combined"):
                 load_tasks(task_file)
 
+    def test_task_agent_and_simulator_harnesses_are_independent(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            task_file = Path(temporary) / "tasks.jsonl"
+            task_file.write_text(
+                json.dumps(
+                    {
+                        "id": "mixed-harness",
+                        "model": "provider/agent",
+                        "harness": "codex",
+                        "user_simulator": {
+                            "instruction": "continue",
+                            "harness": "claude-code",
+                            "model": "provider/simulator",
+                        },
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            task = load_tasks(task_file)[0]
+            assert task.user_simulator is not None
+            self.assertEqual(task.harness, "codex")
+            self.assertEqual(task.user_simulator.harness, "claude-code")
+
+    def test_agent_harness_alias_must_not_conflict(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            task_file = Path(temporary) / "tasks.jsonl"
+            task_file.write_text(
+                json.dumps(
+                    {
+                        "id": "conflict",
+                        "prompt": "hello",
+                        "harness": "codex",
+                        "agent_harness": "openclaw",
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(TaskFormatError, "must match"):
+                load_tasks(task_file)
+
     def test_loads_interns_question_and_multi_turn_messages(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

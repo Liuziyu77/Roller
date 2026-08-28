@@ -150,6 +150,32 @@ class CliTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "not implemented"):
                 _collect(args)
 
+    def test_task_harness_is_used_when_cli_harness_is_omitted(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            tasks = Path(temporary) / "tasks.jsonl"
+            tasks.write_text(
+                json.dumps(
+                    {
+                        "id": "hello",
+                        "harness": "codex",
+                        "model": "gpt-model",
+                        "prompt": "say hello",
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            args = _build_parser().parse_args(
+                ["collect", "--tasks", str(tasks), "--dry-run"]
+            )
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                result = _collect(args)
+        payload = json.loads(output.getvalue())
+        self.assertEqual(result, 0)
+        self.assertEqual(payload["harness"], "codex")
+        self.assertEqual(payload["plan"][0]["harness"], "codex")
+
     @patch("roller.cli.subprocess.run")
     @patch("roller.cli.shutil.which", return_value="/usr/bin/docker")
     def test_docker_preflight_returns_resolved_image_id(self, _which, run) -> None:

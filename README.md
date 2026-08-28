@@ -39,8 +39,8 @@ Docker 中的 Agent Harness
 | Harness | 模型服务协议 | 适合场景 | 关键能力与限制 |
 | --- | --- | --- | --- |
 | OpenClaw（默认） | OpenAI Responses 或 Chat Completions | 自定义/开源模型、动态 User Simulator、多模态输入 | 支持 `external` / `external_always`；模型通过 JSON 配置 |
-| Codex | Responses | Codex CLI 工具轨迹、GPT 与兼容 Responses 服务 | 支持 external thinking；暂不支持 User Simulator |
-| Claude Code | Anthropic `/v1/messages` | Claude Code 工具轨迹与 native thinking | 支持实验性 signature recovery；暂不支持 external thinking 和 User Simulator |
+| Codex | Responses | Codex CLI 工具轨迹、GPT 与兼容 Responses 服务 | 支持 external thinking；可作为 Task Agent 或 User Simulator |
+| Claude Code | Anthropic `/v1/messages` | Claude Code 工具轨迹与 native thinking | 支持实验性 signature recovery；可作为 Task Agent 或 User Simulator |
 
 三者共享相同的 Task、Sample、ACTF、SFT、Viewer、重试和 Resume 边界。镜像、API 和 reasoning 参数不同，详见对应的 [Harness 指南](docs/README.md#按-harness-选择)。
 
@@ -145,7 +145,8 @@ Task 清单支持 `.jsonl`、JSON 数组或 `{"tasks": [...]}`。一条 task 可
 - `files.context`：`AGENTS.md`、`USER.md`、`MEMORY.md`、skills 等 Context；
 - `files.output_dir`：Agent 可写且会被完整回收的目录；
 - `runtime`：环境变量、setup 命令和 task 级 thinking；
-- `user_simulator`：由另一个 OpenClaw Harness 动态生成后续 user message。
+- `harness`（或 `agent_harness` / `task_agent.harness`）：Task Agent 使用的 Harness；也可由 `--harness` 统一覆盖；
+- `user_simulator`：由独立 Harness 动态生成后续 user message，可单独设置 `harness` 和 `model`。
 
 完整字段见 [Task 格式参考](docs/task-format.md)。
 
