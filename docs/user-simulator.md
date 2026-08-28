@@ -23,6 +23,7 @@ User Simulator 是一个独立运行的 Harness，用模型扮演用户。它不
 {
   "schema_version": "roller.task/v1",
   "id": "hr_recruitment_ad",
+  "harness": "codex",
   "model": "my-openai-proxy/task-agent-model",
   "user_simulator": {
     "harness": "openclaw",
@@ -40,7 +41,7 @@ User Simulator 是一个独立运行的 Harness，用模型扮演用户。它不
 | 字段 | 必需 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `instruction` | 是 | 无 | 固定身份、目标、交互策略和完成标准 |
-| `harness` | 否 | `openclaw` | Simulator 使用的 Harness；目前只支持 OpenClaw |
+| `harness` | 否 | `openclaw` | Simulator 使用的 Harness：`openclaw`、`codex` 或 `claude-code` |
 | `model` | 否 | 任务 Agent 模型 | Simulator 使用的 model ref |
 | `max_turns` | 否 | `6` | 最多发送给任务 Agent 的指令数，范围 `1–100` |
 | `thinking` | 否 | CLI 默认值 | 只覆盖 Simulator；使用与 [`--thinking`](openclaw-configuration.md#5-thinkingsystem-prompt-与-wire-trace) 相同的逻辑档位和校验 |
@@ -66,7 +67,7 @@ User Simulator 是一个独立运行的 Harness，用模型扮演用户。它不
 5. Manager 把固定 instruction 与更新后的完整 transcript 再次交给 Simulator。
 6. 重复交替过程，直到 Simulator 结束、达到轮次上限、发生错误或整体超时。
 
-两个 OpenClaw session 在整个 rollout 中持续存在，不会每轮重启。Task Agent 拥有 task 的输入、Context 和 `output_dir`；Simulator 使用独立工作区，只能通过 Manager 提供的对话了解任务进展。
+两个 session 在整个 rollout 中持续存在，不会每轮重启。Task Agent 拥有 task 的输入、Context 和 `output_dir`；Simulator 使用独立工作区，只能通过 Manager 提供的对话了解任务进展。Codex 和 Claude Code 也支持该交互接口，并分别使用各自的 native resume/continue session。
 
 ## 4. Simulator 决策协议
 
@@ -138,7 +139,7 @@ Instruction 不是第一轮 user message，而是 Simulator 每一轮都要遵�
 
 ## 7. 模型、并行与成本
 
-Task Agent 与 Simulator 共用 `--model-config` 中的 provider 列表，但可以使用不同模型。例如用能力较强的模型执行任务，用成本更低的模型扮演用户。
+Task Agent 与 Simulator 可以分别设定 Harness 和 model。例如用 Codex 执行任务、用 OpenClaw 或 Claude Code 扮演用户；同一 Harness 下也可以设置不同 model。OpenClaw 的 model ref 仍来自 `--model-config`，Codex/Claude Code 使用各自 API 参数。
 
 ```bash
 roller collect \
@@ -200,7 +201,7 @@ Task Bundle digest 会变化，run lock 检查会拒绝把新配置混入旧 run
 
 ## 10. 当前边界
 
-- 任务 Agent 与 User Simulator 目前都使用 OpenClaw；
+- Task Agent harness 可按 task 设置；显式 `--harness` 会统一覆盖所有 Task Agent。Simulator harness 可按 task 独立设置；
 - Simulator 只通过 transcript 获取对话信息，不共享 Task Agent 的文件系统与工具状态；
 - 当前协议是一次决策对应一条 user message，不支持多个模拟用户同时参与；
 - `max_turns` 是交给 Task Agent 的指令数，不包含最终的 `finish` 检查。

@@ -12,7 +12,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 from urllib.parse import urlsplit, urlunsplit
 
 from roller.artifacts import ArtifactCollectionResult, collect_output_directory
@@ -22,7 +22,7 @@ from roller.claude_signature_recovery import (
     SignatureRecoverySummary,
     recover_claude_signatures,
 )
-from roller.harnesses.base import Harness
+from roller.harnesses.base import Harness, InteractiveHarness, InteractiveSession, TurnResult
 from roller.harnesses.docker import DockerRuntime
 from roller.models import HarnessResult, RunRequest
 from roller.storage import safe_component
@@ -200,7 +200,7 @@ class ClaudeCodeConfig:
             )
 
 
-class ClaudeCodeHarness(Harness):
+class ClaudeCodeHarness(InteractiveHarness):
     """Run Claude Code in an isolated container and retain native session JSONL."""
 
     name = "claude-code"
@@ -215,6 +215,16 @@ class ClaudeCodeHarness(Harness):
         self.worker_slot = worker_slot
         self.runtime = runtime or DockerRuntime(config.docker_binary)
         self._wire_proxy: WireTraceProxy | None = None
+
+    def create_session(
+        self,
+        request: RunRequest,
+        output_dir: Path,
+        attempt: int,
+        *,
+        collect_outputs: bool = True,
+    ) -> InteractiveSession:
+        return ClaudeCodeSession(self, request, output_dir, attempt, collect_outputs=collect_outputs)
 
     @staticmethod
     def _error_text(result: subprocess.CompletedProcess[str]) -> str:
@@ -927,3 +937,298 @@ class ClaudeCodeHarness(Harness):
                 "provenance": provenance,
             },
         )
+
+
+class ClaudeCodeSession(InteractiveSession):
+    """Persistent Claude Code session for model-driven conversations."""
+
+    def __init__(
+        self,
+        harness: ClaudeCodeHarness,
+        request: RunRequest,
+        output_dir: Path,
+        attempt: int,
+        *,
+        collect_outputs: bool = True,
+    ) -> None:
+        self.harness = harness
+        self.request = request
+        self.output_dir = output_dir
+        self.attempt = attempt
+        self.collect_outputs = collect_outputs
+        self.started = False
+        self.container_started = False
+        self.container = (
+            f"roller-claude-{request.index}-{safe_component(request.model, 20)}-"
+            f"{uuid.uuid4().hex[:8]}"
+        ).lower()
+        self.messages: list[str] = []
+        self.return_codes: list[int] = []
+        self._pending_message = ""
+        self.environment: dict[str, str] = {}
+        self.claude_version = ""
+        self.image_digest = harness._image_digest()
+        self.started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        self.started_monotonic = time.monotonic()
+        self.stream_path = output_dir / "rollout" / f"claude-code.attempt-{attempt}.jsonl"
+        self.recovery_path = output_dir / "signature_recovery.jsonl"
+        self.recovery_summary: SignatureRecoverySummary | None = None
+        self.recovery_error: str | None = None
+        self._finished: HarnessResult | None = None
+
+    def start(self) -> None:
+        if self.started:
+            raise RuntimeError("Claude Code session has already started")
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.stream_path.parent.mkdir(parents=True, exist_ok=True)
+        self.recovery_path.unlink(missing_ok=True)
+        for relative in (
+            "rollout/trace.jsonl",
+            f"rollout/trace.attempt-{self.attempt}.jsonl",
+            "wire_trace.jsonl",
+        ):
+            (self.output_dir / relative).unlink(missing_ok=True)
+        self.harness._start_wire_proxy(self.output_dir)
+        self.environment = self.harness._start_container(self.container, self.request)
+        self.container_started = True
+        self.harness._prepare_workspace(self.container, self.request)
+        self.harness._prepare_context_and_setup(self.container, self.request)
+        self.harness._prepare_settings(self.container)
+        self.claude_version = self.harness._checked(
+            ["exec", self.container, "claude", "--version"],
+            "Claude Code version check",
+        ).stdout.strip()
+        self.started = True
+
+    def _latest_reply(self) -> str:
+        trace = self.harness._collect_trace(self.container, self.output_dir, self.attempt)
+        if trace is None:
+            raise RuntimeError("Claude Code turn produced no native session trace")
+        destination = self.output_dir / "rollout" / f".turn-{len(self.messages) + 1}.ACTF.json"
+        trajectory = convert_claude_code_trace(
+            trace,
+            destination,
+            user_messages=[*self.messages, self._pending_message],
+            wire_trace=self.output_dir / "wire_trace.jsonl",
+            keep_thinking=self.harness.config.keep_thinking,
+            signature_recovery_mode="off",
+        )
+        steps = trajectory.get("steps")
+        if not isinstance(steps, list):
+            raise RuntimeError("Claude Code turn produced an invalid ACTF trajectory")
+        for step in reversed(steps):
+            if not isinstance(step, Mapping):
+                continue
+            assistant = step.get("assistant_content")
+            if not isinstance(assistant, Mapping):
+                continue
+            content = assistant.get("content")
+            if isinstance(content, str) and content.strip():
+                return content.strip()
+        raise RuntimeError("Claude Code turn produced no visible assistant reply")
+
+    def send(self, message: str, timeout_seconds: float) -> TurnResult:
+        if not self.started or not self.container_started:
+            raise RuntimeError("Claude Code session has not started")
+        if not isinstance(message, str) or not message.strip():
+            raise ValueError("Claude Code session messages must be non-empty strings")
+        prompt = message.strip()
+        turn_started = time.monotonic()
+        self._pending_message = prompt
+        self.return_codes.append(
+            self.harness._run_turn(
+                self.container,
+                self.request,
+                prompt,
+                resume=bool(self.messages),
+                timeout_seconds=timeout_seconds,
+                log_path=self.stream_path,
+            )
+        )
+        reply = self._latest_reply()
+        self.messages.append(prompt)
+        return TurnResult(reply, time.monotonic() - turn_started, self.return_codes[-1])
+
+    def finish(self, status: str, error: str | None = None) -> HarnessResult:
+        if self._finished is not None:
+            return self._finished
+        config = self.harness.config
+        trace_path: Path | None = None
+        trajectory_path: Path | None = None
+        artifact_result: ArtifactCollectionResult | None = None
+        output_copy_error: str | None = None
+        final_status = status
+        final_error = error
+        try:
+            self.harness._stop_wire_proxy()
+        except Exception as exc:
+            logger.warning("[%s] Claude Code wire proxy shutdown failed: %s", self.request.task.id, exc)
+        if self.container_started:
+            try:
+                trace_path = self.harness._collect_trace(self.container, self.output_dir, self.attempt)
+            except Exception as exc:
+                logger.warning("[%s] Claude Code trace collection failed: %s", self.request.task.id, exc)
+            if self.collect_outputs:
+                try:
+                    artifact_result, output_copy_error = self.harness._collect_outputs(
+                        self.container, self.request, self.output_dir
+                    )
+                except Exception as exc:
+                    output_copy_error = str(exc)
+                    logger.warning("[%s] Claude Code output collection failed: %s", self.request.task.id, exc)
+        if trace_path is not None:
+            if config.signature_recovery != "off":
+                remaining = self.request.timeout_seconds - (time.monotonic() - self.started_monotonic)
+                if remaining <= 0:
+                    self.recovery_error = "task timeout budget exhausted before signature recovery"
+                else:
+                    try:
+                        self.recovery_summary = recover_claude_signatures(
+                            trace_path,
+                            self.recovery_path,
+                            api_base=config.api_base,
+                            api_key=os.environ[config.api_key_env],
+                            default_model=self.harness._model_name(self.request),
+                            attempts=config.signature_recovery_attempts,
+                            max_tokens=config.signature_recovery_max_tokens,
+                            timeout_seconds=remaining,
+                            only_missing=config.signature_recovery == "fill",
+                        )
+                    except Exception as exc:
+                        self.recovery_error = str(exc)[:1000]
+            try:
+                trajectory_path = self.output_dir / "rollout" / "trace_ACTF.json"
+                trajectory = convert_claude_code_trace(
+                    trace_path,
+                    trajectory_path,
+                    user_messages=self.messages,
+                    wire_trace=self.output_dir / "wire_trace.jsonl",
+                    keep_thinking=config.keep_thinking,
+                    recovered_reasoning=(
+                        self.recovery_summary.recovered_by_message
+                        if self.recovery_summary is not None else None
+                    ),
+                    signature_recovery_mode=config.signature_recovery,
+                )
+                if not trajectory.get("steps"):
+                    raise ValueError("Claude Code native trace produced no assistant steps")
+            except Exception as exc:
+                trajectory_path = None
+                if final_status == "ok":
+                    final_status, final_error = "error", f"Claude Code trajectory conversion failed: {exc}"
+        if final_status == "ok" and trace_path is None:
+            final_status, final_error = "error", "Claude Code finished but no native session trace was found"
+        if final_status == "ok" and output_copy_error is not None:
+            final_status, final_error = "error", f"output collection failed: {output_copy_error}"
+        if final_status == "ok" and artifact_result is not None and not artifact_result.passed:
+            final_status, final_error = "error", "unsafe output files were rejected"
+        retained_container: str | None = None
+        if self.container_started:
+            if config.keep_container_on_error and final_status != "ok":
+                retained_container = self.container
+            else:
+                removed = self.harness.runtime.run(["rm", "-f", self.container], timeout=30)
+                if removed.returncode != 0:
+                    logger.warning("[%s] failed to remove container %s", self.request.task.id, self.container)
+        elapsed = time.monotonic() - self.started_monotonic
+        usage = (
+            extract_claude_code_usage(trace_path, self.stream_path)
+            if trace_path is not None else dict(ZERO_USAGE)
+        )
+        if self.recovery_summary is not None:
+            for name in (
+                "input_tokens", "output_tokens", "cache_read_tokens",
+                "cache_write_tokens", "total_tokens", "request_count",
+            ):
+                usage[name] += self.recovery_summary.usage[name]
+                usage[f"signature_recovery_{name}"] = self.recovery_summary.usage[name]
+        usage["elapsed_seconds"] = round(elapsed, 3)
+        output_metadata = None
+        if artifact_result is not None:
+            output_metadata = {
+                "mode": "all",
+                "agent_output_dir": self.request.task.output_dir,
+                "passed": artifact_result.passed,
+                "path": (
+                    artifact_result.results_path.relative_to(self.output_dir).as_posix()
+                    if artifact_result.results_path is not None else None
+                ),
+                "file_count": artifact_result.file_count,
+                "directory_count": artifact_result.directory_count,
+                "files": list(artifact_result.files),
+                "errors": list(artifact_result.errors),
+            }
+        recovered_count = self.recovery_summary.recovered_count if self.recovery_summary else 0
+        applied_count = 0
+        if self.recovery_summary is not None:
+            applied_count = sum(
+                record.get("status") == "ok"
+                and (config.signature_recovery == "prefer" or record.get("native_reasoning_chars") == 0)
+                for record in self.recovery_summary.records
+            )
+        recovery_metadata = {
+            "mode": config.signature_recovery,
+            "attempts": config.signature_recovery_attempts,
+            "max_tokens": config.signature_recovery_max_tokens,
+            "candidate_count": self.recovery_summary.candidate_count if self.recovery_summary else 0,
+            "recovered_count": recovered_count,
+            "applied_count": applied_count,
+            "artifact": "signature_recovery.jsonl" if self.recovery_path.is_file() else None,
+            "error": self.recovery_error,
+            "exactness": "best_effort",
+            "cost_usd_included": False,
+        }
+        provenance = {
+            "schema_version": "roller.provenance/v1",
+            "roller_version": __version__,
+            "task_id": self.request.task.id,
+            "task_bundle_digest": self.request.bundle.manifest_digest if self.request.bundle else None,
+            "input_tree_digest": self.request.bundle.input_tree_digest if self.request.bundle else None,
+            "input_manifest_digest": self.request.bundle.input_manifest_digest if self.request.bundle else None,
+            "context_manifest_digest": self.request.bundle.context_manifest_digest if self.request.bundle else None,
+            "resume_safe": self.request.bundle.resume_safe if self.request.bundle else None,
+            "harness": self.harness.name,
+            "claude_code_version": self.claude_version,
+            "docker_image": config.docker_image,
+            "docker_image_digest": self.image_digest,
+            "model": self.request.model,
+            "api_base_urls": [redact_anthropic_base_url(config.api_base)] if config.api_base else [],
+            "environment_names": sorted(self.environment),
+            "attempt": self.attempt,
+            "signature_recovery_mode": config.signature_recovery,
+            "started_at": self.started_at,
+            "finished_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        }
+        try:
+            reasoning_effort = self.harness._effective_effort(self.request)
+        except Exception:
+            reasoning_effort = None
+        result = HarnessResult(
+            status=final_status,
+            elapsed_seconds=elapsed,
+            error=final_error,
+            usage=usage,
+            trace_path=trace_path.relative_to(self.output_dir).as_posix() if trace_path else None,
+            trajectory_path=trajectory_path.relative_to(self.output_dir).as_posix() if trajectory_path else None,
+            metadata={
+                "raw_trace_schema": "claude-code-session-jsonl",
+                "claude_code_version": self.claude_version,
+                "container": retained_container,
+                "agent_return_codes": self.return_codes,
+                "turns": len(self.messages),
+                "reasoning_effort": reasoning_effort,
+                "max_thinking_tokens": config.max_thinking_tokens,
+                "max_turns": config.max_turns,
+                "permission_mode": config.permission_mode,
+                "wire_trace": config.wire_trace_mode,
+                "keep_thinking": config.keep_thinking,
+                "signature_recovery": recovery_metadata,
+                "settings_fingerprint": config.settings_fingerprint,
+                "output_collection": output_metadata,
+                "output_copy_error": output_copy_error,
+                "attempt": self.attempt,
+                "provenance": provenance,
+            },
+        )
+        self._finished = result
+        return result

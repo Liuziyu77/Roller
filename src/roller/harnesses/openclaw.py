@@ -952,6 +952,7 @@ exec node --input-type=module -e "$1"
         script: str,
         *,
         output_path: str | None = None,
+        state_dir: str | None = None,
     ) -> subprocess.CompletedProcess[str]:
         args = [
             "exec",
@@ -960,6 +961,11 @@ exec node --input-type=module -e "$1"
         ]
         if output_path is not None:
             args.extend(["-e", f"ROLLER_TRACE_OUTPUT={output_path}"])
+        if state_dir is not None:
+            # OpenClaw 2026.3.11 ignores OPENCLAW_STATE_DIR for gateway
+            # commands but the transcript SDK follows it. Keep both sides on
+            # the same state directory when using the legacy image.
+            args.extend(["-e", f"OPENCLAW_STATE_DIR={state_dir}"])
         args.extend(
             [
                 container,
@@ -972,8 +978,12 @@ exec node --input-type=module -e "$1"
         )
         return self.runtime.run(args)
 
-    def _latest_assistant_content(self, container: str) -> tuple[str, int]:
-        result = self._run_transcript_sdk(container, self._SDK_LAST_ASSISTANT_SCRIPT)
+    def _latest_assistant_content(
+        self, container: str, *, state_dir: str | None = None
+    ) -> tuple[str, int]:
+        result = self._run_transcript_sdk(
+            container, self._SDK_LAST_ASSISTANT_SCRIPT, state_dir=state_dir
+        )
         if result.returncode != 0:
             logger.debug(
                 "OpenClaw transcript SDK unavailable; using legacy JSONL response reader: %s",
@@ -1000,7 +1010,14 @@ exec node --input-type=module -e "$1"
             raise RuntimeError("assistant response extraction returned invalid count")
         return content.strip(), assistant_count
 
-    def _collect_trace(self, container: str, output_dir: Path, attempt: int) -> Path | None:
+    def _collect_trace(
+        self,
+        container: str,
+        output_dir: Path,
+        attempt: int,
+        *,
+        state_dir: str | None = None,
+    ) -> Path | None:
         rollout_dir = output_dir / "rollout"
         rollout_dir.mkdir(parents=True, exist_ok=True)
         attempt_trace_path = rollout_dir / f"trace.attempt-{attempt}.jsonl"
@@ -1011,6 +1028,7 @@ exec node --input-type=module -e "$1"
             container,
             self._SDK_EXPORT_TRANSCRIPT_SCRIPT,
             output_path=TRANSCRIPT_EXPORT_CONTAINER_PATH,
+            state_dir=state_dir,
         )
         if sdk_result.returncode == 0:
             result = self.runtime.run(
@@ -1192,6 +1210,7 @@ class OpenClawSession(InteractiveSession):
         self.gateway_process: subprocess.Popen[str] | None = None
         self.container_started = False
         self.version = ""
+        self.state_dir = OPENCLAW_STATE_CONTAINER_PATH
         self.return_codes: list[int] = []
         self.messages: list[str] = []
         self.environment: dict[str, str] = {}
@@ -1219,11 +1238,31 @@ class OpenClawSession(InteractiveSession):
         self.version = self.harness._configure(
             self.container, self.request, self.environment
         )
+        self.state_dir = self.harness._state_dir_for_version(self.version)
+        # The legacy 2026.3.11 image keeps its gateway config under
+        # /root/.openclaw while the temporary OPENCLAW_STATE_DIR is used by
+        # the CLI. Set both token locations explicitly so gateway and agent
+        # clients authenticate with the same per-rollout token.
+        for setting in ("gateway.auth.token", "gateway.remote.token"):
+            self.harness._checked(
+                [
+                    "exec",
+                    self.container,
+                    "openclaw",
+                    "config",
+                    "set",
+                    setting,
+                    self.gateway_token,
+                ],
+                f"gateway token setup ({setting})",
+            )
         self.gateway_process = self.harness.runtime.popen(
             [
                 "exec",
                 "-e",
                 f"OPENCLAW_GATEWAY_TOKEN={self.gateway_token}",
+                "-e",
+                f"OPENCLAW_STATE_DIR={self.state_dir}",
                 "-w",
                 self.harness.config.workspace_container_path,
                 self.container,
@@ -1248,6 +1287,8 @@ class OpenClawSession(InteractiveSession):
             "exec",
             "-e",
             f"OPENCLAW_GATEWAY_TOKEN={self.gateway_token}",
+            "-e",
+            f"OPENCLAW_STATE_DIR={self.state_dir}",
             "-w",
             self.harness.config.workspace_container_path,
             self.container,
@@ -1296,7 +1337,9 @@ class OpenClawSession(InteractiveSession):
             raise RuntimeError(
                 f"OpenClaw agent turn exited with code {return_code}{suffix}"
             )
-        content, assistant_count = self.harness._latest_assistant_content(self.container)
+        content, assistant_count = self.harness._latest_assistant_content(
+            self.container, state_dir=self.state_dir
+        )
         if assistant_count <= self._assistant_count:
             raise RuntimeError("OpenClaw turn produced no new assistant response")
         self._assistant_count = assistant_count
@@ -1324,7 +1367,10 @@ class OpenClawSession(InteractiveSession):
         if self.container_started:
             try:
                 trace_path = self.harness._collect_trace(
-                    self.container, self.output_dir, self.attempt
+                    self.container,
+                    self.output_dir,
+                    self.attempt,
+                    state_dir=self.state_dir,
                 )
             except Exception as exc:
                 logger.warning("[%s] trace collection failed: %s", self.request.task.id, exc)

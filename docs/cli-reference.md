@@ -45,7 +45,9 @@ roller collect --tasks tasks.jsonl --model provider/model ...
 | --- | --- | --- |
 | `--tasks PATH` | 必填 | JSON 或 JSONL task 清单 |
 | `--model MODEL` | task `model` | 可重复；为每条 task 运行所有指定模型 |
-| `--harness NAME` | `openclaw` | `openclaw`、`codex` 或 `claude-code` |
+| `--harness NAME` | task `harness` 或 `openclaw` | `openclaw`、`codex` 或 `claude-code`；显式提供时统一覆盖 Task Agent 的字段 |
+| `--docker-image IMAGE` | 对应 Harness 默认镜像 | 统一镜像覆盖；混合参与者可用 `--openclaw-image`、`--codex-image`、`--claude-code-image` 分别指定 |
+| `--api-base URL` / `--api-key-env NAME` | 各 Harness 默认值 | 兼容旧用法；混合运行可用 `--codex-api-base`、`--claude-api-base` 及对应 `*-api-key-env` 分别指定 |
 | `--parallel N` | `1` | 最大并行 rollout 数，必须至少为 1 |
 | `--retries N` | `0` | 首次失败后的额外尝试次数 |
 | `--timeout SECONDS` | `600` | 每条 rollout 的总超时，必须大于 0 |
