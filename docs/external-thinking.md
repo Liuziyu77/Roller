@@ -69,7 +69,7 @@ roller collect \
   --harness openclaw \
   --tasks tasks.jsonl \
   --model my-gpt-proxy/gpt-5.6-sol \
-  --model-config examples/json/openclaw-models-reasoning.json \
+  --model-config examples/config/openclaw/models-reasoning.json \
   --external-thinking external \
   --timeout 900
 ```
@@ -81,7 +81,7 @@ roller collect \
   --harness openclaw \
   --tasks tasks.jsonl \
   --model my-gpt-proxy/gpt-5.6-sol \
-  --model-config examples/json/openclaw-models-reasoning.json \
+  --model-config examples/config/openclaw/models-reasoning.json \
   --external-thinking external_always \
   --timeout 1200 \
   --wire-trace full

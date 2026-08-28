@@ -58,9 +58,9 @@ OpenClaw `2026.7.1` 的 session registry 位于
 ## 2. 模型配置文件
 
 `--model-config` 接受一份 OpenClaw models JSON。基础文本模板是
-[`examples/json/openclaw-models.json`](../examples/json/openclaw-models.json)，GPT 与
+[`examples/config/openclaw/models.json`](../examples/config/openclaw/models.json)，GPT 与
 Chat Completions reasoning 模板是
-[`examples/json/openclaw-models-reasoning.json`](../examples/json/openclaw-models-reasoning.json)：
+[`examples/config/openclaw/models-reasoning.json`](../examples/config/openclaw/models-reasoning.json)：
 
 ```json
 {
@@ -173,7 +173,7 @@ roller collect ... --pass-env INTERNAL_SERVICE_TOKEN
 }
 ```
 
-完整模板见 [`examples/json/openclaw-models-multimodal.json`](../examples/json/openclaw-models-multimodal.json)。`input` 只是告诉 OpenClaw 如何使用模型；实际 API 后端仍必须支持对应 adapter 下的图像输入。
+完整模板见 [`examples/config/openclaw/models-multimodal.json`](../examples/config/openclaw/models-multimodal.json)。`input` 只是告诉 OpenClaw 如何使用模型；实际 API 后端仍必须支持对应 adapter 下的图像输入。
 
 默认情况下，Roller 也会尝试把 task model 配置为 OpenClaw 的 image model。旧版 OpenClaw 不支持该设置时只记录 warning；可以用 `--no-set-image-model` 关闭。
 
@@ -279,7 +279,7 @@ Roller 可关闭原生 reasoning，并为一次性 OpenClaw 容器加载本地 `
 roller collect \
   --tasks tasks.jsonl \
   --model my-gpt-proxy/gpt-5.6-sol \
-  --model-config examples/json/openclaw-models-reasoning.json \
+  --model-config examples/config/openclaw/models-reasoning.json \
   --external-thinking external_always \
   --timeout 1200
 ```

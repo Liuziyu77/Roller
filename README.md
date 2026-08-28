@@ -90,7 +90,7 @@ source examples/env/api.env
 set +a
 ```
 
-再把 [`examples/json/openclaw-models.json`](examples/json/openclaw-models.json) 中的 model `id` 改成服务端真实模型名。运行时 model ref 由 provider 名与 model id 组成：
+再把 [`examples/config/openclaw/models.json`](examples/config/openclaw/models.json) 中的 model `id` 改成服务端真实模型名。运行时 model ref 由 provider 名与 model id 组成：
 
 ```text
 my-openai-proxy/my-model
@@ -104,7 +104,7 @@ my-openai-proxy/my-model
 roller collect \
   --tasks examples/tasks/tasks.jsonl \
   --model my-openai-proxy/my-model \
-  --model-config examples/json/openclaw-models.json \
+  --model-config examples/config/openclaw/models.json \
   --parallel 4 \
   --dry-run
 ```
@@ -115,7 +115,7 @@ Dry-run 只解析 task、检查输入文件并打印执行计划，不启动 Doc
 roller collect \
   --tasks examples/tasks/tasks.jsonl \
   --model my-openai-proxy/my-model \
-  --model-config examples/json/openclaw-models.json \
+  --model-config examples/config/openclaw/models.json \
   --parallel 4 \
   --timeout 600 \
   --output runs \

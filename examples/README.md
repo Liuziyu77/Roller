@@ -10,10 +10,15 @@
 examples/
 ├── env/
 │   └── api.env.example
-├── json/
-│   ├── openclaw-models.json
-│   ├── openclaw-models-reasoning.json
-│   └── openclaw-models-multimodal.json
+├── config/
+│   ├── openclaw/
+│   │   ├── models.json
+│   │   ├── models-reasoning.json
+│   │   └── models-multimodal.json
+│   ├── codex/
+│   │   └── config.toml.example
+│   └── claude-code/
+│       └── settings.json.example
 └── tasks/
     ├── tasks.jsonl
     ├── user-simulator.jsonl
@@ -42,20 +47,24 @@ set +a
 
 `examples/env/api.env` 已被 Git 忽略。不要把真实 Key 写进 JSON、task 或命令行。
 
-## 模型配置模板
+## Harness 配置模板
 
-| 文件 | 用途 | 运行时 model ref |
+| Harness | 文件 | 用途 |
 | --- | --- | --- |
-| `json/openclaw-models.json` | 最小文本模型 | `my-openai-proxy/my-model` |
-| `json/openclaw-models-reasoning.json` | GPT Responses 与 Chat Completions reasoning 示例 | `my-gpt-proxy/gpt-5.6-sol`、`my-chat-proxy/my-reasoning-model` |
-| `json/openclaw-models-multimodal.json` | 声明 `text` + `image` 输入能力 | `my-openai-proxy/my-multimodal-model` |
+| OpenClaw | `config/openclaw/models.json` | 最小文本模型；model ref 为 `my-openai-proxy/my-model` |
+| OpenClaw | `config/openclaw/models-reasoning.json` | GPT Responses 与 Chat Completions reasoning 模型 |
+| OpenClaw | `config/openclaw/models-multimodal.json` | 声明 `text` + `image` 输入能力 |
+| Codex | `config/codex/config.toml.example` | 可选的原生 `config.toml`；展示 verbosity 和自定义 MCP 写法 |
+| Claude Code | `config/claude-code/settings.json.example` | 可选的原生 `settings.json`，不包含 Key、权限放宽或 hook |
 
 运行前必须把模板中的 base URL、环境变量和值域改成真实服务支持的配置：
 
 - Responses API：`"api": "openai-responses"`；
 - Chat Completions：`"api": "openai-completions"`；
 - OpenClaw 的 `--model` 必须与 `providers.<name>` 和 `models[].id` 完全对应；
-- Codex 和 Claude Code 不读取这些 JSON，分别直接使用 Responses 和 Anthropic Messages API。
+- Codex 和 Claude Code 不读取 OpenClaw models JSON，分别直接使用 Responses 和 Anthropic
+  Messages API；二者的 model、endpoint、Key 环境变量和 effort 都通过 CLI 设置；
+- `--codex-config` 和 `--claude-settings` 是可选的 Harness 原生配置入口，不是模型注册表。
 
 完整规则见 [OpenClaw Harness 指南](../docs/openclaw-configuration.md#2-模型配置文件)。
 
@@ -80,7 +89,7 @@ set +a
 roller collect \
   --tasks examples/tasks/tasks.jsonl \
   --model my-openai-proxy/my-model \
-  --model-config examples/json/openclaw-models.json \
+  --model-config examples/config/openclaw/models.json \
   --parallel 4 \
   --dry-run
 ```
@@ -93,7 +102,7 @@ roller collect \
 roller collect \
   --tasks examples/tasks/tasks.jsonl \
   --model my-openai-proxy/my-model \
-  --model-config examples/json/openclaw-models.json \
+  --model-config examples/config/openclaw/models.json \
   --parallel 4 \
   --timeout 600 \
   --output runs \
@@ -111,6 +120,7 @@ roller collect \
   --model gpt-5.6-sol \
   --api-base "$ROLLER_CODEX_BASE_URL" \
   --api-key-env ROLLER_CODEX_API_KEY \
+  --codex-config examples/config/codex/config.toml.example \
   --thinking high \
   --reasoning-summary detailed \
   --parallel 2 \
@@ -119,7 +129,9 @@ roller collect \
   --run-name examples-codex
 ```
 
-第四条 task 会通过 `codex exec resume --last` 延续 session。镜像、API 和 reasoning 细节见 [Codex Harness 指南](../docs/codex-configuration.md)。
+`--codex-config` 可以省略；示例文件只设置 Roller 没有覆盖的 text verbosity，并保留一个注释掉的
+MCP 模板。第四条 task 会通过 `codex exec resume --last` 延续 session。镜像、API 和 reasoning
+细节见 [Codex Harness 指南](../docs/codex-configuration.md)。
 
 ## Claude Code：运行相同 Task
 
@@ -132,6 +144,7 @@ roller collect \
   --model claude-sonnet-4-6-thinking \
   --api-base "$ROLLER_ANTHROPIC_BASE_URL" \
   --api-key-env ROLLER_ANTHROPIC_API_KEY \
+  --claude-settings examples/config/claude-code/settings.json.example \
   --thinking high \
   --parallel 2 \
   --timeout 900 \
@@ -139,7 +152,9 @@ roller collect \
   --run-name examples-claude-code
 ```
 
-第四条 task 会通过 `claude --continue` 延续 session。镜像、endpoint、thinking 和 signature recovery 见 [Claude Code Harness 指南](../docs/claude-code-configuration.md)。
+`--claude-settings` 可以省略；示例只关闭 commit co-author 标记，不改变 permission mode、thinking
+或工具行为。第四条 task 会通过 `claude --continue` 延续 session。镜像、endpoint、thinking 和
+signature recovery 见 [Claude Code Harness 指南](../docs/claude-code-configuration.md)。
 
 ## 进阶案例
 
@@ -184,7 +199,7 @@ signed thinking、但 reasoning 为空时，可在 Claude Code 命令中增加�
 ```bash
 roller collect \
   --tasks examples/tasks/user-simulator.jsonl \
-  --model-config examples/json/openclaw-models.json \
+  --model-config examples/config/openclaw/models.json \
   --parallel 1 \
   --timeout 900 \
   --output runs \
@@ -195,7 +210,7 @@ Task 已内置 `model: my-openai-proxy/my-model`。动态对话会额外生成 `
 
 ### 多模态输入
 
-使用 [`json/openclaw-models-multimodal.json`](json/openclaw-models-multimodal.json)，并在 task 的 `files.inputs` 中声明本地图像：
+使用 [`config/openclaw/models-multimodal.json`](config/openclaw/models-multimodal.json)，并在 task 的 `files.inputs` 中声明本地图像：
 
 ```json
 {
@@ -214,7 +229,7 @@ Task 已内置 `model: my-openai-proxy/my-model`。动态对话会额外生成 `
 roller collect \
   --tasks your-image-tasks.jsonl \
   --model my-openai-proxy/my-multimodal-model \
-  --model-config examples/json/openclaw-models-multimodal.json \
+  --model-config examples/config/openclaw/models-multimodal.json \
   --parallel 2 \
   --output runs \
   --run-name examples-vision

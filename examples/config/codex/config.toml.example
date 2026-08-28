@@ -1,0 +1,20 @@
+# Optional native Codex configuration copied to $CODEX_HOME/config.toml.
+#
+# Keep model, provider, API base, reasoning effort, reasoning summary and web
+# search in the `roller collect` command. Roller applies those values for each
+# rollout after loading this file. Never put API keys in this file.
+
+# A setting Roller does not otherwise override.
+model_verbosity = "medium"
+
+# Example custom MCP server. The block stays commented because the referenced
+# program must already exist inside the disposable Codex container.
+#
+# [mcp_servers.my_tools]
+# command = "node"
+# args = ["/roller/workspace/tools/server.mjs"]
+# cwd = "/roller/workspace"
+# startup_timeout_sec = 10
+# tool_timeout_sec = 60
+# enabled_tools = ["lookup"]
+# required = false
