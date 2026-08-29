@@ -156,6 +156,8 @@ class Collector:
             "results",
             "conversation.json",
             "user_simulator",
+            # Written by bench grading, which runs before the container dies.
+            "score.json",
         }
         if keep_aux_traces:
             # Full mode: retain the diagnostic layers alongside the ACTF trajectory.
