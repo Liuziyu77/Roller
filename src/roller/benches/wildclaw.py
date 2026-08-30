@@ -34,6 +34,8 @@ CODE_FENCE_CLOSE_RE = re.compile(r"\n?```$")
 # OpenClaw version, which a hardcoded path here would get wrong.
 WORKSPACE_CONTAINER_PATH = "/tmp_workspace"
 DEFAULT_TIMEOUT_SECONDS = 300
+# ``## Skills`` names resolve to directories under this folder of the checkout.
+SKILLS_DIR_NAME = "skills"
 GRADE_TIMEOUT_SECONDS = 120
 
 
@@ -188,6 +190,34 @@ class WildClawBenchAdapter(BenchAdapter):
         nested = root / "tasks"
         return nested if nested.is_dir() else root
 
+    def _skill_context(self, parsed: dict[str, Any], root: Path) -> list[dict[str, Any]]:
+        """Turn each ``## Skills`` name into a staged ``role: skill`` context entry.
+
+        The names refer to directories under the checkout's ``skills/``. Recording
+        them in bench metadata alone leaves the agent reading a prompt that tells
+        it to follow a skill the container never received, which scores zero in a
+        way that looks like a model failure.
+        """
+
+        entries: list[dict[str, Any]] = []
+        for name in parsed["skills"]:
+            source = (root / SKILLS_DIR_NAME / name).resolve()
+            if not source.is_dir():
+                logger.warning(
+                    "[%s] declared skill not found: %s (task will run without it)",
+                    parsed["id"],
+                    source,
+                )
+                continue
+            entries.append(
+                {
+                    "role": "skill",
+                    "source": str(source),
+                    "target": f"skills/{name}",
+                }
+            )
+        return entries
+
     def _to_row(self, parsed: dict[str, Any], root: Path) -> dict[str, Any]:
         declared = parsed["workspace"]
         workspace = Path(declared) if declared else None
@@ -244,6 +274,9 @@ class WildClawBenchAdapter(BenchAdapter):
                 parsed["id"],
                 workspace,
             )
+        context = self._skill_context(parsed, root)
+        if context:
+            row["files"] = {"context": context}
         if parsed["env_names"] or parsed["warmup"]:
             runtime: dict[str, Any] = {}
             if parsed["env_names"]:
