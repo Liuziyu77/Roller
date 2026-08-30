@@ -9,7 +9,7 @@ import subprocess
 import tempfile
 import time
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from roller.benches.base import BenchBinding, GradeSpec
@@ -183,6 +183,16 @@ class ContainerGrader:
         if self.spec.needs_transcript:
             self._stage_transcript(runtime, container, transcript_container_path, task_id)
 
+        staging_error = self._stage_files(runtime, container, workspace, task_id)
+        if staging_error is not None:
+            # Without its answer key the grader would score a correct run zero,
+            # which reads as a model failure. Surface it as a grading error.
+            return GradeOutcome(
+                _error_scores(f"grader staging failed: {staging_error}"),
+                time.monotonic() - started,
+                error=staging_error,
+            )
+
         runner_source = build_runner_source(self.spec, workspace)
         with tempfile.NamedTemporaryFile(
             "w", suffix=".py", delete=False, encoding="utf-8"
@@ -233,6 +243,41 @@ class ContainerGrader:
             message = f"grader produced no JSON payload: {detail}"
             return GradeOutcome(_error_scores(message), elapsed, error=message)
         return GradeOutcome(scores, elapsed)
+
+    def _stage_files(
+        self, runtime: Any, container: str, workspace: str, task_id: str
+    ) -> str | None:
+        """Copy the spec's ``stage`` sources into the container's workspace.
+
+        This runs after the agent's last turn, so files placed here — answer
+        keys, reference outputs — were never visible to the model. Returns a
+        failure description, or ``None`` when everything landed.
+        """
+
+        for source, target in self.spec.stage:
+            host = Path(source)
+            if not host.exists():
+                return f"staged source is missing on the host: {source}"
+            destination = f"{workspace}/{target}"
+            parent = str(PurePosixPath(destination).parent)
+            # ``docker cp`` needs the destination's parent to exist, and for a
+            # directory source the destination itself.
+            container_dir = destination if host.is_dir() else parent
+            made = runtime.run(
+                ["exec", container, "mkdir", "-p", container_dir], timeout=30
+            )
+            if made.returncode != 0:
+                detail = (made.stderr or made.stdout or "").strip()[-300:]
+                return f"could not create {container_dir}: {detail}"
+            host_argument = f"{host}/." if host.is_dir() else str(host)
+            copied = runtime.run(
+                ["cp", host_argument, f"{container}:{destination}"], timeout=120
+            )
+            if copied.returncode != 0:
+                detail = (copied.stderr or copied.stdout or "").strip()[-300:]
+                return f"could not copy {source} to {destination}: {detail}"
+            logger.debug("[%s] staged %s -> %s for grading", task_id, source, destination)
+        return None
 
     @staticmethod
     def _stage_transcript(

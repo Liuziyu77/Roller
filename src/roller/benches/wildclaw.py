@@ -38,6 +38,13 @@ DEFAULT_TIMEOUT_SECONDS = 300
 SKILLS_DIR_NAME = "skills"
 GRADE_TIMEOUT_SECONDS = 120
 
+# Subdirectories of a task's declared ``## Workspace Path``. Only ``exec`` is the
+# agent's workspace; ``tmp`` holds warmup fixtures and ``gt`` the expected
+# output, which the agent must never see.
+SEED_DIR_NAME = "exec"
+FIXTURES_DIR_NAME = "tmp"
+ANSWER_KEY_DIR_NAME = "gt"
+
 
 def strip_code_fence(raw: str) -> str:
     text = CODE_FENCE_OPEN_RE.sub("", raw.strip())
@@ -220,9 +227,10 @@ class WildClawBenchAdapter(BenchAdapter):
 
     def _to_row(self, parsed: dict[str, Any], root: Path) -> dict[str, Any]:
         declared = parsed["workspace"]
-        workspace = Path(declared) if declared else None
-        if workspace is not None and not workspace.is_absolute():
-            workspace = (root / workspace).resolve()
+        declared_root = Path(declared) if declared else None
+        if declared_root is not None and not declared_root.is_absolute():
+            declared_root = (root / declared_root).resolve()
+        seed, fixtures, answer_key = self._workspace_parts(parsed["id"], declared_root)
         grade = (
             GradeSpec(
                 code=parsed["grader_code"],
@@ -232,6 +240,11 @@ class WildClawBenchAdapter(BenchAdapter):
                 needs_transcript=True,
                 workspace_path=WORKSPACE_CONTAINER_PATH,
                 score_key="overall_score",
+                stage=(
+                    ((str(answer_key), ANSWER_KEY_DIR_NAME),)
+                    if answer_key is not None
+                    else ()
+                ),
             )
             if parsed["grader_code"]
             else None
@@ -260,21 +273,23 @@ class WildClawBenchAdapter(BenchAdapter):
             "timeout_seconds": parsed["timeout_seconds"],
             "bench": binding.as_dict(),
         }
-        if workspace is not None and workspace.is_dir():
+        if seed is not None:
             # ``workspace`` (not ``file_root``) is the key that actually mounts
-            # the directory: Roller copies it into the container's workspace,
-            # which is where WildClaw's graders expect the task's seed files.
-            row["workspace"] = str(workspace)
-        elif declared:
-            # Seed files declared but absent: the agent would start in an empty
-            # workspace and score zero for reasons that look like model failure.
-            # Say so at export time instead.
-            logger.warning(
-                "[%s] declared workspace not found: %s (task will run without seed files)",
-                parsed["id"],
-                workspace,
-            )
+            # the directory: Roller copies its contents into the container's
+            # workspace, which is what upstream does with ``<declared>/exec``.
+            row["workspace"] = str(seed)
         context = self._skill_context(parsed, root)
+        if fixtures is not None:
+            # Upstream copies ``<declared>/tmp`` to ``<workspace>/tmp`` — warmup
+            # scripts read their fixtures from there.
+            context.append(
+                {
+                    "role": "fixture",
+                    "source": str(fixtures),
+                    "target": FIXTURES_DIR_NAME,
+                    "capture": "none",
+                }
+            )
         if context:
             row["files"] = {"context": context}
         if parsed["env_names"] or parsed["warmup"]:
@@ -285,3 +300,54 @@ class WildClawBenchAdapter(BenchAdapter):
                 runtime["setup"] = list(parsed["warmup"])
             row["runtime"] = runtime
         return row
+
+    @staticmethod
+    def _workspace_parts(
+        task_id: str, declared: Path | None
+    ) -> tuple[Path | None, Path | None, Path | None]:
+        """Split a declared workspace into (seed, fixtures, answer key).
+
+        A WildClaw workspace directory is not itself the agent's workspace: it
+        holds ``exec/`` (the seed files the agent starts from), an optional
+        ``tmp/`` (warmup fixtures) and an optional ``gt/`` (the expected output).
+        Upstream mounts only ``exec/`` and copies ``gt/`` in at grading time, so
+        splitting them here is what keeps the answer key out of the agent's
+        reach — mounting the declared directory wholesale hands it the answers.
+        """
+
+        if declared is None:
+            return None, None, None
+        if not declared.is_dir():
+            # Seed files declared but absent: the agent would start in an empty
+            # workspace and score zero for reasons that look like model failure.
+            # Say so at export time instead.
+            logger.warning(
+                "[%s] declared workspace not found: %s (task will run without seed files)",
+                task_id,
+                declared,
+            )
+            return None, None, None
+        seed = declared / SEED_DIR_NAME
+        if not seed.is_dir():
+            # Every upstream task ships ``exec/``, but a trimmed checkout may
+            # not. Falling back to the declared directory keeps such a task
+            # runnable, so warn loudly about what that exposes.
+            logger.warning(
+                "[%s] workspace has no %s/ directory; mounting %s wholesale, which "
+                "may expose grading data to the agent",
+                task_id,
+                SEED_DIR_NAME,
+                declared,
+            )
+            seed = declared
+        fixtures = declared / FIXTURES_DIR_NAME
+        answer_key = declared / ANSWER_KEY_DIR_NAME
+        if seed == declared:
+            # Nothing was split off, so both are already inside the mount and
+            # there is no separate staging to do.
+            return seed, None, None
+        return (
+            seed,
+            fixtures if fixtures.is_dir() else None,
+            answer_key if answer_key.is_dir() else None,
+        )
