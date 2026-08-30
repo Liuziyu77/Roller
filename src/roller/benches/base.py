@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Iterable, Sequence
 
 BENCH_SCHEMA = "roller.bench/v1"
@@ -32,6 +32,12 @@ class GradeSpec:
     workspace_path: str | None = None
     transcript_path: str | None = None
     score_key: str = "overall_score"
+    # Host paths copied into the container immediately before grading, keyed by
+    # their destination relative to the grading workspace. Answer keys live here
+    # rather than in the task's workspace: anything the agent can read it can
+    # also copy from, and a bench whose expected output ships alongside its seed
+    # files is not measuring the model.
+    stage: tuple[tuple[str, str], ...] = ()
 
     def as_dict(self) -> dict[str, Any]:
         payload: dict[str, Any] = {"code": self.code}
@@ -51,6 +57,10 @@ class GradeSpec:
             payload["transcript_path"] = self.transcript_path
         if self.score_key != "overall_score":
             payload["score_key"] = self.score_key
+        if self.stage:
+            payload["stage"] = [
+                {"source": source, "target": target} for source, target in self.stage
+            ]
         return payload
 
     @classmethod
@@ -106,7 +116,38 @@ class GradeSpec:
             workspace_path=workspace_path,
             transcript_path=transcript_path,
             score_key=score_key.strip(),
+            stage=_stage_files(payload.get("stage"), f"{label}.stage"),
         )
+
+
+def _stage_files(value: Any, label: str) -> tuple[tuple[str, str], ...]:
+    """Parse ``stage`` entries into ``(host source, workspace-relative target)``."""
+
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise BenchFormatError(f"{label}: must be a list")
+    entries: list[tuple[str, str]] = []
+    for index, item in enumerate(value):
+        entry_label = f"{label}[{index}]"
+        if not isinstance(item, dict):
+            raise BenchFormatError(f"{entry_label}: must be an object")
+        source = item.get("source")
+        if not isinstance(source, str) or not source.startswith("/"):
+            raise BenchFormatError(f"{entry_label}.source: must be an absolute host path")
+        target = item.get("target")
+        if not isinstance(target, str) or not target.strip():
+            raise BenchFormatError(f"{entry_label}.target: must be a non-empty string")
+        target = target.strip()
+        parts = PurePosixPath(target).parts
+        # A target that escapes the workspace would let a bench definition write
+        # anywhere in the container, so reject rather than normalize it away.
+        if target.startswith("/") or not parts or any(part == ".." for part in parts):
+            raise BenchFormatError(
+                f"{entry_label}.target: must be a relative path inside the workspace"
+            )
+        entries.append((source, target))
+    return tuple(entries)
 
 
 def _env_names(value: Any, label: str) -> tuple[str, ...]:
