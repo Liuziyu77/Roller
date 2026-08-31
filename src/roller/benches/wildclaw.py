@@ -45,6 +45,23 @@ SEED_DIR_NAME = "exec"
 FIXTURES_DIR_NAME = "tmp"
 ANSWER_KEY_DIR_NAME = "gt"
 
+# Upstream's runner prepends this to every task's prompt rather than shipping it
+# in the task file (``eval/run_batch.py``: built as ``system_prompt``, then
+# concatenated into the user prompt — it is not sent as a system message). The
+# task's own timeout is interpolated, so the agent is told the budget it has.
+# Reproducing it here is what makes our prompts byte-identical to upstream's;
+# without it every one of the 60 tasks is asking a different question.
+PROMPT_PREAMBLE = (
+    "You are an expert in a restricted, non-interactive environment. Solve the "
+    "task efficiently before the timeout ({timeout_seconds}s). Run all processes "
+    "in the foreground without user input or background services. Provide a "
+    "complete, functional solution in a single pass with no placeholders. \n"
+)
+
+
+def apply_prompt_preamble(prompt: str, timeout_seconds: int) -> str:
+    return PROMPT_PREAMBLE.format(timeout_seconds=timeout_seconds) + prompt
+
 
 def strip_code_fence(raw: str) -> str:
     text = CODE_FENCE_OPEN_RE.sub("", raw.strip())
@@ -269,7 +286,9 @@ class WildClawBenchAdapter(BenchAdapter):
             "schema_version": TASK_SCHEMA,
             "id": parsed["id"],
             "harness": "openclaw",
-            "prompt": parsed["prompt"],
+            "prompt": apply_prompt_preamble(
+                parsed["prompt"], parsed["timeout_seconds"]
+            ),
             "timeout_seconds": parsed["timeout_seconds"],
             "bench": binding.as_dict(),
         }
