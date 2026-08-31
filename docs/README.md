@@ -38,6 +38,15 @@
 | 理解输入快照、工作区和结果回收 | [Task Bundle 与结果存储](task-bundle-and-storage.md) |
 | 让另一个模型动态扮演用户 | [User Simulator](user-simulator.md) |
 
+### Bench 与评分
+
+| 目标 | 文档 |
+| --- | --- |
+| 把一个 benchmark 跑成带分数的 run | [Bench 接入与评分](bench-format.md#7-cli) |
+| 接入一个新 bench | [Bench 接入与评分](bench-format.md#6-加一个新-bench) |
+| 看懂 `score.json` 与聚合口径 | [Bench 接入与评分](bench-format.md#5-聚合口径) |
+| 确保答案不泄漏给 Agent | [Bench 接入与评分](bench-format.md#4-stage答案不能放在-agent-的工作目录里) |
+
 ### 轨迹与训练数据
 
 | 目标 | 文档 |

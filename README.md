@@ -178,6 +178,7 @@ Run 根目录的 `sft.jsonl` 按 request 顺序汇总全部成功样本。需要
 | 选择并配置 Harness | [OpenClaw](docs/openclaw-configuration.md) · [Codex](docs/codex-configuration.md) · [Claude Code](docs/claude-code-configuration.md) |
 | 查命令行参数与适用范围 | [CLI 参数参考](docs/cli-reference.md) |
 | 管理输入、Context、输出和 Resume | [Task Bundle 与结果存储](docs/task-bundle-and-storage.md) |
+| 跑评测 bench 或接入新 bench | [Bench 接入与评分](docs/bench-format.md) |
 | 制作训练数据 | [SFT 数据格式](docs/sft-format.md) |
 | 保存显式 CoT | [External Thinking](docs/external-thinking.md) |
 | 动态生成 user message | [User Simulator](docs/user-simulator.md) |
