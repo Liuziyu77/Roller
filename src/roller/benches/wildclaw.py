@@ -14,7 +14,10 @@ flat ``key: value`` throughout, and Roller has no runtime dependencies.
 from __future__ import annotations
 
 import logging
+import os
 import re
+import shlex
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -61,6 +64,88 @@ PROMPT_PREAMBLE = (
 
 def apply_prompt_preamble(prompt: str, timeout_seconds: int) -> str:
     return PROMPT_PREAMBLE.format(timeout_seconds=timeout_seconds) + prompt
+
+
+# Upstream does not let ``web_search`` reach the real Brave API: it points the
+# hostname at a local Brave-protocol shim (``tools/serper_brave_shim.py``) with
+# ``--add-host`` plus a mounted CA certificate. Without that wiring the hostname
+# resolves through the host's DNS, the connection fails, and every search comes
+# back ``{"status": "error", "error": "fetch failed"}`` — a silent capability
+# loss, because the agent keeps working and the run still produces scores.
+# Roller has no ``--add-host`` or extra-mount option, so the same wiring is
+# expressed as setup commands, which run as root before the agent starts.
+SHIM_CERT_CONTAINER_PATH = "/usr/local/share/ca-certificates/wildclaw-search-shim.crt"
+SEARCH_SHIM_HOSTNAME_DEFAULT = "api.search.brave.com"
+
+
+@dataclass(frozen=True)
+class SearchShim:
+    """Where the Brave-protocol search shim listens, as seen from the container."""
+
+    hostname: str
+    host_ip: str
+    certificate: str | None = None
+
+    def setup_commands(self) -> list[str]:
+        entry = f"{self.host_ip} {self.hostname}"
+        commands = [
+            # Idempotent: setup may run again on ``--resume`` against a fresh
+            # container, and a duplicate line would still work but reads as a bug.
+            f"grep -qxF {shlex.quote(entry)} /etc/hosts || "
+            f"echo {shlex.quote(entry)} >> /etc/hosts"
+        ]
+        if self.certificate is None:
+            return commands
+        # The certificate is written inline rather than staged as a workspace
+        # file: it is public, and anything copied into the workspace also lands
+        # in the agent's view of the task.
+        commands.append(
+            f"cat > {SHIM_CERT_CONTAINER_PATH} <<'ROLLER_WILDCLAW_SHIM_CERT'\n"
+            f"{self.certificate.strip()}\n"
+            "ROLLER_WILDCLAW_SHIM_CERT\n"
+            "update-ca-certificates >/dev/null 2>&1 || true; "
+            # requests/httpx read certifi's bundle, not the system store.
+            'for bundle in $(python3 -c "import certifi;print(certifi.where())" '
+            "2>/dev/null); do "
+            f'grep -qF "$(sed -n 2p {SHIM_CERT_CONTAINER_PATH})" "$bundle" 2>/dev/null || '
+            f'cat {SHIM_CERT_CONTAINER_PATH} >> "$bundle"; done'
+        )
+        return commands
+
+
+def search_shim_from_env(
+    root: Path, environ: dict[str, str] | None = None
+) -> SearchShim | None:
+    """Read the shim's location from upstream's own environment variables.
+
+    Same names and same defaults as ``src/utils/docker_utils.py``, including the
+    relative ``SEARCH_SHIM_CERT`` path being resolved against the checkout.
+    Returns ``None`` when the shim is not configured, which is upstream's
+    behaviour too — the tasks still run, they just cannot search.
+    """
+
+    env = os.environ if environ is None else environ
+    host_ip = (env.get("SEARCH_SHIM_HOST_IP") or "").strip()
+    if not host_ip:
+        return None
+    hostname = (env.get("SEARCH_SHIM_HOSTNAME") or "").strip() or SEARCH_SHIM_HOSTNAME_DEFAULT
+    raw_cert = (env.get("SEARCH_SHIM_CERT") or "").strip()
+    certificate: str | None = None
+    if raw_cert:
+        cert_path = Path(raw_cert)
+        if not cert_path.is_absolute():
+            cert_path = root / cert_path
+        if cert_path.is_file():
+            certificate = cert_path.read_text(encoding="utf-8")
+        else:
+            # A self-signed shim without its certificate fails TLS on every
+            # search, which looks exactly like "the model did not search".
+            logger.warning(
+                "SEARCH_SHIM_CERT is set but %s is not a file; searches will fail "
+                "TLS verification",
+                cert_path,
+            )
+    return SearchShim(hostname=hostname, host_ip=host_ip, certificate=certificate)
 
 
 def strip_code_fence(raw: str) -> str:
@@ -174,6 +259,12 @@ class WildClawBenchAdapter(BenchAdapter):
     name = "wildclawbench"
     description = "WildClawBench — 60 real-world OpenClaw agent tasks across 6 categories"
 
+    def __init__(self, search_shim: SearchShim | None = None) -> None:
+        # ``None`` means "read upstream's SEARCH_SHIM_* variables at export time";
+        # an explicit value is for tests and for callers that already know where
+        # their shim listens.
+        self._search_shim = search_shim
+
     def load(
         self,
         root: Path,
@@ -182,6 +273,19 @@ class WildClawBenchAdapter(BenchAdapter):
         task_ids: Sequence[str] | None = None,
     ) -> list[dict[str, Any]]:
         tasks_root = self._tasks_root(root)
+        shim = self._search_shim or search_shim_from_env(root)
+        if shim is None:
+            logger.info(
+                "SEARCH_SHIM_HOST_IP is unset: web_search will not resolve inside the "
+                "container and every search will return 'fetch failed'"
+            )
+        else:
+            logger.info(
+                "search shim: %s -> %s (certificate %s)",
+                shim.hostname,
+                shim.host_ip,
+                "trusted" if shim.certificate else "absent",
+            )
         wanted_categories = {c for c in categories or ()}
         wanted_ids = {t for t in task_ids or ()}
         rows: list[dict[str, Any]] = []
@@ -198,7 +302,7 @@ class WildClawBenchAdapter(BenchAdapter):
             if wanted_ids and parsed["id"] not in wanted_ids:
                 continue
             parsed["source_path"] = str(path.resolve())
-            rows.append(self._to_row(parsed, root))
+            rows.append(self._to_row(parsed, root, shim))
         if wanted_ids:
             missing = wanted_ids - {row["id"] for row in rows}
             if missing:
@@ -242,7 +346,9 @@ class WildClawBenchAdapter(BenchAdapter):
             )
         return entries
 
-    def _to_row(self, parsed: dict[str, Any], root: Path) -> dict[str, Any]:
+    def _to_row(
+        self, parsed: dict[str, Any], root: Path, shim: SearchShim | None = None
+    ) -> dict[str, Any]:
         declared = parsed["workspace"]
         declared_root = Path(declared) if declared else None
         if declared_root is not None and not declared_root.is_absolute():
@@ -311,12 +417,15 @@ class WildClawBenchAdapter(BenchAdapter):
             )
         if context:
             row["files"] = {"context": context}
-        if parsed["env_names"] or parsed["warmup"]:
+        # The shim has to be wired up before the agent runs, so it goes ahead of
+        # the task's own warmup commands.
+        setup = (shim.setup_commands() if shim is not None else []) + list(parsed["warmup"])
+        if parsed["env_names"] or setup:
             runtime: dict[str, Any] = {}
             if parsed["env_names"]:
                 runtime["env"] = list(parsed["env_names"])
-            if parsed["warmup"]:
-                runtime["setup"] = list(parsed["warmup"])
+            if setup:
+                runtime["setup"] = setup
             row["runtime"] = runtime
         return row
 
