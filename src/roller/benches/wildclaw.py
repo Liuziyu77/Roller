@@ -14,6 +14,7 @@ flat ``key: value`` throughout, and Roller has no runtime dependencies.
 from __future__ import annotations
 
 import logging
+import math
 import os
 import re
 import shlex
@@ -64,6 +65,42 @@ PROMPT_PREAMBLE = (
 
 def apply_prompt_preamble(prompt: str, timeout_seconds: int) -> str:
     return PROMPT_PREAMBLE.format(timeout_seconds=timeout_seconds) + prompt
+
+
+# Upstream widens timeouts with ``tools/run_with_timeout_multiplier.py``, which
+# rewrites ``timeout_seconds`` in the task files themselves. That detail matters:
+# the same value is interpolated into the prompt preamble above, so scaling the
+# file keeps the budget the agent is *told* about equal to the budget it *has*.
+# Roller's ``--timeout`` only moves the wall clock, which would leave the agent
+# planning against a number that is no longer true — so the multiplier belongs
+# here, where both come from one place.
+TIMEOUT_MULTIPLIER_VARIABLE = "WILDCLAW_TIMEOUT_MULTIPLIER"
+
+
+def scale_timeout(base_seconds: int, multiplier: float) -> int:
+    """Scale a task timeout the way upstream's ``scale_task_file`` does."""
+
+    return max(1, math.ceil(base_seconds * multiplier))
+
+
+def timeout_multiplier_from_env(environ: dict[str, str] | None = None) -> float:
+    """Read upstream's own multiplier variable; ``1.0`` when unset."""
+
+    env = os.environ if environ is None else environ
+    raw = (env.get(TIMEOUT_MULTIPLIER_VARIABLE) or "").strip()
+    if not raw:
+        return 1.0
+    try:
+        multiplier = float(raw)
+    except ValueError:
+        raise BenchFormatError(
+            f"{TIMEOUT_MULTIPLIER_VARIABLE} must be a number, got {raw!r}"
+        ) from None
+    if multiplier <= 0:
+        raise BenchFormatError(
+            f"{TIMEOUT_MULTIPLIER_VARIABLE} must be positive, got {multiplier}"
+        )
+    return multiplier
 
 
 # Upstream does not let ``web_search`` reach the real Brave API: it points the
@@ -259,11 +296,15 @@ class WildClawBenchAdapter(BenchAdapter):
     name = "wildclawbench"
     description = "WildClawBench — 60 real-world OpenClaw agent tasks across 6 categories"
 
-    def __init__(self, search_shim: SearchShim | None = None) -> None:
-        # ``None`` means "read upstream's SEARCH_SHIM_* variables at export time";
-        # an explicit value is for tests and for callers that already know where
-        # their shim listens.
+    def __init__(
+        self,
+        search_shim: SearchShim | None = None,
+        timeout_multiplier: float | None = None,
+    ) -> None:
+        # ``None`` means "read upstream's own variables at export time"; explicit
+        # values are for tests and for callers that already know their setup.
         self._search_shim = search_shim
+        self._timeout_multiplier = timeout_multiplier
 
     def load(
         self,
@@ -273,6 +314,18 @@ class WildClawBenchAdapter(BenchAdapter):
         task_ids: Sequence[str] | None = None,
     ) -> list[dict[str, Any]]:
         tasks_root = self._tasks_root(root)
+        multiplier = (
+            self._timeout_multiplier
+            if self._timeout_multiplier is not None
+            else timeout_multiplier_from_env()
+        )
+        if multiplier != 1.0:
+            logger.info(
+                "scaling every task timeout by %s; the prompt preamble states the "
+                "scaled budget too, matching upstream's %s",
+                multiplier,
+                TIMEOUT_MULTIPLIER_VARIABLE,
+            )
         shim = self._search_shim or search_shim_from_env(root)
         if shim is None:
             logger.info(
@@ -302,6 +355,11 @@ class WildClawBenchAdapter(BenchAdapter):
             if wanted_ids and parsed["id"] not in wanted_ids:
                 continue
             parsed["source_path"] = str(path.resolve())
+            # Scale before the row is built, so the timeout and the preamble that
+            # quotes it cannot drift apart.
+            parsed["timeout_seconds"] = scale_timeout(
+                parsed["timeout_seconds"], multiplier
+            )
             rows.append(self._to_row(parsed, root, shim))
         if wanted_ids:
             missing = wanted_ids - {row["id"] for row in rows}
