@@ -184,6 +184,26 @@ class MyBenchAdapter(BenchAdapter):
 - **解析器收字符串而不是 `Path`。** 让"解析一个任务文件"能脱离文件系统被单测。
 - **上游 runner 加进 prompt 的东西也要翻译。** 不在任务文件里、由 runner 拼上去的
   前缀/后缀（WildClawBench 就有一段 277 字符前缀）漏掉的话，等于在问不一样的问题。
+- **上游有"必须配好才算跑对"的外部依赖时，要在 export 时报出来。** WildClawBench 的
+  `web_search` 打的是本地 shim 而不是真 Brave，没接线的表现是每次搜索都返回
+  `fetch failed`、而 Agent 继续干活、run 照样出分 —— 静默的能力缺失最贵，因为它
+  长得跟"模型不爱搜"一模一样。
+
+### 6.1 每个 bench 都要带一个 README
+
+`docs/benches/<name>.md`，和 adapter 一起提交。这一页不重复 bench 层的通用机制，
+只写这个 bench 自己的配置面：
+
+1. **最短路径** —— 从 clone 上游到 `bench report` 的可复制命令序列；
+2. **上游旋钮 → Roller 对应**的表，逐项列 CLI 参数和环境变量；
+3. **明确标出"未搬"的旋钮**，并说明为什么不能用某个看起来等价的参数冒充
+   （例：WCB 的超时乘数会改写任务文件，因此也改了 prompt 里告诉 Agent 的预算，
+   `--timeout` 只改墙钟，不等价）；
+4. **必需环境变量**，以及要不要 `--pass-env`；
+5. **已知坑**，尤其是"不报错但结果无效"的那些，附一条跑完就能查的核对命令。
+
+第 2、3 条是这页存在的理由：接入一个 bench 的实际风险不是代码写错，而是上游某个
+旋钮没搬过来、跑的人也不知道它不在了。
 
 ## 7. CLI
 
@@ -218,41 +238,11 @@ grader 需要的环境变量要用 `--pass-env` 透传（哪些变量由 bench �
 
 ## 8. 已支持的 bench
 
-### WildClawBench
+每个 bench 的配置面写在自己的 README 里（见 §6.1），这里只做索引。
 
-60 个真实场景 OpenClaw 任务，6 个类别。上游每个任务是一个 markdown 文件：
-flat YAML frontmatter + `## Prompt` + `## Automated Checks`（里面是 `grade()`）。
-Adapter 把各段落映射到 task schema 已有的位置：
+| Bench | `--harness` | README | 一句话 |
+| --- | --- | --- | --- |
+| `wildclawbench` | `openclaw` | [WildClawBench](benches/wildclawbench.md) | 60 个真实场景任务，6 类；grader 在容器里跑，26 个任务的 `gt/` 走 `stage` |
 
-| 上游段落 | 落到 |
-| --- | --- |
-| `## Prompt` | `prompt`（前面拼上上游 runner 的 277 字符前缀，内插本任务超时） |
-| `## Env` | `runtime.env` 和 `bench.grade.env` |
-| `## Warmup` | `runtime.setup` |
-| `## Skills` | `files.context` 的 `role: skill` 条目 |
-| `## Workspace Path` | 见下 |
-| `## Automated Checks` | `bench.grade.code` |
-| frontmatter `timeout_seconds` | `timeout_seconds` |
-
-**`## Workspace Path` 不是 Agent 的工作目录**，它是一个容器，里面有三样东西：
-
-```
-<declared>/
-├── exec/    # 种子文件 —— 这才是 Agent 的工作目录（60/60 个任务都有）
-├── tmp/     # warmup 用的 fixture（5 个任务有）→ 走 files.context 落到 <workspace>/tmp
-└── gt/      # ground truth（26 个任务有）→ 走 bench.grade.stage，评分时才进容器
-```
-
-挂 `<declared>` 整个目录会同时造成两个后果：种子文件全错一层（skill 和 warmup 写
-`/tmp_workspace/utils.py`，实际却在 `/tmp_workspace/exec/` 下），以及把 `gt/`
-直接放到 Agent 面前。所以 `workspace` 指向 `<declared>/exec`，`gt` 和 `tmp`
-是它的兄弟目录 —— **泄漏是靠目录结构关掉的，不靠过滤**。
-
-跑之前需要准备的：
-
-- clone 上游 repo（Roller 不提供 setup 脚本，`bench export` 就是那层翻译）。
-- 构建上游镜像并用 `--openclaw-image` 指定。⚠️ 若镜像把 `http_proxy` 烤进了环境变量，
-  发往自建 gateway 的请求会被黑洞掉，表现为 `request_count=0` 且所有任务齐刷刷在
-  代理超时那一刻退出 —— 那个整齐的退出时间是代理超时，不是模型慢。
-- 透传 `JUDGE_MODEL`、`OPENROUTER_API_KEY`、`OPENROUTER_BASE_URL`（60 个任务里
-  46 个的 grader 要判分）。**判分网关不同分数就不可比。**
+接入前先读对应 README 的"上游旋钮 → Roller 对应"表和"未搬"清单 ——
+少一个旋钮不会报错，只会让分数不可比。

@@ -43,6 +43,7 @@
 | 目标 | 文档 |
 | --- | --- |
 | 把一个 benchmark 跑成带分数的 run | [Bench 接入与评分](bench-format.md#7-cli) |
+| 跑 WildClawBench（上游旋钮对应、search shim、已知坑） | [WildClawBench](benches/wildclawbench.md) |
 | 接入一个新 bench | [Bench 接入与评分](bench-format.md#6-加一个新-bench) |
 | 看懂 `score.json` 与聚合口径 | [Bench 接入与评分](bench-format.md#5-聚合口径) |
 | 确保答案不泄漏给 Agent | [Bench 接入与评分](bench-format.md#4-stage答案不能放在-agent-的工作目录里) |
