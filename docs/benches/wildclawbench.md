@@ -21,7 +21,7 @@ set -a; . ~/WildClawBench/.env; set +a
 roller bench export wildclawbench ~/WildClawBench -o /tmp/wcb.jsonl
 
 # 4) 采集 + 判分（--task-timeouts 必须开：每个任务自带超时，见 §4）
-roller collect --tasks /tmp/wcb.jsonl --model vllm/Qwen3.6-35B-A3B \
+roller collect --tasks /tmp/wcb.jsonl --model <provider>/<model> \
   --harness openclaw --openclaw-image wildclawbench-ubuntu:v1.3 \
   --model-config my_api.json --task-timeouts --parallel 4 \
   --output /tmp/wcb --run-name run1 \
@@ -62,7 +62,7 @@ roller bench report /tmp/wcb/run1
 | `BRAVE_API_KEY` | 同名，默认透传 | 也是 search shim 的 token |
 | `SEARCH_SHIM_HOST_IP` / `SEARCH_SHIM_HOSTNAME` / `SEARCH_SHIM_CERT` | **export 时**读同名变量 | 见 §5 |
 | `OPENROUTER_API_KEY` / `OPENROUTER_BASE_URL` / `JUDGE_MODEL` | 同名 | 46/60 个任务的 grader 靠它判分，见 §3 |
-| `WILDCLAW_TIMEOUT_MULTIPLIER` | **未搬** | 见 §4 |
+| `WILDCLAW_TIMEOUT_MULTIPLIER` | **export 时**读同名变量 | 见 §4 |
 
 ## 3. 环境变量怎么进容器
 
@@ -77,21 +77,28 @@ roller bench report /tmp/wcb/run1
 
 判分那条通路是 host env 直接 `-e` 进 `docker exec`，不需要额外 `--pass-env`。
 
-⚠️ **判分网关不同，分数就不可比。** 上游那次官方基线用的是
-`OPENROUTER_BASE_URL=https://modelservice.jdcloud.com/v1` + `JUDGE_MODEL=gpt-5.4`；
-直接 source WCB 的 `.env` 拿到的是另一个网关。核对 run 的判分网关再比分数。
+⚠️ **判分网关和 judge 模型不同，分数就不可比。** 60 个任务里 46 个的分数是 judge 打的，
+所以 `OPENROUTER_BASE_URL` + `JUDGE_MODEL` 是分数的一部分，不是运行细节。
+拿两个 run 比分之前先核对这两项。
 
 ## 4. 超时
 
 每个任务自带 `timeout_seconds`（实测 300/360/600/900/1200 五档），所以
 **`--task-timeouts` 必须开**，否则全部回落到单一的 `--timeout`。
 
-上游的 `WILDCLAW_TIMEOUT_MULTIPLIER` 没有搬过来，而且**不要用 `--timeout` 冒充它**：
-上游的乘数是靠 `tools/run_with_timeout_multiplier.py` **改写任务文件里的
-`timeout_seconds`** 实现的，所以乘完之后 prompt 前缀里告诉 Agent 的预算也跟着变
-（前缀内插的就是这个值，见 §6）。而 `--timeout` 只改墙钟、不改 prompt —— Agent
-会以为自己有 300 秒，实际有 600 秒。想放宽超时就照上游的做法在 checkout 上跑一遍
-乘数脚本再 export，别在 Roller 侧改墙钟。
+放宽超时用上游同名的环境变量，export 时读：
+
+```bash
+WILDCLAW_TIMEOUT_MULTIPLIER=2 roller bench export wildclawbench ~/WildClawBench -o /tmp/wcb_x2.jsonl
+```
+
+取值 `ceil(base × multiplier)`，和上游 `tools/run_with_timeout_multiplier.py` 一致；
+非法值（非数字、0、负数）直接报错，不会静默按 1× 跑。
+
+⚠️ **不要用 `--timeout` 冒充它。** 上游的乘数是靠改写任务文件里的 `timeout_seconds`
+实现的，而**同一个值会被内插进 prompt 前缀**（§6），所以乘完之后"告诉 Agent 的预算"
+和真实墙钟仍然一致。`--timeout` 只改墙钟 —— Agent 以为自己有 300 秒，实际有 600 秒。
+adapter 这边是在构建任务行之前 scale 的，两者出自同一处，不可能对不上。
 
 ## 5. Search：上游不打真 Brave
 
@@ -162,10 +169,15 @@ grep -c 'fetch failed'             <run>/samples/*/*/trace.jsonl
 ## 9. 已知坑
 
 - **镜像可能把 `http_proxy` 烤进环境变量**（`wildclawbench-ubuntu:v1.3` 就是，且没有
-  `no_proxy`）。发往自建 gateway 的请求会被黑洞，表现是 `request_count=0` 且所有任务
-  齐刷刷在同一秒退出 —— 那个整齐的退出时间是代理超时，不是模型慢。
+  配套的 `no_proxy`）。发往自建 gateway 的请求会被黑洞，表现是 `request_count=0` 且
+  所有任务齐刷刷在同一秒退出 —— 那个整齐的退出时间是代理超时，不是模型慢。
+  用 WCB `.env` 里的 `*_INNER` 那组代理（它们的 `NO_PROXY_INNER` 白名单了内网地址）。
   连带后果：**容器里 `curl` 打不通不能当可达性判据**，OpenClaw 的 HTTP 客户端不读
   `http_proxy`，它可能好着。
+- **模型的输出预算要覆盖 reasoning。** 会返回 `reasoning_content` 的模型先出推理再出
+  正文，`maxTokens` 给小了会拿到 `finish_reason: length` 加空 `content` —— 看起来像
+  模型什么都没做。实测同一个模型 `max_tokens=16` 时 `content` 为空、给到 400 才正常
+  收尾。所以 `--model-config` 里的 `maxTokens` 要按长任务来配。
 - **`SEARCH_SHIM_CERT` 在上游 `.env` 里是相对路径**（相对 WCB checkout 根）。
   Roller 侧 export 时按 `ROOT` 解析；但如果你把它 `--pass-env` 给容器，容器里那个
   相对路径没有意义。
