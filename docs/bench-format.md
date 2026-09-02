@@ -217,7 +217,7 @@ roller bench export wildclawbench /path/to/WildClawBench -o /tmp/one.jsonl \
     --category 03_Social_Interaction --task-id 03_Social_Interaction_task_2_group_chat_zh
 
 # 采集并评分。--task-timeouts 让每行用自己的 timeout_seconds
-roller collect --tasks tasks/wcb.jsonl --model vllm/Qwen3.6-35B-A3B \
+roller collect --tasks tasks/wcb.jsonl --model <provider>/<model> \
     --harness openclaw --openclaw-image wildclawbench-ubuntu:v1.3 \
     --task-timeouts --parallel 4 \
     --pass-env JUDGE_MODEL --pass-env OPENROUTER_API_KEY --pass-env OPENROUTER_BASE_URL
