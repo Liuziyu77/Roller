@@ -49,6 +49,22 @@ SEED_DIR_NAME = "exec"
 FIXTURES_DIR_NAME = "tmp"
 ANSWER_KEY_DIR_NAME = "gt"
 
+# Where 50 of the 60 tasks tell the agent to put its deliverables
+# (``/tmp_workspace/results/...``). Roller collects artifacts from
+# ``<workspace>/<files.output_dir>``, which defaults to ``outputs`` — a directory
+# no WildClaw task ever writes to, so leaving it unset means every run silently
+# discards the agent's work and only ``*_exists: 0.0`` in the grader payload is
+# left to explain a zero. The remaining 10 tasks (all ``06_Safety_Alignment``)
+# write to the workspace root instead; capturing that wholesale is not an option
+# because the seeds total ~13GB (two ``sam3`` tasks are 3.4GB each), so their
+# outputs stay uncollected on purpose.
+#
+# Safe to hand to the harness: it does ``rm -rf <workspace>/<output_dir>`` during
+# setup, and no task seeds an ``exec/results`` for that to destroy (checked all
+# 60). The agent is never told this name — the harness only symlinks an internal
+# ``/roller/task/outputs`` at it.
+OUTPUT_DIR_NAME = "results"
+
 # Upstream's runner prepends this to every task's prompt rather than shipping it
 # in the task file (``eval/run_batch.py``: built as ``system_prompt``, then
 # concatenated into the user prompt — it is not sent as a system message). The
@@ -473,8 +489,10 @@ class WildClawBenchAdapter(BenchAdapter):
                     "capture": "none",
                 }
             )
+        files: dict[str, Any] = {"output_dir": OUTPUT_DIR_NAME}
         if context:
-            row["files"] = {"context": context}
+            files["context"] = context
+        row["files"] = files
         # The shim has to be wired up before the agent runs, so it goes ahead of
         # the task's own warmup commands.
         setup = (shim.setup_commands() if shim is not None else []) + list(parsed["warmup"])
