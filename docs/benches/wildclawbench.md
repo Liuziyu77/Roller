@@ -178,6 +178,12 @@ grep -c 'fetch failed'             <run>/samples/*/*/trace.jsonl
   要复现就手工起一个容器跑 `openclaw gateway --port …` 看 stderr。
   注意它跟"搜索能不能用"是两件事：**值是什么无所谓**（shim token 也行），
   只要非空能解析；真要让搜索通还得配 §5 那套接线。
+- **产出物可以很大，跑全量前先算盘子。** 有些任务要求 Agent 把种子文件**整理并复制**到
+  交付目录（`01_Productivity_Flow_task_10_pdf_digest` 就是：65 个 PDF 重命名归档），
+  实测单个 sample 的 `results/` **658 MB**。60 个任务 × 每个模型都这个量级的话，
+  run 目录会比种子本身还大。要省盘就在 `bench report` 之后删 `results/`，
+  但别在报完之前删 —— 那是诊断 0 分的唯一现场（见
+  [Roller 的 output_dir](../bench-format.md#3-bench-块rollerbenchv1)）。
 - **镜像可能把 `http_proxy` 烤进环境变量**（`wildclawbench-ubuntu:v1.3` 就是，且没有
   配套的 `no_proxy`）。发往自建 gateway 的请求会被黑洞，表现是 `request_count=0` 且
   所有任务齐刷刷在同一秒退出 —— 那个整齐的退出时间是代理超时，不是模型慢。
