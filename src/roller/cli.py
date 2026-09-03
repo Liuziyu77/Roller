@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import hashlib
 import json
 import logging
@@ -10,9 +11,17 @@ import subprocess
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Sequence
+from typing import Any, Sequence
 
 from roller.collector import CollectionConfig, Collector
+from roller.benches import (
+    binding_from_task_row,
+    format_report,
+    get_bench,
+    list_benches,
+    mean_aggregate,
+)
+from roller.benches.grading import GradedHarness
 from roller.bundles import BundlePolicy, TaskBundleStore
 from roller.conversation import ConversationManager
 from roller.external_thinking import validate_external_thinking_provider
@@ -67,6 +76,38 @@ def _build_parser() -> argparse.ArgumentParser:
     view.add_argument("--host", default="127.0.0.1", help="listen host (default: loopback)")
     view.add_argument("--port", type=int, default=8765, help="listen port (default: 8765)")
 
+    bench = subparsers.add_parser("bench", help="work with benchmark adapters")
+    bench_sub = bench.add_subparsers(dest="bench_command", required=True)
+
+    bench_sub.add_parser("list", help="list registered benchmark adapters")
+
+    bench_export = bench_sub.add_parser(
+        "export", help="convert a checked-out bench into a Roller task list"
+    )
+    bench_export.add_argument("name", help="bench adapter name (see 'roller bench list')")
+    bench_export.add_argument("root", help="path to the checked-out benchmark")
+    bench_export.add_argument("--output", "-o", required=True, help="task JSONL to write")
+    bench_export.add_argument(
+        "--category",
+        action="append",
+        default=[],
+        help="restrict to a bench category (repeatable)",
+    )
+    bench_export.add_argument(
+        "--task-id",
+        action="append",
+        default=[],
+        help="restrict to a task id (repeatable)",
+    )
+
+    bench_report = bench_sub.add_parser(
+        "report", help="aggregate bench scores from a finished run"
+    )
+    bench_report.add_argument("run_dir", help="Roller run directory")
+    bench_report.add_argument(
+        "--output", "-o", help="also write the report JSON to this path"
+    )
+
     collect = subparsers.add_parser("collect", help="collect trajectories")
     collect.add_argument("--tasks", required=True, help="JSON or JSONL task list")
     collect.add_argument(
@@ -104,6 +145,14 @@ def _build_parser() -> argparse.ArgumentParser:
         type=int,
         default=50 * 1024 * 1024 * 1024,
         help="maximum total input bytes for one task",
+    )
+    collect.add_argument(
+        "--task-timeouts",
+        action="store_true",
+        help=(
+            "honor each task row's own 'timeout_seconds', falling back to "
+            "--timeout when a row does not declare one (used by bench runs)"
+        ),
     )
     collect.add_argument(
         "--log-level",
@@ -392,6 +441,22 @@ def _dry_run_payload(args: argparse.Namespace, requests: list) -> dict:
     }
 
 
+def _with_task_timeout(request):
+    """Apply a task's own ``timeout_seconds`` when the row declares one.
+
+    The request already carries the global ``--timeout``, so a row without its
+    own value is returned untouched.
+    """
+
+    raw = getattr(request.task, "raw", None)
+    declared = raw.get("timeout_seconds") if isinstance(raw, dict) else None
+    if isinstance(declared, bool) or not isinstance(declared, int) or declared <= 0:
+        return request
+    if declared == request.timeout_seconds:
+        return request
+    return dataclasses.replace(request, timeout_seconds=declared)
+
+
 def _collect(args: argparse.Namespace) -> int:
     if args.parallel < 1:
         raise ValueError("--parallel must be at least 1")
@@ -423,6 +488,10 @@ def _collect(args: argparse.Namespace) -> int:
     requests = build_requests(tasks, args.model, args.timeout)
     if not requests:
         raise TaskFormatError("task list contains no tasks")
+    if getattr(args, "task_timeouts", False):
+        # Benches size their own timeouts per task; a single global value would
+        # either cut long tasks short or let short ones idle.
+        requests = [_with_task_timeout(request) for request in requests]
 
     agent_harnesses = {
         args.harness or getattr(request.task, "harness", "openclaw")
@@ -897,6 +966,11 @@ def _collect(args: argparse.Namespace) -> int:
 
             def harness_factory(slot: int, request):
                 agent = make_harness(cli_harness or request.task.harness, slot)
+                binding = binding_from_task_row(getattr(request.task, "raw", None) or {})
+                if binding is not None and binding.grade is not None:
+                    # Grading has to read the container the agent just wrote to,
+                    # so it runs inside the session rather than after teardown.
+                    return GradedHarness(agent, binding)
                 spec = request.task.user_simulator
                 if spec is None:
                     return agent
@@ -936,6 +1010,88 @@ def _collect(args: argparse.Namespace) -> int:
     return 1 if failed else 0
 
 
+def _bench(args: argparse.Namespace) -> int:
+    if args.bench_command == "list":
+        for adapter in list_benches():
+            print(f"{adapter.name:<16} {adapter.description}")
+        return 0
+    if args.bench_command == "export":
+        adapter = get_bench(args.name)
+        root = Path(args.root).expanduser().resolve()
+        if not root.is_dir():
+            raise FileNotFoundError(f"bench root is not a directory: {root}")
+        rows = adapter.load(
+            root,
+            categories=args.category or None,
+            task_ids=args.task_id or None,
+        )
+        if not rows:
+            raise TaskFormatError(f"{adapter.name}: selection matched no tasks")
+        output = Path(args.output).expanduser().resolve()
+        output.parent.mkdir(parents=True, exist_ok=True)
+        with output.open("w", encoding="utf-8") as handle:
+            for row in rows:
+                handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+        categories = sorted({row["bench"].get("category") or "" for row in rows} - {""})
+        print(f"Exported {len(rows)} {adapter.name} tasks to {output}")
+        if categories:
+            print(f"Categories: {', '.join(categories)}")
+        print("Run with: roller collect --tasks "
+              f"{output} --model <model> --task-timeouts")
+        return 0
+    return _bench_report(args)
+
+
+def _bench_report(args: argparse.Namespace) -> int:
+    run_dir = Path(args.run_dir).expanduser().resolve()
+    samples_root = run_dir / "samples"
+    if not samples_root.is_dir():
+        raise FileNotFoundError(f"run directory has no samples/: {run_dir}")
+    rows: list[dict[str, Any]] = []
+    bench_names: set[str] = set()
+    for info_path in sorted(samples_root.glob("*/*/info.json")):
+        try:
+            info = json.loads(info_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            logger.warning("skipping unreadable sample info: %s", info_path)
+            continue
+        if not isinstance(info, dict):
+            continue
+        runtime = info.get("runtime")
+        payload = runtime.get("bench") if isinstance(runtime, dict) else None
+        if not isinstance(payload, dict):
+            continue
+        name = payload.get("bench")
+        if isinstance(name, str) and name:
+            bench_names.add(name)
+        rows.append(
+            {
+                "task_id": info.get("task_id"),
+                "model": info.get("model"),
+                "status": info.get("status"),
+                "bench_scores": payload.get("scores"),
+                "bench_score_key": payload.get("score_key"),
+                "bench_category": payload.get("category"),
+            }
+        )
+    if not rows:
+        raise TaskFormatError(f"no graded bench samples found under {samples_root}")
+    label = ", ".join(sorted(bench_names)) or "unknown"
+    try:
+        report = get_bench(sorted(bench_names)[0]).aggregate(rows) if len(
+            bench_names
+        ) == 1 else mean_aggregate(rows)
+    except KeyError:
+        report = mean_aggregate(rows)
+    print(format_report(label, report))
+    if args.output:
+        output = Path(args.output).expanduser().resolve()
+        output.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_json(output, report)
+        print(f"Report written to {output}")
+    return 0
+
+
 def _view(args: argparse.Namespace) -> int:
     return serve_viewer(Path(args.run_dir), host=args.host, port=args.port)
 
@@ -951,6 +1107,8 @@ def main(argv: Sequence[str] | None = None) -> None:
     try:
         if args.command == "collect":
             exit_code = _collect(args)
+        elif args.command == "bench":
+            exit_code = _bench(args)
         elif args.command == "view":
             exit_code = _view(args)
         else:
