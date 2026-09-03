@@ -15,6 +15,7 @@ roller view --help
 ```text
 roller collect [OPTIONS]   # 采集轨迹
 roller view RUN_DIR        # 浏览已有 run
+roller bench ...           # bench 翻译与评分汇总，见 §11
 roller --version
 ```
 
@@ -51,6 +52,7 @@ roller collect --tasks tasks.jsonl --model provider/model ...
 | `--parallel N` | `1` | 最大并行 rollout 数，必须至少为 1 |
 | `--retries N` | `0` | 首次失败后的额外尝试次数 |
 | `--timeout SECONDS` | `600` | 每条 rollout 的总超时，必须大于 0 |
+| `--task-timeouts` | 关闭 | 改用每条 task 自己的 `timeout_seconds`，缺失时回落到 `--timeout`。bench 跑通常必须开启，见 [Bench 接入与评分](bench-format.md#7-cli) |
 | `--start-index N` | `0` | 从第 N 条规范化 task 开始 |
 | `--limit N` | 不限制 | 最多选取 N 条 task |
 | `--output DIR` | `runs` | run 根目录的父目录 |
@@ -201,3 +203,25 @@ roller view RUN_DIR [--host HOST] [--port PORT]
 | `--port` | `8765` | 监听端口 |
 
 监听 `0.0.0.0` 会向网络暴露轨迹内容。远程访问使用默认地址和 SSH 端口转发。
+
+## 11. Bench 参数
+
+```bash
+roller bench list
+roller bench export NAME ROOT --output TASKS.jsonl [--category CAT]... [--task-id ID]...
+roller bench report RUN_DIR [--output REPORT.json]
+```
+
+| 参数 | 默认值 | 说明 |
+| --- | --- | --- |
+| `NAME` | 必填 | adapter 名，取自 `roller bench list` |
+| `ROOT` | 必填 | 已 checkout 的 benchmark 目录 |
+| `--output` / `-o` | export 必填 | export 写出的 task JSONL；report 时为可选的报告 JSON |
+| `--category CAT` | 不限制 | 只导出该类别，可重复 |
+| `--task-id ID` | 不限制 | 只导出该 task，可重复；写错的 id 会报错而不是静默跳过 |
+| `RUN_DIR` | 必填 | 已完成的 run 目录，**位置参数**（不是 `--run`） |
+
+`bench export` 只做翻译，不执行任何任务、不联网、不启容器。
+采集时记得加 `--task-timeouts`，并用 `--pass-env` 透传 grader 需要的变量。
+
+字段语义、评分时序、`stage` 防泄漏规则和聚合口径见 [Bench 接入与评分](bench-format.md)。
