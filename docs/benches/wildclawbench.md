@@ -168,6 +168,16 @@ grep -c 'fetch failed'             <run>/samples/*/*/trace.jsonl
 
 ## 9. 已知坑
 
+- **`BRAVE_API_KEY` 不是可选项，缺了 gateway 直接起不来。** 镜像烤进去的
+  `openclaw.json` 里 `tools.web.search.apiKey = "${BRAVE_API_KEY}"`，OpenClaw 把它当
+  **必需 secret**：解析不到就
+  `[WEB_SEARCH_KEY_UNRESOLVED_NO_FALLBACK] … Startup failed: required secrets are
+  unavailable`，进程退 1。Roller 侧只看得到
+  `OpenClaw gateway exited early with code 1`，而 gateway 日志写在
+  `<sample>/rollout/gateway.attempt-N.log`、会被 `_prune_sample` 清掉，所以现场是没有的。
+  要复现就手工起一个容器跑 `openclaw gateway --port …` 看 stderr。
+  注意它跟"搜索能不能用"是两件事：**值是什么无所谓**（shim token 也行），
+  只要非空能解析；真要让搜索通还得配 §5 那套接线。
 - **镜像可能把 `http_proxy` 烤进环境变量**（`wildclawbench-ubuntu:v1.3` 就是，且没有
   配套的 `no_proxy`）。发往自建 gateway 的请求会被黑洞，表现是 `request_count=0` 且
   所有任务齐刷刷在同一秒退出 —— 那个整齐的退出时间是代理超时，不是模型慢。
