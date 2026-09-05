@@ -1,6 +1,6 @@
 # 文件、Task Bundle 与结果存储
 
-[文档中心](README.md) · [Task 格式](task-format.md) · [轨迹产物](trajectory-outputs.md) · [SFT 格式](sft-format.md)
+[文档中心](../index.md) · [Task 格式](task-format.md) · [轨迹产物](../traces/trajectory-outputs.md) · [SFT 格式](../traces/sft-format.md)
 
 本页说明一条 task 从宿主机文件变成 Agent 工作区，再变成最终 run/sample 的完整生命周期，并集中解释快照、Context capture、结果回收、retry 与 Resume。Task 字段本身见 [Task 格式参考](task-format.md)。
 
@@ -226,7 +226,7 @@ transcript SDK 按 session identity 导出，再逐事件序列化为 JSONL；le
 事件合并成自定义文本格式，但该文件不是底层存储的字节副本或上游 HTTP 响应副本。
 “session 中持久化”也不等于“逐字进入每次模型请求”：OpenClaw 可以在调用前组装、压缩
 或裁剪 context。需要核对模型实际收到的 messages/input 时使用 `--wire-trace full`；详见
-[轨迹产出文件指南](trajectory-outputs.md#32-session-历史不等于模型请求-context)。
+[轨迹产出文件指南](../traces/trajectory-outputs.md#32-session-历史不等于模型请求-context)。
 
 ### `trace_ACTF.json`
 
@@ -258,10 +258,10 @@ ACTF 文件直接保存 `ACTF_v1.0` trajectory object：
 `trace_SFT.json` 由 ACTF 投影得到，顶层严格只有 `messages` 和 `tools`，不包含
 task/model、usage、时间戳或其他运行 metadata。Run 根目录的 `sft.jsonl` 按 request
 顺序汇总所有成功 task Agent，每行一个相同结构的 record。完整字段和校验规则见
-[SFT 数据格式](sft-format.md)。
+[SFT 数据格式](../traces/sft-format.md)。
 
 所有轨迹层、辅助文件、参数组合及失败/Resume 下的产出条件见
-[轨迹产出文件指南](trajectory-outputs.md)。
+[轨迹产出文件指南](../traces/trajectory-outputs.md)。
 
 ## 8. 安全与隐私边界
 

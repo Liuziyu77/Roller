@@ -1,0 +1,4 @@
+/* Let the article use the space beside the sidebar on wide screens. */
+.wy-nav-content {
+    max-width: none;
+}

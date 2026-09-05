@@ -1,20 +1,42 @@
 # Roller 文档中心
 
-[项目首页](../README.md) · [快速上手](getting-started.md) · [示例](../examples/README.md) · [CLI 参数参考](cli-reference.md)
+[项目首页](../README.md) · [快速上手](start/getting-started.md) · [示例](start/examples.md) · [CLI 参数参考](start/cli-reference.md)
 
-文档分为快速上手、Harness 配置、Task、轨迹产物和高级功能五类。各专题页独立维护，不要求按目录顺序通读。
+文档按主题放在子目录中，各专题页独立维护，不要求按目录顺序通读。
+
+| 目录 | 内容 |
+| --- | --- |
+| `start/` | 快速上手、Examples、CLI 参数 |
+| `harnesses/` | OpenClaw、Codex、Claude Code |
+| `tasks/` | Task 格式、Bundle 与存储、User Simulator |
+| `traces/` | 轨迹产物、SFT、External Thinking、Viewer |
+| `benches/` | Bench 接入与各 bench 说明 |
+| `index.md` | 文档站首页（Sphinx 入口） |
 
 ## 阅读顺序
 
 | 阶段 | 阅读内容 | 完成标准 |
 | --- | --- | --- |
-| 1. 跑通 | [快速上手](getting-started.md) | 完成 dry-run、采集并打开 Viewer |
-| 2. 选 Harness | [OpenClaw](openclaw-configuration.md)、[Codex](codex-configuration.md) 或 [Claude Code](claude-code-configuration.md) | 镜像、API 协议和 reasoning 参数匹配 |
-| 3. 写 Task | [Task 格式参考](task-format.md) | 能声明 prompt/messages、输入、Context 和输出目录 |
-| 4. 验收产物 | [轨迹产出文件指南](trajectory-outputs.md) | 能区分 raw、ACTF、SFT、wire 与 results |
-| 5. 批量运行 | [Task Bundle 与结果存储](task-bundle-and-storage.md) | 理解快照、run lock、retry 与 Resume |
+| 1. 跑通 | [快速上手](start/getting-started.md) | 完成 dry-run、采集并打开 Viewer |
+| 2. 选 Harness | [OpenClaw](harnesses/openclaw-configuration.md)、[Codex](harnesses/codex-configuration.md) 或 [Claude Code](harnesses/claude-code-configuration.md) | 镜像、API 协议和 reasoning 参数匹配 |
+| 3. 写 Task | [Task 格式参考](tasks/task-format.md) | 能声明 prompt/messages、输入、Context 和输出目录 |
+| 4. 验收产物 | [轨迹产出文件指南](traces/trajectory-outputs.md) | 能区分 raw、ACTF、SFT、wire 与 results |
+| 5. 批量运行 | [Task Bundle 与结果存储](tasks/task-bundle-and-storage.md) | 理解快照、run lock、retry 与 Resume |
 
-仓库内可运行命令集中在 [Examples](../examples/README.md)。
+仓库内可运行命令集中在 [Examples](start/examples.md)。
+
+## 在线文档站
+
+本目录中的 Markdown 同时作为 [Sphinx](https://www.sphinx-doc.org/) 站点源文件。本地预览：
+
+```bash
+python -m pip install -r docs/requirements-docs.txt
+cd docs
+make html
+python -m http.server -d _build/html 8000
+```
+
+浏览器打开 `http://127.0.0.1:8000`。将仓库接入 [Read the Docs](https://readthedocs.org/) 后，会按根目录 `.readthedocs.yaml` 自动构建并发布。
 
 ## 按目标查文档
 
@@ -22,42 +44,42 @@
 
 | 目标 | 文档 |
 | --- | --- |
-| 从空环境完成第一次采集 | [快速上手](getting-started.md) |
-| 查某个 CLI 参数、默认值或适用 Harness | [CLI 参数参考](cli-reference.md) |
-| 连接 Responses、Chat Completions 或开源模型服务 | [OpenClaw Harness 指南](openclaw-configuration.md) |
-| 使用 Codex CLI 采集轨迹 | [Codex Harness 指南](codex-configuration.md) |
-| 使用 Anthropic Messages API 与 Claude Code | [Claude Code Harness 指南](claude-code-configuration.md) |
-| 批量并行、retry 或断点续跑 | [Task Bundle 与结果存储](task-bundle-and-storage.md#6-run-与-sample) |
+| 从空环境完成第一次采集 | [快速上手](start/getting-started.md) |
+| 查某个 CLI 参数、默认值或适用 Harness | [CLI 参数参考](start/cli-reference.md) |
+| 连接 Responses、Chat Completions 或开源模型服务 | [OpenClaw Harness 指南](harnesses/openclaw-configuration.md) |
+| 使用 Codex CLI 采集轨迹 | [Codex Harness 指南](harnesses/codex-configuration.md) |
+| 使用 Anthropic Messages API 与 Claude Code | [Claude Code Harness 指南](harnesses/claude-code-configuration.md) |
+| 批量并行、retry 或断点续跑 | [Task Bundle 与结果存储](tasks/task-bundle-and-storage.md#6-run-与-sample) |
 
 ### Task 与文件
 
 | 目标 | 文档 |
 | --- | --- |
-| 编写单轮或预定义多轮 task | [Task 格式参考](task-format.md) |
-| 携带本地文件、Context、skills 或 setup | [Task 格式参考](task-format.md#4-fileroot) |
-| 理解输入快照、工作区和结果回收 | [Task Bundle 与结果存储](task-bundle-and-storage.md) |
-| 让另一个模型动态扮演用户 | [User Simulator](user-simulator.md) |
+| 编写单轮或预定义多轮 task | [Task 格式参考](tasks/task-format.md) |
+| 携带本地文件、Context、skills 或 setup | [Task 格式参考](tasks/task-format.md#4-fileroot) |
+| 理解输入快照、工作区和结果回收 | [Task Bundle 与结果存储](tasks/task-bundle-and-storage.md) |
+| 让另一个模型动态扮演用户 | [User Simulator](tasks/user-simulator.md) |
 
 ### Bench 与评分
 
 | 目标 | 文档 |
 | --- | --- |
-| 把一个 benchmark 跑成带分数的 run | [Bench 接入与评分](bench-format.md#7-cli) |
+| 把一个 benchmark 跑成带分数的 run | [Bench 接入与评分](benches/bench-format.md#7-cli) |
 | 跑 WildClawBench（上游旋钮对应、search shim、已知坑） | [WildClawBench](benches/wildclawbench.md) |
-| 接入一个新 bench | [Bench 接入与评分](bench-format.md#6-加一个新-bench) |
-| 看懂 `score.json` 与聚合口径 | [Bench 接入与评分](bench-format.md#5-聚合口径) |
-| 确保答案不泄漏给 Agent | [Bench 接入与评分](bench-format.md#4-stage答案不能放在-agent-的工作目录里) |
+| 接入一个新 bench | [Bench 接入与评分](benches/bench-format.md#6-加一个新-bench) |
+| 看懂 `score.json` 与聚合口径 | [Bench 接入与评分](benches/bench-format.md#5-聚合口径) |
+| 确保答案不泄漏给 Agent | [Bench 接入与评分](benches/bench-format.md#4-stage答案不能放在-agent-的工作目录里) |
 
 ### 轨迹与训练数据
 
 | 目标 | 文档 |
 | --- | --- |
-| 知道每个产物何时生成、应该看哪个 | [轨迹产出文件指南](trajectory-outputs.md) |
-| 直接训练 `messages` + `tools` 数据 | [SFT 数据格式](sft-format.md) |
-| 核对模型实际收到的请求 context | [Wire trace 与 context 审计](trajectory-outputs.md#32-session-历史不等于模型请求-context) |
-| 用工具参数保存显式 CoT | [External Thinking](external-thinking.md) |
-| 恢复 Claude signed thinking | [Claude Signature Recovery](claude-code-configuration.md#5-signature-recovery实验性) |
-| 在网页中检查 reasoning 和工具步骤 | [Viewer](viewer.md) |
+| 知道每个产物何时生成、应该看哪个 | [轨迹产出文件指南](traces/trajectory-outputs.md) |
+| 直接训练 `messages` + `tools` 数据 | [SFT 数据格式](traces/sft-format.md) |
+| 核对模型实际收到的请求 context | [Wire trace 与 context 审计](traces/trajectory-outputs.md#32-session-历史不等于模型请求-context) |
+| 用工具参数保存显式 CoT | [External Thinking](traces/external-thinking.md) |
+| 恢复 Claude signed thinking | [Claude Signature Recovery](harnesses/claude-code-configuration.md#5-signature-recovery实验性) |
+| 在网页中检查 reasoning 和工具步骤 | [Viewer](traces/viewer.md) |
 
 ## 按 Harness 选择
 
@@ -70,7 +92,7 @@
 | External thinking | 是 | 是 | 否 |
 | Signature recovery | 否 | 否 | 实验性 |
 | Wire request capture | 是 | 是 | 是 |
-| Harness 专属指南 | [打开](openclaw-configuration.md) | [打开](codex-configuration.md) | [打开](claude-code-configuration.md) |
+| Harness 专属指南 | [打开](harnesses/openclaw-configuration.md) | [打开](harnesses/codex-configuration.md) | [打开](harnesses/claude-code-configuration.md) |
 
 ## CoT 路径选择
 
@@ -101,13 +123,13 @@
 
 ## 文档职责
 
-- `README.md`：项目定位和最短入门路径；
-- `getting-started.md`：首次运行的完整流程；
-- Harness 指南：只解释对应镜像、API、reasoning、native raw 与限制；
-- `task-format.md`：输入 schema 的权威人工参考；
-- `trajectory-outputs.md`：产物条件和信息边界的权威参考；
-- `sft-format.md`：训练投影 schema 的权威参考；
-- `cli-reference.md`：参数适用范围和默认值。
+- 仓库根 `README.md`：项目定位和最短入门路径；
+- `start/getting-started.md`：首次运行的完整流程；
+- `harnesses/`：只解释对应镜像、API、reasoning、native raw 与限制；
+- `tasks/task-format.md`：输入 schema 的权威人工参考；
+- `traces/trajectory-outputs.md`：产物条件和信息边界的权威参考；
+- `traces/sft-format.md`：训练投影 schema 的权威参考；
+- `start/cli-reference.md`：参数适用范围和默认值。
 
 机器可读 Task 约束见 [`schemas/task.schema.json`](../schemas/task.schema.json)。CLI 的最终事实来源始终是：
 

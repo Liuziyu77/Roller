@@ -1,6 +1,6 @@
 # Bench 接入与评分
 
-[文档中心](README.md) · [Task 格式参考](task-format.md) · [CLI 参数参考](cli-reference.md) · [轨迹产出文件指南](trajectory-outputs.md)
+[文档中心](../index.md) · [Task 格式参考](../tasks/task-format.md) · [CLI 参数参考](../start/cli-reference.md) · [轨迹产出文件指南](../traces/trajectory-outputs.md)
 
 Roller 的采集路径本身不含"评分"概念：它跑完 task 就把容器销毁。Bench 层在这之上补两件事：
 
@@ -242,7 +242,7 @@ grader 需要的环境变量要用 `--pass-env` 透传（哪些变量由 bench �
 
 | Bench | `--harness` | README | 一句话 |
 | --- | --- | --- | --- |
-| `wildclawbench` | `openclaw` | [WildClawBench](benches/wildclawbench.md) | 60 个真实场景任务，6 类；grader 在容器里跑，26 个任务的 `gt/` 走 `stage` |
+| `wildclawbench` | `openclaw` | [WildClawBench](wildclawbench.md) | 60 个真实场景任务，6 类；grader 在容器里跑，26 个任务的 `gt/` 走 `stage` |
 
 接入前先读对应 README 的"上游旋钮 → Roller 对应"表和"未搬"清单 ——
 少一个旋钮不会报错，只会让分数不可比。

@@ -1,6 +1,6 @@
 # User Simulator 与动态对话
 
-[文档中心](README.md) · [Task 格式](task-format.md) · [示例](../examples/README.md#动态-user-simulator) · [产物说明](trajectory-outputs.md)
+[文档中心](../index.md) · [Task 格式](task-format.md) · [示例](../start/examples.md#动态-user-simulator) · [产物说明](../traces/trajectory-outputs.md)
 
 User Simulator 是一个独立运行的 Harness，用模型扮演用户。它不会提前生成完整对话，而是在任务 Agent 完成当前指令后读取截至当前轮的完整上下文，再决定提出新要求或结束任务。
 
@@ -44,7 +44,7 @@ User Simulator 是一个独立运行的 Harness，用模型扮演用户。它不
 | `harness` | 否 | `openclaw` | Simulator 使用的 Harness：`openclaw`、`codex` 或 `claude-code` |
 | `model` | 否 | 任务 Agent 模型 | Simulator 使用的 model ref |
 | `max_turns` | 否 | `6` | 最多发送给任务 Agent 的指令数，范围 `1–100` |
-| `thinking` | 否 | CLI 默认值 | 只覆盖 Simulator；使用与 [`--thinking`](openclaw-configuration.md#5-thinkingsystem-prompt-与-wire-trace) 相同的逻辑档位和校验 |
+| `thinking` | 否 | CLI 默认值 | 只覆盖 Simulator；使用与 [`--thinking`](../harnesses/openclaw-configuration.md#5-thinkingsystem-prompt-与-wire-trace) 相同的逻辑档位和校验 |
 
 命令行 `--model` 只覆盖任务 Agent 的模型；`user_simulator.model` 仍按 task 配置。省略 Simulator model 时，它跟随本次实际使用的任务 Agent 模型。
 
@@ -117,7 +117,7 @@ Instruction 不是第一轮 user message，而是 Simulator 每一轮都要遵�
 
 不要把“逐步披露需求”和一份已经包含所有细节的第一轮话术同时写进 instruction，否则动态交互会退化成普通单轮任务。也不要只写宽泛身份而省略结束条件，否则 Simulator 容易无意义地持续追问到 `max_turns`。
 
-仓库中的可运行版本见 [`examples/tasks/user-simulator.jsonl`](../examples/tasks/user-simulator.jsonl)。
+仓库中的可运行版本见 [`examples/tasks/user-simulator.jsonl`](../../examples/tasks/user-simulator.jsonl)。
 
 ## 6. 终止与失败
 
@@ -152,7 +152,7 @@ roller collect \
   --run-name user_simulator_hr
 ```
 
-`--parallel N` 仍表示同时执行 N 条 rollout。每条动态 rollout 会同时占用两个容器，并产生两组模型调用和两份轨迹。端口规划见 [OpenClaw 配置](openclaw-configuration.md#7-并行容器与端口)。
+`--parallel N` 仍表示同时执行 N 条 rollout。每条动态 rollout 会同时占用两个容器，并产生两组模型调用和两份轨迹。端口规划见 [OpenClaw 配置](../harnesses/openclaw-configuration.md#7-并行容器与端口)。
 
 ## 8. 保存与使用轨迹
 
@@ -181,7 +181,7 @@ samples/<task-agent-model>/<index>_<task>/
 - 统计成本：根 `info.json` 的 `usage` 是双方总量；根 `info.json` 的 `conversation.participants` 保存两边各自的 usage 和轨迹位置。
 - 检查任务交付：使用 `results/`，这里只回收 Task Agent 的输出。
 
-`conversation.json` 不复制隐藏 reasoning、tool call 或 tool result；这些事件仍留在各自 raw/ACTF/SFT 轨迹中。详细产出条件见 [轨迹产出文件指南](trajectory-outputs.md)，sample 字段和结果安全规则见 [文件、Task Bundle 与结果存储](task-bundle-and-storage.md#6-run-与-sample)。
+`conversation.json` 不复制隐藏 reasoning、tool call 或 tool result；这些事件仍留在各自 raw/ACTF/SFT 轨迹中。详细产出条件见 [轨迹产出文件指南](../traces/trajectory-outputs.md)，sample 字段和结果安全规则见 [文件、Task Bundle 与结果存储](task-bundle-and-storage.md#6-run-与-sample)。
 
 ## 9. Retry 与 Resume
 
