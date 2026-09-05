@@ -56,7 +56,7 @@ Docker 中的 Agent Harness
 
 ## 最小运行流程
 
-以下流程使用 OpenClaw 完成一次基础采集。镜像构建、Codex/Claude Code 配置和结果验收见 [快速上手](docs/getting-started.md)。
+以下流程使用 OpenClaw 完成一次基础采集。镜像构建、Codex/Claude Code 配置和结果验收见 [快速上手](docs/start/getting-started.md)。
 
 ### 1. 安装 Roller 与镜像
 
@@ -148,7 +148,7 @@ Task 清单支持 `.jsonl`、JSON 数组或 `{"tasks": [...]}`。一条 task 可
 - `harness`（或 `agent_harness` / `task_agent.harness`）：Task Agent 使用的 Harness；也可由 `--harness` 统一覆盖；
 - `user_simulator`：由独立 Harness 动态生成后续 user message，可单独设置 `harness` 和 `model`。
 
-完整字段见 [Task 格式参考](docs/task-format.md)。
+完整字段见 [Task 格式参考](docs/tasks/task-format.md)。
 
 每个成功 sample 至少包含：
 
@@ -160,30 +160,31 @@ Task 清单支持 `.jsonl`、JSON 数组或 `{"tasks": [...]}`。一条 task 可
 | `info.json` | 状态、耗时、usage、版本和输入来源 |
 | `results/` | task `output_dir` 中生成了文件时存在 |
 
-Run 根目录的 `sft.jsonl` 按 request 顺序汇总全部成功样本。需要审计 Harness 是否压缩、裁剪或改写了模型请求 context 时，使用 `--wire-trace full`；native session 不等同于模型实际收到的请求。详见 [轨迹产出文件指南](docs/trajectory-outputs.md)。
+Run 根目录的 `sft.jsonl` 按 request 顺序汇总全部成功样本。需要审计 Harness 是否压缩、裁剪或改写了模型请求 context 时，使用 `--wire-trace full`；native session 不等同于模型实际收到的请求。详见 [轨迹产出文件指南](docs/traces/trajectory-outputs.md)。
 
 ## 文档导航
 
 阅读顺序：
 
-1. [快速上手](docs/getting-started.md)：从安装到采集、验收和查看轨迹。
+1. [快速上手](docs/start/getting-started.md)：从安装到采集、验收和查看轨迹。
 2. [Examples](examples/README.md)：OpenClaw、Codex、Claude Code 和进阶案例命令。
-3. [Task 格式参考](docs/task-format.md)：开始编写自己的 task。
-4. [轨迹产出文件指南](docs/trajectory-outputs.md)：理解 raw、ACTF、SFT、wire 和产出条件。
+3. [Task 格式参考](docs/tasks/task-format.md)：开始编写自己的 task。
+4. [轨迹产出文件指南](docs/traces/trajectory-outputs.md)：理解 raw、ACTF、SFT、wire 和产出条件。
 
 按需查阅：
 
 | 目标 | 文档 |
 | --- | --- |
-| 选择并配置 Harness | [OpenClaw](docs/openclaw-configuration.md) · [Codex](docs/codex-configuration.md) · [Claude Code](docs/claude-code-configuration.md) |
-| 查命令行参数与适用范围 | [CLI 参数参考](docs/cli-reference.md) |
-| 管理输入、Context、输出和 Resume | [Task Bundle 与结果存储](docs/task-bundle-and-storage.md) |
-| 跑评测 bench 或接入新 bench | [Bench 接入与评分](docs/bench-format.md) |
-| 制作训练数据 | [SFT 数据格式](docs/sft-format.md) |
-| 保存显式 CoT | [External Thinking](docs/external-thinking.md) |
-| 动态生成 user message | [User Simulator](docs/user-simulator.md) |
-| 使用可视化页面 | [Viewer](docs/viewer.md) |
+| 选择并配置 Harness | [OpenClaw](docs/harnesses/openclaw-configuration.md) · [Codex](docs/harnesses/codex-configuration.md) · [Claude Code](docs/harnesses/claude-code-configuration.md) |
+| 查命令行参数与适用范围 | [CLI 参数参考](docs/start/cli-reference.md) |
+| 管理输入、Context、输出和 Resume | [Task Bundle 与结果存储](docs/tasks/task-bundle-and-storage.md) |
+| 跑评测 bench 或接入新 bench | [Bench 接入与评分](docs/benches/bench-format.md) |
+| 制作训练数据 | [SFT 数据格式](docs/traces/sft-format.md) |
+| 保存显式 CoT | [External Thinking](docs/traces/external-thinking.md) |
+| 动态生成 user message | [User Simulator](docs/tasks/user-simulator.md) |
+| 使用可视化页面 | [Viewer](docs/traces/viewer.md) |
 | 浏览全部资料 | [Docs 首页](docs/README.md) |
+| 本地构建文档站 | `cd docs && make html`，见 [Docs 首页](docs/README.md#在线文档站) |
 
 ## 安全边界
 
@@ -193,7 +194,7 @@ Run 根目录的 `sft.jsonl` 按 request 顺序汇总全部成功样本。需要
 - `wire_trace.jsonl` 会保存完整请求文本，可能包含敏感 prompt、reasoning 和工具结果，应按敏感数据管理；
 - Viewer 默认只监听 `127.0.0.1`，远程访问建议使用 SSH 端口转发。
 
-完整规则见 [Task Bundle 与结果存储](docs/task-bundle-and-storage.md#8-安全与隐私边界)。
+完整规则见 [Task Bundle 与结果存储](docs/tasks/task-bundle-and-storage.md#8-安全与隐私边界)。
 
 ## 开发
 

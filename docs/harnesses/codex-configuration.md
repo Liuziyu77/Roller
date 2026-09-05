@@ -1,8 +1,8 @@
 # Codex Harness 指南
 
-[文档中心](README.md) · [快速上手](getting-started.md) · [OpenClaw](openclaw-configuration.md) · [Claude Code](claude-code-configuration.md) · [CLI 参数](cli-reference.md)
+[文档中心](../index.md) · [快速上手](../start/getting-started.md) · [OpenClaw](openclaw-configuration.md) · [Claude Code](claude-code-configuration.md) · [CLI 参数](../start/cli-reference.md)
 
-本页只说明 Codex 专属的镜像、Responses API、reasoning、native session 和排错。Task 字段见 [Task 格式参考](task-format.md)，所有 Harness 共用的产物语义见 [轨迹产出文件指南](trajectory-outputs.md)。
+本页只说明 Codex 专属的镜像、Responses API、reasoning、native session 和排错。Task 字段见 [Task 格式参考](../tasks/task-format.md)，所有 Harness 共用的产物语义见 [轨迹产出文件指南](../traces/trajectory-outputs.md)。
 
 > 快速定位：支持范围（第 1 节）· 镜像（第 2 节）· API（第 3 节）· reasoning/external thinking（第 4 节）· native/ACTF/SFT/wire（第 7–8 节）· 排错（第 9 节）
 
@@ -28,7 +28,7 @@ Codex Harness 支持：
 
 ## 2. 构建固定版本镜像
 
-Roller 使用 [`docker/codex/Dockerfile`](../docker/codex/Dockerfile)，基础镜像为
+Roller 使用 [`docker/codex/Dockerfile`](../../docker/codex/Dockerfile)，基础镜像为
 `node:22-bookworm-slim`，默认固定安装 `@openai/codex@0.149.0`。镜像还包含 Git、ripgrep、
 Python、curl、jq、SSH client 等常用任务工具。
 
@@ -213,13 +213,13 @@ roller collect \
   assistant 的 `reasoning_content`。
 
 详细的阶段协议、raw 事件形态和校验规则见
-[External Thinking 指南](external-thinking.md)。
+[External Thinking 指南](../traces/external-thinking.md)。
 
 建议先用一条短 task 配合 `--wire-trace full` 验收。成功的 `external_always` 在 sample
 `info.json` 中应为 `validated=true`，wire phase 应严格按 `think/act` 交替；Viewer 展示
 ACTF 中的 canonical `deep_think` 工具步骤，折叠后的训练 reasoning 则位于
 `trace_SFT.json`。可复制的检查命令见
-[如何查看和验收](external-thinking.md#7-如何查看和验收)。
+[如何查看和验收](../traces/external-thinking.md#7-如何查看和验收)。
 
 ## 5. Web search
 

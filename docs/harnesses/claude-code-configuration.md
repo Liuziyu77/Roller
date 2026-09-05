@@ -1,8 +1,8 @@
 # Claude Code Harness 指南
 
-[文档中心](README.md) · [快速上手](getting-started.md) · [OpenClaw](openclaw-configuration.md) · [Codex](codex-configuration.md) · [CLI 参数](cli-reference.md)
+[文档中心](../index.md) · [快速上手](../start/getting-started.md) · [OpenClaw](openclaw-configuration.md) · [Codex](codex-configuration.md) · [CLI 参数](../start/cli-reference.md)
 
-本页只说明 Claude Code 专属的镜像、Anthropic Messages API、thinking、signature recovery、native session 和排错。Task 字段见 [Task 格式参考](task-format.md)，所有 Harness 共用的产物语义见 [轨迹产出文件指南](trajectory-outputs.md)。
+本页只说明 Claude Code 专属的镜像、Anthropic Messages API、thinking、signature recovery、native session 和排错。Task 字段见 [Task 格式参考](../tasks/task-format.md)，所有 Harness 共用的产物语义见 [轨迹产出文件指南](../traces/trajectory-outputs.md)。
 
 > 快速定位：支持范围（第 1 节）· 镜像（第 2 节）· API（第 3 节）· thinking（第 4 节）· signature recovery（第 5 节）· native/ACTF/SFT/wire（第 8–9 节）· 排错（第 10 节）
 
@@ -33,7 +33,7 @@ Claude Code Harness 支持：
 
 ## 2. 构建固定版本镜像
 
-Roller 使用 [`docker/claude-code/Dockerfile`](../docker/claude-code/Dockerfile)，基础镜像为
+Roller 使用 [`docker/claude-code/Dockerfile`](../../docker/claude-code/Dockerfile)，基础镜像为
 `node:22-bookworm-slim`，默认固定安装 `@anthropic-ai/claude-code@2.1.222`。Codex 已使用的
 Node 22 离线归档可以直接复用，不需要重新下载基础镜像。
 

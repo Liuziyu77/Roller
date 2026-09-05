@@ -1,6 +1,6 @@
 # External Thinking：以工具调用保存显式 CoT
 
-[文档中心](README.md) · [OpenClaw](openclaw-configuration.md) · [Codex](codex-configuration.md) · [SFT 格式](sft-format.md)
+[文档中心](../index.md) · [OpenClaw](../harnesses/openclaw-configuration.md) · [Codex](../harnesses/codex-configuration.md) · [SFT 格式](sft-format.md)
 
 Roller 参考 [oh-my-pi](https://github.com/can1357/oh-my-pi)，为 OpenClaw 和 Codex 实现了
 `external` 与 `external_always` 模式：关闭 provider 原生 reasoning，把模型明确生成的
@@ -231,7 +231,7 @@ Claude Code Harness 当前不实现 external thinking。`--harness claude-code` 
 Claude 的可选 `--claude-signature-recovery fill|prefer` 是任务结束后的 provider-assisted
 signature replay，不注入 `deep_think` 工具，也不参与 Agent THINK/ACT 循环，因此不属于本章
 的 external thinking。该限制与 Anthropic Messages API 的调用和轨迹采集无关；见
-[Claude Code Harness 指南](claude-code-configuration.md)。
+[Claude Code Harness 指南](../harnesses/claude-code-configuration.md)。
 
 ### `wire_trace.jsonl`
 

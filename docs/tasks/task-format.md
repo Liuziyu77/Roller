@@ -1,13 +1,13 @@
 # Task 格式参考
 
-[文档中心](README.md) · [快速上手](getting-started.md) · [文件生命周期](task-bundle-and-storage.md) · [机器可读 Schema](../schemas/task.schema.json)
+[文档中心](../index.md) · [快速上手](../start/getting-started.md) · [文件生命周期](task-bundle-and-storage.md) · [机器可读 Schema](../../schemas/task.schema.json)
 
 Roller 使用 `roller.task/v1` 描述一次 rollout 需要的对话、文件、Context 和运行设置。Task 清单可以是 JSONL 或 JSON：
 
 - `.jsonl`：每个非空行是一条 task。
 - `.json`：顶层是 task 数组，或 `{"tasks": [...]}`。
 
-机器可读约束见 [Task JSON Schema](../schemas/task.schema.json)。
+机器可读约束见 [Task JSON Schema](../../schemas/task.schema.json)。
 
 ## 1. 完整单轮示例
 
@@ -289,7 +289,7 @@ OpenClaw adapter 会把 Context 注入 `/root/<target>` 与 `/tmp_workspace/<tar
 | --- | --- |
 | `env` | Task 强制依赖的宿主机环境变量名；缺失或为空时 task 失败 |
 | `setup` | Agent 启动前在 `/tmp_workspace` 执行的 shell 命令 |
-| `thinking` | 覆盖本 task 的 Harness reasoning/thinking 设置；OpenClaw 见 [Thinking 配置](openclaw-configuration.md#5-thinkingsystem-prompt-与-wire-trace)，Codex 见 [Reasoning 配置](codex-configuration.md#4-reasoning-配置)，Claude Code 见 [Thinking 与 effort](claude-code-configuration.md#4-thinking-与-effort) |
+| `thinking` | 覆盖本 task 的 Harness reasoning/thinking 设置；OpenClaw 见 [Thinking 配置](../harnesses/openclaw-configuration.md#5-thinkingsystem-prompt-与-wire-trace)，Codex 见 [Reasoning 配置](../harnesses/codex-configuration.md#4-reasoning-配置)，Claude Code 见 [Thinking 与 effort](../harnesses/claude-code-configuration.md#4-thinking-与-effort) |
 
 `env` 和 `setup` 都接受单个字符串或字符串数组。Task 作者应把 setup 当作可执行代码管理，只运行可信数据集中的命令。
 
