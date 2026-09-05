@@ -1,8 +1,12 @@
+import os
 from pathlib import Path
 
 project = "Roller"
 author = "Roller contributors"
 copyright = "2026, Roller contributors"
+
+# "en" (default public site) or "zh" (Chinese tree under /zh/).
+DOCS_LANG = os.environ.get("DOCS_LANG", "en")
 
 
 def _version() -> str:
@@ -32,7 +36,7 @@ source_suffix = {
 }
 
 master_doc = "index"
-language = "zh_CN"
+language = "zh_CN" if DOCS_LANG == "zh" else "en"
 
 exclude_patterns = [
     "_build",
@@ -45,6 +49,7 @@ exclude_patterns = [
 templates_path: list[str] = []
 html_static_path = ["_static"]
 html_css_files = ["custom.css"]
+html_js_files = ["language-switcher.js"]
 
 html_theme = "sphinx_rtd_theme"
 html_theme_options = {
@@ -78,15 +83,15 @@ _HTML_REDIRECTS = {
 }
 
 _REDIRECT_PAGE = """<!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="{lang}">
 <head>
   <meta charset="utf-8">
   <meta http-equiv="refresh" content="0; url={url}">
   <link rel="canonical" href="{url}">
-  <title>页面已移动</title>
+  <title>Page moved</title>
 </head>
 <body>
-  <p>文档已移动到 <a href="{url}">{url}</a>。</p>
+  <p>This page has moved to <a href="{url}">{url}</a>.</p>
 </body>
 </html>
 """
@@ -97,9 +102,10 @@ def setup(app):
         if exception or getattr(app.builder, "name", None) != "html":
             return
         outdir = Path(app.outdir)
+        page_lang = "zh-CN" if DOCS_LANG == "zh" else "en"
         for old_name, new_url in _HTML_REDIRECTS.items():
             (outdir / old_name).write_text(
-                _REDIRECT_PAGE.format(url=new_url),
+                _REDIRECT_PAGE.format(url=new_url, lang=page_lang),
                 encoding="utf-8",
             )
 

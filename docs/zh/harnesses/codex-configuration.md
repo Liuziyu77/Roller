@@ -28,7 +28,7 @@ Codex Harness 支持：
 
 ## 2. 构建固定版本镜像
 
-Roller 使用 [`docker/codex/Dockerfile`](../../docker/codex/Dockerfile)，基础镜像为
+Roller 使用 [`docker/codex/Dockerfile`](../../../docker/codex/Dockerfile)，基础镜像为
 `node:22-bookworm-slim`，默认固定安装 `@openai/codex@0.149.0`。镜像还包含 Git、ripgrep、
 Python、curl、jq、SSH client 等常用任务工具。
 

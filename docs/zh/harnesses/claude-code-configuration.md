@@ -33,7 +33,7 @@ Claude Code Harness 支持：
 
 ## 2. 构建固定版本镜像
 
-Roller 使用 [`docker/claude-code/Dockerfile`](../../docker/claude-code/Dockerfile)，基础镜像为
+Roller 使用 [`docker/claude-code/Dockerfile`](../../../docker/claude-code/Dockerfile)，基础镜像为
 `node:22-bookworm-slim`，默认固定安装 `@anthropic-ai/claude-code@2.1.222`。Codex 已使用的
 Node 22 离线归档可以直接复用，不需要重新下载基础镜像。
 

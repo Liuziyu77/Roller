@@ -1,0 +1,100 @@
+# Roller documentation
+
+Roller is a multi-model, multi-harness framework for collecting agent trajectories. It expands a task list and a model list into independent rollouts, runs each agent in a one-shot Docker container, and saves:
+
+- `trace.jsonl`: harness-native raw trace
+- `trace_ACTF.json`: unified analysis and visualization format (`ACTF_v1.0`)
+- `trace_SFT.json`: one standard training sample
+- `results/`: files produced by the agent
+- `info.json`: status, usage, and run provenance
+
+```text
+tasks.jsonl × models
+        │
+        ▼
+Agent harness in Docker
+        │
+        ├─ trace.jsonl       harness-native raw trace
+        ├─ trace_ACTF.json   unified analysis format
+        ├─ trace_SFT.json    one standard training sample
+        ├─ results/          files produced by the agent
+        └─ info.json         status, usage, and provenance
+```
+
+Current scope: Python 3.10+, task schema `roller.task/v1`, trace format `ACTF_v1.0`. The project is in Alpha and licensed under Apache 2.0. Source: [GitHub](https://github.com/Liuziyu77/Roller).
+
+## What it is for
+
+- Batch-collect single-turn, multi-turn, or tool-using agent traces
+- Compare multiple models or harnesses on the same tasks
+- Emit SFT JSONL whose top level is strictly `messages` and `tools`
+- Keep reasoning, tool calls, tool results, and task file artifacts
+- Build a recoverable data pipeline with run locks, retries, and resume
+- Step through each task's thinking and actions in the built-in Viewer
+
+## Choose a harness
+
+| Harness | Model API | Best for | Capabilities and limits |
+| --- | --- | --- | --- |
+| OpenClaw (default) | OpenAI Responses or Chat Completions | Custom/open models, dynamic User Simulator, multimodal input | Supports `external` / `external_always`; models are configured in JSON |
+| Codex | Responses | Codex CLI tool traces, GPT and Responses-compatible services | Supports external thinking; can be the task agent or the User Simulator |
+| Claude Code | Anthropic `/v1/messages` | Claude Code tool traces and native thinking | Experimental signature recovery; can be the task agent or the User Simulator |
+
+All three share the same Task, Sample, ACTF, SFT, Viewer, retry, and Resume boundaries. Images, APIs, and reasoning flags differ; see the matching harness guide.
+
+## Suggested reading order
+
+| Stage | Read | Done when |
+| --- | --- | --- |
+| 1. Run once | [Getting started](start/getting-started.md) | Dry-run, collect, and open the Viewer |
+| 2. Pick a harness | [OpenClaw](harnesses/openclaw-configuration.md), [Codex](harnesses/codex-configuration.md), or [Claude Code](harnesses/claude-code-configuration.md) | Image, API protocol, and reasoning flags match |
+| 3. Write tasks | [Task format](tasks/task-format.md) | You can declare prompt/messages, inputs, context, and an output directory |
+| 4. Check outputs | [Trajectory outputs](traces/trajectory-outputs.md) | You can tell raw, ACTF, SFT, wire, and results apart |
+| 5. Run at scale | [Task bundles and storage](tasks/task-bundle-and-storage.md) | You understand snapshots, run locks, retry, and Resume |
+
+Runnable commands live in [Examples](start/examples.md).
+
+```{toctree}
+:maxdepth: 1
+:caption: Getting started
+
+start/getting-started
+start/examples
+start/cli-reference
+```
+
+```{toctree}
+:maxdepth: 1
+:caption: Harness setup
+
+harnesses/openclaw-configuration
+harnesses/codex-configuration
+harnesses/claude-code-configuration
+```
+
+```{toctree}
+:maxdepth: 1
+:caption: Tasks and runs
+
+tasks/task-format
+tasks/task-bundle-and-storage
+tasks/user-simulator
+```
+
+```{toctree}
+:maxdepth: 1
+:caption: Traces and training data
+
+traces/trajectory-outputs
+traces/sft-format
+traces/external-thinking
+traces/viewer
+```
+
+```{toctree}
+:maxdepth: 1
+:caption: Bench
+
+benches/bench-format
+benches/wildclawbench
+```
