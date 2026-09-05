@@ -1,6 +1,6 @@
 # Roller Examples
 
-[项目首页](../README.md) · [快速上手](../docs/start/getting-started.md) · [Task 格式](../docs/tasks/task-format.md) · [产物说明](../docs/traces/trajectory-outputs.md)
+[项目首页](../README.md) · [快速上手](../docs/zh/start/getting-started.md) · [Task 格式](../docs/zh/tasks/task-format.md) · [产物说明](../docs/zh/traces/trajectory-outputs.md)
 
 本目录包含配置模板、task 和运行命令。安装、字段定义与轨迹语义由对应专题文档维护。
 
@@ -33,7 +33,7 @@ examples/
 
 ## 一次性准备
 
-先按照 [Getting Started](../docs/start/getting-started.md#1-准备运行环境) 安装 Roller，并准备至少一个 Harness 镜像。
+先按照 [Getting Started](../docs/zh/start/getting-started.md#1-准备运行环境) 安装 Roller，并准备至少一个 Harness 镜像。
 
 复制并编辑本地 API 环境文件：
 
@@ -66,7 +66,7 @@ set +a
   Messages API；二者的 model、endpoint、Key 环境变量和 effort 都通过 CLI 设置；
 - `--codex-config` 和 `--claude-settings` 是可选的 Harness 原生配置入口，不是模型注册表。
 
-完整规则见 [OpenClaw Harness 指南](../docs/harnesses/openclaw-configuration.md#2-模型配置文件)。
+完整规则见 [OpenClaw Harness 指南](../docs/zh/harnesses/openclaw-configuration.md#2-模型配置文件)。
 
 ## 基础 Task 清单
 
@@ -131,7 +131,7 @@ roller collect \
 
 `--codex-config` 可以省略；示例文件只设置 Roller 没有覆盖的 text verbosity，并保留一个注释掉的
 MCP 模板。第四条 task 会通过 `codex exec resume --last` 延续 session。镜像、API 和 reasoning
-细节见 [Codex Harness 指南](../docs/harnesses/codex-configuration.md)。
+细节见 [Codex Harness 指南](../docs/zh/harnesses/codex-configuration.md)。
 
 ## Claude Code：运行相同 Task
 
@@ -154,7 +154,7 @@ roller collect \
 
 `--claude-settings` 可以省略；示例只关闭 commit co-author 标记，不改变 permission mode、thinking
 或工具行为。第四条 task 会通过 `claude --continue` 延续 session。镜像、endpoint、thinking 和
-signature recovery 见 [Claude Code Harness 指南](../docs/harnesses/claude-code-configuration.md)。
+signature recovery 见 [Claude Code Harness 指南](../docs/zh/harnesses/claude-code-configuration.md)。
 
 ## 进阶案例
 
@@ -178,7 +178,7 @@ roller collect \
   --run-name examples-codex-external
 ```
 
-成功后，ACTF 保留 canonical `deep_think` call/result，SFT 则删除内部工具协议并把 thoughts 写入下一条 assistant 的 `reasoning_content`。完整验收方法见 [External Thinking](../docs/traces/external-thinking.md#7-如何查看和验收)。
+成功后，ACTF 保留 canonical `deep_think` call/result，SFT 则删除内部工具协议并把 thoughts 写入下一条 assistant 的 `reasoning_content`。完整验收方法见 [External Thinking](../docs/zh/traces/external-thinking.md#7-如何查看和验收)。
 
 ### Claude signature recovery
 
@@ -190,7 +190,7 @@ signed thinking、但 reasoning 为空时，可在 Claude Code 命令中增加�
 --claude-signature-recovery-attempts 2
 ```
 
-`fill` 是推荐的保守模式；它只填空值。该功能会增加独立 provider 请求，结果为 best effort，正式训练前应检查 `signature_recovery.jsonl`。详见 [Signature recovery](../docs/harnesses/claude-code-configuration.md#5-signature-recovery实验性)。
+`fill` 是推荐的保守模式；它只填空值。该功能会增加独立 provider 请求，结果为 best effort，正式训练前应检查 `signature_recovery.jsonl`。详见 [Signature recovery](../docs/zh/harnesses/claude-code-configuration.md#5-signature-recovery实验性)。
 
 ### 动态 User Simulator
 
@@ -206,7 +206,7 @@ roller collect \
   --run-name examples-user-simulator
 ```
 
-Task 已内置 `model: my-openai-proxy/my-model`。动态对话会额外生成 `conversation.json` 和 `user_simulator/` 轨迹；Task Agent 与 Simulator 可在各自字段中选择 OpenClaw、Codex 或 Claude Code。详见 [User Simulator](../docs/tasks/user-simulator.md)。
+Task 已内置 `model: my-openai-proxy/my-model`。动态对话会额外生成 `conversation.json` 和 `user_simulator/` 轨迹；Task Agent 与 Simulator 可在各自字段中选择 OpenClaw、Codex 或 Claude Code。详见 [User Simulator](../docs/zh/tasks/user-simulator.md)。
 
 ### 多模态输入
 
@@ -252,4 +252,4 @@ roller view runs/examples-openclaw
 - 每个成功 sample 是否有 `trace.jsonl`、`trace_ACTF.json`、`trace_SFT.json` 和 `info.json`；
 - run 根目录 `sft.jsonl` 是否按 request 顺序汇总成功样本。
 
-下一步：编写自己的 [Task](../docs/tasks/task-format.md)，或阅读 [轨迹产出文件指南](../docs/traces/trajectory-outputs.md) 选择训练、调试与审计所需的文件。
+下一步：编写自己的 [Task](../docs/zh/tasks/task-format.md)，或阅读 [轨迹产出文件指南](../docs/zh/traces/trajectory-outputs.md) 选择训练、调试与审计所需的文件。

@@ -117,7 +117,7 @@ Instruction 不是第一轮 user message，而是 Simulator 每一轮都要遵�
 
 不要把“逐步披露需求”和一份已经包含所有细节的第一轮话术同时写进 instruction，否则动态交互会退化成普通单轮任务。也不要只写宽泛身份而省略结束条件，否则 Simulator 容易无意义地持续追问到 `max_turns`。
 
-仓库中的可运行版本见 [`examples/tasks/user-simulator.jsonl`](../../examples/tasks/user-simulator.jsonl)。
+仓库中的可运行版本见 [`examples/tasks/user-simulator.jsonl`](../../../examples/tasks/user-simulator.jsonl)。
 
 ## 6. 终止与失败
 

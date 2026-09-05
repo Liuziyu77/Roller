@@ -124,7 +124,7 @@ OpenClaw 通过 `--model-config` 读取 provider 与 model：
 - Responses 服务使用 `openai-responses`；只有 `/v1/chat/completions` 的服务使用 `openai-completions`；
 - `baseUrl` 通常写到 `/v1`，不要把 `/chat/completions` 当作 base URL。
 
-仓库模板位于 [`examples/config/openclaw/models.json`](../../examples/config/openclaw/models.json)。Reasoning、多模态和 Harness 原生配置模板见 [Examples](examples.md#harness-配置模板)。
+仓库模板位于 [`examples/config/openclaw/models.json`](../../../examples/config/openclaw/models.json)。Reasoning、多模态和 Harness 原生配置模板见 [Examples](examples.md#harness-配置模板)。
 
 ### Codex 配置
 
@@ -150,7 +150,7 @@ Claude Code 也不读取 OpenClaw model JSON。它直接使用：
 
 ## 4. 认识示例 Task
 
-[`examples/tasks/tasks.jsonl`](../../examples/tasks/tasks.jsonl) 包含四条由简到繁的 task：
+[`examples/tasks/tasks.jsonl`](../../../examples/tasks/tasks.jsonl) 包含四条由简到繁的 task：
 
 | ID | 展示内容 |
 | --- | --- |

@@ -191,7 +191,7 @@ class MyBenchAdapter(BenchAdapter):
 
 ### 6.1 每个 bench 都要带一个 README
 
-`docs/benches/<name>.md`，和 adapter 一起提交。这一页不重复 bench 层的通用机制，
+`docs/zh/benches/<name>.md`（英文对应页在 `docs/en/benches/`），和 adapter 一起提交。这一页不重复 bench 层的通用机制，
 只写这个 bench 自己的配置面：
 
 1. **最短路径** —— 从 clone 上游到 `bench report` 的可复制命令序列；

@@ -1,14 +1,18 @@
-# Minimal Sphinx makefile. Usage: `make html` from this directory.
+# Dual-language Sphinx build. Default HTML output is English; Chinese is under zh/.
 
 SPHINXOPTS    ?=
 SPHINXBUILD   ?= sphinx-build
-SOURCEDIR     = .
 BUILDDIR      = _build
 
-.PHONY: help Makefile
+.PHONY: help html clean
 
 help:
-	@$(SPHINXBUILD) -M help "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)
+	@echo "make html    Build English (site root) and Chinese (/zh/)"
+	@echo "make clean   Remove build output"
 
-%: Makefile
-	@$(SPHINXBUILD) -M $@ "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)
+clean:
+	rm -rf "$(BUILDDIR)"
+
+html:
+	DOCS_LANG=en $(SPHINXBUILD) -b html -c . -D language=en $(SPHINXOPTS) en "$(BUILDDIR)/html"
+	DOCS_LANG=zh $(SPHINXBUILD) -b html -c . -D language=zh_CN $(SPHINXOPTS) zh "$(BUILDDIR)/html/zh"
