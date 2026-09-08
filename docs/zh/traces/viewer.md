@@ -1,6 +1,6 @@
 # 轨迹可视化 Viewer
 
-[文档中心](README.md) · [快速上手](getting-started.md#8-打开-viewer) · [产物说明](trajectory-outputs.md) · [SFT 格式](sft-format.md)
+[文档中心](../index.md) · [快速上手](../start/getting-started.md#8-打开-viewer) · [产物说明](trajectory-outputs.md) · [SFT 格式](sft-format.md)
 
 Roller 内置一个零额外依赖的只读 Web Viewer，用于按 task 浏览一个 run 中的任务、
 模型 rollout、reasoning、工具调用、工具结果和最终回复。Viewer 直接读取现有 Roller

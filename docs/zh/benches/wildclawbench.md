@@ -1,12 +1,12 @@
 # WildClawBench
 
-[文档中心](../README.md) · [Bench 接入与评分](../bench-format.md) · [CLI 参数参考](../cli-reference.md)
+[文档中心](../index.md) · [Bench 接入与评分](bench-format.md) · [CLI 参数参考](../start/cli-reference.md)
 
 60 个真实场景 OpenClaw 任务，6 个类别。上游：<https://github.com/InternLM/WildClawBench>。
 
 本页只讲**这个 bench 自己的配置面**：上游有哪些旋钮、在 Roller 侧对应什么、哪些没搬过来。
 bench 层通用机制（`bench` 块、grading 时序、`stage` 防泄漏、聚合口径）见
-[Bench 接入与评分](../bench-format.md)。
+[Bench 接入与评分](bench-format.md)。
 
 ## 1. 最短路径
 
@@ -184,4 +184,4 @@ grep -c 'fetch failed'             <run>/samples/*/*/trace.jsonl
 - **`info.json` 的 `status` 不是失败率**。`bench report` 读 `score.json`；
   `status: error` 常见形态有四种，其中三种（观察里有图片、墙钟砍在工具调用中间、
   末轮只有工具调用没有收尾文本）都**照样有有效分**。见
-  [Bench 接入与评分 §3.2](../bench-format.md#32-grading-失败--0-分)。
+  [Bench 接入与评分 §3.2](bench-format.md#32-grading-失败--0-分)。

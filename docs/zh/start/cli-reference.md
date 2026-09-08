@@ -1,6 +1,6 @@
 # CLI 参数参考
 
-[文档中心](README.md) · [快速上手](getting-started.md) · [Task 格式](task-format.md) · [产物说明](trajectory-outputs.md)
+[文档中心](../index.md) · [快速上手](getting-started.md) · [Task 格式](../tasks/task-format.md) · [产物说明](../traces/trajectory-outputs.md)
 
 本页按适用范围列出 Roller CLI 参数。当前安装版本的参数以命令输出为准：
 
@@ -52,7 +52,7 @@ roller collect --tasks tasks.jsonl --model provider/model ...
 | `--parallel N` | `1` | 最大并行 rollout 数，必须至少为 1 |
 | `--retries N` | `0` | 首次失败后的额外尝试次数 |
 | `--timeout SECONDS` | `600` | 每条 rollout 的总超时，必须大于 0 |
-| `--task-timeouts` | 关闭 | 改用每条 task 自己的 `timeout_seconds`，缺失时回落到 `--timeout`。bench 跑通常必须开启，见 [Bench 接入与评分](bench-format.md#7-cli) |
+| `--task-timeouts` | 关闭 | 改用每条 task 自己的 `timeout_seconds`，缺失时回落到 `--timeout`。bench 跑通常必须开启，见 [Bench 接入与评分](../benches/bench-format.md#7-cli) |
 | `--start-index N` | `0` | 从第 N 条规范化 task 开始 |
 | `--limit N` | 不限制 | 最多选取 N 条 task |
 | `--output DIR` | `runs` | run 根目录的父目录 |
@@ -111,7 +111,7 @@ off | minimal | low | medium | high | xhigh | adaptive | max | ultra
 | `actf` | 默认；提取 ACTF 需要的 system/tools 后删除中间 wire 文件 |
 | `full` | 额外保留 `wire_trace.jsonl`，用于审计模型实际请求 context |
 
-`full` 会保存 prompt、reasoning、工具参数与结果等完整请求文本，体积和敏感度都更高。参见 [轨迹产出文件指南](trajectory-outputs.md#55-wiretracejsonl)。
+`full` 会保存 prompt、reasoning、工具参数与结果等完整请求文本，体积和敏感度都更高。参见 {ref}`轨迹产出文件指南 <wire-trace-jsonl>`。
 
 ## 5. OpenClaw 专属参数
 
@@ -160,7 +160,7 @@ off | minimal | low | medium | high | xhigh | adaptive | max | ultra
 
 默认镜像优先级：`--docker-image` → `ROLLER_CLAUDE_CODE_IMAGE` → `roller-claude-code:2.1.222`。
 
-Signature recovery 必须同时保持 `--keep-thinking`。它是任务结束后的额外 provider 请求，不是本地解密；详见 [Claude Code 指南](claude-code-configuration.md#5-signature-recovery实验性)。
+Signature recovery 必须同时保持 `--keep-thinking`。它是任务结束后的额外 provider 请求，不是本地解密；详见 [Claude Code 指南](../harnesses/claude-code-configuration.md#5-signature-recovery实验性)。
 
 ## 8. External thinking
 
@@ -178,7 +178,7 @@ thinking 使用 `--claude-signature-recovery`，不使用本选项。
 | `external` | Responses provider | Responses HTTP | 不支持 |
 | `external_always` | Responses provider | Responses HTTP | 不支持 |
 
-启用后，Roller 关闭原生 reasoning，把 `deep_think` 工具参数标准化进 SFT 的 `reasoning_content`。阶段协议、验收和安全边界见 [External Thinking](external-thinking.md)。
+启用后，Roller 关闭原生 reasoning，把 `deep_think` 工具参数标准化进 SFT 的 `reasoning_content`。阶段协议、验收和安全边界见 [External Thinking](../traces/external-thinking.md)。
 
 ## 9. Resume
 
@@ -224,4 +224,4 @@ roller bench report RUN_DIR [--output REPORT.json]
 `bench export` 只做翻译，不执行任何任务、不联网、不启容器。
 采集时记得加 `--task-timeouts`，并用 `--pass-env` 透传 grader 需要的变量。
 
-字段语义、评分时序、`stage` 防泄漏规则和聚合口径见 [Bench 接入与评分](bench-format.md)。
+字段语义、评分时序、`stage` 防泄漏规则和聚合口径见 [Bench 接入与评分](../benches/bench-format.md)。
