@@ -1,6 +1,6 @@
 # 快速上手：从安装到第一条轨迹
 
-[文档中心](README.md) · [示例目录](../examples/README.md) · [CLI 参数](cli-reference.md) · [产物说明](trajectory-outputs.md)
+[文档中心](../index.md) · [示例目录](examples.md) · [CLI 参数](cli-reference.md) · [产物说明](../traces/trajectory-outputs.md)
 
 本页覆盖环境准备、API 配置、dry-run、正式采集、结果验收和 Viewer。最终 run 包含 native raw、ACTF、SFT 与运行信息。
 
@@ -67,7 +67,7 @@ docker run --rm roller-codex:0.149.0 codex --version
 docker load -i /path/to/node-22-bookworm-slim-linux-amd64.tar.gz
 ```
 
-完整构建参数和跨机器导出方法见 [Codex Harness 指南](codex-configuration.md#2-构建固定版本镜像)。
+完整构建参数和跨机器导出方法见 [Codex Harness 指南](../harnesses/codex-configuration.md#2-构建固定版本镜像)。
 
 ### Claude Code
 
@@ -78,7 +78,7 @@ docker build -f docker/claude-code/Dockerfile -t roller-claude-code:2.1.222 .
 docker run --rm roller-claude-code:2.1.222 claude --version
 ```
 
-完整构建参数见 [Claude Code Harness 指南](claude-code-configuration.md#2-构建固定版本镜像)。
+完整构建参数见 [Claude Code Harness 指南](../harnesses/claude-code-configuration.md#2-构建固定版本镜像)。
 
 如果使用自定义 tag，可通过 `--docker-image` 指定，或设置 `ROLLER_OPENCLAW_IMAGE`、`ROLLER_CODEX_IMAGE`、`ROLLER_CLAUDE_CODE_IMAGE` 中对应的环境变量。
 
@@ -124,7 +124,7 @@ OpenClaw 通过 `--model-config` 读取 provider 与 model：
 - Responses 服务使用 `openai-responses`；只有 `/v1/chat/completions` 的服务使用 `openai-completions`；
 - `baseUrl` 通常写到 `/v1`，不要把 `/chat/completions` 当作 base URL。
 
-仓库模板位于 [`examples/config/openclaw/models.json`](../examples/config/openclaw/models.json)。Reasoning、多模态和 Harness 原生配置模板见 [Examples](../examples/README.md#harness-配置模板)。
+仓库模板位于 [`examples/config/openclaw/models.json`](../../../examples/config/openclaw/models.json)。Reasoning、多模态和 Harness 原生配置模板见 [Examples](examples.md#harness-配置模板)。
 
 ### Codex 配置
 
@@ -150,7 +150,7 @@ Claude Code 也不读取 OpenClaw model JSON。它直接使用：
 
 ## 4. 认识示例 Task
 
-[`examples/tasks/tasks.jsonl`](../examples/tasks/tasks.jsonl) 包含四条由简到繁的 task：
+[`examples/tasks/tasks.jsonl`](../../../examples/tasks/tasks.jsonl) 包含四条由简到繁的 task：
 
 | ID | 展示内容 |
 | --- | --- |
@@ -165,7 +165,7 @@ Claude Code 也不读取 OpenClaw model JSON。它直接使用：
 {"schema_version":"roller.task/v1","id":"01_text_only","prompt":"计算 2+3，只回复数字。"}
 ```
 
-`--model` 可以在命令行统一指定；若未传，则每条 task 必须有自己的 `model` 字段。详细 schema 见 [Task 格式参考](task-format.md)。
+`--model` 可以在命令行统一指定；若未传，则每条 task 必须有自己的 `model` 字段。详细 schema 见 [Task 格式参考](../tasks/task-format.md)。
 
 ## 5. Dry-run
 
@@ -248,7 +248,7 @@ info.json
 5. 需要文件交付的 task，其 sample `results/` 是否包含预期文件；
 6. run `sft.jsonl` 行数是否等于可纳入训练的成功 sample 数。
 
-各文件的生成条件和失败语义见 [轨迹产出文件指南](trajectory-outputs.md)。
+各文件的生成条件和失败语义见 [轨迹产出文件指南](../traces/trajectory-outputs.md)。
 
 ## 8. 打开 Viewer
 
@@ -262,7 +262,7 @@ roller view runs/quickstart
 ssh -L 8765:127.0.0.1:8765 your-host
 ```
 
-Viewer 会展示 ACTF 时间线；Inspector 用于查看 system prompt、tools schema、运行信息和原始内容。详见 [Viewer 指南](viewer.md)。
+Viewer 会展示 ACTF 时间线；Inspector 用于查看 system prompt、tools schema、运行信息和原始内容。详见 [Viewer 指南](../traces/viewer.md)。
 
 ## 9. 切换到 Codex 或 Claude Code
 
@@ -303,11 +303,11 @@ roller collect \
 
 ## 10. 下一步
 
-- 复制更多命令：[Examples](../examples/README.md)
-- 写自己的数据：[Task 格式参考](task-format.md)
-- 配置 reasoning：[OpenClaw](openclaw-configuration.md#5-thinkingsystem-prompt-与-wire-trace) · [Codex](codex-configuration.md#4-reasoning-配置) · [Claude Code](claude-code-configuration.md#4-thinking-与-effort)
-- 采集显式 CoT：[External Thinking](external-thinking.md)
-- 理解训练格式：[SFT 数据格式](sft-format.md)
+- 复制更多命令：[Examples](examples.md)
+- 写自己的数据：[Task 格式参考](../tasks/task-format.md)
+- 配置 reasoning：[OpenClaw](../harnesses/openclaw-configuration.md#5-thinkingsystem-prompt-与-wire-trace) · [Codex](../harnesses/codex-configuration.md#4-reasoning-配置) · [Claude Code](../harnesses/claude-code-configuration.md#4-thinking-与-effort)
+- 采集显式 CoT：[External Thinking](../traces/external-thinking.md)
+- 理解训练格式：[SFT 数据格式](../traces/sft-format.md)
 - 查全部命令行选项：[CLI 参数参考](cli-reference.md)
 
 ## 常见的首次运行问题

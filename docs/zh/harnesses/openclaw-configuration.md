@@ -1,8 +1,8 @@
 # OpenClaw Harness 指南
 
-[文档中心](README.md) · [快速上手](getting-started.md) · [Codex](codex-configuration.md) · [Claude Code](claude-code-configuration.md) · [CLI 参数](cli-reference.md)
+[文档中心](../index.md) · [快速上手](../start/getting-started.md) · [Codex](codex-configuration.md) · [Claude Code](claude-code-configuration.md) · [CLI 参数](../start/cli-reference.md)
 
-本页只说明 OpenClaw 专属的镜像、模型 provider、API adapter、thinking、搜索、gateway 和排错。Task 字段见 [Task 格式参考](task-format.md)，所有 Harness 共用的产物语义见 [轨迹产出文件指南](trajectory-outputs.md)。
+本页只说明 OpenClaw 专属的镜像、模型 provider、API adapter、thinking、搜索、gateway 和排错。Task 字段见 [Task 格式参考](../tasks/task-format.md)，所有 Harness 共用的产物语义见 [轨迹产出文件指南](../traces/trajectory-outputs.md)。
 
 > 快速定位：镜像与 Docker（第 1 节）· provider JSON（第 2–4 节）· reasoning/wire（第 5 节）· 并行端口（第 7 节）· 参数速查与排错（第 8–10 节）
 
@@ -58,9 +58,9 @@ OpenClaw `2026.7.1` 的 session registry 位于
 ## 2. 模型配置文件
 
 `--model-config` 接受一份 OpenClaw models JSON。基础文本模板是
-[`examples/config/openclaw/models.json`](../examples/config/openclaw/models.json)，GPT 与
+[`examples/config/openclaw/models.json`](../../../examples/config/openclaw/models.json)，GPT 与
 Chat Completions reasoning 模板是
-[`examples/config/openclaw/models-reasoning.json`](../examples/config/openclaw/models-reasoning.json)：
+[`examples/config/openclaw/models-reasoning.json`](../../../examples/config/openclaw/models-reasoning.json)：
 
 ```json
 {
@@ -173,7 +173,7 @@ roller collect ... --pass-env INTERNAL_SERVICE_TOKEN
 }
 ```
 
-完整模板见 [`examples/config/openclaw/models-multimodal.json`](../examples/config/openclaw/models-multimodal.json)。`input` 只是告诉 OpenClaw 如何使用模型；实际 API 后端仍必须支持对应 adapter 下的图像输入。
+完整模板见 [`examples/config/openclaw/models-multimodal.json`](../../../examples/config/openclaw/models-multimodal.json)。`input` 只是告诉 OpenClaw 如何使用模型；实际 API 后端仍必须支持对应 adapter 下的图像输入。
 
 默认情况下，Roller 也会尝试把 task model 配置为 OpenClaw 的 image model。旧版 OpenClaw 不支持该设置时只记录 warning；可以用 `--no-set-image-model` 关闭。
 
@@ -310,7 +310,7 @@ call/result 和顶层 `deep_think` schema，并把 thoughts 合并到随后实�
 若不希望保存它，应使用 `--external-thinking off`。
 
 完整的安全边界、SFT 形态、与 claw-eval 参考实现的差异见
-[External Thinking 指南](external-thinking.md)。
+[External Thinking 指南](../traces/external-thinking.md)。
 
 ### 保留与剥离
 
@@ -359,7 +359,7 @@ API 之间；对合法 JSON，它在可选的历史 thinking 剥离之后记录�
 `cache_trace.jsonl` 保存前会递归脱敏 API key、token、authorization、password 和 secret
 等 JSON 字段；`wire_trace.jsonl` 不扫描 system/user/tool/reasoning 自由文本，必须按敏感
 数据管理。完整捕获边界、对照步骤和失败/重试语义见
-[轨迹产出文件指南](trajectory-outputs.md#32-session-历史不等于模型请求-context)。
+[轨迹产出文件指南](../traces/trajectory-outputs.md#32-session-历史不等于模型请求-context)。
 
 本地代理绑定宿主机 `127.0.0.1`，因此 `actf`、`full`、Chat Completions thinking 规范化和
 `--no-keep-thinking` 当前要求保留默认 `--network host`，且所选 provider 必须提供绝对
@@ -453,4 +453,4 @@ Sample provenance 会记录 OpenClaw 版本、镜像及 digest、model ref、使
 
 ### 任务成功回复但 sample 失败
 
-Roller 要求成功 sample 同时具有 OpenClaw raw trace、可转换的 ACTF 和标准化 SFT。还应检查输出目录里是否存在被拒绝的符号链接或特殊文件。具体产出条件见 [轨迹产出文件指南](trajectory-outputs.md)，结果安全规则见 [结果存储](task-bundle-and-storage.md#5-输出回收)。
+Roller 要求成功 sample 同时具有 OpenClaw raw trace、可转换的 ACTF 和标准化 SFT。还应检查输出目录里是否存在被拒绝的符号链接或特殊文件。具体产出条件见 [轨迹产出文件指南](../traces/trajectory-outputs.md)，结果安全规则见 [结果存储](../tasks/task-bundle-and-storage.md#5-输出回收)。

@@ -1,6 +1,6 @@
 # 轨迹产出文件指南
 
-[文档中心](README.md) · [快速上手](getting-started.md) · [SFT 格式](sft-format.md) · [Viewer](viewer.md)
+[文档中心](../index.md) · [快速上手](../start/getting-started.md) · [SFT 格式](sft-format.md) · [Viewer](viewer.md)
 
 本文说明 `roller collect` 会产出哪些文件、每个文件何时生成和保留、它们之间的
 信息差异，以及训练、分析、调试时应选择哪一层。
@@ -354,6 +354,7 @@ cache trace 能展示每次差异；ACTF 顶层值不能代表所有 step。
 脱敏基于 JSON key，不会扫描 system prompt 自由文本中的秘密；该文件和下游 ACTF/SFT
 仍应按敏感数据管理。
 
+(wire-trace-jsonl)=
 ### 5.5 `wire_trace.jsonl`
 
 本地反向代理在请求发往模型服务前记录 wire 数据：
@@ -476,8 +477,8 @@ OpenClaw 的 `off` 或 `actf` 降级后，如果轨迹实际调用了工具，SF
 
 `--thinking LEVEL` 控制 Harness/模型请求的逻辑档位，但不能凭空生成可见文本。GPT 原生
 effort、开源模型 profile 和 OpenClaw 镜像限制见
-[Thinking 配置](openclaw-configuration.md#5-thinkingsystem-prompt-与-wire-trace)；Claude Code
-映射见 [Thinking 与 effort](claude-code-configuration.md#4-thinking-与-effort)。
+[Thinking 配置](../harnesses/openclaw-configuration.md#5-thinkingsystem-prompt-与-wire-trace)；Claude Code
+映射见 [Thinking 与 effort](../harnesses/claude-code-configuration.md#4-thinking-与-effort)。
 后端只报告 reasoning token、却不返回 reasoning summary/content 时，ACTF/SFT 没有可保存
 的 `reasoning_content`。GPT 的压缩 summary 会原样进入该字段，encrypted reasoning
 不会进入 SFT。
@@ -510,7 +511,7 @@ Claude Code 当前只支持原生 thinking，`external/external_always` 会在 D
 Recovery 是 task 完成后的独立调用，不进入 `--continue` history。它要求 `--keep-thinking`，并
 受 rollout `--timeout` 剩余预算约束。模式、尝试数、max tokens 会写入 run lock，Resume
 不能混用不同 recovery 配置。完整语义见
-[Claude Code Signature recovery](claude-code-configuration.md#5-signature-recovery实验性)。
+[Claude Code Signature recovery](../harnesses/claude-code-configuration.md#5-signature-recovery实验性)。
 
 ### 6.4 Cache trace（OpenClaw）
 
