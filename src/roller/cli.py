@@ -34,6 +34,11 @@ from roller.harnesses.claude_code import (
     claude_effort,
     redact_anthropic_base_url,
 )
+from roller.harness_registry import HARNESSES, HARNESS_NAMES
+from roller.harnesses.hermes import (
+    COMMON_ENV_NAMES as HERMES_COMMON_ENV_NAMES,
+    DEFAULT_HERMES_IMAGE, HERMES_REVISION, HermesConfig, HermesHarness, hermes_effort,
+)
 from roller.harnesses.codex import (
     COMMON_ENV_NAMES as CODEX_COMMON_ENV_NAMES,
     DEFAULT_CODEX_IMAGE,
@@ -118,7 +123,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     collect.add_argument(
         "--harness",
-        choices=("openclaw", "codex", "claude-code"),
+        choices=HARNESS_NAMES,
         default=None,
         help="default/override task-agent harness (task 'harness' is used when omitted)",
     )
@@ -170,6 +175,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     runtime.add_argument("--openclaw-image", help="OpenClaw image override (for mixed Harness runs)")
     runtime.add_argument("--codex-image", help="Codex image override (for mixed Harness runs)")
+    runtime.add_argument("--hermes-image", help="Hermes image override (for mixed Harness runs)")
     runtime.add_argument("--claude-code-image", help="Claude Code image override (for mixed Harness runs)")
     runtime.add_argument(
         "--container-user",
@@ -195,7 +201,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help=(
             "tool-based CoT for OpenAI Responses in OpenClaw or Codex: external "
             "forces the first deep_think call; external_always pairs every action "
-            "with deep_think; Claude Code currently accepts only 'off'"
+            "with deep_think; Claude Code and Hermes currently accept only 'off'"
         ),
     )
     runtime.add_argument(
@@ -224,7 +230,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help=(
             "keep visible reasoning in ACTF/SFT. For OpenClaw, --no-keep-thinking also "
             "strips reasoning from request history at the wire layer; for Codex and "
-            "Claude Code it controls export and leaves native raw/resume context unchanged"
+            "Claude Code/Hermes it controls export and leaves native raw/resume context unchanged"
         ),
     )
     runtime.add_argument("--keep-container-on-error", action="store_true")
@@ -255,27 +261,33 @@ def _build_parser() -> argparse.ArgumentParser:
         help="record the assembled system prompt per LLM call (diagnostics.cacheTrace)",
     )
 
-    api = collect.add_argument_group("Codex and Claude Code API")
+    api = collect.add_argument_group("Codex, Claude Code and Hermes API")
     api.add_argument(
         "--api-base",
         "--anthropic-base-url",
         dest="api_base",
         help=(
-            "model API base: OpenAI-compatible base for Codex or Anthropic base/"
+            "model API base: OpenAI-compatible base for Codex/Hermes or Anthropic base/"
             "full /v1/messages endpoint for Claude Code; defaults to the Harness env"
         ),
     )
+    api.add_argument("--hermes-api-base", help="Hermes-only OpenAI-compatible Chat Completions API base")
+    api.add_argument("--hermes-api-key-env", help="Hermes-only API key environment variable")
     api.add_argument("--codex-api-base", help="Codex-only API base override (for mixed Harness runs)")
     api.add_argument("--claude-api-base", help="Claude Code-only API base override (for mixed Harness runs)")
     api.add_argument(
         "--api-key-env",
         help=(
             "host environment variable containing the model API key; defaults to "
-            "OPENAI_API_KEY for Codex and ANTHROPIC_API_KEY for Claude Code"
+            "OPENAI_API_KEY for Codex/Hermes and ANTHROPIC_API_KEY for Claude Code"
         ),
     )
     api.add_argument("--codex-api-key-env", help="Codex-only API key environment variable")
     api.add_argument("--claude-api-key-env", help="Claude Code-only API key environment variable")
+
+    hermes = collect.add_argument_group("Hermes")
+    hermes.add_argument("--hermes-max-iterations", type=int, default=12, help="maximum model iterations per Hermes user turn (default: 12)")
+    hermes.add_argument("--hermes-context-length", type=int, help="override Hermes model context window (at least 64000 tokens)")
 
     codex = collect.add_argument_group("Codex")
     codex.add_argument(
@@ -507,13 +519,14 @@ def _collect(args: argparse.Namespace) -> int:
     args._cli_harness = cli_harness
     # Resolve the historical global default after loading tasks.  This keeps
     # ``--harness`` backward compatible while allowing a task-level harness.
-    args.harness = next(iter(agent_harnesses))
+    args.harness = next(name for name in HARNESS_NAMES if name in agent_harnesses)
     requested_api_base = args.api_base
     if args.api_base is None:
         if selected_harnesses == {"codex"}:
             args.api_base = os.environ.get("OPENAI_BASE_URL")
         elif selected_harnesses == {"claude-code"}:
             args.api_base = os.environ.get("ANTHROPIC_BASE_URL")
+    hermes_api_base = args.hermes_api_base or requested_api_base or os.environ.get("OPENAI_BASE_URL")
     codex_api_base = args.codex_api_base or requested_api_base or os.environ.get("OPENAI_BASE_URL")
     claude_api_base = args.claude_api_base or requested_api_base or os.environ.get("ANTHROPIC_BASE_URL")
     requested_api_key_env = args.api_key_env
@@ -522,14 +535,17 @@ def _collect(args: argparse.Namespace) -> int:
             "ANTHROPIC_API_KEY" if selected_harnesses == {"claude-code"}
             else "OPENAI_API_KEY"
         )
+    hermes_api_key_env = args.hermes_api_key_env or requested_api_key_env or "OPENAI_API_KEY"
     codex_api_key_env = args.codex_api_key_env or requested_api_key_env or "OPENAI_API_KEY"
     claude_api_key_env = args.claude_api_key_env or requested_api_key_env or "ANTHROPIC_API_KEY"
     defaults = {
+        "hermes": os.environ.get("ROLLER_HERMES_IMAGE", DEFAULT_HERMES_IMAGE),
         "openclaw": os.environ.get("ROLLER_OPENCLAW_IMAGE", DEFAULT_OPENCLAW_IMAGE),
         "codex": os.environ.get("ROLLER_CODEX_IMAGE", DEFAULT_CODEX_IMAGE),
         "claude-code": os.environ.get("ROLLER_CLAUDE_CODE_IMAGE", DEFAULT_CLAUDE_CODE_IMAGE),
     }
     image_overrides = {
+        "hermes": args.hermes_image,
         "openclaw": args.openclaw_image,
         "codex": args.codex_image,
         "claude-code": args.claude_code_image,
@@ -539,11 +555,11 @@ def _collect(args: argparse.Namespace) -> int:
         for name in selected_harnesses
     }
     args.docker_image = args.docker_image or images[args.harness]
-    if "claude-code" in selected_harnesses and args.external_thinking != "off":
-        raise ValueError(
-            "Claude Code external thinking is not implemented; use "
-            "--external-thinking off"
-        )
+    for name in HARNESS_NAMES:
+        if name in selected_harnesses and args.external_thinking != "off" and not HARNESSES[name].external_thinking:
+            raise ValueError(f"{HARNESSES[name].label} external thinking is not implemented; use --external-thinking off")
+    if args.collect_path and "openclaw" not in selected_harnesses:
+        raise ValueError("--collect-path requires an OpenClaw participant")
 
     model_config = None
     model_config_path: Path | None = None
@@ -583,6 +599,7 @@ def _collect(args: argparse.Namespace) -> int:
             "--claude-signature-recovery is only valid when a Claude Code participant is selected"
         )
 
+    hermes_config: HermesConfig | None = None
     openclaw_config: OpenClawConfig | None = None
     codex_config: CodexConfig | None = None
     claude_code_config: ClaudeCodeConfig | None = None
@@ -675,6 +692,24 @@ def _collect(args: argparse.Namespace) -> int:
             if spec is not None and spec.harness == "claude-code":
                 claude_effort(resolve_thinking(spec.thinking, claude_code_config.reasoning_effort))
 
+    if "hermes" in selected_harnesses:
+        hermes_config = HermesConfig(
+            docker_image=images["hermes"],
+            container_user=None if args.container_user == "image" else args.container_user,
+            network=args.network, api_base=hermes_api_base, api_key_env=hermes_api_key_env,
+            pass_env=_deduplicate((*HERMES_COMMON_ENV_NAMES, *args.pass_env)),
+            reasoning_effort=args.thinking, max_iterations=args.hermes_max_iterations,
+            context_length=args.hermes_context_length,
+            wire_trace_mode=args.wire_trace, keep_thinking=args.keep_thinking,
+            keep_container_on_error=args.keep_container_on_error, docker_binary=args.docker_binary,
+        )
+        for request in requests:
+            if (cli_harness or request.task.harness) == "hermes":
+                hermes_effort(resolve_thinking(request.task.thinking, hermes_config.reasoning_effort))
+            spec = request.task.user_simulator
+            if spec is not None and spec.harness == "hermes":
+                hermes_effort(resolve_thinking(spec.thinking, hermes_config.reasoning_effort))
+
     if args.dry_run:
         # Exercise all path, hash, collision and size checks without leaving a run directory.
         with tempfile.TemporaryDirectory(prefix="roller-dry-run-") as temporary:
@@ -686,7 +721,6 @@ def _collect(args: argparse.Namespace) -> int:
         harness: _docker_preflight(args.docker_binary, image)
         for harness, image in images.items()
     }
-    docker_image_digest = docker_image_digests[args.harness]
     run_label = next(iter(agent_harnesses)) if len(agent_harnesses) == 1 else "mixed"
     output_root = Path(args.output).expanduser().resolve()
     run_dir = output_root / _run_name(run_label, args.run_name)
@@ -775,6 +809,18 @@ def _collect(args: argparse.Namespace) -> int:
             "pass_env_names": list(claude_code_config.pass_env),
         }
 
+    if hermes_config is not None:
+        harness_configurations["hermes"] = {
+            "docker_image": images["hermes"], "container_user": args.container_user,
+            "network": args.network, "api_base": hermes_api_base or "https://api.openai.com/v1",
+            "api_key_env": hermes_api_key_env, "reasoning_effort": args.thinking,
+            "max_iterations": args.hermes_max_iterations, "hermes_revision": HERMES_REVISION,
+            "context_length": args.hermes_context_length,
+            "toolsets": ["terminal", "file"], "api_mode": "chat_completions",
+            "external_thinking": "off", "wire_trace": args.wire_trace,
+            "keep_thinking": args.keep_thinking, "pass_env_names": list(hermes_config.pass_env),
+        }
+
     run_info = {
         "schema_version": "roller.run/v1",
         "roller_version": __version__,
@@ -826,87 +872,6 @@ def _collect(args: argparse.Namespace) -> int:
             bundles = bundle_store.prepare_all(tasks)
             requests = bundle_store.attach(requests, bundles)
             run_dir.mkdir(parents=True, exist_ok=True)
-            if args.harness == "openclaw":
-                assert openclaw_config is not None
-                harness_execution: dict[str, object] = {
-                    "docker_image": args.docker_image,
-                    "docker_image_digest": docker_image_digest,
-                    "container_user": args.container_user,
-                    "network": args.network,
-                    "session_id": args.session_id,
-                    "search_provider": args.search_provider,
-                    "thinking": (
-                        "off" if args.external_thinking != "off" else args.thinking
-                    ),
-                    "external_thinking": args.external_thinking,
-                    "keep_thinking": args.keep_thinking,
-                    "cache_trace": args.cache_trace,
-                    "wire_trace": args.wire_trace,
-                    "pass_env_names": list(openclaw_config.pass_env),
-                    "collect_paths": list(args.collect_path),
-                    "set_image_model": args.set_image_model,
-                }
-            elif args.harness == "codex":
-                assert codex_config is not None
-                harness_execution = {
-                    "docker_image": args.docker_image,
-                    "docker_image_digest": docker_image_digest,
-                    "container_user": args.container_user,
-                    "network": args.network,
-                    "config_path": (
-                        str(codex_config_path) if codex_config_path else None
-                    ),
-                    "config_sha256": codex_config_digest,
-                    "api_base": (
-                        redact_api_base(args.api_base) if args.api_base else None
-                    ),
-                    "api_key_env": args.api_key_env,
-                    "reasoning_effort": (
-                        "off" if args.external_thinking != "off" else args.thinking
-                    ),
-                    "reasoning_summary": args.reasoning_summary,
-                    "external_thinking": args.external_thinking,
-                    "wire_trace": args.wire_trace,
-                    "keep_thinking": args.keep_thinking,
-                    "web_search": args.codex_web_search,
-                    "supports_websockets": args.codex_websockets,
-                    "pass_env_names": list(codex_config.pass_env),
-                }
-            else:
-                assert claude_code_config is not None
-                harness_execution = {
-                    "docker_image": args.docker_image,
-                    "docker_image_digest": docker_image_digest,
-                    "container_user": args.container_user,
-                    "network": args.network,
-                    "settings_path": (
-                        str(claude_settings_path)
-                        if claude_settings_path
-                        else None
-                    ),
-                    "settings_fingerprint": claude_settings_fingerprint,
-                    "api_base": (
-                        redact_anthropic_base_url(claude_code_config.api_base)
-                        if claude_code_config.api_base
-                        else None
-                    ),
-                    "api_key_env": args.api_key_env,
-                    "reasoning_effort": args.thinking,
-                    "max_thinking_tokens": args.claude_max_thinking_tokens,
-                    "max_turns": args.claude_max_turns,
-                    "permission_mode": args.claude_permission_mode,
-                    "external_thinking": "off",
-                    "wire_trace": args.wire_trace,
-                    "keep_thinking": args.keep_thinking,
-                    "signature_recovery": args.claude_signature_recovery,
-                    "signature_recovery_attempts": (
-                        args.claude_signature_recovery_attempts
-                    ),
-                    "signature_recovery_max_tokens": (
-                        args.claude_signature_recovery_max_tokens
-                    ),
-                    "pass_env_names": list(claude_code_config.pass_env),
-                }
             run_lock = build_run_lock(
                 requests,
                 roller_version=__version__,
@@ -925,7 +890,7 @@ def _collect(args: argparse.Namespace) -> int:
                         for name, payload in harness_configurations.items()
                     },
                 },
-                model_config=model_config if args.harness == "openclaw" else None,
+                model_config=model_config if "openclaw" in selected_harnesses else None,
             )
             lock_decision = ensure_run_lock(
                 run_dir / "lock.json",
@@ -943,9 +908,10 @@ def _collect(args: argparse.Namespace) -> int:
                 configuration["resume_reuse_enabled"] = (
                     lock_decision.reuse_existing_samples
                 )
-                harness_info = configuration.get(args.harness)
-                if isinstance(harness_info, dict):
-                    harness_info["docker_image_digest"] = docker_image_digest
+                for name, digest in docker_image_digests.items():
+                    harness_info = configuration.get(name)
+                    if isinstance(harness_info, dict):
+                        harness_info["docker_image_digest"] = digest
             run_info["lock"] = {
                 "path": "lock.json",
                 "schema_version": RUN_LOCK_SCHEMA,
@@ -961,8 +927,13 @@ def _collect(args: argparse.Namespace) -> int:
                 if name == "codex":
                     assert codex_config is not None
                     return CodexHarness(codex_config, slot)
-                assert claude_code_config is not None
-                return ClaudeCodeHarness(claude_code_config, slot)
+                if name == "claude-code":
+                    assert claude_code_config is not None
+                    return ClaudeCodeHarness(claude_code_config, slot)
+                if name == "hermes":
+                    assert hermes_config is not None
+                    return HermesHarness(hermes_config, slot)
+                raise ValueError(f"unknown Harness: {name}")
 
             def harness_factory(slot: int, request):
                 agent = make_harness(cli_harness or request.task.harness, slot)

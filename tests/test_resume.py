@@ -12,7 +12,7 @@ from roller.harnesses.base import InteractiveHarness, InteractiveSession, TurnRe
 from roller.models import HarnessResult, RunRequest, Task, UserSimulatorSpec
 
 
-HARNESSES = ("openclaw", "codex", "claude-code")
+HARNESSES = ("openclaw", "codex", "claude-code", "hermes")
 
 
 class RecordingSession(InteractiveSession):
@@ -133,7 +133,7 @@ class MixedResumeTests(unittest.TestCase):
             str(path): (path.read_bytes(), path.stat().st_mtime_ns)
             for path in self.root.glob("samples/*/*/**/trace.jsonl")
         }
-        self.assertEqual([r["status"] for r in self.collect(True)], ["skipped"] * 12)
+        self.assertEqual([r["status"] for r in self.collect(True)], ["skipped"] * len(self.requests))
         self.assertEqual(self.calls, before)
         for name, snapshot in raw_before.items():
             path = Path(name)
@@ -148,8 +148,8 @@ class MixedResumeTests(unittest.TestCase):
         expected_calls = 2 if request.task.user_simulator else 1
         self.assertEqual(len(self.calls) - before, expected_calls)
 
-    def test_full_mode_reuses_three_agents_and_all_nine_simulator_pairs(self):
-        self.assertEqual([r["status"] for r in self.collect()], ["ok"] * 12)
+    def test_full_mode_reuses_four_agents_and_all_sixteen_simulator_pairs(self):
+        self.assertEqual([r["status"] for r in self.collect()], ["ok"] * len(self.requests))
         for _, path, harness in self.participants():
             self.assertTrue((path / "wire_trace.jsonl").is_file())
             self.assertEqual((path / "cache_trace.jsonl").is_file(), harness == "openclaw")

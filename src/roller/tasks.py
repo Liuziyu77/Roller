@@ -7,10 +7,10 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Iterable
 
 from roller.models import ContextFile, InputFile, RunRequest, Task, UserSimulatorSpec
+from roller.harness_registry import HARNESS_NAMES
 from roller.thinking import normalize_thinking
 
 TASK_SCHEMA_V1 = "roller.task/v1"
-HARNESS_NAMES = ("openclaw", "codex", "claude-code")
 CAPTURE_POLICIES = {"full", "hash", "none"}
 DEFAULT_CONTEXT_TARGETS = {
     "user": "USER.md",

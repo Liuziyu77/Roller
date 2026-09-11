@@ -41,7 +41,7 @@ User Simulator 是一个独立运行的 Harness，用模型扮演用户。它不
 | 字段 | 必需 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `instruction` | 是 | 无 | 固定身份、目标、交互策略和完成标准 |
-| `harness` | 否 | `openclaw` | Simulator 使用的 Harness：`openclaw`、`codex` 或 `claude-code` |
+| `harness` | 否 | `openclaw` | Simulator 使用的 Harness：`openclaw`、`codex`、`claude-code` 或 `hermes` |
 | `model` | 否 | 任务 Agent 模型 | Simulator 使用的 model ref |
 | `max_turns` | 否 | `6` | 最多发送给任务 Agent 的指令数，范围 `1–100` |
 | `thinking` | 否 | CLI 默认值 | 只覆盖 Simulator；使用与 [`--thinking`](../harnesses/openclaw-configuration.md#5-thinkingsystem-prompt-与-wire-trace) 相同的逻辑档位和校验 |
@@ -139,7 +139,7 @@ Instruction 不是第一轮 user message，而是 Simulator 每一轮都要遵�
 
 ## 7. 模型、并行与成本
 
-Task Agent 与 Simulator 可以分别设定 Harness 和 model。例如用 Codex 执行任务、用 OpenClaw 或 Claude Code 扮演用户；同一 Harness 下也可以设置不同 model。OpenClaw 的 model ref 仍来自 `--model-config`，Codex/Claude Code 使用各自 API 参数。
+Task Agent 与 Simulator 可以分别设定 Harness 和 model。例如用 Codex 执行任务、用 OpenClaw 或 Claude Code 扮演用户；同一 Harness 下也可以设置不同 model。OpenClaw 的 model ref 仍来自 `--model-config`，Codex/Claude Code/Hermes 使用各自 API 参数。
 
 ```bash
 roller collect \
@@ -207,3 +207,5 @@ Task Bundle digest 会变化，run lock 检查会拒绝把新配置混入旧 run
 - `max_turns` 是交给 Task Agent 的指令数，不包含最终的 `finish` 检查。
 
 后续接入其他 Harness 时，Conversation Manager 的轮次、决策和保存边界可以保持不变，只需由新的 Harness 实现 interactive session 接口。
+
+Hermes 保留同一个容器，每轮启动 Python agent 并恢复原生消息历史；后台进程句柄等进程内状态不会恢复。详见 [Hermes](../harnesses/hermes-configuration.md)。

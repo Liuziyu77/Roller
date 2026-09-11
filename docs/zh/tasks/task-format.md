@@ -66,7 +66,7 @@ examples/tasks/files/product_summary/
 | `id` | 是 | Task 清单内唯一的字符串或整数标识 |
 | `prompt` / `question` / `messages` / `user_simulator` | 选择一种 | 单轮、兼容单轮、预定义多轮或动态多轮 |
 | `file_root` | 否 | 文件包根目录；默认是 task 清单所在目录 |
-| `harness`（或 `agent_harness` / `task_agent.harness`） | 否 | Task Agent 使用的 Harness：`openclaw`、`codex` 或 `claude-code`；默认 `openclaw`。命令行 `--harness` 可统一覆盖 |
+| `harness`（或 `agent_harness` / `task_agent.harness`） | 否 | Task Agent 使用的 Harness：`openclaw`、`codex`、`claude-code` 或 `hermes`；默认 `openclaw`。命令行 `--harness` 可统一覆盖 |
 | `model` | 条件必需 | Task 自己的模型；如果命令行提供 `--model`，则使用命令行模型 |
 | `files` | 否 | 输入、Context 和输出目录声明 |
 | `runtime` | 否 | 必需环境变量、setup 命令和 thinking 设置 |
@@ -300,7 +300,7 @@ OpenClaw 专用 `adaptive` 和没有通用等价语义的 `off`；默认 Codex 0
 `minimal/low/medium/high/xhigh`，不支持 `max/ultra`。Claude Code 2.1.222 接受
 `low/medium/high/xhigh/max/ultracode`，Roller 将 `ultra` 映射为 `ultracode`，拒绝
 `off/minimal/adaptive`。最终可用档位仍由 Harness 版本、model 和 provider 共同校验。
-Task Agent 可以使用 OpenClaw、Codex 或 Claude Code；User Simulator 也可在其自身的 `harness` 字段中选择这三种 Harness。Task Agent harness 可按 task 混用，显式 `--harness` 会统一覆盖；Simulator 可独立选择。
+Task Agent 可以使用 OpenClaw、Codex、Claude Code 或 Hermes；User Simulator 也可在其自身的 `harness` 字段中选择这四种 Harness。Task Agent harness 可按 task 混用，显式 `--harness` 会统一覆盖；Simulator 可独立选择。
 
 ## 9. 路径与格式校验
 

@@ -4,7 +4,7 @@
   <p><strong>面向多模型、多 Harness 的 Agent 轨迹采集框架</strong></p>
   <p>
     <img alt="Python 3.10+" src="https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white">
-    <img alt="OpenClaw, Codex, and Claude Code Harnesses" src="https://img.shields.io/badge/Harness-OpenClaw%20%7C%20Codex%20%7C%20Claude_Code-6F42C1">
+    <img alt="OpenClaw, Codex, Claude Code, and Hermes Harnesses" src="https://img.shields.io/badge/Harness-OpenClaw%20%7C%20Codex%20%7C%20Claude_Code%20%7C%20Hermes-6F42C1">
     <img alt="ACTF v1.0" src="https://img.shields.io/badge/Trace-ACTF__v1.0-00A67E">
     <a href="LICENSE"><img alt="Apache 2.0 License" src="https://img.shields.io/badge/License-Apache--2.0-D22128"></a>
   </p>
@@ -41,8 +41,9 @@ Docker 中的 Agent Harness
 | OpenClaw（默认） | OpenAI Responses 或 Chat Completions | 自定义/开源模型、动态 User Simulator、多模态输入 | 支持 `external` / `external_always`；模型通过 JSON 配置 |
 | Codex | Responses | Codex CLI 工具轨迹、GPT 与兼容 Responses 服务 | 支持 external thinking；可作为 Task Agent 或 User Simulator |
 | Claude Code | Anthropic `/v1/messages` | Claude Code 工具轨迹与 native thinking | 支持实验性 signature recovery；可作为 Task Agent 或 User Simulator |
+| Hermes | OpenAI Chat Completions | 原生请求与工具消息 → ACTF/SFT | 固定版本，容器内 terminal/file；可作为 Task Agent 或 User Simulator |
 
-三者共享相同的 Task、Sample、ACTF、SFT、Viewer、重试和 Resume 边界。镜像、API 和 reasoning 参数不同，详见对应的 [Harness 指南](docs/README.md#按-harness-选择)。
+四者共享相同的 Task、Sample、ACTF、SFT、Viewer、重试和 Resume 边界。镜像、API 和 reasoning 参数不同，详见对应的 [Harness 指南](docs/README.md#按-harness-选择)。
 
 ## CoT 采集方式
 
@@ -167,7 +168,7 @@ Run 根目录的 `sft.jsonl` 按 request 顺序汇总全部成功样本。需要
 阅读顺序：
 
 1. [快速上手](docs/zh/start/getting-started.md)：从安装到采集、验收和查看轨迹。
-2. [Examples](examples/README.md)：OpenClaw、Codex、Claude Code 和进阶案例命令。
+2. [Examples](examples/README.md)：OpenClaw、Codex、Claude Code、Hermes 和进阶案例命令。
 3. [Task 格式参考](docs/zh/tasks/task-format.md)：开始编写自己的 task。
 4. [轨迹产出文件指南](docs/zh/traces/trajectory-outputs.md)：理解 raw、ACTF、SFT、wire 和产出条件。
 
@@ -175,7 +176,7 @@ Run 根目录的 `sft.jsonl` 按 request 顺序汇总全部成功样本。需要
 
 | 目标 | 文档 |
 | --- | --- |
-| 选择并配置 Harness | [OpenClaw](docs/zh/harnesses/openclaw-configuration.md) · [Codex](docs/zh/harnesses/codex-configuration.md) · [Claude Code](docs/zh/harnesses/claude-code-configuration.md) |
+| 选择并配置 Harness | [OpenClaw](docs/zh/harnesses/openclaw-configuration.md) · [Codex](docs/zh/harnesses/codex-configuration.md) · [Claude Code](docs/zh/harnesses/claude-code-configuration.md) · [Hermes](docs/zh/harnesses/hermes-configuration.md) |
 | 查命令行参数与适用范围 | [CLI 参数参考](docs/zh/start/cli-reference.md) |
 | 管理输入、Context、输出和 Resume | [Task Bundle 与结果存储](docs/zh/tasks/task-bundle-and-storage.md) |
 | 跑评测 bench 或接入新 bench | [Bench 接入与评分](docs/zh/benches/bench-format.md) |

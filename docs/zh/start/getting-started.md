@@ -26,13 +26,14 @@ docker version
 
 ## 2. 选择 Harness 与镜像
 
-OpenClaw 同时兼容 Responses 与 Chat Completions，适合作为首次环境验证。动态 User Simulator 可与 OpenClaw、Codex 或 Claude Code 任意组合。
+OpenClaw 同时兼容 Responses 与 Chat Completions，适合作为首次环境验证。动态 User Simulator 可与 OpenClaw、Codex、Claude Code 或 Hermes 任意组合。
 
 | Harness | API 要求 | 默认镜像 | 准备方式 |
 | --- | --- | --- | --- |
 | OpenClaw | OpenAI Responses 或 Chat Completions | `ghcr.io/openclaw/openclaw:2026.7.1-2` | 直接 pull/load |
 | Codex | Responses streaming | `roller-codex:0.149.0` | 用仓库 Dockerfile 构建 |
 | Claude Code | Anthropic `/v1/messages` | `roller-claude-code:2.1.222` | 用仓库 Dockerfile 构建 |
+| Hermes | Chat Completions | `roller-hermes:d15ed4445207` | [Hermes](../harnesses/hermes-configuration.md) |
 
 CoT 配置按模型返回形式选择：
 

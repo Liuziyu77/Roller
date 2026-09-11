@@ -43,7 +43,7 @@ CLI flags of `eval/run_batch.py`:
 | `--task` / `--category` | `bench export --task-id` / `--category` | Roller can pass several; a wrong id errors instead of silently running empty |
 | `--model` | `collect --model` | Repeatable; multi-model Cartesian expansion |
 | `--parallel` | `collect --parallel` | |
-| `--agent-backend` | `collect --harness` | The adapter writes `openclaw`; `codex`/`claude-code` can override with `--harness`; `hermesagent` has no equivalent |
+| `--agent-backend` | `collect --harness` | The adapter writes `openclaw`; `codex`/`claude-code`/`hermes` can override with `--harness`; use `--harness hermes` for Hermes tasks |
 | `--models-config` | `collect --model-config` | Both sides expand `${ENV}` |
 | `--thinking` | `collect --thinking` | The adapter does **not** hard-code thinking in the task, or the task level would override the command line |
 | `--lobster-env` | `collect --pass-env` | |
