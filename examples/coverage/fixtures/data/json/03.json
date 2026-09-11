@@ -1,0 +1,5 @@
+[
+  {"module": "billing", "coverage": 92.1},
+  {"module": "search", "coverage": 76.4},
+  {"module": "reports", "coverage": 81.0}
+]

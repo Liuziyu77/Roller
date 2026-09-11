@@ -1,0 +1,8 @@
+dashboard rollup sample:
+  D-1 readings: "10.5", null, "NaN", 11
+
+Expected cleaned readings:
+  [10.5, 11.0]
+
+Current behavior either raises on null or returns NaN for the whole average when
+the string "NaN" reaches float().

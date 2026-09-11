@@ -1,0 +1,4 @@
+service: "billing-api"
+debug: "true"
+owner: ""
+retention_days: "30"

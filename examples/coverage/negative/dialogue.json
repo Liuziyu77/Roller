@@ -1,0 +1,58 @@
+[
+  {
+    "task": {
+      "schema_version": "roller.task/v1",
+      "id": "negative_dialogue_1",
+      "prompt": "",
+      "file_root": "../fixtures"
+    },
+    "error_contains": "missing non-empty"
+  },
+  {
+    "task": {
+      "schema_version": "roller.task/v1",
+      "id": "negative_dialogue_2",
+      "prompt": "只回复 OK。",
+      "file_root": "../fixtures",
+      "messages": [
+        {
+          "role": "assistant",
+          "content": "hello"
+        }
+      ]
+    },
+    "error_contains": "only user"
+  },
+  {
+    "task": {
+      "schema_version": "roller.task/v1",
+      "id": "negative_dialogue_3",
+      "prompt": "只回复 OK。",
+      "file_root": "../fixtures",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "image_url",
+              "image_url": "x"
+            }
+          ]
+        }
+      ]
+    },
+    "error_contains": "empty content"
+  },
+  {
+    "task": {
+      "schema_version": "roller.task/v1",
+      "id": "negative_dialogue_4",
+      "prompt": "只回复 OK。",
+      "file_root": "../fixtures",
+      "user_simulator": {
+        "instruction": "test"
+      }
+    },
+    "error_contains": "cannot be combined"
+  }
+]

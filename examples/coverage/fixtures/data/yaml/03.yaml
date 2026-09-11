@@ -1,0 +1,6 @@
+max_attempts: 4
+cap_minutes: 120
+failure_codes:
+  - code: temporary_network
+  - code: gateway_timeout
+  - code: issuer_unavailable

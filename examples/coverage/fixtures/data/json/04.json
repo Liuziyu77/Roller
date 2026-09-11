@@ -1,0 +1,4 @@
+{
+  "budgets": {"marketing": 10000, "support": 5000, "research": 20000},
+  "spend": {"marketing": 8000, "support": 5500, "research": 12000, "sales": 3000}
+}

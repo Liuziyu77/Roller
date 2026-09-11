@@ -103,7 +103,13 @@ def _validate_trajectory_files(
             raise ValueError(f"required trajectory file is missing: {path.name}")
     if require_wire_trace and not (base / "wire_trace.jsonl").is_file():
         raise ValueError("required full-mode wire_trace.jsonl is missing")
-    if require_cache_trace and not (base / "cache_trace.jsonl").is_file():
+    # Only OpenClaw emits cache traces. Finalized metadata records the actual
+    # harness, including CLI overrides, for each participant independently.
+    # Keep the strict check for legacy or unrecognized harness metadata.
+    cache_trace_required = require_cache_trace and info.get("harness") not in (
+        "codex", "claude-code"
+    )
+    if cache_trace_required and not (base / "cache_trace.jsonl").is_file():
         raise ValueError("required full-mode cache_trace.jsonl is missing")
     if not _has_json_event(raw_path):
         raise ValueError("trace.jsonl contains no valid JSON object event")
@@ -183,7 +189,11 @@ def validate_resumable_sample(
     require_wire_trace: bool = False,
     require_cache_trace: bool = False,
 ) -> None:
-    """Raise ``ValueError`` when a finalized sample is unsafe to reuse."""
+    """Raise ``ValueError`` when a finalized sample is unsafe to reuse.
+
+    Cache-trace requirements are resolved separately for each participant's
+    recorded harness; wire-trace requirements apply to every harness.
+    """
 
     if info.get("schema_version") != "roller.sample/v1":
         raise ValueError("info.json has an unsupported schema_version")

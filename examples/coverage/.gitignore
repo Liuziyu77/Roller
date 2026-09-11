@@ -1,0 +1,8 @@
+# Machine-specific configuration and generated reports belong outside the suite.
+.env
+*.env
+*.local.json
+/local/
+/results/
+/reports/
+/live-test/

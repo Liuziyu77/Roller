@@ -1,0 +1,5 @@
+roles:
+  - role: "admin"
+    permissions: "read,write,delete"
+  - role: "analyst"
+    permissions: "read,export"

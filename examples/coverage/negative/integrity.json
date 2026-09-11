@@ -1,0 +1,67 @@
+[
+  {
+    "task": {
+      "schema_version": "roller.task/v1",
+      "id": "negative_integrity_1",
+      "prompt": "只回复 OK。",
+      "file_root": "../fixtures",
+      "files": {
+        "inputs": [
+          "missing/required.txt"
+        ]
+      }
+    },
+    "error_contains": "does not exist"
+  },
+  {
+    "task": {
+      "schema_version": "roller.task/v1",
+      "id": "negative_integrity_2",
+      "prompt": "只回复 OK。",
+      "file_root": "../fixtures",
+      "files": {
+        "context": [
+          {
+            "role": "memory",
+            "source": "context/missing.md"
+          }
+        ]
+      }
+    },
+    "error_contains": "does not exist"
+  },
+  {
+    "task": {
+      "schema_version": "roller.task/v1",
+      "id": "negative_integrity_3",
+      "prompt": "只回复 OK。",
+      "file_root": "../fixtures",
+      "files": {
+        "inputs": [
+          {
+            "source": "tiny/1.txt",
+            "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        ]
+      }
+    },
+    "error_contains": "sha256 mismatch"
+  },
+  {
+    "task": {
+      "schema_version": "roller.task/v1",
+      "id": "negative_integrity_4",
+      "prompt": "只回复 OK。",
+      "file_root": "../fixtures",
+      "files": {
+        "inputs": [
+          {
+            "source": "tiny/1.txt",
+            "sha256": "bad"
+          }
+        ]
+      }
+    },
+    "error_contains": "64 hex"
+  }
+]

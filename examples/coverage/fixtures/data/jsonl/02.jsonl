@@ -1,0 +1,5 @@
+{"id": "S1", "text": "支付失败后页面没有提示", "source": "support", "label": "negative"}
+{"id": "S2", "text": "很好", "source": "survey", "label": "positive"}
+{"id": "S3", "text": "导出按钮点击后下载速度很快", "source": "survey", "label": "positive"}
+{"id": "S4", "text": "支付失败后页面没有提示", "source": "support", "label": "negative"}
+{"id": "S5", "text": "说明文档缺少截图", "source": "review", "label": "negative"}

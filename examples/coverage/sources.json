@@ -1,0 +1,247 @@
+{
+  "schema_version": "roller.examples-sources/v1",
+  "source_dataset": "Roller_Data",
+  "note": "Files are copied unchanged; source paths are relative to the dataset root. Bundled copies are sufficient to run and regenerate the suite.",
+  "files": [
+    {
+      "path": "fixtures/data/csv/01.csv",
+      "source": "files/task_000501/stock.csv",
+      "sha256": "59a6fa1f536a11b6c5a96ea011d1d9529b6e8bea2e78b6ed0a18efa90db17fd5",
+      "bytes": 46
+    },
+    {
+      "path": "fixtures/data/csv/02.csv",
+      "source": "files/task_000458/scores.csv",
+      "sha256": "940369c8fee987b3bf733c011dc2c6b16b448760bcb3b14cbe042ea606f9361e",
+      "bytes": 52
+    },
+    {
+      "path": "fixtures/data/csv/03.csv",
+      "source": "files/task_000497/fuel.csv",
+      "sha256": "4c89408d40163cdc3a81953653aa06e73510b84659fe578fc99abd6a7376b226",
+      "bytes": 57
+    },
+    {
+      "path": "fixtures/data/csv/04.csv",
+      "source": "files/task_001135/channel_cpa_data.csv",
+      "sha256": "3344a0fb8f9ca6980f39d0cfbb89848cfdb6ec47f6c41dc86ea3fc90feb78b46",
+      "bytes": 57
+    },
+    {
+      "path": "fixtures/data/html/01.html",
+      "source": "files/task_000418/sample_page.html",
+      "sha256": "7e6a98dcdcf886371365151a7f47d1115d63f6282018e1f7099a990169585074",
+      "bytes": 413
+    },
+    {
+      "path": "fixtures/data/html/02.html",
+      "source": "files/task_001072/advising_page.html",
+      "sha256": "ef75e84bbfe25de6002d1d84be86330f1878e3a5a809c699258a0850a0df3210",
+      "bytes": 423
+    },
+    {
+      "path": "fixtures/data/html/03.html",
+      "source": "files/task_001018/email_template_rules_v1.html",
+      "sha256": "254cdbec3221663ce504f14d9ab012334bdffd9693fee943de60d67c82afec2a",
+      "bytes": 516
+    },
+    {
+      "path": "fixtures/data/html/04.html",
+      "source": "files/task_001072/course_guide.html",
+      "sha256": "beb9ef89e7f97e3ca94cef2b593b9a3e259c3818e59875ee9bd0890bf2ee1cea",
+      "bytes": 531
+    },
+    {
+      "path": "fixtures/data/json/01.json",
+      "source": "files/task_000398/staging_config.json",
+      "sha256": "cef45c81b1287f7966839e753efd2771d0cc836660f028dd7ea0a8cf197bb763",
+      "bytes": 117
+    },
+    {
+      "path": "fixtures/data/json/02.json",
+      "source": "files/task_000502/campaigns.json",
+      "sha256": "5381840efc37de76b17a7b91fef29d97eacff4ba3e12fa619919f210eb4ca76d",
+      "bytes": 130
+    },
+    {
+      "path": "fixtures/data/json/03.json",
+      "source": "files/task_000491/coverage.json",
+      "sha256": "7c12b8e4088200043e7d7c99783939ada5a494d719209c3b0b83486761d55ef8",
+      "bytes": 131
+    },
+    {
+      "path": "fixtures/data/json/04.json",
+      "source": "files/task_000388/budget_snapshot.json",
+      "sha256": "4911353431c08df93bed008f2ee03aef8b798d7402d8b86e048f3cb61a712e1d",
+      "bytes": 157
+    },
+    {
+      "path": "fixtures/data/jsonl/01.jsonl",
+      "source": "files/task_000419/training_samples.jsonl",
+      "sha256": "b436404ceda35dcb2887ef6c7fe580e2bf24b9743c916a7753fe3a604e8cd347",
+      "bytes": 467
+    },
+    {
+      "path": "fixtures/data/jsonl/02.jsonl",
+      "source": "files/task_000419/training_samples.jsonl",
+      "sha256": "b436404ceda35dcb2887ef6c7fe580e2bf24b9743c916a7753fe3a604e8cd347",
+      "bytes": 467
+    },
+    {
+      "path": "fixtures/data/jsonl/03.jsonl",
+      "source": "files/task_000419/training_samples.jsonl",
+      "sha256": "b436404ceda35dcb2887ef6c7fe580e2bf24b9743c916a7753fe3a604e8cd347",
+      "bytes": 467
+    },
+    {
+      "path": "fixtures/data/jsonl/04.jsonl",
+      "source": "files/task_000419/training_samples.jsonl",
+      "sha256": "b436404ceda35dcb2887ef6c7fe580e2bf24b9743c916a7753fe3a604e8cd347",
+      "bytes": 467
+    },
+    {
+      "path": "fixtures/data/log/01.log",
+      "source": "files/task_000251/score_input.log",
+      "sha256": "c43cce33b6bbf9994089c0a2c5190ddfd6b5f431c74d826236dc27d5f1b67800",
+      "bytes": 154
+    },
+    {
+      "path": "fixtures/data/log/02.log",
+      "source": "files/task_000287/refund_failure.log",
+      "sha256": "7ab70fa9f87bbef67c6ff3f5f3bc401fdabbb9234f37825c6bd3ce5e4bfe043c",
+      "bytes": 217
+    },
+    {
+      "path": "fixtures/data/log/03.log",
+      "source": "files/task_000263/sensor_nan.log",
+      "sha256": "09a34aa81c2e6154ebcde4a7d714238d83961c870958c7ae8231f9388b592afb",
+      "bytes": 224
+    },
+    {
+      "path": "fixtures/data/log/04.log",
+      "source": "files/task_000222/empty_tree_trace.log",
+      "sha256": "5e6f97db9335ff57e90d7decdc573476baab77a526e811e8699b733c05c86f32",
+      "bytes": 230
+    },
+    {
+      "path": "fixtures/data/md/01.md",
+      "source": "files/task_000329/grade_boundaries.md",
+      "sha256": "da86aea29380cd930c953507e562db0f3fa63efb0c1b7f988d9b198d077b92fe",
+      "bytes": 163
+    },
+    {
+      "path": "fixtures/data/md/02.md",
+      "source": "files/task_000319/priority_notes.md",
+      "sha256": "52a4c0d90d0841e806667272ff74f3dd1cd2b69221fe521a3e61247a3a081ef2",
+      "bytes": 196
+    },
+    {
+      "path": "fixtures/data/md/03.md",
+      "source": "files/task_000316/notification_test_notes.md",
+      "sha256": "21b3846a0088f63b015076f3c0157205cc8d5c4673dda0247628a969b51e5026",
+      "bytes": 224
+    },
+    {
+      "path": "fixtures/data/md/04.md",
+      "source": "files/task_000326/sla_policy_notes.md",
+      "sha256": "c931f7ae61d60ed37f2ed71119c658124c4c751a82f1d60a4e87ac3359780d34",
+      "bytes": 229
+    },
+    {
+      "path": "fixtures/data/py/01.py",
+      "source": "files/task_000447/feed_filter.py",
+      "sha256": "034dd5fe410ca7a27c8332552a0ccfb5104d308e118f55c3c7ab1b6af9e5ffc1",
+      "bytes": 403
+    },
+    {
+      "path": "fixtures/data/py/02.py",
+      "source": "files/task_000440/sample_module.py",
+      "sha256": "5312dc6becaee48ec0fa8d50f37895c3c489f6455c6d601819c7e99277a93ffe",
+      "bytes": 431
+    },
+    {
+      "path": "fixtures/data/py/03.py",
+      "source": "files/task_000444/migration_plan.py",
+      "sha256": "29b43564157de50650d06cb4b258398d28ae37a99407477ed81fd77960ecc911",
+      "bytes": 438
+    },
+    {
+      "path": "fixtures/data/py/04.py",
+      "source": "files/task_000435/rename_preview.py",
+      "sha256": "f8b4ca38c65517d1adb3e7fe41e8e0932e1d34235fb1a5c93ed27e479798a6b4",
+      "bytes": 451
+    },
+    {
+      "path": "fixtures/data/svg/01.svg",
+      "source": "files/task_001138/product_return_rate.svg",
+      "sha256": "2fbee859f8424a3f9c958936d75654c629ca5318f7cdc662d64884d344be91e8",
+      "bytes": 1355
+    },
+    {
+      "path": "fixtures/data/svg/02.svg",
+      "source": "files/task_001147/warehouse_pick_accuracy.svg",
+      "sha256": "8b1a6036be9372eae6e30fdbd75e2a2a5271f579858fad5103292ef68982858d",
+      "bytes": 1386
+    },
+    {
+      "path": "fixtures/data/svg/03.svg",
+      "source": "files/task_001141/supplier_delivery_quality.svg",
+      "sha256": "bccf8d5914300920034f8fba88fb267aa9704b6d65e154a9abf0e806ce28d5e3",
+      "bytes": 1398
+    },
+    {
+      "path": "fixtures/data/svg/04.svg",
+      "source": "files/task_001276/project_not_found.svg",
+      "sha256": "1bf96bb5ff9ecd2a787e5c183516d388db5bc3cd843178db681c9c5dcde5d7d2",
+      "bytes": 1463
+    },
+    {
+      "path": "fixtures/data/txt/01.txt",
+      "source": "files/task_000441/keywords.txt",
+      "sha256": "0027c80fe6a11f21480ea2d22d93f47b5467092ab7a1ca3e1acd7538e951a473",
+      "bytes": 34
+    },
+    {
+      "path": "fixtures/data/txt/02.txt",
+      "source": "files/task_001079/interview_scorecard.txt",
+      "sha256": "e853b52b415c5cce4be1792a793305fdb48df11ef0455024ae6de489f2f472d2",
+      "bytes": 296
+    },
+    {
+      "path": "fixtures/data/txt/03.txt",
+      "source": "files/task_000413/meeting_notes.txt",
+      "sha256": "aa4c88f5c23192ed3640c294542d4f0ce44c1a14bd92ddd92c4ced91a98da89e",
+      "bytes": 349
+    },
+    {
+      "path": "fixtures/data/txt/04.txt",
+      "source": "files/task_001080/cashier_prompts.txt",
+      "sha256": "494c2c17f95880a4d68054e0e76b0383b20934b6224698d6cdedce735520dc60",
+      "bytes": 357
+    },
+    {
+      "path": "fixtures/data/yaml/01.yaml",
+      "source": "files/task_000466/app_config.yaml",
+      "sha256": "82a241cf62babe35188ede5abb5ddd9a7fe2d5ad8c0a930ac3377bd1ceb50fbd",
+      "bytes": 68
+    },
+    {
+      "path": "fixtures/data/yaml/02.yaml",
+      "source": "files/task_000498/permissions.yaml",
+      "sha256": "7d5fb78b7aeb24c36afae244162264a008e3bcc500b51652515a3ab7b1ea17bb",
+      "bytes": 113
+    },
+    {
+      "path": "fixtures/data/yaml/03.yaml",
+      "source": "files/task_000564/retry_config.yaml",
+      "sha256": "f35904ebbdfd89bbea205d5523d9d257dd918800a96a9c74ffe248bb9b774e6f",
+      "bytes": 131
+    },
+    {
+      "path": "fixtures/data/yaml/04.yaml",
+      "source": "files/task_000509/licenses.yaml",
+      "sha256": "52b221484b2cb5a600f4b7fe861c971691ee2060aac56fc97f30fd611978cf56",
+      "bytes": 133
+    }
+  ]
+}

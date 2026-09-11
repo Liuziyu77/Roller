@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="780" height="460" viewBox="0 0 780 460" role="img" aria-label="Project not found error page">
+  <rect width="780" height="460" fill="#f4f7fb"/>
+  <rect x="86" y="52" width="608" height="356" rx="12" fill="#ffffff" stroke="#d6e0ea"/>
+  <text x="126" y="102" font-family="Arial" font-size="18" font-weight="700" fill="#344054">Acme Projects</text>
+  <line x1="126" y1="126" x2="654" y2="126" stroke="#eaecf0"/>
+  <text x="126" y="178" font-family="Arial" font-size="54" font-weight="700" fill="#175cd3">404</text>
+  <text x="126" y="214" font-family="Arial" font-size="24" font-weight="700" fill="#101828">Project not found</text>
+  <text x="126" y="246" font-family="Arial" font-size="15" fill="#475467">The project "North Ridge Launch" could not be opened.</text>
+  <text x="126" y="274" font-family="Arial" font-size="14" fill="#667085">It may have been archived, deleted, or the link may be incorrect.</text>
+  <rect x="126" y="318" width="142" height="42" rx="6" fill="#175cd3"/>
+  <text x="157" y="345" font-family="Arial" font-size="14" font-weight="700" fill="#ffffff">Go to projects</text>
+  <rect x="286" y="318" width="138" height="42" rx="6" fill="#eef2f6" stroke="#cbd5e1"/>
+  <text x="316" y="345" font-family="Arial" font-size="14" font-weight="700" fill="#344054">Contact owner</text>
+  <text x="126" y="386" font-family="Arial" font-size="12" fill="#98a2b3">Request ID: ui-404-prj-8821</text>
+</svg>
+

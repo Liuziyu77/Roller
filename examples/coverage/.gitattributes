@@ -1,0 +1,5 @@
+# Keep scripts and documentation consistent across checkouts.
+* text=auto eol=lf
+# Checksums and parser fixtures depend on the original bytes (including BOM/CRLF).
+fixtures/** -text
+cases/** -text

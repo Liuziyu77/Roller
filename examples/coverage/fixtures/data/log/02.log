@@ -1,0 +1,2 @@
+2026-05-25 refund_check order=R-44 item_status=final_sale purchased_on=2026-05-10 payment_status=paid expected=false actual=true
+说明：final_sale 和 used 商品不能退款，即使仍在普通 30 天窗口内。

@@ -309,8 +309,9 @@ credential 与 pass-through environment 的值不会保存到锁，也不会触�
    深度审计；Resume 为避免重新读取大文件，只做路径、存在性和大小检查。
 7. User Simulator task 还必须有有效的 `conversation.json`、participant info 和 Simulator
    raw/ACTF/SFT。
-8. `--wire-trace full` 还要求双方的 `wire_trace.jsonl` 存在；同时启用 cache trace 时也要求
-   `cache_trace.jsonl` 存在。
+8. `--wire-trace full` 还要求双方的 `wire_trace.jsonl` 存在；同时启用 cache trace 时，
+   根据 Agent 和 Simulator 各自实际使用的 Harness，要求 OpenClaw 一侧的
+   `cache_trace.jsonl` 存在。Codex 和 Claude Code 不产生此文件，不要求提供。
 
 同一运行锁下，任一 sample 不满足完整性条件时只重跑该 sample。以下变化会导致运行锁
 不一致，需要使用新的 run name，而不是静默重跑并混入旧 run：

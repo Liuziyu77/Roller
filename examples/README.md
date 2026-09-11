@@ -4,10 +4,26 @@
 
 本目录包含配置模板、task 和运行命令。安装、字段定义与轨迹语义由对应专题文档维护。
 
+| 使用目的 | 入口 |
+| --- | --- |
+| 跑通模型服务、Harness 和轨迹采集 | [基础 Task 清单](#基础-task-清单)：4 条文本、文件、Context 和多轮任务 |
+| 检查不同输入形式和 Harness 组合的功能 | [Coverage 功能测试](#coverage-功能测试)：按场景选择任务，附离线校验和结果验收 |
+
+以下命令均从 **Roller 项目根目录** 执行。
+
 ## 目录内容
 
 ```text
 examples/
+├── coverage/                       功能覆盖测试套件
+│   ├── README.md / README.en.md     中英文使用说明
+│   ├── COVERAGE.md / manifest.json  场景索引和机器可读预期
+│   ├── all_tasks.json              合并任务模板
+│   ├── config/                     测试用模型与环境配置模板
+│   ├── cases/                      按场景与 Harness 分组的清单
+│   ├── fixtures/                   已包含的输入小文件
+│   ├── negative/                   预期拒绝的输入
+│   └── suite.py                    列表、校验、分组运行与验收
 ├── env/
 │   └── api.env.example
 ├── config/
@@ -31,7 +47,61 @@ examples/
                 └── MEMORY.md
 ```
 
-## 一次性准备
+## Coverage 功能测试
+
+[完整使用说明](coverage/README.md) · [English quickstart](coverage/README.en.md) · [场景清单](coverage/COVERAGE.md)
+
+Coverage 用于检查清单解析、文件和 Context 输入、Runtime 配置、产物回收、评分，以及多种 Harness 的执行与 Resume 行为。包含 **648 条正常任务，分为 162 组，每组 4 条**，另有 **20 条预期拒绝的输入**。其中 612 条覆盖 51 种场景在 OpenClaw、Codex、Claude Code 上的执行，36 条覆盖全部 9 种 Task Agent × User Simulator 配对。
+
+任务以加法、读取小文件、写入短答案为主，对话最多两轮。输入文件已随仓库提供，下载后无需另行准备 `Roller_Data`。
+
+### 先做离线校验
+
+需要 Python 3.10+，无需 Docker、API Key 或额外 Python 依赖：
+
+```bash
+python examples/coverage/suite.py list
+python examples/coverage/suite.py validate
+python examples/coverage/validate_merged.py
+
+# 检查一组 4 条任务的 CLI 参数、模型路由和文件打包，不请求模型。
+python examples/coverage/suite.py run --case formats/jsonl/codex --dry-run
+```
+
+将 `--case formats/jsonl/codex` 改成 `--case '*'` 可遍历全部 162 组。错误输入由校验脚本逐条验证，不作为正常任务提交给模型。
+
+### 配置后运行一组任务
+
+按 [Getting Started](../docs/zh/start/getting-started.md) 准备 Roller 和所选 Harness 的镜像，再复制 Coverage 的 [环境配置模板](coverage/config/.env.example)。下面以 Codex 的 4 条加法任务为例：
+
+```bash
+cp examples/coverage/config/.env.example examples/coverage/config/.env
+# 编辑 .env，填写实际的 ROLLER_TEST_CODEX_MODEL、服务地址和 API Key。
+set -a
+source examples/coverage/config/.env
+set +a
+
+python examples/coverage/suite.py run --case formats/jsonl/codex \
+  -- --codex-api-base "$ROLLER_CODEX_BASE_URL" \
+     --codex-api-key-env ROLLER_CODEX_API_KEY
+
+python examples/coverage/suite.py check --case formats/jsonl/codex
+```
+
+默认并发 2、单次超时 180 秒、重试 0，结果写入 `runs/coverage/formats__jsonl__codex/`。本地 `.env` 和 `runs/` 已被 Git 忽略。其他 Harness、Simulator 配对及结果检查方式见 [Coverage 使用说明](coverage/README.md)。
+
+### 选择任务入口
+
+| 需要验证的内容 | 使用方式 |
+| --- | --- |
+| 某个输入场景或 Harness | 从 [场景清单](coverage/COVERAGE.md) 选择组名，用 `suite.py run --case ...` 运行、`suite.py check` 验收；保留原始格式、自定义 key 和特殊 ID 的测试 |
+| 一次运行多个 Harness | 用 [merge.py](coverage/merge.py) 选择场景并绑定实际模型，生成单个 JSON 后交给 `roller collect`；完整模板见 [all_tasks.json](coverage/all_tasks.json) |
+| 检查合并运行的结果 | 用 [report.py](coverage/report.py) 检查采集状态、答案、产物和轨迹；`--fail-on-check` 可用于 CI |
+| 检查已有样本能否 Resume | 用 [audit_resume.py](coverage/audit_resume.py) 做只读审计；实际恢复仍使用原采集命令加 `--resume` |
+
+总 JSON 中的模型名是占位值，合并时会统一原始清单格式和 ID；本地模型配置与任务副本的生成命令见 [混合 Harness 运行说明](coverage/README.md#4-使用一个总-json-运行混合-harness)。其中 12 条视觉任务需要模型、服务与图像工具支持；二进制文件读取测试仅验证文件访问能力。
+
+## 基础样例的采集准备
 
 先按照 [Getting Started](../docs/zh/start/getting-started.md#1-准备运行环境) 安装 Roller，并准备至少一个 Harness 镜像。
 

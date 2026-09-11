@@ -1,0 +1,7 @@
+licenses:
+  - product: "DesignSuite"
+    used: "42"
+    purchased: "40"
+  - product: "BuildCloud"
+    used: "25"
+    purchased: "30"

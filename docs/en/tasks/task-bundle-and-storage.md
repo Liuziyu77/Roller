@@ -310,8 +310,9 @@ After the run lock matches, only samples that meet every condition are reused:
    deep audit; Resume only checks path, existence, and size so large files are not reread.
 7. A User Simulator task must also have a valid `conversation.json`, participant info, and Simulator
    raw/ACTF/SFT.
-8. `--wire-trace full` also requires both sides' `wire_trace.jsonl` to exist; when cache trace is enabled it also requires
-   `cache_trace.jsonl` to exist.
+8. `--wire-trace full` also requires both sides' `wire_trace.jsonl` to exist. When cache trace is enabled,
+   each Agent or Simulator participant that actually used OpenClaw must also have `cache_trace.jsonl`.
+   Codex and Claude Code do not produce this file and are not required to provide it.
 
 Under the same run lock, a sample that fails the integrity checks is rerun by itself. The following changes make the run lock
 inconsistent and require a new run name, rather than a silent rerun mixed into the old run:

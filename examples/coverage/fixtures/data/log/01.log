@@ -1,0 +1,8 @@
+live-score sample payload:
+Blue.players[0].points = "12"
+Blue.players[1].points = null
+Red.players[0].points = 9
+
+Expected team totals:
+Blue = 12
+Red = 9
