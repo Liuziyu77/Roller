@@ -1,0 +1,9 @@
+Smoke test failure:
+
+input = {}
+call = summarize_tree(input)
+error = KeyError: 'name'
+
+A missing tree can also be represented as None by an upstream import step.
+Expected empty-tree summary:
+{"depth": 0, "nodes": 0, "leaves": []}

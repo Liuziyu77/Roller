@@ -1,0 +1,17 @@
+{
+  "mode": "merge",
+  "providers": {
+    "my-openai-proxy": {
+      "baseUrl": "${MY_PROXY_BASE_URL}",
+      "apiKey": "${MY_PROXY_API_KEY}",
+      "api": "${ROLLER_TEST_OPENCLAW_API}",
+      "models": [
+        {
+          "id": "${ROLLER_TEST_OPENCLAW_MODEL_ID}",
+          "name": "Coverage test model",
+          "input": ["text"]
+        }
+      ]
+    }
+  }
+}

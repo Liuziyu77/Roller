@@ -1,0 +1,68 @@
+[
+  {
+    "task": {
+      "schema_version": "roller.task/v1",
+      "id": "negative_collisions_1",
+      "prompt": "只回复 OK。",
+      "file_root": "../fixtures",
+      "files": {
+        "inputs": [
+          "tiny/1.txt",
+          "tiny/1.txt"
+        ]
+      }
+    },
+    "error_contains": "collision"
+  },
+  {
+    "task": {
+      "schema_version": "roller.task/v1",
+      "id": "negative_collisions_2",
+      "prompt": "只回复 OK。",
+      "file_root": "../fixtures",
+      "files": {
+        "context": [
+          {
+            "role": "fixture",
+            "source": "context/source-1.md",
+            "target": "outputs/note.md"
+          }
+        ]
+      }
+    },
+    "error_contains": "reserved"
+  },
+  {
+    "task": {
+      "schema_version": "roller.task/v1",
+      "id": "negative_collisions_3",
+      "prompt": "只回复 OK。",
+      "file_root": "../fixtures",
+      "files": {
+        "context": [
+          {
+            "role": "fixture",
+            "source": "context/source-1.md",
+            "target": "notes/a.md"
+          }
+        ],
+        "output_dir": "notes"
+      }
+    },
+    "error_contains": "overlaps context"
+  },
+  {
+    "task": {
+      "schema_version": "roller.task/v1",
+      "id": "negative_collisions_4",
+      "prompt": "只回复 OK。",
+      "file_root": "../fixtures",
+      "files": {
+        "outputs": [
+          "*.txt"
+        ]
+      }
+    },
+    "error_contains": "no longer supported"
+  }
+]

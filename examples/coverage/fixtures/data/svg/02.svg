@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="420" viewBox="0 0 720 420" role="img" aria-labelledby="title desc">
+  <title id="title">Warehouse Pick Accuracy by Shift</title>
+  <desc id="desc">Bar chart comparing pick accuracy percentages across four warehouse shifts.</desc>
+  <rect width="720" height="420" fill="#fff"/>
+  <text x="360" y="34" text-anchor="middle" font-family="Arial, sans-serif" font-size="22" font-weight="700">Warehouse Pick Accuracy by Shift</text>
+  <text x="360" y="58" text-anchor="middle" font-family="Arial, sans-serif" font-size="13" fill="#555">Percent accurate picks; higher is better</text>
+  <line x1="80" y1="350" x2="660" y2="350" stroke="#333"/>
+  <line x1="80" y1="100" x2="80" y2="350" stroke="#333"/>
+  <g font-family="Arial, sans-serif" font-size="13" text-anchor="middle">
+    <rect x="120" y="102" width="78" height="248" fill="#4e79a7"/><text x="159" y="94">99.1%</text><text x="159" y="378">Morning</text>
+    <rect x="250" y="119" width="78" height="231" fill="#76b7b2"/><text x="289" y="111">98.4%</text><text x="289" y="378">Midday</text>
+    <rect x="380" y="132" width="78" height="218" fill="#e15759"/><text x="419" y="124">97.9%</text><text x="419" y="378">Evening</text>
+    <rect x="510" y="109" width="78" height="241" fill="#59a14f"/><text x="549" y="101">98.8%</text><text x="549" y="378">Night</text>
+  </g>
+</svg>

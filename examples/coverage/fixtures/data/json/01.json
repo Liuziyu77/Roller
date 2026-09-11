@@ -1,0 +1,9 @@
+{
+  "timeout_seconds": 35,
+  "features": {
+    "email_receipts": true
+  },
+  "logging": {
+    "level": "DEBUG"
+  }
+}

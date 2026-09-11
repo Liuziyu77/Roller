@@ -1,0 +1,48 @@
+[
+  {
+    "task": {
+      "schema_version": "roller.task/v1",
+      "id": "negative_configuration_1",
+      "prompt": "只回复 OK。",
+      "file_root": "../fixtures",
+      "harness": "unknown"
+    },
+    "error_contains": "harness must be one of"
+  },
+  {
+    "task": {
+      "schema_version": "roller.task/v1",
+      "id": "negative_configuration_2",
+      "prompt": "只回复 OK。",
+      "file_root": "../fixtures",
+      "harness": "codex",
+      "agent_harness": "openclaw"
+    },
+    "error_contains": "must match"
+  },
+  {
+    "task": {
+      "schema_version": "roller.task/v1",
+      "id": "negative_configuration_3",
+      "prompt": null,
+      "file_root": "../fixtures",
+      "user_simulator": {
+        "instruction": "test",
+        "max_turns": 0
+      }
+    },
+    "error_contains": "max_turns"
+  },
+  {
+    "task": {
+      "schema_version": "roller.task/v1",
+      "id": "negative_configuration_4",
+      "prompt": "只回复 OK。",
+      "file_root": "../fixtures",
+      "runtime": {
+        "thinking": "invalid"
+      }
+    },
+    "error_contains": "thinking"
+  }
+]

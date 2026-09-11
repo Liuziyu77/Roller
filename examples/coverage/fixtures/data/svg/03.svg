@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="740" height="430" viewBox="0 0 740 430" role="img" aria-labelledby="title desc">
+  <title id="title">供应商准时交付率对比</title>
+  <desc id="desc">柱状图比较四个虚构供应商的准时交付率，缺陷率在 JSON 数据中提供。</desc>
+  <rect width="740" height="430" fill="#fff"/>
+  <text x="370" y="34" text-anchor="middle" font-family="Arial, sans-serif" font-size="22" font-weight="700">供应商准时交付率对比</text>
+  <text x="370" y="58" text-anchor="middle" font-family="Arial, sans-serif" font-size="13" fill="#555">单位：%，越高越好</text>
+  <line x1="80" y1="350" x2="670" y2="350" stroke="#333"/>
+  <line x1="80" y1="90" x2="80" y2="350" stroke="#333"/>
+  <g font-family="Arial, sans-serif" font-size="13" text-anchor="middle">
+    <rect x="125" y="106" width="72" height="244" fill="#4e79a7"/><text x="161" y="98">94%</text><text x="161" y="378">星河制造</text>
+    <rect x="255" y="119" width="72" height="231" fill="#76b7b2"/><text x="291" y="111">89%</text><text x="291" y="378">北辰组件</text>
+    <rect x="385" y="101" width="72" height="249" fill="#f28e2b"/><text x="421" y="93">96%</text><text x="421" y="378">海岚电子</text>
+    <rect x="515" y="137" width="72" height="213" fill="#e15759"/><text x="551" y="129">82%</text><text x="551" y="378">远航五金</text>
+  </g>
+</svg>
