@@ -66,7 +66,7 @@ When the task runs, the input remains at `inputs/product-brief.md`; files the Ag
 | `id` | yes | Unique string or integer identifier within the Task list |
 | `prompt` / `question` / `messages` / `user_simulator` | choose one | Single-turn, compatibility single-turn, predefined multi-turn, or dynamic multi-turn |
 | `file_root` | no | Root of the file pack; defaults to the directory that contains the task list |
-| `harness` (or `agent_harness` / `task_agent.harness`) | no | Harness used by the Task Agent: `openclaw`, `codex`, or `claude-code`; default `openclaw`. CLI `--harness` overrides all of them |
+| `harness` (or `agent_harness` / `task_agent.harness`) | no | Harness used by the Task Agent: `openclaw`, `codex`, `claude-code`, or `hermes`; default `openclaw`. CLI `--harness` overrides all of them |
 | `model` | conditionally required | The Task's own model; if the CLI provides `--model`, the CLI model is used |
 | `files` | no | Declarations for inputs, Context, and the output directory |
 | `runtime` | no | Required environment variables, setup commands, and thinking settings |
@@ -300,7 +300,7 @@ the OpenClaw-only `adaptive` and `off`, which has no shared equivalent; the defa
 `minimal/low/medium/high/xhigh` and does not support `max/ultra`. Claude Code 2.1.222 accepts
 `low/medium/high/xhigh/max/ultracode`; Roller maps `ultra` to `ultracode` and rejects
 `off/minimal/adaptive`. The levels that actually work are still validated jointly by the Harness version, model, and provider.
-The Task Agent can use OpenClaw, Codex, or Claude Code; the User Simulator can also choose any of these three Harnesses in its own `harness` field. Task Agent harnesses may be mixed per task; an explicit `--harness` overrides all of them. The Simulator can choose independently.
+The Task Agent can use OpenClaw, Codex, Claude Code, or Hermes; the User Simulator can also choose any of these four Harnesses in its own `harness` field. Task Agent harnesses may be mixed per task; an explicit `--harness` overrides all of them. The Simulator can choose independently.
 
 ## 9. Path and format validation
 

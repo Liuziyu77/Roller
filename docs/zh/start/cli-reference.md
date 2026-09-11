@@ -46,8 +46,8 @@ roller collect --tasks tasks.jsonl --model provider/model ...
 | --- | --- | --- |
 | `--tasks PATH` | 必填 | JSON 或 JSONL task 清单 |
 | `--model MODEL` | task `model` | 可重复；为每条 task 运行所有指定模型 |
-| `--harness NAME` | task `harness` 或 `openclaw` | `openclaw`、`codex` 或 `claude-code`；显式提供时统一覆盖 Task Agent 的字段 |
-| `--docker-image IMAGE` | 对应 Harness 默认镜像 | 统一镜像覆盖；混合参与者可用 `--openclaw-image`、`--codex-image`、`--claude-code-image` 分别指定 |
+| `--harness NAME` | task `harness` 或 `openclaw` | `openclaw`、`codex`、`claude-code` 或 `hermes`；显式提供时统一覆盖 Task Agent 的字段 |
+| `--docker-image IMAGE` | 对应 Harness 默认镜像 | 统一镜像覆盖；混合参与者可用 `--openclaw-image`、`--codex-image`、`--claude-code-image`、`--hermes-image` 分别指定 |
 | `--api-base URL` / `--api-key-env NAME` | 各 Harness 默认值 | 兼容旧用法；混合运行可用 `--codex-api-base`、`--claude-api-base` 及对应 `*-api-key-env` 分别指定 |
 | `--parallel N` | `1` | 最大并行 rollout 数，必须至少为 1 |
 | `--retries N` | `0` | 首次失败后的额外尝试次数 |
@@ -172,11 +172,11 @@ thinking 使用 `--claude-signature-recovery`，不使用本选项。
 --external-thinking off|external|external_always
 ```
 
-| 模式 | OpenClaw | Codex | Claude Code |
-| --- | --- | --- | --- |
-| `off` | 支持，默认 | 支持，默认 | 唯一支持值 |
-| `external` | Responses provider | Responses HTTP | 不支持 |
-| `external_always` | Responses provider | Responses HTTP | 不支持 |
+| 模式 | OpenClaw | Codex | Claude Code | Hermes |
+| --- | --- | --- | --- | --- |
+| `off` | 支持，默认 | 支持，默认 | 唯一支持值 | 唯一支持值 |
+| `external` | Responses provider | Responses HTTP | 不支持 | 不支持 |
+| `external_always` | Responses provider | Responses HTTP | 不支持 | 不支持 |
 
 启用后，Roller 关闭原生 reasoning，把 `deep_think` 工具参数标准化进 SFT 的 `reasoning_content`。阶段协议、验收和安全边界见 [External Thinking](../traces/external-thinking.md)。
 
@@ -225,3 +225,15 @@ roller bench report RUN_DIR [--output REPORT.json]
 采集时记得加 `--task-timeouts`，并用 `--pass-env` 透传 grader 需要的变量。
 
 字段语义、评分时序、`stage` 防泄漏规则和聚合口径见 [Bench 接入与评分](../benches/bench-format.md)。
+
+## Hermes 专属参数
+
+| 参数 | 默认值 | 用途 |
+| --- | --- | --- |
+| `--hermes-image` | `ROLLER_HERMES_IMAGE` 或 `roller-hermes:d15ed4445207` | 覆盖共享 `--docker-image` |
+| `--hermes-api-base` | `--api-base`、`OPENAI_BASE_URL`、OpenAI `/v1` | Chat Completions API 地址 |
+| `--hermes-api-key-env` | `--api-key-env` 或 `OPENAI_API_KEY` | 宿主机 Key 变量名 |
+| `--hermes-context-length` | 由 Hermes 读取模型信息 | 可选窗口覆盖，至少 64000 tokens |
+| `--hermes-max-iterations` | `12` | 每条 user message 的模型迭代上限 |
+
+Hermes 接受 `off/minimal/low/medium/high/xhigh` reasoning 提示，最终由原生模型/provider 适配决定；暂不支持 external thinking。所有 wire 模式均保留原生请求中的工具 schema；`full` 额外保留 HTTP 轨迹，要求已配置 API base 和 host 网络。详见 [Hermes 配置](../harnesses/hermes-configuration.md)。

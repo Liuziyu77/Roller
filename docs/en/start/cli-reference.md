@@ -40,15 +40,15 @@ Repeated `--model` values are de-duplicated and Cartesian-expanded with each tas
 
 ## 3. Shared collection flags
 
-These flags apply to all three Harnesses:
+These flags apply to all four Harnesses:
 
 | Flag | Default | Description |
 | --- | --- | --- |
 | `--tasks PATH` | Required | JSON or JSONL task list |
 | `--model MODEL` | task `model` | Repeatable; run every listed model for each task |
-| `--harness NAME` | task `harness` or `openclaw` | `openclaw`, `codex`, or `claude-code`; when set explicitly, overrides the Task Agent field for the whole run |
-| `--docker-image IMAGE` | Default image for that Harness | Global image override; mixed participants can set `--openclaw-image`, `--codex-image`, and `--claude-code-image` separately |
-| `--api-base URL` / `--api-key-env NAME` | Harness-specific defaults | Legacy-compatible; mixed runs can set `--codex-api-base`, `--claude-api-base`, and the matching `*-api-key-env` separately |
+| `--harness NAME` | task `harness` or `openclaw` | `openclaw`, `codex`, `claude-code`, or `hermes`; when set explicitly, overrides the Task Agent field for the whole run |
+| `--docker-image IMAGE` | Default image for that Harness | Global image override; mixed participants can set `--openclaw-image`, `--codex-image`, `--claude-code-image`, and `--hermes-image` separately |
+| `--api-base URL` / `--api-key-env NAME` | Harness-specific defaults | Legacy-compatible; mixed runs can set `--codex-api-base`, `--claude-api-base`, `--hermes-api-base`, and the matching `*-api-key-env` separately |
 | `--parallel N` | `1` | Maximum parallel rollouts; must be at least 1 |
 | `--retries N` | `0` | Extra attempts after the first failure |
 | `--timeout SECONDS` | `600` | Total timeout per rollout; must be greater than 0 |
@@ -73,7 +73,7 @@ File limits:
 
 ## 4. Shared Harness runtime flags
 
-These flags are shared by all three Harnesses, but allowed values and semantics are validated by each Harness:
+These flags are shared by all four Harnesses, but allowed values and semantics are validated by each Harness:
 
 | Flag | Default | Description |
 | --- | --- | --- |
@@ -172,11 +172,11 @@ thinking uses `--claude-signature-recovery`, not this option.
 --external-thinking off|external|external_always
 ```
 
-| Mode | OpenClaw | Codex | Claude Code |
-| --- | --- | --- | --- |
-| `off` | Supported, default | Supported, default | Only supported value |
-| `external` | Responses provider | Responses HTTP | Not supported |
-| `external_always` | Responses provider | Responses HTTP | Not supported |
+| Mode | OpenClaw | Codex | Claude Code | Hermes |
+| --- | --- | --- | --- | --- |
+| `off` | Supported, default | Supported, default | Only supported value | Only supported value |
+| `external` | Responses provider | Responses HTTP | Not supported | Not supported |
+| `external_always` | Responses provider | Responses HTTP | Not supported | Not supported |
 
 When enabled, Roller turns off native reasoning and normalizes `deep_think` tool arguments into SFT `reasoning_content`. Stage protocol, checks, and safety bounds are in [External Thinking](../traces/external-thinking.md).
 
@@ -225,3 +225,15 @@ roller bench report RUN_DIR [--output REPORT.json]
 When collecting, remember `--task-timeouts`, and use `--pass-env` to pass through variables the grader needs.
 
 Field semantics, scoring timeline, `stage` leak-prevention rules, and aggregation rules are in [Bench integration and scoring](../benches/bench-format.md).
+
+## Hermes
+
+| Flag | Default | Purpose |
+| --- | --- | --- |
+| `--hermes-image` | `ROLLER_HERMES_IMAGE` or `roller-hermes:d15ed4445207` | Pinned container image |
+| `--hermes-api-base` | `--api-base`, then `OPENAI_BASE_URL`, then OpenAI `/v1` | Chat Completions API base |
+| `--hermes-api-key-env` | `--api-key-env`, then `OPENAI_API_KEY` | Host key variable name |
+| `--hermes-context-length` | Provider metadata | Optional context window override, at least 64000 tokens |
+| `--hermes-max-iterations` | `12` | Model iterations per user turn; must be positive |
+
+Hermes accepts `off/minimal/low/medium/high/xhigh` thinking hints, subject to native provider/model handling. External thinking is unsupported. Native request snapshots preserve tool schemas in every wire mode; `full` also retains the HTTP trace and requires an explicit API base and host networking. See [Hermes configuration](../harnesses/hermes-configuration.md).

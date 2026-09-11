@@ -40,7 +40,7 @@ roller bench report /tmp/wcb/run1
 | `--task` / `--category` | `bench export --task-id` / `--category` | Roller 可重复传多个；写错的 id 报错而不是静默跑空 |
 | `--model` | `collect --model` | 可重复，多模型笛卡尔展开 |
 | `--parallel` | `collect --parallel` | |
-| `--agent-backend` | `collect --harness` | adapter 写 `openclaw`；`codex`/`claude-code` 可用 `--harness` 覆盖，`hermesagent` 无对应 |
+| `--agent-backend` | `collect --harness` | adapter 写 `openclaw`；`codex`/`claude-code`/`hermes` 可用 `--harness` 覆盖，原 `hermesagent` 可选择 `--harness hermes` |
 | `--models-config` | `collect --model-config` | 两边都支持 `${ENV}` 展开 |
 | `--thinking` | `collect --thinking` | adapter **不**在 task 里写死 thinking，否则 task 级会盖掉命令行 |
 | `--lobster-env` | `collect --pass-env` | |

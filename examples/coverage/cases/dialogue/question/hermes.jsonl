@@ -1,0 +1,4 @@
+{"schema_version": "roller.task/v1", "question": "计算 1+2，只回复数字。 这是小型功能测试。不要联网、安装依赖或处理无关文件；完成指定操作后立即结束。", "id": "dialogue__question__hermes__01", "harness": "hermes", "model": "replace-hermes-model"}
+{"schema_version": "roller.task/v1", "question": "计算 2+2，只回复数字。 这是小型功能测试。不要联网、安装依赖或处理无关文件；完成指定操作后立即结束。", "id": "dialogue__question__hermes__02", "harness": "hermes", "model": "replace-hermes-model"}
+{"schema_version": "roller.task/v1", "question": "计算 3+2，只回复数字。 这是小型功能测试。不要联网、安装依赖或处理无关文件；完成指定操作后立即结束。", "id": "dialogue__question__hermes__03", "harness": "hermes", "model": "replace-hermes-model"}
+{"schema_version": "roller.task/v1", "question": "计算 4+2，只回复数字。 这是小型功能测试。不要联网、安装依赖或处理无关文件；完成指定操作后立即结束。", "id": "dialogue__question__hermes__04", "harness": "hermes", "model": "replace-hermes-model"}

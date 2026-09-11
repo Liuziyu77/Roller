@@ -6,3 +6,7 @@
 /results/
 /reports/
 /live-test/
+/validation/
+/*_VALIDATION.md
+.DS_Store
+Thumbs.db
