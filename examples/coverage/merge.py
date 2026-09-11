@@ -20,6 +20,7 @@ def main():
     parser.add_argument('--model', help='shared model ID; per-Harness options take precedence')
     parser.add_argument('--openclaw-provider', default='my-openai-proxy')
     parser.add_argument('--case', action='append', help='case key or quoted glob; repeatable; default: all groups')
+    parser.add_argument('--exclude-case', action='append', help='exclude a case key or quoted glob; repeatable')
     parser.add_argument('--absolute-roots', action='store_true', help='materialize absolute-root cases for a local run; omit for portable templates')
     for harness in HARNESSES:
         parser.add_argument('--' + harness + '-model', help='override the model for this Harness, including Simulator participants')
@@ -31,10 +32,10 @@ def main():
         shared = f'{args.openclaw_provider}/{args.model}' if harness == 'openclaw' and args.model else args.model
         # No implicit environment binding: regeneration must stay deterministic.
         models[harness] = getattr(args, harness.replace('-', '_') + '_model') or shared or DEFAULT_MODELS[harness]
-    if output == ROOT / 'all_tasks.json' and (models != DEFAULT_MODELS or args.case or args.absolute_roots):
+    if output == ROOT / 'all_tasks.json' and (models != DEFAULT_MODELS or args.case or args.exclude_case or args.absolute_roots):
         parser.error('use --output runs/coverage/<name>/tasks.json for local models, subsets, or absolute paths')
     manifest = json.loads((ROOT / 'manifest.json').read_text())
-    cases = select(manifest['cases'], args.case)
+    cases = select(manifest['cases'], args.case, args.exclude_case)
     rows, index = [], []
     for case in cases:
         tasks = normalized(case)

@@ -39,15 +39,16 @@ Current scope: Python 3.10+, task schema `roller.task/v1`, trace format `ACTF_v1
 | OpenClaw (default) | OpenAI Responses or Chat Completions | Custom/open models, dynamic User Simulator, multimodal input | Supports `external` / `external_always`; models are configured in JSON |
 | Codex | Responses | Codex CLI tool traces, GPT and Responses-compatible services | Supports external thinking; can be the task agent or the User Simulator |
 | Claude Code | Anthropic `/v1/messages` | Claude Code tool traces and native thinking | Experimental signature recovery; can be the task agent or the User Simulator |
+| Hermes | OpenAI Chat Completions | Native request/message journal → ACTF/SFT | Local terminal/file tools; Agent and Simulator |
 
-All three share the same Task, Sample, ACTF, SFT, Viewer, retry, and Resume boundaries. Images, APIs, and reasoning flags differ; see the matching harness guide.
+All four share the same Task, Sample, ACTF, SFT, Viewer, retry, and Resume boundaries. Images, APIs, and reasoning flags differ; see the matching harness guide.
 
 ## Suggested reading order
 
 | Stage | Read | Done when |
 | --- | --- | --- |
 | 1. Run once | [Getting started](start/getting-started.md) | Dry-run, collect, and open the Viewer |
-| 2. Pick a harness | [OpenClaw](harnesses/openclaw-configuration.md), [Codex](harnesses/codex-configuration.md), or [Claude Code](harnesses/claude-code-configuration.md) | Image, API protocol, and reasoning flags match |
+| 2. Pick a harness | [OpenClaw](harnesses/openclaw-configuration.md), [Codex](harnesses/codex-configuration.md), or [Claude Code](harnesses/claude-code-configuration.md), [Hermes](harnesses/hermes-configuration.md) | Image, API protocol, and reasoning flags match |
 | 3. Write tasks | [Task format](tasks/task-format.md) | You can declare prompt/messages, inputs, context, and an output directory |
 | 4. Check outputs | [Trajectory outputs](traces/trajectory-outputs.md) | You can tell raw, ACTF, SFT, wire, and results apart |
 | 5. Run at scale | [Task bundles and storage](tasks/task-bundle-and-storage.md) | You understand snapshots, run locks, retry, and Resume |
@@ -70,6 +71,7 @@ start/cli-reference
 harnesses/openclaw-configuration
 harnesses/codex-configuration
 harnesses/claude-code-configuration
+harnesses/hermes-configuration
 ```
 
 ```{toctree}

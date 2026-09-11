@@ -24,8 +24,8 @@ from roller.integrity import validate_resumable_sample
 from roller.storage import safe_component
 from roller.tasks import _read_rows, build_requests, load_tasks
 
-HARNESSES = ("openclaw", "codex", "claude-code")
-DEFAULT_MODELS = {"openclaw": "my-openai-proxy/my-model", "codex": "replace-codex-model", "claude-code": "replace-claude-model"}
+HARNESSES = ("openclaw", "codex", "claude-code", "hermes")
+DEFAULT_MODELS = {"openclaw": "my-openai-proxy/my-model", "codex": "replace-codex-model", "claude-code": "replace-claude-model", "hermes": "replace-hermes-model"}
 
 
 def read_json(path: Path):
@@ -36,13 +36,16 @@ def manifest() -> dict:
     return read_json(ROOT / "manifest.json")
 
 
-def select(cases: list[dict], patterns: list[str] | None) -> list[dict]:
-    if not patterns:
-        return cases
-    for pattern in patterns:
+def select(cases: list[dict], patterns: list[str] | None, exclude: list[str] | None = None) -> list[dict]:
+    for pattern in [*(patterns or []), *(exclude or [])]:
         if not any(fnmatch.fnmatchcase(case["key"], pattern) for case in cases):
             raise ValueError(f"case pattern matched nothing: {pattern}")
-    return [case for case in cases if any(fnmatch.fnmatchcase(case["key"], pattern) for pattern in patterns)]
+    selected = [case for case in cases
+                if (not patterns or any(fnmatch.fnmatchcase(case["key"], p) for p in patterns))
+                and not any(fnmatch.fnmatchcase(case["key"], p) for p in (exclude or []))]
+    if not selected:
+        raise ValueError("case selection is empty after exclusions")
+    return selected
 
 
 def normalized(case: dict):
@@ -298,6 +301,7 @@ def main() -> int:
     for command in ("list", "validate", "run", "check"):
         sub = commands.add_parser(command)
         sub.add_argument("--case", action="append", required=command in {"run", "check"}, help="case key or quoted glob; repeatable")
+        sub.add_argument("--exclude-case", action="append", help="exclude a case key or quoted glob; repeatable")
         if command in {"run", "check"}:
             sub.add_argument("--output", type=Path, default=PROJECT / "runs/coverage")
         if command == "check":
@@ -313,7 +317,7 @@ def main() -> int:
     if extra and args.command != "run":
         parser.error("arguments after -- are only supported by run")
     data = manifest()
-    cases = select(data["cases"], args.case)
+    cases = select(data["cases"], args.case, args.exclude_case)
     if args.command == "list":
         for case in cases:
             print(f"{case['key']:<52} {case['count']}  {case['tier']:<10} {case['description']}")
