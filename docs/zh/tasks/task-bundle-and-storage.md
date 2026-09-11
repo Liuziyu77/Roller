@@ -10,7 +10,7 @@ Roller 把文件分成四个阶段：
 
 1. **宿主机文件包**：`file_root` 下由用户维护的输入与 Context。
 2. **Task Bundle**：运行前构建的不可变快照，供同一 task 的所有模型使用。
-3. **Agent 工作区**：每个 rollout 独享；OpenClaw 使用 `/tmp_workspace`，Codex 与 Claude Code 使用 `/roller/workspace`。
+3. **Agent 工作区**：每个 rollout 独享；OpenClaw 使用 `/tmp_workspace`，Codex、Claude Code 与 Hermes 使用 `/roller/workspace`。
 4. **Sample**：最终保留 raw、ACTF、SFT、info 和可选 `results/`。
 
 一组典型路径如下：

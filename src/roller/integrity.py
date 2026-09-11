@@ -8,6 +8,7 @@ from typing import Any, Mapping
 
 from roller.external_thinking import external_thinking_mode_from_metadata
 from roller.models import RunRequest
+from roller.harness_registry import requires_cache_trace
 from roller.sft import actf_to_sft
 
 
@@ -106,9 +107,7 @@ def _validate_trajectory_files(
     # Only OpenClaw emits cache traces. Finalized metadata records the actual
     # harness, including CLI overrides, for each participant independently.
     # Keep the strict check for legacy or unrecognized harness metadata.
-    cache_trace_required = require_cache_trace and info.get("harness") not in (
-        "codex", "claude-code"
-    )
+    cache_trace_required = require_cache_trace and requires_cache_trace(info.get("harness"))
     if cache_trace_required and not (base / "cache_trace.jsonl").is_file():
         raise ValueError("required full-mode cache_trace.jsonl is missing")
     if not _has_json_event(raw_path):

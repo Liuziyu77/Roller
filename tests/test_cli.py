@@ -25,8 +25,8 @@ class CliTests(unittest.TestCase):
         self.assertIn("wire_trace", groups["Harness runtime and trajectory"])
         self.assertIn("model_config", groups["OpenClaw"])
         self.assertNotIn("thinking", groups["OpenClaw"])
-        self.assertIn("api_base", groups["Codex and Claude Code API"])
-        self.assertIn("api_key_env", groups["Codex and Claude Code API"])
+        self.assertIn("api_base", groups["Codex, Claude Code and Hermes API"])
+        self.assertIn("api_key_env", groups["Codex, Claude Code and Hermes API"])
 
     def test_parser_accepts_codex_harness_options(self) -> None:
         args = _build_parser().parse_args(
