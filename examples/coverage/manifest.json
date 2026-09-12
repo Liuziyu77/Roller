@@ -1,7 +1,7 @@
 {
   "schema_version": "roller.examples-coverage/v1",
   "cases_per_group": 4,
-  "positive_tasks": 1368,
+  "positive_tasks": 1624,
   "negative_tasks": 20,
   "source_files": 40,
   "cases": [
@@ -240,6 +240,45 @@
       ]
     },
     {
+      "key": "formats/jsonl/pi",
+      "path": "cases/formats/jsonl/pi.jsonl",
+      "scenario": "formats/jsonl",
+      "harness": "pi",
+      "simulator": null,
+      "tier": "standard",
+      "description": "Task 清单格式：jsonl",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "3",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "formats__jsonl__pi__01"
+        },
+        {
+          "reply": "4",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "formats__jsonl__pi__02"
+        },
+        {
+          "reply": "5",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "formats__jsonl__pi__03"
+        },
+        {
+          "reply": "6",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "formats__jsonl__pi__04"
+        }
+      ]
+    },
+    {
       "key": "formats/json_array/openclaw",
       "path": "cases/formats/json_array/openclaw.json",
       "scenario": "formats/json_array",
@@ -470,6 +509,45 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "formats__json_array__deepseek__04"
+        }
+      ]
+    },
+    {
+      "key": "formats/json_array/pi",
+      "path": "cases/formats/json_array/pi.json",
+      "scenario": "formats/json_array",
+      "harness": "pi",
+      "simulator": null,
+      "tier": "standard",
+      "description": "Task 清单格式：json_array",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "3",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "formats__json_array__pi__01"
+        },
+        {
+          "reply": "4",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "formats__json_array__pi__02"
+        },
+        {
+          "reply": "5",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "formats__json_array__pi__03"
+        },
+        {
+          "reply": "6",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "formats__json_array__pi__04"
         }
       ]
     },
@@ -708,6 +786,45 @@
       ]
     },
     {
+      "key": "formats/json_object/pi",
+      "path": "cases/formats/json_object/pi.json",
+      "scenario": "formats/json_object",
+      "harness": "pi",
+      "simulator": null,
+      "tier": "standard",
+      "description": "Task 清单格式：json_object",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "3",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "formats__json_object__pi__01"
+        },
+        {
+          "reply": "4",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "formats__json_object__pi__02"
+        },
+        {
+          "reply": "5",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "formats__json_object__pi__03"
+        },
+        {
+          "reply": "6",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "formats__json_object__pi__04"
+        }
+      ]
+    },
+    {
       "key": "formats/jsonl_bom/openclaw",
       "path": "cases/formats/jsonl_bom/openclaw.jsonl",
       "scenario": "formats/jsonl_bom",
@@ -942,6 +1059,45 @@
       ]
     },
     {
+      "key": "formats/jsonl_bom/pi",
+      "path": "cases/formats/jsonl_bom/pi.jsonl",
+      "scenario": "formats/jsonl_bom",
+      "harness": "pi",
+      "simulator": null,
+      "tier": "standard",
+      "description": "Task 清单格式：jsonl_bom",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "3",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "formats__jsonl_bom__pi__01"
+        },
+        {
+          "reply": "4",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "formats__jsonl_bom__pi__02"
+        },
+        {
+          "reply": "5",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "formats__jsonl_bom__pi__03"
+        },
+        {
+          "reply": "6",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "formats__jsonl_bom__pi__04"
+        }
+      ]
+    },
+    {
       "key": "dialogue/question/openclaw",
       "path": "cases/dialogue/question/openclaw.jsonl",
       "scenario": "dialogue/question",
@@ -1172,6 +1328,45 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "dialogue__question__deepseek__04"
+        }
+      ]
+    },
+    {
+      "key": "dialogue/question/pi",
+      "path": "cases/dialogue/question/pi.jsonl",
+      "scenario": "dialogue/question",
+      "harness": "pi",
+      "simulator": null,
+      "tier": "standard",
+      "description": "对话输入：question；最多两轮",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "3",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "dialogue__question__pi__01"
+        },
+        {
+          "reply": "4",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "dialogue__question__pi__02"
+        },
+        {
+          "reply": "5",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "dialogue__question__pi__03"
+        },
+        {
+          "reply": "6",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "dialogue__question__pi__04"
         }
       ]
     },
@@ -1428,6 +1623,48 @@
       ]
     },
     {
+      "key": "dialogue/custom_keys/pi",
+      "path": "cases/dialogue/custom_keys/pi.jsonl",
+      "scenario": "dialogue/custom_keys",
+      "harness": "pi",
+      "simulator": null,
+      "tier": "standard",
+      "description": "对话输入：custom_keys；最多两轮",
+      "count": 4,
+      "parser_options": {
+        "prompt_key": "instruction",
+        "id_key": "case_id"
+      },
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "3",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "dialogue__custom_keys__pi__01"
+        },
+        {
+          "reply": "4",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "dialogue__custom_keys__pi__02"
+        },
+        {
+          "reply": "5",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "dialogue__custom_keys__pi__03"
+        },
+        {
+          "reply": "6",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "dialogue__custom_keys__pi__04"
+        }
+      ]
+    },
+    {
       "key": "dialogue/messages_strings/openclaw",
       "path": "cases/dialogue/messages_strings/openclaw.jsonl",
       "scenario": "dialogue/messages_strings",
@@ -1658,6 +1895,45 @@
           "user_turns": 2,
           "status": "ok",
           "task_id": "dialogue__messages_strings__deepseek__04"
+        }
+      ]
+    },
+    {
+      "key": "dialogue/messages_strings/pi",
+      "path": "cases/dialogue/messages_strings/pi.jsonl",
+      "scenario": "dialogue/messages_strings",
+      "harness": "pi",
+      "simulator": null,
+      "tier": "standard",
+      "description": "对话输入：messages_strings；最多两轮",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "TOKEN_1",
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "dialogue__messages_strings__pi__01"
+        },
+        {
+          "reply": "TOKEN_2",
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "dialogue__messages_strings__pi__02"
+        },
+        {
+          "reply": "TOKEN_3",
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "dialogue__messages_strings__pi__03"
+        },
+        {
+          "reply": "TOKEN_4",
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "dialogue__messages_strings__pi__04"
         }
       ]
     },
@@ -1896,6 +2172,45 @@
       ]
     },
     {
+      "key": "dialogue/messages_objects/pi",
+      "path": "cases/dialogue/messages_objects/pi.jsonl",
+      "scenario": "dialogue/messages_objects",
+      "harness": "pi",
+      "simulator": null,
+      "tier": "standard",
+      "description": "对话输入：messages_objects；最多两轮",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "TOKEN_1",
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "dialogue__messages_objects__pi__01"
+        },
+        {
+          "reply": "TOKEN_2",
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "dialogue__messages_objects__pi__02"
+        },
+        {
+          "reply": "TOKEN_3",
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "dialogue__messages_objects__pi__03"
+        },
+        {
+          "reply": "TOKEN_4",
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "dialogue__messages_objects__pi__04"
+        }
+      ]
+    },
+    {
       "key": "dialogue/multiline/openclaw",
       "path": "cases/dialogue/multiline/openclaw.jsonl",
       "scenario": "dialogue/multiline",
@@ -2126,6 +2441,45 @@
           "user_turns": 1,
           "status": "ok",
           "task_id": "dialogue__multiline__deepseek__04"
+        }
+      ]
+    },
+    {
+      "key": "dialogue/multiline/pi",
+      "path": "cases/dialogue/multiline/pi.jsonl",
+      "scenario": "dialogue/multiline",
+      "harness": "pi",
+      "simulator": null,
+      "tier": "standard",
+      "description": "对话输入：multiline；最多两轮",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "TOKEN_1",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "dialogue__multiline__pi__01"
+        },
+        {
+          "reply": "TOKEN_2",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "dialogue__multiline__pi__02"
+        },
+        {
+          "reply": "TOKEN_3",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "dialogue__multiline__pi__03"
+        },
+        {
+          "reply": "TOKEN_4",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "dialogue__multiline__pi__04"
         }
       ]
     },
@@ -2364,6 +2718,45 @@
       ]
     },
     {
+      "key": "routing/aliases/pi",
+      "path": "cases/routing/aliases/pi.jsonl",
+      "scenario": "routing/aliases",
+      "harness": "pi",
+      "simulator": null,
+      "tier": "standard",
+      "description": "Harness / model / ID 声明：aliases",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "3",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "routing__aliases__pi__01"
+        },
+        {
+          "reply": "4",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "routing__aliases__pi__02"
+        },
+        {
+          "reply": "5",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "routing__aliases__pi__03"
+        },
+        {
+          "reply": "6",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "routing__aliases__pi__04"
+        }
+      ]
+    },
+    {
       "key": "routing/model_cli/openclaw",
       "path": "cases/routing/model_cli/openclaw.jsonl",
       "scenario": "routing/model_cli",
@@ -2598,6 +2991,45 @@
       ]
     },
     {
+      "key": "routing/model_cli/pi",
+      "path": "cases/routing/model_cli/pi.jsonl",
+      "scenario": "routing/model_cli",
+      "harness": "pi",
+      "simulator": null,
+      "tier": "standard",
+      "description": "Harness / model / ID 声明：model_cli",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": true,
+      "expectations": [
+        {
+          "reply": "3",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "routing__model_cli__pi__01"
+        },
+        {
+          "reply": "4",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "routing__model_cli__pi__02"
+        },
+        {
+          "reply": "5",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "routing__model_cli__pi__03"
+        },
+        {
+          "reply": "6",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "routing__model_cli__pi__04"
+        }
+      ]
+    },
+    {
       "key": "routing/id_variants/openclaw",
       "path": "cases/routing/id_variants/openclaw.jsonl",
       "scenario": "routing/id_variants",
@@ -2797,6 +3229,45 @@
       "path": "cases/routing/id_variants/deepseek.jsonl",
       "scenario": "routing/id_variants",
       "harness": "deepseek",
+      "simulator": null,
+      "tier": "standard",
+      "description": "Harness / model / ID 声明：id_variants",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "3",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "101"
+        },
+        {
+          "reply": "4",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "中文 空格"
+        },
+        {
+          "reply": "5",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "a/b:c?d"
+        },
+        {
+          "reply": "6",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "long_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        }
+      ]
+    },
+    {
+      "key": "routing/id_variants/pi",
+      "path": "cases/routing/id_variants/pi.jsonl",
+      "scenario": "routing/id_variants",
+      "harness": "pi",
       "simulator": null,
       "tier": "standard",
       "description": "Harness / model / ID 声明：id_variants",
@@ -3138,6 +3609,57 @@
       ]
     },
     {
+      "key": "data/csv/pi",
+      "path": "cases/data/csv/pi.jsonl",
+      "scenario": "data/csv",
+      "harness": "pi",
+      "simulator": null,
+      "tier": "standard",
+      "description": "来自 Roller_Data 的小型 .csv 文件",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__csv__pi__01"
+        },
+        {
+          "files": {
+            "answer.txt": "5"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__csv__pi__02"
+        },
+        {
+          "files": {
+            "answer.txt": "3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__csv__pi__03"
+        },
+        {
+          "files": {
+            "answer.txt": "4"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__csv__pi__04"
+        }
+      ]
+    },
+    {
       "key": "data/html/openclaw",
       "path": "cases/data/html/openclaw.jsonl",
       "scenario": "data/html",
@@ -3440,6 +3962,57 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "data__html__deepseek__04"
+        }
+      ]
+    },
+    {
+      "key": "data/html/pi",
+      "path": "cases/data/html/pi.jsonl",
+      "scenario": "data/html",
+      "harness": "pi",
+      "simulator": null,
+      "tier": "standard",
+      "description": "来自 Roller_Data 的小型 .html 文件",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "<!doctype html>"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__html__pi__01"
+        },
+        {
+          "files": {
+            "answer.txt": "<!DOCTYPE html>"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__html__pi__02"
+        },
+        {
+          "files": {
+            "answer.txt": "<!doctype html>"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__html__pi__03"
+        },
+        {
+          "files": {
+            "answer.txt": "<!DOCTYPE html>"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__html__pi__04"
         }
       ]
     },
@@ -3750,6 +4323,57 @@
       ]
     },
     {
+      "key": "data/json/pi",
+      "path": "cases/data/json/pi.jsonl",
+      "scenario": "data/json",
+      "harness": "pi",
+      "simulator": null,
+      "tier": "standard",
+      "description": "来自 Roller_Data 的小型 .json 文件",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__json__pi__01"
+        },
+        {
+          "files": {
+            "answer.txt": "2"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__json__pi__02"
+        },
+        {
+          "files": {
+            "answer.txt": "3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__json__pi__03"
+        },
+        {
+          "files": {
+            "answer.txt": "2"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__json__pi__04"
+        }
+      ]
+    },
+    {
       "key": "data/jsonl/openclaw",
       "path": "cases/data/jsonl/openclaw.jsonl",
       "scenario": "data/jsonl",
@@ -4052,6 +4676,57 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "data__jsonl__deepseek__04"
+        }
+      ]
+    },
+    {
+      "key": "data/jsonl/pi",
+      "path": "cases/data/jsonl/pi.jsonl",
+      "scenario": "data/jsonl",
+      "harness": "pi",
+      "simulator": null,
+      "tier": "standard",
+      "description": "来自 Roller_Data 的小型 .jsonl 文件",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "S1"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__jsonl__pi__01"
+        },
+        {
+          "files": {
+            "answer.txt": "S2"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__jsonl__pi__02"
+        },
+        {
+          "files": {
+            "answer.txt": "S3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__jsonl__pi__03"
+        },
+        {
+          "files": {
+            "answer.txt": "S4"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__jsonl__pi__04"
         }
       ]
     },
@@ -4362,6 +5037,57 @@
       ]
     },
     {
+      "key": "data/log/pi",
+      "path": "cases/data/log/pi.jsonl",
+      "scenario": "data/log",
+      "harness": "pi",
+      "simulator": null,
+      "tier": "standard",
+      "description": "来自 Roller_Data 的小型 .log 文件",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "live-score sample payload:"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__log__pi__01"
+        },
+        {
+          "files": {
+            "answer.txt": "2026-05-25 refund_check order=R-44 item_status=final_sale purchased_on=2026-05-10 payment_status=paid expected=false actual=true"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__log__pi__02"
+        },
+        {
+          "files": {
+            "answer.txt": "dashboard rollup sample:"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__log__pi__03"
+        },
+        {
+          "files": {
+            "answer.txt": "Smoke test failure:"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__log__pi__04"
+        }
+      ]
+    },
+    {
       "key": "data/md/openclaw",
       "path": "cases/data/md/openclaw.jsonl",
       "scenario": "data/md",
@@ -4664,6 +5390,57 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "data__md__deepseek__04"
+        }
+      ]
+    },
+    {
+      "key": "data/md/pi",
+      "path": "cases/data/md/pi.jsonl",
+      "scenario": "data/md",
+      "harness": "pi",
+      "simulator": null,
+      "tier": "standard",
+      "description": "来自 Roller_Data 的小型 .md 文件",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "# 成绩边界说明"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__md__pi__01"
+        },
+        {
+          "files": {
+            "answer.txt": "# 优先级排序说明"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__md__pi__02"
+        },
+        {
+          "files": {
+            "answer.txt": "# 通知测试关注点"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__md__pi__03"
+        },
+        {
+          "files": {
+            "answer.txt": "# SLA policy notes"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__md__pi__04"
         }
       ]
     },
@@ -4974,6 +5751,57 @@
       ]
     },
     {
+      "key": "data/py/pi",
+      "path": "cases/data/py/pi.jsonl",
+      "scenario": "data/py",
+      "harness": "pi",
+      "simulator": null,
+      "tier": "standard",
+      "description": "来自 Roller_Data 的小型 .py 文件",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "import json"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__py__pi__01"
+        },
+        {
+          "files": {
+            "answer.txt": "def charge_customer(customer_id, amount):"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__py__pi__02"
+        },
+        {
+          "files": {
+            "answer.txt": "import json"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__py__pi__03"
+        },
+        {
+          "files": {
+            "answer.txt": "import csv"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__py__pi__04"
+        }
+      ]
+    },
+    {
       "key": "data/svg/openclaw",
       "path": "cases/data/svg/openclaw.jsonl",
       "scenario": "data/svg",
@@ -5276,6 +6104,57 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "data__svg__deepseek__04"
+        }
+      ]
+    },
+    {
+      "key": "data/svg/pi",
+      "path": "cases/data/svg/pi.jsonl",
+      "scenario": "data/svg",
+      "harness": "pi",
+      "simulator": null,
+      "tier": "standard",
+      "description": "来自 Roller_Data 的小型 .svg 文件",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "720"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__svg__pi__01"
+        },
+        {
+          "files": {
+            "answer.txt": "720"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__svg__pi__02"
+        },
+        {
+          "files": {
+            "answer.txt": "740"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__svg__pi__03"
+        },
+        {
+          "files": {
+            "answer.txt": "780"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__svg__pi__04"
         }
       ]
     },
@@ -5586,6 +6465,57 @@
       ]
     },
     {
+      "key": "data/txt/pi",
+      "path": "cases/data/txt/pi.jsonl",
+      "scenario": "data/txt",
+      "harness": "pi",
+      "simulator": null,
+      "tier": "standard",
+      "description": "来自 Roller_Data 的小型 .txt 文件",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "refund"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__txt__pi__01"
+        },
+        {
+          "files": {
+            "answer.txt": "面试评价表"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__txt__pi__02"
+        },
+        {
+          "files": {
+            "answer.txt": "2026-04-18 产品例会"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__txt__pi__03"
+        },
+        {
+          "files": {
+            "answer.txt": "收银系统提示文案"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__txt__pi__04"
+        }
+      ]
+    },
+    {
       "key": "data/yaml/openclaw",
       "path": "cases/data/yaml/openclaw.jsonl",
       "scenario": "data/yaml",
@@ -5888,6 +6818,57 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "data__yaml__deepseek__04"
+        }
+      ]
+    },
+    {
+      "key": "data/yaml/pi",
+      "path": "cases/data/yaml/pi.jsonl",
+      "scenario": "data/yaml",
+      "harness": "pi",
+      "simulator": null,
+      "tier": "standard",
+      "description": "来自 Roller_Data 的小型 .yaml 文件",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "service: \"billing-api\""
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__yaml__pi__01"
+        },
+        {
+          "files": {
+            "answer.txt": "roles:"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__yaml__pi__02"
+        },
+        {
+          "files": {
+            "answer.txt": "max_attempts: 4"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__yaml__pi__03"
+        },
+        {
+          "files": {
+            "answer.txt": "licenses:"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__yaml__pi__04"
         }
       ]
     },
@@ -6198,6 +7179,57 @@
       ]
     },
     {
+      "key": "inputs/object/pi",
+      "path": "cases/inputs/object/pi.jsonl",
+      "scenario": "inputs/object",
+      "harness": "pi",
+      "simulator": null,
+      "tier": "standard",
+      "description": "文件包输入方式：object",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "TOKEN_1"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__object__pi__01"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_2"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__object__pi__02"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__object__pi__03"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_4"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__object__pi__04"
+        }
+      ]
+    },
+    {
       "key": "inputs/sha256/openclaw",
       "path": "cases/inputs/sha256/openclaw.jsonl",
       "scenario": "inputs/sha256",
@@ -6500,6 +7532,57 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "inputs__sha256__deepseek__04"
+        }
+      ]
+    },
+    {
+      "key": "inputs/sha256/pi",
+      "path": "cases/inputs/sha256/pi.jsonl",
+      "scenario": "inputs/sha256",
+      "harness": "pi",
+      "simulator": null,
+      "tier": "standard",
+      "description": "文件包输入方式：sha256",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "TOKEN_1"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__sha256__pi__01"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_2"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__sha256__pi__02"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__sha256__pi__03"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_4"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__sha256__pi__04"
         }
       ]
     },
@@ -6810,6 +7893,57 @@
       ]
     },
     {
+      "key": "inputs/multiple/pi",
+      "path": "cases/inputs/multiple/pi.jsonl",
+      "scenario": "inputs/multiple",
+      "harness": "pi",
+      "simulator": null,
+      "tier": "standard",
+      "description": "文件包输入方式：multiple",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__multiple__pi__01"
+        },
+        {
+          "files": {
+            "answer.txt": "3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__multiple__pi__02"
+        },
+        {
+          "files": {
+            "answer.txt": "3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__multiple__pi__03"
+        },
+        {
+          "files": {
+            "answer.txt": "3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__multiple__pi__04"
+        }
+      ]
+    },
+    {
       "key": "inputs/directory/openclaw",
       "path": "cases/inputs/directory/openclaw.jsonl",
       "scenario": "inputs/directory",
@@ -7112,6 +8246,57 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "inputs__directory__deepseek__04"
+        }
+      ]
+    },
+    {
+      "key": "inputs/directory/pi",
+      "path": "cases/inputs/directory/pi.jsonl",
+      "scenario": "inputs/directory",
+      "harness": "pi",
+      "simulator": null,
+      "tier": "standard",
+      "description": "文件包输入方式：directory",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "a.txt\nnested/b.txt"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__directory__pi__01"
+        },
+        {
+          "files": {
+            "answer.txt": "a.txt\nnested/b.txt"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__directory__pi__02"
+        },
+        {
+          "files": {
+            "answer.txt": "a.txt\nnested/b.txt"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__directory__pi__03"
+        },
+        {
+          "files": {
+            "answer.txt": "a.txt\nnested/b.txt"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__directory__pi__04"
         }
       ]
     },
@@ -7422,6 +8607,57 @@
       ]
     },
     {
+      "key": "inputs/optional_missing/pi",
+      "path": "cases/inputs/optional_missing/pi.jsonl",
+      "scenario": "inputs/optional_missing",
+      "harness": "pi",
+      "simulator": null,
+      "tier": "standard",
+      "description": "文件包输入方式：optional_missing",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "OK"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__optional_missing__pi__01"
+        },
+        {
+          "files": {
+            "answer.txt": "OK"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__optional_missing__pi__02"
+        },
+        {
+          "files": {
+            "answer.txt": "OK"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__optional_missing__pi__03"
+        },
+        {
+          "files": {
+            "answer.txt": "OK"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__optional_missing__pi__04"
+        }
+      ]
+    },
+    {
       "key": "inputs/unicode_paths/openclaw",
       "path": "cases/inputs/unicode_paths/openclaw.jsonl",
       "scenario": "inputs/unicode_paths",
@@ -7724,6 +8960,57 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "inputs__unicode_paths__deepseek__04"
+        }
+      ]
+    },
+    {
+      "key": "inputs/unicode_paths/pi",
+      "path": "cases/inputs/unicode_paths/pi.jsonl",
+      "scenario": "inputs/unicode_paths",
+      "harness": "pi",
+      "simulator": null,
+      "tier": "standard",
+      "description": "文件包输入方式：unicode_paths",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "TOKEN_1"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__unicode_paths__pi__01"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_2"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__unicode_paths__pi__02"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__unicode_paths__pi__03"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_4"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__unicode_paths__pi__04"
         }
       ]
     },
@@ -8034,6 +9321,57 @@
       ]
     },
     {
+      "key": "inputs/empty/pi",
+      "path": "cases/inputs/empty/pi.jsonl",
+      "scenario": "inputs/empty",
+      "harness": "pi",
+      "simulator": null,
+      "tier": "standard",
+      "description": "文件包输入方式：empty",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "0"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__empty__pi__01"
+        },
+        {
+          "files": {
+            "answer.txt": "0"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__empty__pi__02"
+        },
+        {
+          "files": {
+            "answer.txt": "0"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__empty__pi__03"
+        },
+        {
+          "files": {
+            "answer.txt": "0"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__empty__pi__04"
+        }
+      ]
+    },
+    {
       "key": "inputs/default_root/openclaw",
       "path": "fixtures/openclaw-default-root.jsonl",
       "scenario": "inputs/default_root",
@@ -8336,6 +9674,57 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "inputs__default_root__deepseek__04"
+        }
+      ]
+    },
+    {
+      "key": "inputs/default_root/pi",
+      "path": "fixtures/pi-default-root.jsonl",
+      "scenario": "inputs/default_root",
+      "harness": "pi",
+      "simulator": null,
+      "tier": "standard",
+      "description": "文件包输入方式：default_root",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "TOKEN_1"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__default_root__pi__01"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_2"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__default_root__pi__02"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__default_root__pi__03"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_4"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__default_root__pi__04"
         }
       ]
     },
@@ -8652,6 +10041,58 @@
       "runtime_absolute_file_root": true
     },
     {
+      "key": "inputs/absolute_root/pi",
+      "path": "cases/inputs/absolute_root/pi.jsonl",
+      "scenario": "inputs/absolute_root",
+      "harness": "pi",
+      "simulator": null,
+      "tier": "standard",
+      "description": "文件包输入方式：absolute_root",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "TOKEN_1"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__absolute_root__pi__01"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_2"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__absolute_root__pi__02"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__absolute_root__pi__03"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_4"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__absolute_root__pi__04"
+        }
+      ],
+      "runtime_absolute_file_root": true
+    },
+    {
       "key": "inputs/legacy_workspace/openclaw",
       "path": "cases/inputs/legacy_workspace/openclaw.jsonl",
       "scenario": "inputs/legacy_workspace",
@@ -8954,6 +10395,57 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "inputs__legacy_workspace__deepseek__04"
+        }
+      ]
+    },
+    {
+      "key": "inputs/legacy_workspace/pi",
+      "path": "cases/inputs/legacy_workspace/pi.jsonl",
+      "scenario": "inputs/legacy_workspace",
+      "harness": "pi",
+      "simulator": null,
+      "tier": "standard",
+      "description": "文件包输入方式：legacy_workspace",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "TOKEN_1"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__legacy_workspace__pi__01"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_2"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__legacy_workspace__pi__02"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__legacy_workspace__pi__03"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_4"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__legacy_workspace__pi__04"
         }
       ]
     },
@@ -9288,6 +10780,61 @@
       ]
     },
     {
+      "key": "context/full/pi",
+      "path": "cases/context/full/pi.jsonl",
+      "scenario": "context/full",
+      "harness": "pi",
+      "simulator": null,
+      "tier": "standard",
+      "description": "Context 注入 / capture：full",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "TOKEN_1"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__full__pi__01"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_2"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__full__pi__02"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__full__pi__03"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_4"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__full__pi__04"
+        }
+      ]
+    },
+    {
       "key": "context/hash/openclaw",
       "path": "cases/context/hash/openclaw.jsonl",
       "scenario": "context/hash",
@@ -9614,6 +11161,61 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "context__hash__deepseek__04"
+        }
+      ]
+    },
+    {
+      "key": "context/hash/pi",
+      "path": "cases/context/hash/pi.jsonl",
+      "scenario": "context/hash",
+      "harness": "pi",
+      "simulator": null,
+      "tier": "standard",
+      "description": "Context 注入 / capture：hash",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "TOKEN_1"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__hash__pi__01"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_2"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__hash__pi__02"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__hash__pi__03"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_4"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__hash__pi__04"
         }
       ]
     },
@@ -9948,6 +11550,61 @@
       ]
     },
     {
+      "key": "context/none/pi",
+      "path": "cases/context/none/pi.jsonl",
+      "scenario": "context/none",
+      "harness": "pi",
+      "simulator": null,
+      "tier": "standard",
+      "description": "Context 注入 / capture：none",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "TOKEN_1"
+          },
+          "resume_safe": false,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__none__pi__01"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_2"
+          },
+          "resume_safe": false,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__none__pi__02"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "resume_safe": false,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__none__pi__03"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_4"
+          },
+          "resume_safe": false,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__none__pi__04"
+        }
+      ]
+    },
+    {
       "key": "context/roles/openclaw",
       "path": "cases/context/roles/openclaw.jsonl",
       "scenario": "context/roles",
@@ -10274,6 +11931,61 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "context__roles__deepseek__04"
+        }
+      ]
+    },
+    {
+      "key": "context/roles/pi",
+      "path": "cases/context/roles/pi.jsonl",
+      "scenario": "context/roles",
+      "harness": "pi",
+      "simulator": null,
+      "tier": "standard",
+      "description": "Context 注入 / capture：roles",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "TOKEN_1"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__roles__pi__01"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_2"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__roles__pi__02"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__roles__pi__03"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_4"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__roles__pi__04"
         }
       ]
     },
@@ -10608,6 +12320,61 @@
       ]
     },
     {
+      "key": "context/skill/pi",
+      "path": "cases/context/skill/pi.jsonl",
+      "scenario": "context/skill",
+      "harness": "pi",
+      "simulator": null,
+      "tier": "standard",
+      "description": "Context 注入 / capture：skill",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "TOKEN_1"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__skill__pi__01"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_2"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__skill__pi__02"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__skill__pi__03"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_4"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__skill__pi__04"
+        }
+      ]
+    },
+    {
       "key": "context/optional/openclaw",
       "path": "cases/context/optional/openclaw.jsonl",
       "scenario": "context/optional",
@@ -10938,6 +12705,61 @@
       ]
     },
     {
+      "key": "context/optional/pi",
+      "path": "cases/context/optional/pi.jsonl",
+      "scenario": "context/optional",
+      "harness": "pi",
+      "simulator": null,
+      "tier": "standard",
+      "description": "Context 注入 / capture：optional",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "TOKEN_1"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__optional__pi__01"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_2"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__optional__pi__02"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__optional__pi__03"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_4"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__optional__pi__04"
+        }
+      ]
+    },
+    {
       "key": "runtime/setup_string/openclaw",
       "path": "cases/runtime/setup_string/openclaw.jsonl",
       "scenario": "runtime/setup_string",
@@ -11244,6 +13066,57 @@
       ]
     },
     {
+      "key": "runtime/setup_string/pi",
+      "path": "cases/runtime/setup_string/pi.jsonl",
+      "scenario": "runtime/setup_string",
+      "harness": "pi",
+      "simulator": null,
+      "tier": "standard",
+      "description": "运行设置：setup_string",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "SETUP_1"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "runtime__setup_string__pi__01"
+        },
+        {
+          "files": {
+            "answer.txt": "SETUP_2"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "runtime__setup_string__pi__02"
+        },
+        {
+          "files": {
+            "answer.txt": "SETUP_3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "runtime__setup_string__pi__03"
+        },
+        {
+          "files": {
+            "answer.txt": "SETUP_4"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "runtime__setup_string__pi__04"
+        }
+      ]
+    },
+    {
       "key": "runtime/setup_list/openclaw",
       "path": "cases/runtime/setup_list/openclaw.jsonl",
       "scenario": "runtime/setup_list",
@@ -11546,6 +13419,57 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "runtime__setup_list__deepseek__04"
+        }
+      ]
+    },
+    {
+      "key": "runtime/setup_list/pi",
+      "path": "cases/runtime/setup_list/pi.jsonl",
+      "scenario": "runtime/setup_list",
+      "harness": "pi",
+      "simulator": null,
+      "tier": "standard",
+      "description": "运行设置：setup_list",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "SETUP_1"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "runtime__setup_list__pi__01"
+        },
+        {
+          "files": {
+            "answer.txt": "SETUP_2"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "runtime__setup_list__pi__02"
+        },
+        {
+          "files": {
+            "answer.txt": "SETUP_3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "runtime__setup_list__pi__03"
+        },
+        {
+          "files": {
+            "answer.txt": "SETUP_4"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "runtime__setup_list__pi__04"
         }
       ]
     },
@@ -11868,6 +13792,59 @@
       ]
     },
     {
+      "key": "runtime/env/pi",
+      "path": "cases/runtime/env/pi.jsonl",
+      "scenario": "runtime/env",
+      "harness": "pi",
+      "simulator": null,
+      "tier": "standard",
+      "description": "运行设置：env",
+      "count": 4,
+      "parser_options": {},
+      "environment": {
+        "ROLLER_EXAMPLE_TOKEN": "ENV_OK"
+      },
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "ENV_OK1"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "runtime__env__pi__01"
+        },
+        {
+          "files": {
+            "answer.txt": "ENV_OK2"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "runtime__env__pi__02"
+        },
+        {
+          "files": {
+            "answer.txt": "ENV_OK3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "runtime__env__pi__03"
+        },
+        {
+          "files": {
+            "answer.txt": "ENV_OK4"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "runtime__env__pi__04"
+        }
+      ]
+    },
+    {
       "key": "runtime/thinking/openclaw",
       "path": "cases/runtime/thinking/openclaw.jsonl",
       "scenario": "runtime/thinking",
@@ -12098,6 +14075,45 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "runtime__thinking__deepseek__04"
+        }
+      ]
+    },
+    {
+      "key": "runtime/thinking/pi",
+      "path": "cases/runtime/thinking/pi.jsonl",
+      "scenario": "runtime/thinking",
+      "harness": "pi",
+      "simulator": null,
+      "tier": "standard",
+      "description": "运行设置：thinking",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "3",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "runtime__thinking__pi__01"
+        },
+        {
+          "reply": "4",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "runtime__thinking__pi__02"
+        },
+        {
+          "reply": "5",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "runtime__thinking__pi__03"
+        },
+        {
+          "reply": "6",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "runtime__thinking__pi__04"
         }
       ]
     },
@@ -12404,6 +14420,57 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "outputs__nested__deepseek__04"
+        }
+      ]
+    },
+    {
+      "key": "outputs/nested/pi",
+      "path": "cases/outputs/nested/pi.jsonl",
+      "scenario": "outputs/nested",
+      "harness": "pi",
+      "simulator": null,
+      "tier": "standard",
+      "description": "输出回收：nested",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "nested/answer.txt": "RESULT_1"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "outputs__nested__pi__01"
+        },
+        {
+          "files": {
+            "nested/answer.txt": "RESULT_2"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "outputs__nested__pi__02"
+        },
+        {
+          "files": {
+            "nested/answer.txt": "RESULT_3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "outputs__nested__pi__03"
+        },
+        {
+          "files": {
+            "nested/answer.txt": "RESULT_4"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "outputs__nested__pi__04"
         }
       ]
     },
@@ -12738,6 +14805,61 @@
       ]
     },
     {
+      "key": "outputs/multiple/pi",
+      "path": "cases/outputs/multiple/pi.jsonl",
+      "scenario": "outputs/multiple",
+      "harness": "pi",
+      "simulator": null,
+      "tier": "standard",
+      "description": "输出回收：multiple",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "a.txt": "A1",
+            "nested/b.txt": "B1"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "outputs__multiple__pi__01"
+        },
+        {
+          "files": {
+            "a.txt": "A2",
+            "nested/b.txt": "B2"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "outputs__multiple__pi__02"
+        },
+        {
+          "files": {
+            "a.txt": "A3",
+            "nested/b.txt": "B3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "outputs__multiple__pi__03"
+        },
+        {
+          "files": {
+            "a.txt": "A4",
+            "nested/b.txt": "B4"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "outputs__multiple__pi__04"
+        }
+      ]
+    },
+    {
       "key": "outputs/no_files/openclaw",
       "path": "cases/outputs/no_files/openclaw.jsonl",
       "scenario": "outputs/no_files",
@@ -12992,6 +15114,49 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "outputs__no_files__deepseek__04"
+        }
+      ]
+    },
+    {
+      "key": "outputs/no_files/pi",
+      "path": "cases/outputs/no_files/pi.jsonl",
+      "scenario": "outputs/no_files",
+      "harness": "pi",
+      "simulator": null,
+      "tier": "standard",
+      "description": "输出回收：no_files",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "3",
+          "no_output_files": true,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "outputs__no_files__pi__01"
+        },
+        {
+          "reply": "4",
+          "no_output_files": true,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "outputs__no_files__pi__02"
+        },
+        {
+          "reply": "5",
+          "no_output_files": true,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "outputs__no_files__pi__03"
+        },
+        {
+          "reply": "6",
+          "no_output_files": true,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "outputs__no_files__pi__04"
         }
       ]
     },
@@ -13302,6 +15467,57 @@
       ]
     },
     {
+      "key": "binary/png/pi",
+      "path": "cases/binary/png/pi.jsonl",
+      "scenario": "binary/png",
+      "harness": "pi",
+      "simulator": null,
+      "tier": "standard",
+      "description": "二进制 .png 传输和读取；不验证语义理解",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "97"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "binary__png__pi__01"
+        },
+        {
+          "files": {
+            "answer.txt": "95"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "binary__png__pi__02"
+        },
+        {
+          "files": {
+            "answer.txt": "95"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "binary__png__pi__03"
+        },
+        {
+          "files": {
+            "answer.txt": "97"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "binary__png__pi__04"
+        }
+      ]
+    },
+    {
       "key": "binary/pdf/openclaw",
       "path": "cases/binary/pdf/openclaw.jsonl",
       "scenario": "binary/pdf",
@@ -13604,6 +15820,57 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "binary__pdf__deepseek__04"
+        }
+      ]
+    },
+    {
+      "key": "binary/pdf/pi",
+      "path": "cases/binary/pdf/pi.jsonl",
+      "scenario": "binary/pdf",
+      "harness": "pi",
+      "simulator": null,
+      "tier": "standard",
+      "description": "二进制 .pdf 传输和读取；不验证语义理解",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "582"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "binary__pdf__pi__01"
+        },
+        {
+          "files": {
+            "answer.txt": "582"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "binary__pdf__pi__02"
+        },
+        {
+          "files": {
+            "answer.txt": "582"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "binary__pdf__pi__03"
+        },
+        {
+          "files": {
+            "answer.txt": "582"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "binary__pdf__pi__04"
         }
       ]
     },
@@ -13914,6 +16181,57 @@
       ]
     },
     {
+      "key": "binary/wav/pi",
+      "path": "cases/binary/wav/pi.jsonl",
+      "scenario": "binary/wav",
+      "harness": "pi",
+      "simulator": null,
+      "tier": "standard",
+      "description": "二进制 .wav 传输和读取；不验证语义理解",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "80"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "binary__wav__pi__01"
+        },
+        {
+          "files": {
+            "answer.txt": "160"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "binary__wav__pi__02"
+        },
+        {
+          "files": {
+            "answer.txt": "240"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "binary__wav__pi__03"
+        },
+        {
+          "files": {
+            "answer.txt": "320"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "binary__wav__pi__04"
+        }
+      ]
+    },
+    {
       "key": "binary/zip/openclaw",
       "path": "cases/binary/zip/openclaw.jsonl",
       "scenario": "binary/zip",
@@ -14216,6 +16534,57 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "binary__zip__deepseek__04"
+        }
+      ]
+    },
+    {
+      "key": "binary/zip/pi",
+      "path": "cases/binary/zip/pi.jsonl",
+      "scenario": "binary/zip",
+      "harness": "pi",
+      "simulator": null,
+      "tier": "standard",
+      "description": "二进制 .zip 传输和读取；不验证语义理解",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "TOKEN_1"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "binary__zip__pi__01"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_2"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "binary__zip__pi__02"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "binary__zip__pi__03"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_4"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "binary__zip__pi__04"
         }
       ]
     },
@@ -14526,6 +16895,57 @@
       ]
     },
     {
+      "key": "vision/png/pi",
+      "path": "cases/vision/png/pi.jsonl",
+      "scenario": "vision/png",
+      "harness": "pi",
+      "simulator": null,
+      "tier": "vision",
+      "description": "可选：真正调用图像查看工具识别纯色，需模型和工具支持视觉",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "red"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "vision__png__pi__01"
+        },
+        {
+          "files": {
+            "answer.txt": "green"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "vision__png__pi__02"
+        },
+        {
+          "files": {
+            "answer.txt": "blue"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "vision__png__pi__03"
+        },
+        {
+          "files": {
+            "answer.txt": "yellow"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "vision__png__pi__04"
+        }
+      ]
+    },
+    {
       "key": "bench/file_grader/openclaw",
       "path": "cases/bench/file_grader/openclaw.jsonl",
       "scenario": "bench/file_grader",
@@ -14828,6 +17248,57 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "bench__file_grader__deepseek__04"
+        }
+      ]
+    },
+    {
+      "key": "bench/file_grader/pi",
+      "path": "cases/bench/file_grader/pi.jsonl",
+      "scenario": "bench/file_grader",
+      "harness": "pi",
+      "simulator": null,
+      "tier": "standard",
+      "description": "容器销毁前用标准库评分；不调用 LLM judge",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "BENCH_1"
+          },
+          "score": 1.0,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "bench__file_grader__pi__01"
+        },
+        {
+          "files": {
+            "answer.txt": "BENCH_2"
+          },
+          "score": 1.0,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "bench__file_grader__pi__02"
+        },
+        {
+          "files": {
+            "answer.txt": "BENCH_3"
+          },
+          "score": 1.0,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "bench__file_grader__pi__03"
+        },
+        {
+          "files": {
+            "answer.txt": "BENCH_4"
+          },
+          "score": 1.0,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "bench__file_grader__pi__04"
         }
       ]
     },
@@ -15162,6 +17633,61 @@
       ]
     },
     {
+      "key": "simulators/pair/openclaw--pi",
+      "path": "cases/simulators/pair/openclaw--pi.jsonl",
+      "scenario": "simulators/pair",
+      "harness": "openclaw",
+      "simulator": "pi",
+      "tier": "simulator",
+      "description": "四种短对话：纯文本 / 文件两轮 / Context+自定义输出 / max_turns；同 Harness 首例继承模型",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "SIM_1",
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__openclaw--pi__01"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "3"
+          },
+          "rounds": 2,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "simulators__pair__openclaw--pi__02"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__openclaw--pi__03"
+        },
+        {
+          "reply": "SIM_4",
+          "rounds": 1,
+          "termination": "max_turns",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__openclaw--pi__04"
+        }
+      ]
+    },
+    {
       "key": "simulators/pair/codex--openclaw",
       "path": "cases/simulators/pair/codex--openclaw.jsonl",
       "scenario": "simulators/pair",
@@ -15488,6 +18014,61 @@
           "user_turns": 1,
           "status": "ok",
           "task_id": "simulators__pair__codex--deepseek__04"
+        }
+      ]
+    },
+    {
+      "key": "simulators/pair/codex--pi",
+      "path": "cases/simulators/pair/codex--pi.jsonl",
+      "scenario": "simulators/pair",
+      "harness": "codex",
+      "simulator": "pi",
+      "tier": "simulator",
+      "description": "四种短对话：纯文本 / 文件两轮 / Context+自定义输出 / max_turns；同 Harness 首例继承模型",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "SIM_1",
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__codex--pi__01"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "3"
+          },
+          "rounds": 2,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "simulators__pair__codex--pi__02"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__codex--pi__03"
+        },
+        {
+          "reply": "SIM_4",
+          "rounds": 1,
+          "termination": "max_turns",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__codex--pi__04"
         }
       ]
     },
@@ -15822,6 +18403,61 @@
       ]
     },
     {
+      "key": "simulators/pair/claude-code--pi",
+      "path": "cases/simulators/pair/claude-code--pi.jsonl",
+      "scenario": "simulators/pair",
+      "harness": "claude-code",
+      "simulator": "pi",
+      "tier": "simulator",
+      "description": "四种短对话：纯文本 / 文件两轮 / Context+自定义输出 / max_turns；同 Harness 首例继承模型",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "SIM_1",
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__claude-code--pi__01"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "3"
+          },
+          "rounds": 2,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "simulators__pair__claude-code--pi__02"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__claude-code--pi__03"
+        },
+        {
+          "reply": "SIM_4",
+          "rounds": 1,
+          "termination": "max_turns",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__claude-code--pi__04"
+        }
+      ]
+    },
+    {
       "key": "simulators/pair/hermes--openclaw",
       "path": "cases/simulators/pair/hermes--openclaw.jsonl",
       "scenario": "simulators/pair",
@@ -16148,6 +18784,61 @@
           "user_turns": 1,
           "status": "ok",
           "task_id": "simulators__pair__hermes--deepseek__04"
+        }
+      ]
+    },
+    {
+      "key": "simulators/pair/hermes--pi",
+      "path": "cases/simulators/pair/hermes--pi.jsonl",
+      "scenario": "simulators/pair",
+      "harness": "hermes",
+      "simulator": "pi",
+      "tier": "simulator",
+      "description": "四种短对话：纯文本 / 文件两轮 / Context+自定义输出 / max_turns；同 Harness 首例继承模型",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "SIM_1",
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__hermes--pi__01"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "3"
+          },
+          "rounds": 2,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "simulators__pair__hermes--pi__02"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__hermes--pi__03"
+        },
+        {
+          "reply": "SIM_4",
+          "rounds": 1,
+          "termination": "max_turns",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__hermes--pi__04"
         }
       ]
     },
@@ -16482,6 +19173,61 @@
       ]
     },
     {
+      "key": "simulators/pair/opencode--pi",
+      "path": "cases/simulators/pair/opencode--pi.jsonl",
+      "scenario": "simulators/pair",
+      "harness": "opencode",
+      "simulator": "pi",
+      "tier": "simulator",
+      "description": "四种短对话：纯文本 / 文件两轮 / Context+自定义输出 / max_turns；同 Harness 首例继承模型",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "SIM_1",
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__opencode--pi__01"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "3"
+          },
+          "rounds": 2,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "simulators__pair__opencode--pi__02"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__opencode--pi__03"
+        },
+        {
+          "reply": "SIM_4",
+          "rounds": 1,
+          "termination": "max_turns",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__opencode--pi__04"
+        }
+      ]
+    },
+    {
       "key": "simulators/pair/deepseek--openclaw",
       "path": "cases/simulators/pair/deepseek--openclaw.jsonl",
       "scenario": "simulators/pair",
@@ -16808,6 +19554,446 @@
           "user_turns": 1,
           "status": "ok",
           "task_id": "simulators__pair__deepseek--deepseek__04"
+        }
+      ]
+    },
+    {
+      "key": "simulators/pair/deepseek--pi",
+      "path": "cases/simulators/pair/deepseek--pi.jsonl",
+      "scenario": "simulators/pair",
+      "harness": "deepseek",
+      "simulator": "pi",
+      "tier": "simulator",
+      "description": "四种短对话：纯文本 / 文件两轮 / Context+自定义输出 / max_turns；同 Harness 首例继承模型",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "SIM_1",
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__deepseek--pi__01"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "3"
+          },
+          "rounds": 2,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "simulators__pair__deepseek--pi__02"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__deepseek--pi__03"
+        },
+        {
+          "reply": "SIM_4",
+          "rounds": 1,
+          "termination": "max_turns",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__deepseek--pi__04"
+        }
+      ]
+    },
+    {
+      "key": "simulators/pair/pi--openclaw",
+      "path": "cases/simulators/pair/pi--openclaw.jsonl",
+      "scenario": "simulators/pair",
+      "harness": "pi",
+      "simulator": "openclaw",
+      "tier": "simulator",
+      "description": "四种短对话：纯文本 / 文件两轮 / Context+自定义输出 / max_turns；同 Harness 首例继承模型",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "SIM_1",
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__pi--openclaw__01"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "3"
+          },
+          "rounds": 2,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "simulators__pair__pi--openclaw__02"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__pi--openclaw__03"
+        },
+        {
+          "reply": "SIM_4",
+          "rounds": 1,
+          "termination": "max_turns",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__pi--openclaw__04"
+        }
+      ]
+    },
+    {
+      "key": "simulators/pair/pi--codex",
+      "path": "cases/simulators/pair/pi--codex.jsonl",
+      "scenario": "simulators/pair",
+      "harness": "pi",
+      "simulator": "codex",
+      "tier": "simulator",
+      "description": "四种短对话：纯文本 / 文件两轮 / Context+自定义输出 / max_turns；同 Harness 首例继承模型",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "SIM_1",
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__pi--codex__01"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "3"
+          },
+          "rounds": 2,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "simulators__pair__pi--codex__02"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__pi--codex__03"
+        },
+        {
+          "reply": "SIM_4",
+          "rounds": 1,
+          "termination": "max_turns",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__pi--codex__04"
+        }
+      ]
+    },
+    {
+      "key": "simulators/pair/pi--claude-code",
+      "path": "cases/simulators/pair/pi--claude-code.jsonl",
+      "scenario": "simulators/pair",
+      "harness": "pi",
+      "simulator": "claude-code",
+      "tier": "simulator",
+      "description": "四种短对话：纯文本 / 文件两轮 / Context+自定义输出 / max_turns；同 Harness 首例继承模型",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "SIM_1",
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__pi--claude-code__01"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "3"
+          },
+          "rounds": 2,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "simulators__pair__pi--claude-code__02"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__pi--claude-code__03"
+        },
+        {
+          "reply": "SIM_4",
+          "rounds": 1,
+          "termination": "max_turns",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__pi--claude-code__04"
+        }
+      ]
+    },
+    {
+      "key": "simulators/pair/pi--hermes",
+      "path": "cases/simulators/pair/pi--hermes.jsonl",
+      "scenario": "simulators/pair",
+      "harness": "pi",
+      "simulator": "hermes",
+      "tier": "simulator",
+      "description": "四种短对话：纯文本 / 文件两轮 / Context+自定义输出 / max_turns；同 Harness 首例继承模型",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "SIM_1",
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__pi--hermes__01"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "3"
+          },
+          "rounds": 2,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "simulators__pair__pi--hermes__02"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__pi--hermes__03"
+        },
+        {
+          "reply": "SIM_4",
+          "rounds": 1,
+          "termination": "max_turns",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__pi--hermes__04"
+        }
+      ]
+    },
+    {
+      "key": "simulators/pair/pi--opencode",
+      "path": "cases/simulators/pair/pi--opencode.jsonl",
+      "scenario": "simulators/pair",
+      "harness": "pi",
+      "simulator": "opencode",
+      "tier": "simulator",
+      "description": "四种短对话：纯文本 / 文件两轮 / Context+自定义输出 / max_turns；同 Harness 首例继承模型",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "SIM_1",
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__pi--opencode__01"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "3"
+          },
+          "rounds": 2,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "simulators__pair__pi--opencode__02"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__pi--opencode__03"
+        },
+        {
+          "reply": "SIM_4",
+          "rounds": 1,
+          "termination": "max_turns",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__pi--opencode__04"
+        }
+      ]
+    },
+    {
+      "key": "simulators/pair/pi--deepseek",
+      "path": "cases/simulators/pair/pi--deepseek.jsonl",
+      "scenario": "simulators/pair",
+      "harness": "pi",
+      "simulator": "deepseek",
+      "tier": "simulator",
+      "description": "四种短对话：纯文本 / 文件两轮 / Context+自定义输出 / max_turns；同 Harness 首例继承模型",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "SIM_1",
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__pi--deepseek__01"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "3"
+          },
+          "rounds": 2,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "simulators__pair__pi--deepseek__02"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__pi--deepseek__03"
+        },
+        {
+          "reply": "SIM_4",
+          "rounds": 1,
+          "termination": "max_turns",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__pi--deepseek__04"
+        }
+      ]
+    },
+    {
+      "key": "simulators/pair/pi--pi",
+      "path": "cases/simulators/pair/pi--pi.jsonl",
+      "scenario": "simulators/pair",
+      "harness": "pi",
+      "simulator": "pi",
+      "tier": "simulator",
+      "description": "四种短对话：纯文本 / 文件两轮 / Context+自定义输出 / max_turns；同 Harness 首例继承模型",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "SIM_1",
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__pi--pi__01"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "3"
+          },
+          "rounds": 2,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "simulators__pair__pi--pi__02"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__pi--pi__03"
+        },
+        {
+          "reply": "SIM_4",
+          "rounds": 1,
+          "termination": "max_turns",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__pi--pi__04"
         }
       ]
     }

@@ -40,6 +40,11 @@ from roller.harnesses.deepseek import (
     DEFAULT_DEEPSEEK_IMAGE, DEEPSEEK_VERSION, DEEPSEEK_TOOLS,
     DeepSeekConfig, DeepSeekHarness, deepseek_effort,
 )
+from roller.harnesses.pi import (
+    COMMON_ENV_NAMES as PI_COMMON_ENV_NAMES,
+    DEFAULT_PI_IMAGE, PI_VERSION, PI_TOOLS,
+    PiConfig, PiHarness, pi_effort,
+)
 from roller.harnesses.opencode import (
     COMMON_ENV_NAMES as OPENCODE_COMMON_ENV_NAMES,
     DEFAULT_OPENCODE_IMAGE, OPENCODE_VERSION, OPENCODE_TOOLS,
@@ -188,6 +193,7 @@ def _build_parser() -> argparse.ArgumentParser:
     runtime.add_argument("--hermes-image", help="Hermes image override (for mixed Harness runs)")
     runtime.add_argument("--opencode-image", help="OpenCode image override (for mixed Harness runs)")
     runtime.add_argument("--deepseek-image", help="DeepSeek image override (for mixed Harness runs)")
+    runtime.add_argument("--pi-image", help="Pi image override (for mixed Harness runs)")
     runtime.add_argument("--claude-code-image", help="Claude Code image override (for mixed Harness runs)")
     runtime.add_argument(
         "--container-user",
@@ -273,13 +279,13 @@ def _build_parser() -> argparse.ArgumentParser:
         help="record the assembled system prompt per LLM call (diagnostics.cacheTrace)",
     )
 
-    api = collect.add_argument_group("Codex, Claude Code, Hermes and OpenCode API")
+    api = collect.add_argument_group("Harness API")
     api.add_argument(
         "--api-base",
         "--anthropic-base-url",
         dest="api_base",
         help=(
-            "model API base: OpenAI-compatible base for Codex/Hermes/OpenCode or Anthropic base/"
+            "model API base: OpenAI-compatible base for Codex/Hermes/OpenCode/DeepSeek/Pi or Anthropic base/"
             "full /v1/messages endpoint for Claude Code; defaults to the Harness env"
         ),
     )
@@ -287,8 +293,10 @@ def _build_parser() -> argparse.ArgumentParser:
     api.add_argument("--hermes-api-key-env", help="Hermes-only API key environment variable")
     api.add_argument("--opencode-api-base", help="OpenCode-only Chat Completions API base")
     api.add_argument("--deepseek-api-base", help="DeepSeek-only Chat Completions API base")
+    api.add_argument("--pi-api-base", help="Pi-only Chat Completions API base")
     api.add_argument("--opencode-api-key-env", help="OpenCode-only API key environment variable")
     api.add_argument("--deepseek-api-key-env", help="DeepSeek-only API key environment variable")
+    api.add_argument("--pi-api-key-env", help="Pi-only API key environment variable")
     api.add_argument("--codex-api-base", help="Codex-only API base override (for mixed Harness runs)")
     api.add_argument("--claude-api-base", help="Claude Code-only API base override (for mixed Harness runs)")
     api.add_argument(
@@ -314,6 +322,11 @@ def _build_parser() -> argparse.ArgumentParser:
     deepseek.add_argument("--deepseek-max-steps", type=int, default=12, help="maximum model steps per DeepSeek user turn (default: 12)")
     deepseek.add_argument("--deepseek-context-length", type=int, default=128000, help="DeepSeek model context window (default: 128000 tokens)")
     deepseek.add_argument("--deepseek-output-tokens", type=int, default=8192, help="DeepSeek maximum output tokens (default: 8192)")
+
+    pi = collect.add_argument_group("Pi")
+    pi.add_argument("--pi-max-steps", type=int, default=12, help="maximum model steps per Pi user turn (default: 12)")
+    pi.add_argument("--pi-context-length", type=int, default=128000, help="Pi model context window (default: 128000 tokens)")
+    pi.add_argument("--pi-output-tokens", type=int, default=8192, help="Pi maximum output tokens (default: 8192)")
 
     codex = collect.add_argument_group("Codex")
     codex.add_argument(
@@ -555,6 +568,7 @@ def _collect(args: argparse.Namespace) -> int:
     hermes_api_base = args.hermes_api_base or requested_api_base or os.environ.get("OPENAI_BASE_URL")
     opencode_api_base = args.opencode_api_base or requested_api_base or os.environ.get("OPENAI_BASE_URL")
     deepseek_api_base = args.deepseek_api_base or requested_api_base or os.environ.get("DEEPSEEK_BASE_URL")
+    pi_api_base = args.pi_api_base or requested_api_base or os.environ.get("OPENAI_BASE_URL")
     codex_api_base = args.codex_api_base or requested_api_base or os.environ.get("OPENAI_BASE_URL")
     claude_api_base = args.claude_api_base or requested_api_base or os.environ.get("ANTHROPIC_BASE_URL")
     requested_api_key_env = args.api_key_env
@@ -566,12 +580,14 @@ def _collect(args: argparse.Namespace) -> int:
     hermes_api_key_env = args.hermes_api_key_env or requested_api_key_env or "OPENAI_API_KEY"
     opencode_api_key_env = args.opencode_api_key_env or requested_api_key_env or "OPENAI_API_KEY"
     deepseek_api_key_env = args.deepseek_api_key_env or requested_api_key_env or "DEEPSEEK_API_KEY"
+    pi_api_key_env = args.pi_api_key_env or requested_api_key_env or "OPENAI_API_KEY"
     codex_api_key_env = args.codex_api_key_env or requested_api_key_env or "OPENAI_API_KEY"
     claude_api_key_env = args.claude_api_key_env or requested_api_key_env or "ANTHROPIC_API_KEY"
     defaults = {
         "hermes": os.environ.get("ROLLER_HERMES_IMAGE", DEFAULT_HERMES_IMAGE),
         "opencode": os.environ.get("ROLLER_OPENCODE_IMAGE", DEFAULT_OPENCODE_IMAGE),
         "deepseek": os.environ.get("ROLLER_DEEPSEEK_IMAGE", DEFAULT_DEEPSEEK_IMAGE),
+        "pi": os.environ.get("ROLLER_PI_IMAGE", DEFAULT_PI_IMAGE),
         "openclaw": os.environ.get("ROLLER_OPENCLAW_IMAGE", DEFAULT_OPENCLAW_IMAGE),
         "codex": os.environ.get("ROLLER_CODEX_IMAGE", DEFAULT_CODEX_IMAGE),
         "claude-code": os.environ.get("ROLLER_CLAUDE_CODE_IMAGE", DEFAULT_CLAUDE_CODE_IMAGE),
@@ -580,6 +596,7 @@ def _collect(args: argparse.Namespace) -> int:
         "hermes": args.hermes_image,
         "opencode": args.opencode_image,
         "deepseek": args.deepseek_image,
+        "pi": args.pi_image,
         "openclaw": args.openclaw_image,
         "codex": args.codex_image,
         "claude-code": args.claude_code_image,
@@ -636,6 +653,7 @@ def _collect(args: argparse.Namespace) -> int:
     hermes_config: HermesConfig | None = None
     opencode_config: OpenCodeConfig | None = None
     deepseek_config: DeepSeekConfig | None = None
+    pi_config: PiConfig | None = None
     openclaw_config: OpenClawConfig | None = None
     codex_config: CodexConfig | None = None
     claude_code_config: ClaudeCodeConfig | None = None
@@ -782,6 +800,24 @@ def _collect(args: argparse.Namespace) -> int:
             if spec is not None and spec.harness == "deepseek":
                 deepseek_effort(resolve_thinking(spec.thinking, deepseek_config.reasoning_effort))
 
+    if "pi" in selected_harnesses:
+        pi_config = PiConfig(
+            docker_image=images["pi"],
+            container_user=None if args.container_user == "image" else args.container_user,
+            network=args.network, api_base=pi_api_base, api_key_env=pi_api_key_env,
+            pass_env=_deduplicate((*PI_COMMON_ENV_NAMES, *args.pass_env)),
+            reasoning_effort=args.thinking, max_steps=args.pi_max_steps,
+            context_length=args.pi_context_length, output_tokens=args.pi_output_tokens,
+            wire_trace_mode=args.wire_trace, keep_thinking=args.keep_thinking,
+            keep_container_on_error=args.keep_container_on_error, docker_binary=args.docker_binary,
+        )
+        for request in requests:
+            if (cli_harness or request.task.harness) == "pi":
+                pi_effort(resolve_thinking(request.task.thinking, pi_config.reasoning_effort))
+            spec = request.task.user_simulator
+            if spec is not None and spec.harness == "pi":
+                pi_effort(resolve_thinking(spec.thinking, pi_config.reasoning_effort))
+
     if args.dry_run:
         # Exercise all path, hash, collision and size checks without leaving a run directory.
         with tempfile.TemporaryDirectory(prefix="roller-dry-run-") as temporary:
@@ -919,6 +955,19 @@ def _collect(args: argparse.Namespace) -> int:
             "profile": "sdk-minimal", "retry_count": 0,
         }
 
+    if pi_config is not None:
+        harness_configurations["pi"] = {
+            "docker_image": images["pi"], "container_user": args.container_user,
+            "network": args.network, "api_base": pi_api_base or "https://api.openai.com/v1",
+            "api_key_env": pi_api_key_env, "reasoning_effort": pi_config.reasoning_effort,
+            "max_steps": args.pi_max_steps, "pi_version": PI_VERSION,
+            "context_length": args.pi_context_length, "output_tokens": args.pi_output_tokens,
+            "tools": list(PI_TOOLS), "api_mode": "chat_completions",
+            "external_thinking": "off", "wire_trace": args.wire_trace,
+            "keep_thinking": args.keep_thinking, "pass_env_names": list(pi_config.pass_env),
+            "compaction": {"auto": False}, "retry_count": 0,
+        }
+
     run_info = {
         "schema_version": "roller.run/v1",
         "roller_version": __version__,
@@ -1037,6 +1086,9 @@ def _collect(args: argparse.Namespace) -> int:
                 if name == "deepseek":
                     assert deepseek_config is not None
                     return DeepSeekHarness(deepseek_config, slot)
+                if name == "pi":
+                    assert pi_config is not None
+                    return PiHarness(pi_config, slot)
                 raise ValueError(f"unknown Harness: {name}")
 
             def harness_factory(slot: int, request):

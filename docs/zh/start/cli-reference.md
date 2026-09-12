@@ -40,15 +40,15 @@ roller collect --tasks tasks.jsonl --model provider/model ...
 
 ## 3. 通用采集参数
 
-以下参数适用于六种 Harness：
+以下参数适用于七种 Harness：
 
 | 参数 | 默认值 | 说明 |
 | --- | --- | --- |
 | `--tasks PATH` | 必填 | JSON 或 JSONL task 清单 |
 | `--model MODEL` | task `model` | 可重复；为每条 task 运行所有指定模型 |
-| `--harness NAME` | task `harness` 或 `openclaw` | `openclaw`、`codex`、`claude-code`、`hermes`、`opencode` 或 `deepseek`；显式提供时统一覆盖 Task Agent 的字段 |
-| `--docker-image IMAGE` | 对应 Harness 默认镜像 | 统一镜像覆盖；混合参与者可用 `--openclaw-image`、`--codex-image`、`--claude-code-image`、`--hermes-image`、`--opencode-image`、`--deepseek-image` 分别指定 |
-| `--api-base URL` / `--api-key-env NAME` | 各 Harness 默认值 | 兼容旧用法；混合运行可用 `--codex-api-base`、`--claude-api-base`、`--hermes-api-base`、`--opencode-api-base`、`--deepseek-api-base` 及对应 `*-api-key-env` 分别指定 |
+| `--harness NAME` | task `harness` 或 `openclaw` | `openclaw`、`codex`、`claude-code`、`hermes`、`opencode`、`deepseek` 或 `pi`；显式提供时统一覆盖 Task Agent 的字段 |
+| `--docker-image IMAGE` | 对应 Harness 默认镜像 | 统一镜像覆盖；混合参与者可用 `--openclaw-image`、`--codex-image`、`--claude-code-image`、`--hermes-image`、`--opencode-image`、`--deepseek-image`、`--pi-image` 分别指定 |
+| `--api-base URL` / `--api-key-env NAME` | 各 Harness 默认值 | 兼容旧用法；混合运行可用 `--codex-api-base`、`--claude-api-base`、`--hermes-api-base`、`--opencode-api-base`、`--deepseek-api-base`、`--pi-api-base` 及对应 `*-api-key-env` 分别指定 |
 | `--parallel N` | `1` | 最大并行 rollout 数，必须至少为 1 |
 | `--retries N` | `0` | 首次失败后的额外尝试次数 |
 | `--timeout SECONDS` | `600` | 每条 rollout 的总超时，必须大于 0 |
@@ -73,7 +73,7 @@ roller collect --tasks tasks.jsonl --model provider/model ...
 
 ## 4. 通用 Harness 运行参数
 
-这些参数由六种 Harness 共用，但具体允许值和语义由 Harness 校验：
+这些参数由七种 Harness 共用，但具体允许值和语义由 Harness 校验：
 
 | 参数 | 默认值 | 说明 |
 | --- | --- | --- |
@@ -263,3 +263,16 @@ Hermes 接受 `off/minimal/low/medium/high/xhigh` reasoning 提示，最终由�
 | `--deepseek-output-tokens` | 8192 |
 
 [DeepSeek Harness](../harnesses/deepseek-configuration.md) 使用 `sdk-minimal`、持久化 Bash 和原生 `off/low/high/max` reasoning。
+
+## Pi Agent Harness
+
+| 参数 | 默认值 |
+| --- | --- |
+| `--pi-image` | `roller-pi:0.85.1` |
+| `--pi-api-base` | `--api-base` / `OPENAI_BASE_URL` / `https://api.openai.com/v1` |
+| `--pi-api-key-env` | `--api-key-env` / `OPENAI_API_KEY` |
+| `--pi-max-steps` | 12 |
+| `--pi-context-length` | 128000 |
+| `--pi-output-tokens` | 8192 |
+
+[Pi Agent](../harnesses/pi-configuration.md) 支持 `off/minimal/low/medium/high/xhigh/max` reasoning；默认 `off`。
