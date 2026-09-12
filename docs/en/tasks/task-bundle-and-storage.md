@@ -10,7 +10,7 @@ Roller splits files into four stages:
 
 1. **Host file pack**: inputs and Context under `file_root`, maintained by the user.
 2. **Task Bundle**: an immutable snapshot built before the run and shared by every model of the same task.
-3. **Agent workspace**: exclusive to each rollout; OpenClaw uses `/tmp_workspace`, Codex, Claude Code, and Hermes use `/roller/workspace`.
+3. **Agent workspace**: exclusive to each rollout; OpenClaw uses `/tmp_workspace`, Codex, Claude Code, Hermes, and OpenCode use `/roller/workspace`.
 4. **Sample**: the final keepers of raw, ACTF, SFT, info, and optional `results/`.
 
 Typical paths:

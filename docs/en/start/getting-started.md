@@ -26,7 +26,7 @@ docker version
 
 ## 2. Choose a Harness and image
 
-OpenClaw works with both Responses and Chat Completions, so it is a good first environment check. The dynamic User Simulator can be paired with OpenClaw, Codex, Claude Code, or Hermes.
+OpenClaw works with both Responses and Chat Completions, so it is a good first environment check. The dynamic User Simulator can be paired with OpenClaw, Codex, Claude Code, Hermes, or OpenCode.
 
 | Harness | API requirements | Default image | How to prepare |
 | --- | --- | --- | --- |
@@ -34,6 +34,7 @@ OpenClaw works with both Responses and Chat Completions, so it is a good first e
 | Codex | Responses streaming | `roller-codex:0.149.0` | Build from the repository Dockerfile |
 | Claude Code | Anthropic `/v1/messages` | `roller-claude-code:2.1.222` | Build from the repository Dockerfile |
 | Hermes | Chat Completions | `roller-hermes:d15ed4445207` | [Build and configure Hermes](../harnesses/hermes-configuration.md) |
+| OpenCode | OpenAI Chat Completions | Native CLI sessions and tools → ACTF/SFT | Pinned version; Task Agent or User Simulator |
 
 Choose CoT settings based on how the model returns reasoning:
 
@@ -323,4 +324,4 @@ Do not pass OpenClaw `--model-config` to a run that has no OpenClaw participant.
 | A run with the same name already exists | Use `--resume` for the original experiment; change `--run-name` for a new one |
 | Viewer does not show new tasks | Confirm you passed the run root directory, refresh the page, and check run `info.json` |
 
-More specific errors are listed at the end of each of the four Harness guides.
+More specific errors are listed at the end of each of the five Harness guides.

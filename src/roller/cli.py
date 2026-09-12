@@ -35,6 +35,11 @@ from roller.harnesses.claude_code import (
     redact_anthropic_base_url,
 )
 from roller.harness_registry import HARNESSES, HARNESS_NAMES
+from roller.harnesses.opencode import (
+    COMMON_ENV_NAMES as OPENCODE_COMMON_ENV_NAMES,
+    DEFAULT_OPENCODE_IMAGE, OPENCODE_VERSION, OPENCODE_TOOLS,
+    OpenCodeConfig, OpenCodeHarness, opencode_effort,
+)
 from roller.harnesses.hermes import (
     COMMON_ENV_NAMES as HERMES_COMMON_ENV_NAMES,
     DEFAULT_HERMES_IMAGE, HERMES_REVISION, HermesConfig, HermesHarness, hermes_effort,
@@ -176,6 +181,7 @@ def _build_parser() -> argparse.ArgumentParser:
     runtime.add_argument("--openclaw-image", help="OpenClaw image override (for mixed Harness runs)")
     runtime.add_argument("--codex-image", help="Codex image override (for mixed Harness runs)")
     runtime.add_argument("--hermes-image", help="Hermes image override (for mixed Harness runs)")
+    runtime.add_argument("--opencode-image", help="OpenCode image override (for mixed Harness runs)")
     runtime.add_argument("--claude-code-image", help="Claude Code image override (for mixed Harness runs)")
     runtime.add_argument(
         "--container-user",
@@ -201,7 +207,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help=(
             "tool-based CoT for OpenAI Responses in OpenClaw or Codex: external "
             "forces the first deep_think call; external_always pairs every action "
-            "with deep_think; Claude Code and Hermes currently accept only 'off'"
+            "with deep_think; Claude Code, Hermes and OpenCode currently accept only 'off'"
         ),
     )
     runtime.add_argument(
@@ -230,7 +236,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help=(
             "keep visible reasoning in ACTF/SFT. For OpenClaw, --no-keep-thinking also "
             "strips reasoning from request history at the wire layer; for Codex and "
-            "Claude Code/Hermes it controls export and leaves native raw/resume context unchanged"
+            "Claude Code/Hermes/OpenCode it controls export and leaves native raw/resume context unchanged"
         ),
     )
     runtime.add_argument("--keep-container-on-error", action="store_true")
@@ -261,25 +267,27 @@ def _build_parser() -> argparse.ArgumentParser:
         help="record the assembled system prompt per LLM call (diagnostics.cacheTrace)",
     )
 
-    api = collect.add_argument_group("Codex, Claude Code and Hermes API")
+    api = collect.add_argument_group("Codex, Claude Code, Hermes and OpenCode API")
     api.add_argument(
         "--api-base",
         "--anthropic-base-url",
         dest="api_base",
         help=(
-            "model API base: OpenAI-compatible base for Codex/Hermes or Anthropic base/"
+            "model API base: OpenAI-compatible base for Codex/Hermes/OpenCode or Anthropic base/"
             "full /v1/messages endpoint for Claude Code; defaults to the Harness env"
         ),
     )
     api.add_argument("--hermes-api-base", help="Hermes-only OpenAI-compatible Chat Completions API base")
     api.add_argument("--hermes-api-key-env", help="Hermes-only API key environment variable")
+    api.add_argument("--opencode-api-base", help="OpenCode-only Chat Completions API base")
+    api.add_argument("--opencode-api-key-env", help="OpenCode-only API key environment variable")
     api.add_argument("--codex-api-base", help="Codex-only API base override (for mixed Harness runs)")
     api.add_argument("--claude-api-base", help="Claude Code-only API base override (for mixed Harness runs)")
     api.add_argument(
         "--api-key-env",
         help=(
             "host environment variable containing the model API key; defaults to "
-            "OPENAI_API_KEY for Codex/Hermes and ANTHROPIC_API_KEY for Claude Code"
+            "OPENAI_API_KEY for Codex/Hermes/OpenCode and ANTHROPIC_API_KEY for Claude Code"
         ),
     )
     api.add_argument("--codex-api-key-env", help="Codex-only API key environment variable")
@@ -288,6 +296,11 @@ def _build_parser() -> argparse.ArgumentParser:
     hermes = collect.add_argument_group("Hermes")
     hermes.add_argument("--hermes-max-iterations", type=int, default=12, help="maximum model iterations per Hermes user turn (default: 12)")
     hermes.add_argument("--hermes-context-length", type=int, help="override Hermes model context window (at least 64000 tokens)")
+
+    opencode = collect.add_argument_group("OpenCode")
+    opencode.add_argument("--opencode-max-steps", type=int, default=12, help="maximum model steps per OpenCode user turn (default: 12)")
+    opencode.add_argument("--opencode-context-length", type=int, default=128000, help="OpenCode model context window (default: 128000 tokens)")
+    opencode.add_argument("--opencode-output-tokens", type=int, default=8192, help="OpenCode maximum output tokens (default: 8192)")
 
     codex = collect.add_argument_group("Codex")
     codex.add_argument(
@@ -527,6 +540,7 @@ def _collect(args: argparse.Namespace) -> int:
         elif selected_harnesses == {"claude-code"}:
             args.api_base = os.environ.get("ANTHROPIC_BASE_URL")
     hermes_api_base = args.hermes_api_base or requested_api_base or os.environ.get("OPENAI_BASE_URL")
+    opencode_api_base = args.opencode_api_base or requested_api_base or os.environ.get("OPENAI_BASE_URL")
     codex_api_base = args.codex_api_base or requested_api_base or os.environ.get("OPENAI_BASE_URL")
     claude_api_base = args.claude_api_base or requested_api_base or os.environ.get("ANTHROPIC_BASE_URL")
     requested_api_key_env = args.api_key_env
@@ -536,16 +550,19 @@ def _collect(args: argparse.Namespace) -> int:
             else "OPENAI_API_KEY"
         )
     hermes_api_key_env = args.hermes_api_key_env or requested_api_key_env or "OPENAI_API_KEY"
+    opencode_api_key_env = args.opencode_api_key_env or requested_api_key_env or "OPENAI_API_KEY"
     codex_api_key_env = args.codex_api_key_env or requested_api_key_env or "OPENAI_API_KEY"
     claude_api_key_env = args.claude_api_key_env or requested_api_key_env or "ANTHROPIC_API_KEY"
     defaults = {
         "hermes": os.environ.get("ROLLER_HERMES_IMAGE", DEFAULT_HERMES_IMAGE),
+        "opencode": os.environ.get("ROLLER_OPENCODE_IMAGE", DEFAULT_OPENCODE_IMAGE),
         "openclaw": os.environ.get("ROLLER_OPENCLAW_IMAGE", DEFAULT_OPENCLAW_IMAGE),
         "codex": os.environ.get("ROLLER_CODEX_IMAGE", DEFAULT_CODEX_IMAGE),
         "claude-code": os.environ.get("ROLLER_CLAUDE_CODE_IMAGE", DEFAULT_CLAUDE_CODE_IMAGE),
     }
     image_overrides = {
         "hermes": args.hermes_image,
+        "opencode": args.opencode_image,
         "openclaw": args.openclaw_image,
         "codex": args.codex_image,
         "claude-code": args.claude_code_image,
@@ -600,6 +617,7 @@ def _collect(args: argparse.Namespace) -> int:
         )
 
     hermes_config: HermesConfig | None = None
+    opencode_config: OpenCodeConfig | None = None
     openclaw_config: OpenClawConfig | None = None
     codex_config: CodexConfig | None = None
     claude_code_config: ClaudeCodeConfig | None = None
@@ -710,6 +728,24 @@ def _collect(args: argparse.Namespace) -> int:
             if spec is not None and spec.harness == "hermes":
                 hermes_effort(resolve_thinking(spec.thinking, hermes_config.reasoning_effort))
 
+    if "opencode" in selected_harnesses:
+        opencode_config = OpenCodeConfig(
+            docker_image=images["opencode"],
+            container_user=None if args.container_user == "image" else args.container_user,
+            network=args.network, api_base=opencode_api_base, api_key_env=opencode_api_key_env,
+            pass_env=_deduplicate((*OPENCODE_COMMON_ENV_NAMES, *args.pass_env)),
+            reasoning_effort=args.thinking, max_steps=args.opencode_max_steps,
+            context_length=args.opencode_context_length, output_tokens=args.opencode_output_tokens,
+            wire_trace_mode=args.wire_trace, keep_thinking=args.keep_thinking,
+            keep_container_on_error=args.keep_container_on_error, docker_binary=args.docker_binary,
+        )
+        for request in requests:
+            if (cli_harness or request.task.harness) == "opencode":
+                opencode_effort(resolve_thinking(request.task.thinking, opencode_config.reasoning_effort))
+            spec = request.task.user_simulator
+            if spec is not None and spec.harness == "opencode":
+                opencode_effort(resolve_thinking(spec.thinking, opencode_config.reasoning_effort))
+
     if args.dry_run:
         # Exercise all path, hash, collision and size checks without leaving a run directory.
         with tempfile.TemporaryDirectory(prefix="roller-dry-run-") as temporary:
@@ -819,6 +855,19 @@ def _collect(args: argparse.Namespace) -> int:
             "toolsets": ["terminal", "file"], "api_mode": "chat_completions",
             "external_thinking": "off", "wire_trace": args.wire_trace,
             "keep_thinking": args.keep_thinking, "pass_env_names": list(hermes_config.pass_env),
+        }
+
+    if opencode_config is not None:
+        harness_configurations["opencode"] = {
+            "docker_image": images["opencode"], "container_user": args.container_user,
+            "network": args.network, "api_base": opencode_api_base or "https://api.openai.com/v1",
+            "api_key_env": opencode_api_key_env, "reasoning_effort": args.thinking,
+            "max_steps": args.opencode_max_steps, "opencode_version": OPENCODE_VERSION,
+            "context_length": args.opencode_context_length, "output_tokens": args.opencode_output_tokens,
+            "tools": list(OPENCODE_TOOLS), "api_mode": "chat_completions",
+            "external_thinking": "off", "wire_trace": args.wire_trace,
+            "keep_thinking": args.keep_thinking, "pass_env_names": list(opencode_config.pass_env),
+            "compaction": {"auto": False, "prune": False},
         }
 
     run_info = {
@@ -933,6 +982,9 @@ def _collect(args: argparse.Namespace) -> int:
                 if name == "hermes":
                     assert hermes_config is not None
                     return HermesHarness(hermes_config, slot)
+                if name == "opencode":
+                    assert opencode_config is not None
+                    return OpenCodeHarness(opencode_config, slot)
                 raise ValueError(f"unknown Harness: {name}")
 
             def harness_factory(slot: int, request):

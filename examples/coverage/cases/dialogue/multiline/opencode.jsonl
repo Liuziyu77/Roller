@@ -1,0 +1,4 @@
+{"schema_version": "roller.task/v1", "prompt": "## 第一段\n校验词 TOKEN_1\n---\n## 第二段\n这仍然是一条消息，只回复校验词。 这是小型功能测试。不要联网、安装依赖或处理无关文件；完成指定操作后立即结束。", "id": "dialogue__multiline__opencode__01", "harness": "opencode", "model": "replace-opencode-model"}
+{"schema_version": "roller.task/v1", "prompt": "## 第一段\n校验词 TOKEN_2\n---\n## 第二段\n这仍然是一条消息，只回复校验词。 这是小型功能测试。不要联网、安装依赖或处理无关文件；完成指定操作后立即结束。", "id": "dialogue__multiline__opencode__02", "harness": "opencode", "model": "replace-opencode-model"}
+{"schema_version": "roller.task/v1", "prompt": "## 第一段\n校验词 TOKEN_3\n---\n## 第二段\n这仍然是一条消息，只回复校验词。 这是小型功能测试。不要联网、安装依赖或处理无关文件；完成指定操作后立即结束。", "id": "dialogue__multiline__opencode__03", "harness": "opencode", "model": "replace-opencode-model"}
+{"schema_version": "roller.task/v1", "prompt": "## 第一段\n校验词 TOKEN_4\n---\n## 第二段\n这仍然是一条消息，只回复校验词。 这是小型功能测试。不要联网、安装依赖或处理无关文件；完成指定操作后立即结束。", "id": "dialogue__multiline__opencode__04", "harness": "opencode", "model": "replace-opencode-model"}

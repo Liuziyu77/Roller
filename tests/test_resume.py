@@ -12,7 +12,7 @@ from roller.harnesses.base import InteractiveHarness, InteractiveSession, TurnRe
 from roller.models import HarnessResult, RunRequest, Task, UserSimulatorSpec
 
 
-HARNESSES = ("openclaw", "codex", "claude-code", "hermes")
+HARNESSES = ("openclaw", "codex", "claude-code", "hermes", "opencode")
 
 
 class RecordingSession(InteractiveSession):
@@ -148,7 +148,7 @@ class MixedResumeTests(unittest.TestCase):
         expected_calls = 2 if request.task.user_simulator else 1
         self.assertEqual(len(self.calls) - before, expected_calls)
 
-    def test_full_mode_reuses_four_agents_and_all_sixteen_simulator_pairs(self):
+    def test_full_mode_reuses_five_agents_and_all_twenty_five_simulator_pairs(self):
         self.assertEqual([r["status"] for r in self.collect()], ["ok"] * len(self.requests))
         for _, path, harness in self.participants():
             self.assertTrue((path / "wire_trace.jsonl").is_file())

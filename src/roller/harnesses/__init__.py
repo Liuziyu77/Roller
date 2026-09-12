@@ -2,6 +2,7 @@ from roller.harnesses.base import Harness, InteractiveHarness, InteractiveSessio
 from roller.harnesses.claude_code import ClaudeCodeConfig, ClaudeCodeHarness
 from roller.harnesses.codex import CodexConfig, CodexHarness
 from roller.harnesses.hermes import HermesConfig, HermesHarness
+from roller.harnesses.opencode import OpenCodeConfig, OpenCodeHarness
 from roller.harnesses.openclaw import OpenClawConfig, OpenClawHarness
 
 __all__ = [
@@ -11,6 +12,8 @@ __all__ = [
     "ClaudeCodeHarness",
     "HermesConfig",
     "HermesHarness",
+    "OpenCodeConfig",
+    "OpenCodeHarness",
     "Harness",
     "InteractiveHarness",
     "InteractiveSession",

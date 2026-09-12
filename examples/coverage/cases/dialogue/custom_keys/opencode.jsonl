@@ -1,0 +1,4 @@
+{"schema_version": "roller.task/v1", "instruction": "计算 1+2，只回复数字。 这是小型功能测试。不要联网、安装依赖或处理无关文件；完成指定操作后立即结束。", "harness": "opencode", "model": "replace-opencode-model", "case_id": "dialogue__custom_keys__opencode__01"}
+{"schema_version": "roller.task/v1", "instruction": "计算 2+2，只回复数字。 这是小型功能测试。不要联网、安装依赖或处理无关文件；完成指定操作后立即结束。", "harness": "opencode", "model": "replace-opencode-model", "case_id": "dialogue__custom_keys__opencode__02"}
+{"schema_version": "roller.task/v1", "instruction": "计算 3+2，只回复数字。 这是小型功能测试。不要联网、安装依赖或处理无关文件；完成指定操作后立即结束。", "harness": "opencode", "model": "replace-opencode-model", "case_id": "dialogue__custom_keys__opencode__03"}
+{"schema_version": "roller.task/v1", "instruction": "计算 4+2，只回复数字。 这是小型功能测试。不要联网、安装依赖或处理无关文件；完成指定操作后立即结束。", "harness": "opencode", "model": "replace-opencode-model", "case_id": "dialogue__custom_keys__opencode__04"}
