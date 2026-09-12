@@ -41,6 +41,7 @@ Current scope: Python 3.10+, task schema `roller.task/v1`, trace format `ACTF_v1
 | Claude Code | Anthropic `/v1/messages` | Claude Code tool traces and native thinking | Experimental signature recovery; can be the task agent or the User Simulator |
 | Hermes | OpenAI Chat Completions | Native request/message journal → ACTF/SFT | Local terminal/file tools; Agent and Simulator |
 | OpenCode | OpenAI Chat Completions | Native CLI sessions and tools → ACTF/SFT | Pinned version; Task Agent or User Simulator |
+| DeepSeek Harness | DeepSeek Chat Completions | Native SDK / persistent Bash → ACTF/SFT | sdk-minimal; Agent / Simulator |
 
 All four share the same Task, Sample, ACTF, SFT, Viewer, retry, and Resume boundaries. Images, APIs, and reasoning flags differ; see the matching harness guide.
 
@@ -49,7 +50,7 @@ All four share the same Task, Sample, ACTF, SFT, Viewer, retry, and Resume bound
 | Stage | Read | Done when |
 | --- | --- | --- |
 | 1. Run once | [Getting started](start/getting-started.md) | Dry-run, collect, and open the Viewer |
-| 2. Pick a harness | [OpenClaw](harnesses/openclaw-configuration.md), [Codex](harnesses/codex-configuration.md), or [Claude Code](harnesses/claude-code-configuration.md), [Hermes](harnesses/hermes-configuration.md) · [OpenCode](harnesses/opencode-configuration.md) | Image, API protocol, and reasoning flags match |
+| 2. Pick a harness | [OpenClaw](harnesses/openclaw-configuration.md), [Codex](harnesses/codex-configuration.md), or [Claude Code](harnesses/claude-code-configuration.md), [Hermes](harnesses/hermes-configuration.md) · [OpenCode](harnesses/opencode-configuration.md) · [DeepSeek](harnesses/deepseek-configuration.md) | Image, API protocol, and reasoning flags match |
 | 3. Write tasks | [Task format](tasks/task-format.md) | You can declare prompt/messages, inputs, context, and an output directory |
 | 4. Check outputs | [Trajectory outputs](traces/trajectory-outputs.md) | You can tell raw, ACTF, SFT, wire, and results apart |
 | 5. Run at scale | [Task bundles and storage](tasks/task-bundle-and-storage.md) | You understand snapshots, run locks, retry, and Resume |
@@ -74,6 +75,7 @@ harnesses/codex-configuration
 harnesses/claude-code-configuration
 harnesses/hermes-configuration
 harnesses/opencode-configuration
+harnesses/deepseek-configuration
 ```
 
 ```{toctree}

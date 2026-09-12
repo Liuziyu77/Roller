@@ -28,7 +28,7 @@ Dockerfile 默认基础镜像为 `python:3.12-slim-bookworm`。可以通过 `--b
 | `--opencode-api-base` | 回退到 `--api-base`、`OPENAI_BASE_URL`、`https://api.openai.com/v1` |
 | `--opencode-api-key-env` | 回退到 `--api-key-env`、`OPENAI_API_KEY`；传变量名，不传密钥值 |
 | `--opencode-max-steps` | 每条用户消息最多 12 个原生模型步骤，另受整个 rollout 超时约束 |
-| `--opencode-context-length` | 模型上下文窗口，默认 128000，至少 1024；按服务真实能力设置 |
+| `--opencode-context-length` | 模型上下文窗口，默认 134200，至少 1024；按服务真实能力设置 |
 | `--opencode-output-tokens` | 最大输出 tokens，默认 8192，必须小于上下文窗口 |
 | `--thinking` / `runtime.thinking` | 支持 `off/minimal/low/medium/high/xhigh`；传给兼容服务的 reasoning effort，`off` 映射为 `none`，仍需服务支持 |
 | `--wire-trace` | 默认 `actf`；各模式均通过插件保留原生请求和 schema；`full` 额外保存 HTTP 记录，要求显式 API base 与 host 网络 |
@@ -67,6 +67,6 @@ ROLLER_OPENCODE_DOCKER_TEST=1 PYTHONPATH=src \
 
 Docker 集成测试使用本地确定性流式 API 和虚构 Key，实际运行 OpenCode 工具，验证只读输入、Context/setup/env、多轮历史、reasoning、wire、Resume 和超时清理，不产生外部模型费用。
 
-矩阵新增 204 条 OpenCode 输入任务和 36 条 Simulator 配对任务，每组 4 条。非视觉输入共 200 条；涉及 OpenCode 的 9 种配对可用 `--case 'simulators/pair/opencode--*' --case 'simulators/pair/*--opencode'` 选择，重叠组自动去重。完整矩阵为 1120 条任务、20 条隔离负例，见 [Coverage 使用说明](../../../examples/coverage/README.md)。
+矩阵新增 204 条 OpenCode 输入任务和 36 条 Simulator 配对任务，每组 4 条。非视觉输入共 200 条；涉及 OpenCode 的 9 种配对可用 `--case 'simulators/pair/opencode--*' --case 'simulators/pair/*--opencode'` 选择，重叠组自动去重。完整矩阵为 1368 条任务、20 条隔离负例，见 [Coverage 使用说明](../../../examples/coverage/README.md)。
 
 首版不支持 external thinking、直接多模态消息和视觉验收、原生账号/OAuth 登录、自定义 provider SDK、MCP、子 Agent 及长期记忆。可选视觉组记录能力边界，不属于要求全部通过的验收范围。关闭自动压缩意味着长任务需要自行配置足够的上下文窗口，超窗会失败。
