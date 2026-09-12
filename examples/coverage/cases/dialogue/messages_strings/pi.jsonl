@@ -1,0 +1,4 @@
+{"schema_version": "roller.task/v1", "messages": ["记住校验词 TOKEN_1，只回复 OK。", "刚才的校验词是什么？只回复校验词。 这是小型功能测试。不要联网、安装依赖或处理无关文件；完成指定操作后立即结束。"], "id": "dialogue__messages_strings__pi__01", "harness": "pi", "model": "replace-pi-model"}
+{"schema_version": "roller.task/v1", "messages": ["记住校验词 TOKEN_2，只回复 OK。", "刚才的校验词是什么？只回复校验词。 这是小型功能测试。不要联网、安装依赖或处理无关文件；完成指定操作后立即结束。"], "id": "dialogue__messages_strings__pi__02", "harness": "pi", "model": "replace-pi-model"}
+{"schema_version": "roller.task/v1", "messages": ["记住校验词 TOKEN_3，只回复 OK。", "刚才的校验词是什么？只回复校验词。 这是小型功能测试。不要联网、安装依赖或处理无关文件；完成指定操作后立即结束。"], "id": "dialogue__messages_strings__pi__03", "harness": "pi", "model": "replace-pi-model"}
+{"schema_version": "roller.task/v1", "messages": ["记住校验词 TOKEN_4，只回复 OK。", "刚才的校验词是什么？只回复校验词。 这是小型功能测试。不要联网、安装依赖或处理无关文件；完成指定操作后立即结束。"], "id": "dialogue__messages_strings__pi__04", "harness": "pi", "model": "replace-pi-model"}

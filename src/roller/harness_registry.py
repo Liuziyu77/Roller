@@ -18,6 +18,7 @@ HARNESSES = {
     "hermes": HarnessCapabilities("Hermes"),
     "opencode": HarnessCapabilities("OpenCode"),
     "deepseek": HarnessCapabilities("DeepSeek Harness"),
+    "pi": HarnessCapabilities("Pi Agent"),
 }
 HARNESS_NAMES = tuple(HARNESSES)
 

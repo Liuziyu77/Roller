@@ -26,7 +26,7 @@ docker version
 
 ## 2. Choose a Harness and image
 
-OpenClaw works with both Responses and Chat Completions, so it is a good first environment check. The dynamic User Simulator can be paired with OpenClaw, Codex, Claude Code, Hermes, OpenCode, or DeepSeek.
+OpenClaw works with both Responses and Chat Completions, so it is a good first environment check. The dynamic User Simulator can be paired with OpenClaw, Codex, Claude Code, Hermes, OpenCode, DeepSeek, or Pi.
 
 | Harness | API requirements | Default image | How to prepare |
 | --- | --- | --- | --- |
@@ -36,6 +36,7 @@ OpenClaw works with both Responses and Chat Completions, so it is a good first e
 | Hermes | Chat Completions | `roller-hermes:d15ed4445207` | [Build and configure Hermes](../harnesses/hermes-configuration.md) |
 | OpenCode | OpenAI Chat Completions | Native CLI sessions and tools → ACTF/SFT | Pinned version; Task Agent or User Simulator |
 | DeepSeek Harness | DeepSeek Chat Completions | Native SDK / persistent Bash → ACTF/SFT | sdk-minimal; Agent / Simulator |
+| Pi Agent | Chat Completions | `roller-pi:0.85.1` | [Build and configure](../harnesses/pi-configuration.md) |
 
 Choose CoT settings based on how the model returns reasoning:
 

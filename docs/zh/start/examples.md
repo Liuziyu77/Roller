@@ -78,7 +78,7 @@ set +a
 | `03_user_memory_context` | `USER.md` + `MEMORY.md` | Context 注入和 capture |
 | `04_multi_turn` | 两条 `messages` | 同一 Agent session 的预定义多轮 |
 
-这四条 task 可由六种 Harness 运行，是最适合做环境验收的一组数据。
+这四条 task 可由七种 Harness 运行，是最适合做环境验收的一组数据。
 
 ## OpenClaw：基础采集
 
@@ -199,7 +199,7 @@ roller collect \
   --run-name examples-user-simulator
 ```
 
-Task 已内置 `model: my-openai-proxy/my-model`。动态对话会额外生成 `conversation.json` 和 `user_simulator/` 轨迹；Task Agent 与 Simulator 可在各自字段中选择 OpenClaw、Codex、Claude Code、Hermes、OpenCode 或 DeepSeek。详见 [User Simulator](../tasks/user-simulator.md)。
+Task 已内置 `model: my-openai-proxy/my-model`。动态对话会额外生成 `conversation.json` 和 `user_simulator/` 轨迹；Task Agent 与 Simulator 可在各自字段中选择 OpenClaw、Codex、Claude Code、Hermes、OpenCode、DeepSeek 或 Pi。详见 [User Simulator](../tasks/user-simulator.md)。
 
 ### 多模态输入
 

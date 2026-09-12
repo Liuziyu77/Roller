@@ -40,15 +40,15 @@ Repeated `--model` values are de-duplicated and Cartesian-expanded with each tas
 
 ## 3. Shared collection flags
 
-These flags apply to all six Harnesses:
+These flags apply to all seven Harnesses:
 
 | Flag | Default | Description |
 | --- | --- | --- |
 | `--tasks PATH` | Required | JSON or JSONL task list |
 | `--model MODEL` | task `model` | Repeatable; run every listed model for each task |
-| `--harness NAME` | task `harness` or `openclaw` | `openclaw`, `codex`, `claude-code`, `hermes`, `opencode`, or `deepseek`; when set explicitly, overrides the Task Agent field for the whole run |
-| `--docker-image IMAGE` | Default image for that Harness | Global image override; mixed participants can set `--openclaw-image`, `--codex-image`, `--claude-code-image`, `--hermes-image`, `--opencode-image`, and `--deepseek-image` separately |
-| `--api-base URL` / `--api-key-env NAME` | Harness-specific defaults | Legacy-compatible; mixed runs can set `--codex-api-base`, `--claude-api-base`, `--hermes-api-base`, `--opencode-api-base`, `--deepseek-api-base`, and the matching `*-api-key-env` separately |
+| `--harness NAME` | task `harness` or `openclaw` | `openclaw`, `codex`, `claude-code`, `hermes`, `opencode`, `deepseek`, or `pi`; when set explicitly, overrides the Task Agent field for the whole run |
+| `--docker-image IMAGE` | Default image for that Harness | Global image override; mixed participants can set `--openclaw-image`, `--codex-image`, `--claude-code-image`, `--hermes-image`, `--opencode-image`, `--deepseek-image`, and `--pi-image` separately |
+| `--api-base URL` / `--api-key-env NAME` | Harness-specific defaults | Legacy-compatible; mixed runs can set `--codex-api-base`, `--claude-api-base`, `--hermes-api-base`, `--opencode-api-base`, `--deepseek-api-base`, `--pi-api-base`, and the matching `*-api-key-env` separately |
 | `--parallel N` | `1` | Maximum parallel rollouts; must be at least 1 |
 | `--retries N` | `0` | Extra attempts after the first failure |
 | `--timeout SECONDS` | `600` | Total timeout per rollout; must be greater than 0 |
@@ -73,7 +73,7 @@ File limits:
 
 ## 4. Shared Harness runtime flags
 
-These flags are shared by all six Harnesses, but allowed values and semantics are validated by each Harness:
+These flags are shared by all seven Harnesses, but allowed values and semantics are validated by each Harness:
 
 | Flag | Default | Description |
 | --- | --- | --- |
@@ -263,3 +263,16 @@ See [native sessions, request capture, and limitations](../harnesses/opencode-co
 | `--deepseek-output-tokens` | 8192 |
 
 [DeepSeek Harness](../harnesses/deepseek-configuration.md): `sdk-minimal`, persistent Bash, `off/low/high/max` thinking.
+
+## Pi Agent Harness
+
+| Flag | Default |
+| --- | --- |
+| `--pi-image` | `roller-pi:0.85.1` |
+| `--pi-api-base` | `--api-base` / `OPENAI_BASE_URL` / `https://api.openai.com/v1` |
+| `--pi-api-key-env` | `--api-key-env` / `OPENAI_API_KEY` |
+| `--pi-max-steps` | 12 |
+| `--pi-context-length` | 128000 |
+| `--pi-output-tokens` | 8192 |
+
+[Pi Agent](../harnesses/pi-configuration.md): `off/minimal/low/medium/high/xhigh/max` thinking; default `off`.
