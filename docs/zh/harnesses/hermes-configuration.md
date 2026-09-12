@@ -79,4 +79,4 @@ ROLLER_HERMES_DOCKER_TEST=1 PYTHONPATH=src \
 
 集成测试使用本地固定响应 HTTP 服务和虚构 Key，真实执行 Hermes 工具，覆盖输入只读、Context/setup/env、多轮历史、full/off wire、reasoning 导出、Resume/run lock，以及超时回收和清理。它不调用外部模型，不产生模型费用；需要 Docker host 网络。
 
-可用 `--case '*/hermes' --exclude-case 'vision/*'` 选中 200 条非视觉输入任务；追加 `--case 'simulators/pair/*'` 则包含全部 144 条 Agent/Simulator 任务，共 344 条，需要配置六种 Harness。`suite.py` 和 `merge.py` 均支持这些筛选参数。
+可用 `--case '*/hermes' --exclude-case 'vision/*'` 选中 200 条非视觉输入任务；追加 `--case 'simulators/pair/*'` 则包含全部 196 条 Agent/Simulator 任务，共 396 条，需要配置七种 Harness。`suite.py` 和 `merge.py` 均支持这些筛选参数。

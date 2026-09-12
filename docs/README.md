@@ -9,7 +9,7 @@
 | `en/` | 英文手册（网站默认语言） |
 | `zh/` | 中文手册 |
 | `en/start/` · `zh/start/` | 快速上手、Examples、CLI 参数 |
-| `en/harnesses/` · `zh/harnesses/` | OpenClaw、Codex、Claude Code、Hermes、OpenCode、DeepSeek |
+| `en/harnesses/` · `zh/harnesses/` | OpenClaw、Codex、Claude Code、Hermes、OpenCode、DeepSeek、Pi Agent |
 | `en/tasks/` · `zh/tasks/` | Task 格式、Bundle 与存储、User Simulator |
 | `en/traces/` · `zh/traces/` | 轨迹产物、SFT、External Thinking、Viewer |
 | `en/benches/` · `zh/benches/` | Bench 接入与各 bench 说明 |
@@ -19,7 +19,7 @@
 | 阶段 | 阅读内容 | 完成标准 |
 | --- | --- | --- |
 | 1. 跑通 | [快速上手](zh/start/getting-started.md) | 完成 dry-run、采集并打开 Viewer |
-| 2. 选 Harness | [OpenClaw](zh/harnesses/openclaw-configuration.md)、[Codex](zh/harnesses/codex-configuration.md) 或 [Claude Code](zh/harnesses/claude-code-configuration.md)、[Hermes](zh/harnesses/hermes-configuration.md) · [OpenCode](zh/harnesses/opencode-configuration.md) · [DeepSeek](zh/harnesses/deepseek-configuration.md) | 镜像、API 协议和 reasoning 参数匹配 |
+| 2. 选 Harness | [OpenClaw](zh/harnesses/openclaw-configuration.md)、[Codex](zh/harnesses/codex-configuration.md) 或 [Claude Code](zh/harnesses/claude-code-configuration.md)、[Hermes](zh/harnesses/hermes-configuration.md) · [OpenCode](zh/harnesses/opencode-configuration.md) · [DeepSeek](zh/harnesses/deepseek-configuration.md) · [Pi Agent](zh/harnesses/pi-configuration.md) | 镜像、API 协议和 reasoning 参数匹配 |
 | 3. 写 Task | [Task 格式参考](zh/tasks/task-format.md) | 能声明 prompt/messages、输入、Context 和输出目录 |
 | 4. 验收产物 | [轨迹产出文件指南](zh/traces/trajectory-outputs.md) | 能区分 raw、ACTF、SFT、wire 与 results |
 | 5. 批量运行 | [Task Bundle 与结果存储](zh/tasks/task-bundle-and-storage.md) | 理解快照、run lock、retry 与 Resume |
@@ -84,16 +84,16 @@ python -m http.server -d _build/html 8000
 
 ## 按 Harness 选择
 
-| 能力 | OpenClaw | Codex | Claude Code | Hermes | OpenCode | DeepSeek Harness |
-| --- | --- | --- | --- | --- | --- | --- |
-| API 协议 | Responses / Chat Completions | Responses | Anthropic Messages | Chat Completions | Chat Completions | DeepSeek Chat Completions |
-| 模型配置入口 | `--model-config` | `--api-base` + `--api-key-env` | `--api-base` + `--api-key-env` | `--hermes-api-base` + `--hermes-api-key-env` | `--opencode-api-base` + `--opencode-api-key-env` | `--deepseek-api-base` + `--deepseek-api-key-env` |
-| 单轮 / 预定义多轮 | 是 / 是 | 是 / 是 | 是 / 是 | 是 / 是 | 是 / 是 | 是 / 是 |
-| 动态 User Simulator | 是 | 是 | 是 | 是 | 是 | 是 |
-| External thinking | 是 | 是 | 否 | 否 | 否 | 否 |
-| Signature recovery | 否 | 否 | 实验性 | 否 | 否 | 否 |
-| Wire request capture | 是 | 是 | 是 | 是 | 是 | 是 |
-| Harness 专属指南 | [打开](zh/harnesses/openclaw-configuration.md) | [打开](zh/harnesses/codex-configuration.md) | [打开](zh/harnesses/claude-code-configuration.md) | [打开](zh/harnesses/hermes-configuration.md) | [打开](zh/harnesses/opencode-configuration.md) | [打开](zh/harnesses/deepseek-configuration.md) |
+| 能力 | OpenClaw | Codex | Claude Code | Hermes | OpenCode | DeepSeek Harness | Pi Agent |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| API 协议 | Responses / Chat Completions | Responses | Anthropic Messages | Chat Completions | Chat Completions | DeepSeek Chat Completions | Chat Completions |
+| 模型配置入口 | `--model-config` | `--api-base` + `--api-key-env` | `--api-base` + `--api-key-env` | `--hermes-api-base` + `--hermes-api-key-env` | `--opencode-api-base` + `--opencode-api-key-env` | `--deepseek-api-base` + `--deepseek-api-key-env` | `--pi-api-base` + `--pi-api-key-env` |
+| 单轮 / 预定义多轮 | 是 / 是 | 是 / 是 | 是 / 是 | 是 / 是 | 是 / 是 | 是 / 是 | 是 / 是 |
+| 动态 User Simulator | 是 | 是 | 是 | 是 | 是 | 是 | 是 |
+| External thinking | 是 | 是 | 否 | 否 | 否 | 否 | 否 |
+| Signature recovery | 否 | 否 | 实验性 | 否 | 否 | 否 | 否 |
+| Wire request capture | 是 | 是 | 是 | 是 | 是 | 是 | 是 |
+| Harness 专属指南 | [打开](zh/harnesses/openclaw-configuration.md) | [打开](zh/harnesses/codex-configuration.md) | [打开](zh/harnesses/claude-code-configuration.md) | [打开](zh/harnesses/hermes-configuration.md) | [打开](zh/harnesses/opencode-configuration.md) | [打开](zh/harnesses/deepseek-configuration.md) | [打开](zh/harnesses/pi-configuration.md) |
 
 ## CoT 路径选择
 

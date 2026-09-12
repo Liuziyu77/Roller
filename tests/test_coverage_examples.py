@@ -80,7 +80,7 @@ class CoverageExamplesTests(unittest.TestCase):
 
     def test_subset_binds_all_simulator_pairs_and_preserves_inheritance(self):
         output = self.checkout / "runs" / "mixed" / "tasks.json"
-        models = {"openclaw": "example/provider-model", "codex": "example-codex", "claude-code": "example-claude", "hermes": "example-hermes", "opencode": "example-opencode", "deepseek": "example-deepseek"}
+        models = {"openclaw": "example/provider-model", "codex": "example-codex", "claude-code": "example-claude", "hermes": "example-hermes", "opencode": "example-opencode", "deepseek": "example-deepseek", "pi": "example-pi"}
         model_args = [arg for name, value in models.items() for arg in ("--" + name + "-model", value)]
         self.run_script("merge.py", "--case", "simulators/pair/*", *model_args, "--output", output)
         payload = json.loads(output.read_text())
@@ -113,7 +113,7 @@ class CoverageExamplesTests(unittest.TestCase):
         self.assertEqual(path.read_bytes(), original)
 
     def test_nonvision_subsets_are_easy_to_reproduce(self):
-        for harness in ("hermes", "opencode", "deepseek"):
+        for harness in ("hermes", "opencode", "deepseek", "pi"):
             with self.subTest(harness=harness):
                 output = self.checkout / "runs" / harness / "tasks.json"
                 self.run_script("merge.py", "--case", "*/" + harness, "--exclude-case", "vision/*", "--output", output)

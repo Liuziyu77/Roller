@@ -24,8 +24,8 @@ from roller.integrity import validate_resumable_sample
 from roller.storage import safe_component
 from roller.tasks import _read_rows, build_requests, load_tasks
 
-HARNESSES = ("openclaw", "codex", "claude-code", "hermes", "opencode", "deepseek")
-DEFAULT_MODELS = {"openclaw": "my-openai-proxy/my-model", "codex": "replace-codex-model", "claude-code": "replace-claude-model", "hermes": "replace-hermes-model", "opencode": "replace-opencode-model", "deepseek": "replace-deepseek-model"}
+HARNESSES = ("openclaw", "codex", "claude-code", "hermes", "opencode", "deepseek", "pi")
+DEFAULT_MODELS = {"openclaw": "my-openai-proxy/my-model", "codex": "replace-codex-model", "claude-code": "replace-claude-model", "hermes": "replace-hermes-model", "opencode": "replace-opencode-model", "deepseek": "replace-deepseek-model", "pi": "replace-pi-model"}
 
 
 def read_json(path: Path):

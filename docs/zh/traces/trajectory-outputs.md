@@ -12,7 +12,7 @@
 | 直接训练 Task Agent | Run 级 `sft.jsonl` | 每行一个最小 SFT record，可直接流式读取 |
 | 查看单条训练样本 | Sample 级 `trace_SFT.json` | 与 `sft.jsonl` 中对应 record 完全相同 |
 | 轨迹分析、打分、统计 token | `trace_ACTF.json` | 有 step、reasoning、observation、metric 和时间信息 |
-| 追查 Harness session 原始事件 | `trace.jsonl` | OpenClaw、Codex、Claude Code、Hermes、OpenCode 或 DeepSeek native session，Roller 不做训练清洗 |
+| 追查 Harness session 原始事件 | `trace.jsonl` | OpenClaw、Codex、Claude Code、Hermes、OpenCode、DeepSeek 或 Pi native session，Roller 不做训练清洗 |
 | 查看 ACTF 捕获的首个 system prompt | `trace_ACTF.json` 顶层 | 来自各 Harness 可取得的 native/cache/wire 来源，只固化一次 |
 | 核对 OpenClaw 每次 system prompt 是否变化 | `--wire-trace full` 的 `cache_trace.jsonl` | 保留 OpenClaw 每次 LLM call 的诊断记录 |
 | 核对模型实际收到的请求历史和 tools | `--wire-trace full` 的 `wire_trace.jsonl` | 保存代理实际转发的每次 JSON 请求体 |
@@ -31,7 +31,7 @@
 
 OpenClaw 默认参数是 `--cache-trace --wire-trace actf --keep-thinking`；Codex 默认关闭 web
 search，并保留 native session 中实际可见的 reasoning content 或 summary；Claude
-Code 保留 native session 中的明文 thinking block。六种 Harness 成功 run 的主要结构相同：
+Code 保留 native session 中的明文 thinking block。七种 Harness 成功 run 的主要结构相同：
 
 ```text
 <output>/<run-name>/
@@ -194,7 +194,7 @@ Sample `info.json.trajectory.raw_schema` 会分别标记 `openclaw-session-jsonl
 - 适合追查上游字段、事件顺序和转换问题；
 - 结构属于 Harness，不作为稳定训练 schema；
 - 不能单独用于验证 context compaction、tool-result pruning 或 provider 适配后的真实
-  请求；六种 Harness 都应使用 `--wire-trace full`；
+  请求；七种 Harness 都应使用 `--wire-trace full`；
 - Chat Completions 返回的 `reasoning`/`reasoning_text` 在进入 OpenClaw 前可能被等价规范化
   为 `reasoning_content`，以保证后续轮次重放；thinking 文本不变，但字段签名和上游 HTTP
   响应不再是逐字对应关系；
@@ -655,3 +655,5 @@ Hermes raw 使用 `roller.hermes-events/v1`：记录完整请求快照、模型�
 OpenCode raw 使用 `roller.opencode-events/v1`：记录 provider 序列化请求、原生 message/part 更新及 session 导出，按原生 ID 合并为 ACTF/SFT，不生成 `cache_trace.jsonl`。详见 [OpenCode 轨迹](../harnesses/opencode-configuration.md)。
 
 DeepSeek raw 使用 `roller.deepseek-events/v1`，保存 SDK 原生通知和序列化请求，不生成 OpenClaw cache trace。详见 [DeepSeek Harness](../harnesses/deepseek-configuration.md)。
+
+Pi raw 使用 `roller.pi-events/v1`，记录原生事件、context、实际请求与轮次边界；不要求 OpenClaw cache trace。详见 [Pi Agent](../harnesses/pi-configuration.md)。

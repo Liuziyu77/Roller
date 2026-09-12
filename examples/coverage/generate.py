@@ -15,8 +15,8 @@ import zipfile
 import zlib
 
 ROOT = Path(__file__).resolve().parent
-HARNESSES = ("openclaw", "codex", "claude-code", "hermes", "opencode", "deepseek")
-MODELS = {"openclaw": "my-openai-proxy/my-model", "codex": "replace-codex-model", "claude-code": "replace-claude-model", "hermes": "replace-hermes-model", "opencode": "replace-opencode-model", "deepseek": "replace-deepseek-model"}
+HARNESSES = ("openclaw", "codex", "claude-code", "hermes", "opencode", "deepseek", "pi")
+MODELS = {"openclaw": "my-openai-proxy/my-model", "codex": "replace-codex-model", "claude-code": "replace-claude-model", "hermes": "replace-hermes-model", "opencode": "replace-opencode-model", "deepseek": "replace-deepseek-model", "pi": "replace-pi-model"}
 TAIL = "这是小型功能测试。不要联网、安装依赖或处理无关文件；完成指定操作后立即结束。"
 
 
@@ -409,7 +409,7 @@ def main() -> None:
     negative = negative_groups()
     payload = {"schema_version": "roller.examples-coverage/v1", "cases_per_group": 4, "positive_tasks": sum(c["count"] for c in cases), "negative_tasks": sum(c["count"] for c in negative), "source_files": len(sources["files"]), "cases": cases, "negative": negative}
     json_write(ROOT / "manifest.json", payload)
-    labels = {"openclaw": "OpenClaw", "codex": "Codex", "claude-code": "Claude Code", "hermes": "Hermes", "opencode": "OpenCode", "deepseek": "DeepSeek Harness"}
+    labels = {"openclaw": "OpenClaw", "codex": "Codex", "claude-code": "Claude Code", "hermes": "Hermes", "opencode": "OpenCode", "deepseek": "DeepSeek Harness", "pi": "Pi Agent"}
     lines = ["# 覆盖清单", "", "由 `generate.py` 生成。每个链接是一份恰好含 4 条任务的独立清单；运行说明见 [README](README.md)。", "", "## 输入场景 × Harness", "", "| 场景 | " + " | ".join(labels[name] for name in HARNESSES) + " | 验证点 |", "| " + " | ".join(["---"] * (len(HARNESSES) + 2)) + " |"]
     for scenario in dict.fromkeys(case["scenario"] for case in cases if not case["simulator"]):
         members = [case for case in cases if case["scenario"] == scenario]

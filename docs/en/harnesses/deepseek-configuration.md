@@ -53,4 +53,4 @@ ROLLER_DEEPSEEK_DOCKER_TEST=1 PYTHONPATH=src \
   python -m unittest discover -s tests -p test_deepseek_docker.py -v
 ```
 
-Docker tests execute real SDK tools against a deterministic local API with a fake key. Coverage includes 204 input tasks (200 nonvision) and 44 tasks across all 11 pairings involving DeepSeek. Select pairings with `--case 'simulators/pair/deepseek--*' --case 'simulators/pair/*--deepseek'`. See [coverage instructions](https://github.com/Liuziyu77/Roller/blob/main/examples/coverage/README.en.md).
+Docker tests execute real SDK tools against a deterministic local API with a fake key. Coverage includes 204 input tasks (200 nonvision) and 52 tasks across all 13 pairings involving DeepSeek. Select pairings with `--case 'simulators/pair/deepseek--*' --case 'simulators/pair/*--deepseek'`. See [coverage instructions](https://github.com/Liuziyu77/Roller/blob/main/examples/coverage/README.en.md).
