@@ -9,10 +9,8 @@ from roller.actf import convert_openclaw_trace
 from roller.collector import CollectionConfig, Collector
 from roller.conversation import ConversationManager
 from roller.harnesses.base import InteractiveHarness, InteractiveSession, TurnResult
+from roller.harness_registry import HARNESS_NAMES as HARNESSES
 from roller.models import HarnessResult, RunRequest, Task, UserSimulatorSpec
-
-
-HARNESSES = ("openclaw", "codex", "claude-code", "hermes", "opencode")
 
 
 class RecordingSession(InteractiveSession):
@@ -148,7 +146,7 @@ class MixedResumeTests(unittest.TestCase):
         expected_calls = 2 if request.task.user_simulator else 1
         self.assertEqual(len(self.calls) - before, expected_calls)
 
-    def test_full_mode_reuses_five_agents_and_all_twenty_five_simulator_pairs(self):
+    def test_full_mode_reuses_all_agents_and_simulator_pairs(self):
         self.assertEqual([r["status"] for r in self.collect()], ["ok"] * len(self.requests))
         for _, path, harness in self.participants():
             self.assertTrue((path / "wire_trace.jsonl").is_file())

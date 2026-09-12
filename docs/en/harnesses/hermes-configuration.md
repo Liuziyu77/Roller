@@ -61,7 +61,7 @@ python examples/coverage/suite.py run --case data/txt/hermes \
 python examples/coverage/suite.py check --case data/txt/hermes
 ```
 
-The matrix contains 204 Hermes input tasks and 28 additional mixed Simulator tasks (seven new pairings, four cases each). Tasks include text, files, context, setup/environment, binary inspection, output collection, grading, and short conversations. The complete project matrix is 1120 positive tasks and 20 isolated negative cases.
+The matrix contains 204 Hermes input tasks and 28 additional mixed Simulator tasks (seven new pairings, four cases each). Tasks include text, files, context, setup/environment, binary inspection, output collection, grading, and short conversations. The complete project matrix is 1368 positive tasks and 20 isolated negative cases.
 
 The initial adapter supports Chat Completions and text-oriented terminal/file execution. Vision tools, direct multimodal messages, external thinking, provider-specific authentication flows, Hermes gateways, remote terminal backends, persistent memory, and skill learning are outside this scope. The optional Hermes vision group records that capability boundary and is excluded from the required passing set. Binary file access is tested separately from media understanding.
 
@@ -79,4 +79,4 @@ ROLLER_HERMES_DOCKER_TEST=1 PYTHONPATH=src \
 
 The Docker test uses a localhost HTTP server and a synthetic key. It verifies actual terminal execution, read-only inputs, context/setup/environment, two-turn history, full and disabled wire capture, reasoning export, Resume/run-lock behavior, and timeout cleanup. No external model credentials or model charges are involved. It requires Docker host networking, as used by the adapter’s full wire mode.
 
-Use `--case '*/hermes' --exclude-case 'vision/*'` to select the 200 supported input tasks. Add `--case 'simulators/pair/*'` to include all 100 Agent/Simulator tasks (300 in total, requiring all five Harnesses). Both `suite.py` and `merge.py` accept these filters.
+Use `--case '*/hermes' --exclude-case 'vision/*'` to select the 200 supported input tasks. Add `--case 'simulators/pair/*'` to include all 144 Agent/Simulator tasks (344 in total, requiring all six Harnesses). Both `suite.py` and `merge.py` accept these filters.

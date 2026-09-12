@@ -78,7 +78,7 @@ Full rules are in the [OpenClaw Harness guide](../harnesses/openclaw-configurati
 | `03_user_memory_context` | `USER.md` + `MEMORY.md` | Context injection and capture |
 | `04_multi_turn` | Two `messages` | Predefined multi-turn in the same Agent session |
 
-These four tasks can run on all five Harnesses and are the best set for an environment check.
+These four tasks can run on all six Harnesses and are the best set for an environment check.
 
 ## OpenClaw: basic collection
 
@@ -199,7 +199,7 @@ roller collect \
   --run-name examples-user-simulator
 ```
 
-The task already includes `model: my-openai-proxy/my-model`. A dynamic conversation also writes `conversation.json` and `user_simulator/` traces; the Task Agent and Simulator can each choose OpenClaw, Codex, Claude Code, Hermes, or OpenCode in their own fields. See [User Simulator](../tasks/user-simulator.md).
+The task already includes `model: my-openai-proxy/my-model`. A dynamic conversation also writes `conversation.json` and `user_simulator/` traces; the Task Agent and Simulator can each choose OpenClaw, Codex, Claude Code, Hermes, OpenCode, or DeepSeek in their own fields. See [User Simulator](../tasks/user-simulator.md).
 
 ### Multimodal input
 

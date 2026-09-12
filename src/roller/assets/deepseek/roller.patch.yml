@@ -1,0 +1,15 @@
+# Fixed additions to the official sdk-minimal profile. The native agent loop,
+# persistent bash tool and session persistence are left under dsh's ownership.
+- id: session-log-deepseek
+  disabled: true
+- id: plugin-package-inventory-deepseek
+  disabled: true
+- id: llm-deepseek
+  config:
+    models: !!js "[{id: process.env.ROLLER_DEEPSEEK_MODEL, contextWindow: Number(process.env.DSH_CONTEXT_WINDOW), maxTokens: Number(process.env.ROLLER_DEEPSEEK_OUTPUT_TOKENS)}]"
+    retryPolicy:
+      mode: normal
+      maxRetries: 0
+- insert:
+    - id: roller-request-journal
+      name: /roller/deepseek_journal.mjs

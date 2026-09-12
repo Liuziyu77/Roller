@@ -26,7 +26,7 @@ docker version
 
 ## 2. 选择 Harness 与镜像
 
-OpenClaw 同时兼容 Responses 与 Chat Completions，适合作为首次环境验证。动态 User Simulator 可与 OpenClaw、Codex、Claude Code、Hermes 或 OpenCode 任意组合。
+OpenClaw 同时兼容 Responses 与 Chat Completions，适合作为首次环境验证。动态 User Simulator 可与 OpenClaw、Codex、Claude Code、Hermes、OpenCode 或 DeepSeek 任意组合。
 
 | Harness | API 要求 | 默认镜像 | 准备方式 |
 | --- | --- | --- | --- |
@@ -35,6 +35,7 @@ OpenClaw 同时兼容 Responses 与 Chat Completions，适合作为首次环境�
 | Claude Code | Anthropic `/v1/messages` | `roller-claude-code:2.1.222` | 用仓库 Dockerfile 构建 |
 | Hermes | Chat Completions | `roller-hermes:d15ed4445207` | [Hermes](../harnesses/hermes-configuration.md) |
 | OpenCode | OpenAI Chat Completions | CLI session / tools → ACTF/SFT | 固定版本，文本与文件工具；支持 Agent / Simulator |
+| DeepSeek Harness | DeepSeek Chat Completions | 原生 SDK / 持久化 Bash → ACTF/SFT | sdk-minimal；支持 Agent / Simulator |
 
 CoT 配置按模型返回形式选择：
 
@@ -324,4 +325,4 @@ roller collect \
 | 同名 run 已存在 | 原实验使用 `--resume`，新实验更换 `--run-name` |
 | Viewer 没有新 task | 确认传入的是 run 根目录，刷新页面并检查 run `info.json` |
 
-更具体的错误分别列在三个 Harness 指南末尾。
+更具体的错误分别列在六种 Harness 指南末尾。

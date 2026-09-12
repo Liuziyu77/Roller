@@ -40,15 +40,15 @@ Repeated `--model` values are de-duplicated and Cartesian-expanded with each tas
 
 ## 3. Shared collection flags
 
-These flags apply to all five Harnesses:
+These flags apply to all six Harnesses:
 
 | Flag | Default | Description |
 | --- | --- | --- |
 | `--tasks PATH` | Required | JSON or JSONL task list |
 | `--model MODEL` | task `model` | Repeatable; run every listed model for each task |
-| `--harness NAME` | task `harness` or `openclaw` | `openclaw`, `codex`, `claude-code`, `hermes`, or `opencode`; when set explicitly, overrides the Task Agent field for the whole run |
-| `--docker-image IMAGE` | Default image for that Harness | Global image override; mixed participants can set `--openclaw-image`, `--codex-image`, `--claude-code-image`, `--hermes-image`, and `--opencode-image` separately |
-| `--api-base URL` / `--api-key-env NAME` | Harness-specific defaults | Legacy-compatible; mixed runs can set `--codex-api-base`, `--claude-api-base`, `--hermes-api-base`, `--opencode-api-base`, and the matching `*-api-key-env` separately |
+| `--harness NAME` | task `harness` or `openclaw` | `openclaw`, `codex`, `claude-code`, `hermes`, `opencode`, or `deepseek`; when set explicitly, overrides the Task Agent field for the whole run |
+| `--docker-image IMAGE` | Default image for that Harness | Global image override; mixed participants can set `--openclaw-image`, `--codex-image`, `--claude-code-image`, `--hermes-image`, `--opencode-image`, and `--deepseek-image` separately |
+| `--api-base URL` / `--api-key-env NAME` | Harness-specific defaults | Legacy-compatible; mixed runs can set `--codex-api-base`, `--claude-api-base`, `--hermes-api-base`, `--opencode-api-base`, `--deepseek-api-base`, and the matching `*-api-key-env` separately |
 | `--parallel N` | `1` | Maximum parallel rollouts; must be at least 1 |
 | `--retries N` | `0` | Extra attempts after the first failure |
 | `--timeout SECONDS` | `600` | Total timeout per rollout; must be greater than 0 |
@@ -73,7 +73,7 @@ File limits:
 
 ## 4. Shared Harness runtime flags
 
-These flags are shared by all five Harnesses, but allowed values and semantics are validated by each Harness:
+These flags are shared by all six Harnesses, but allowed values and semantics are validated by each Harness:
 
 | Flag | Default | Description |
 | --- | --- | --- |
@@ -105,11 +105,11 @@ Authoritative mappings are in the reasoning sections of each Harness guide.
 
 ### Wire trace
 
-| Mode | Outputs and purpose |
-| --- | --- |
-| `off` | No HTTP proxy capture; OpenCode/Hermes still journal native request schemas |
-| `actf` | Default; retain system/tools needed for ACTF and remove intermediate wire files |
-| `full` | Also retain `wire_trace.jsonl` for auditing the actual HTTP requests |
+| Mode | Outputs and purpose | DeepSeek Harness |
+| --- | --- | --- |
+| `off` | No HTTP proxy capture; OpenCode/Hermes/DeepSeek still journal native request schemas | Native reasoning |
+| `actf` | Default; retain system/tools needed for ACTF and remove intermediate wire files | Not supported |
+| `full` | Also retain `wire_trace.jsonl` for auditing the actual HTTP requests | Not supported |
 
 `full` stores complete request text including prompts, reasoning, tool arguments, and results, so size and sensitivity are both higher. See {ref}`Trajectory outputs <wire-trace-jsonl>`.
 
@@ -250,3 +250,16 @@ Hermes accepts `off/minimal/low/medium/high/xhigh` thinking hints, subject to na
 | `--opencode-output-tokens` | 8192 |
 
 See [native sessions, request capture, and limitations](../harnesses/opencode-configuration.md).
+
+## DeepSeek Harness
+
+| Option | Default |
+| --- | --- |
+| `--deepseek-image` | `roller-deepseek:0.1.5rc1` |
+| `--deepseek-api-base` | `--api-base` / `DEEPSEEK_BASE_URL` / `https://api.deepseek.com` |
+| `--deepseek-api-key-env` | `--api-key-env` / `DEEPSEEK_API_KEY` |
+| `--deepseek-max-steps` | 12 |
+| `--deepseek-context-length` | 128000 |
+| `--deepseek-output-tokens` | 8192 |
+
+[DeepSeek Harness](../harnesses/deepseek-configuration.md): `sdk-minimal`, persistent Bash, `off/low/high/max` thinking.
