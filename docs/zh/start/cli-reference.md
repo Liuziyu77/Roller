@@ -40,15 +40,15 @@ roller collect --tasks tasks.jsonl --model provider/model ...
 
 ## 3. 通用采集参数
 
-以下参数适用于三个 Harness：
+以下参数适用于六种 Harness：
 
 | 参数 | 默认值 | 说明 |
 | --- | --- | --- |
 | `--tasks PATH` | 必填 | JSON 或 JSONL task 清单 |
 | `--model MODEL` | task `model` | 可重复；为每条 task 运行所有指定模型 |
-| `--harness NAME` | task `harness` 或 `openclaw` | `openclaw`、`codex`、`claude-code` 或 `hermes`；显式提供时统一覆盖 Task Agent 的字段 |
-| `--docker-image IMAGE` | 对应 Harness 默认镜像 | 统一镜像覆盖；混合参与者可用 `--openclaw-image`、`--codex-image`、`--claude-code-image`、`--hermes-image`、`--opencode-image` 分别指定 |
-| `--api-base URL` / `--api-key-env NAME` | 各 Harness 默认值 | 兼容旧用法；混合运行可用 `--codex-api-base`、`--claude-api-base` 及对应 `*-api-key-env` 分别指定 |
+| `--harness NAME` | task `harness` 或 `openclaw` | `openclaw`、`codex`、`claude-code`、`hermes`、`opencode` 或 `deepseek`；显式提供时统一覆盖 Task Agent 的字段 |
+| `--docker-image IMAGE` | 对应 Harness 默认镜像 | 统一镜像覆盖；混合参与者可用 `--openclaw-image`、`--codex-image`、`--claude-code-image`、`--hermes-image`、`--opencode-image`、`--deepseek-image` 分别指定 |
+| `--api-base URL` / `--api-key-env NAME` | 各 Harness 默认值 | 兼容旧用法；混合运行可用 `--codex-api-base`、`--claude-api-base`、`--hermes-api-base`、`--opencode-api-base`、`--deepseek-api-base` 及对应 `*-api-key-env` 分别指定 |
 | `--parallel N` | `1` | 最大并行 rollout 数，必须至少为 1 |
 | `--retries N` | `0` | 首次失败后的额外尝试次数 |
 | `--timeout SECONDS` | `600` | 每条 rollout 的总超时，必须大于 0 |
@@ -73,7 +73,7 @@ roller collect --tasks tasks.jsonl --model provider/model ...
 
 ## 4. 通用 Harness 运行参数
 
-这些参数由三个 Harness 共用，但具体允许值和语义由 Harness 校验：
+这些参数由六种 Harness 共用，但具体允许值和语义由 Harness 校验：
 
 | 参数 | 默认值 | 说明 |
 | --- | --- | --- |
@@ -105,11 +105,11 @@ off | minimal | low | medium | high | xhigh | adaptive | max | ultra
 
 ### Wire trace
 
-| 模式 | 产物与用途 |
-| --- | --- |
-| `off` | 不启动 HTTP 代理采集；OpenCode/Hermes 仍保留原生请求中的 schema |
-| `actf` | 默认；保留 ACTF 需要的 system/tools，删除中间 wire 文件 |
-| `full` | 额外保留 `wire_trace.jsonl`，用于审计实际 HTTP 请求 |
+| 模式 | 产物与用途 | DeepSeek Harness |
+| --- | --- | --- |
+| `off` | 不启动 HTTP 代理采集；OpenCode/Hermes/DeepSeek 仍保留原生请求中的 schema | 原生 reasoning |
+| `actf` | 默认；保留 ACTF 需要的 system/tools，删除中间 wire 文件 | 不支持 |
+| `full` | 额外保留 `wire_trace.jsonl`，用于审计实际 HTTP 请求 | 不支持 |
 
 `full` 会保存 prompt、reasoning、工具参数与结果等完整请求文本，体积和敏感度都更高。参见 {ref}`轨迹产出文件指南 <wire-trace-jsonl>`。
 
@@ -250,3 +250,16 @@ Hermes 接受 `off/minimal/low/medium/high/xhigh` reasoning 提示，最终由�
 | `--opencode-output-tokens` | 8192 |
 
 [原生会话、请求捕获和限制](../harnesses/opencode-configuration.md)。
+
+## DeepSeek Harness
+
+| 参数 | 默认值 |
+| --- | --- |
+| `--deepseek-image` | `roller-deepseek:0.1.5rc1` |
+| `--deepseek-api-base` | `--api-base` / `DEEPSEEK_BASE_URL` / `https://api.deepseek.com` |
+| `--deepseek-api-key-env` | `--api-key-env` / `DEEPSEEK_API_KEY` |
+| `--deepseek-max-steps` | 12 |
+| `--deepseek-context-length` | 128000 |
+| `--deepseek-output-tokens` | 8192 |
+
+[DeepSeek Harness](../harnesses/deepseek-configuration.md) 使用 `sdk-minimal`、持久化 Bash 和原生 `off/low/high/max` reasoning。

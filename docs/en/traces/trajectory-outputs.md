@@ -13,7 +13,7 @@ analysis, and debugging.
 | Train a Task Agent directly | Run-level `sft.jsonl` | One minimal SFT record per line, ready for streaming reads |
 | Inspect a single training sample | Sample-level `trace_SFT.json` | Identical to the matching record in `sft.jsonl` |
 | Trajectory analysis, scoring, token stats | `trace_ACTF.json` | Has step, reasoning, observation, metric, and timing |
-| Trace Harness session raw events | `trace.jsonl` | OpenClaw, Codex, Claude Code, Hermes, or OpenCode native session; Roller does not clean it for training |
+| Trace Harness session raw events | `trace.jsonl` | OpenClaw, Codex, Claude Code, Hermes, OpenCode, or DeepSeek native session; Roller does not clean it for training |
 | Inspect the first system prompt captured into ACTF | Top level of `trace_ACTF.json` | Taken from whichever native/cache/wire source each Harness can obtain, frozen once |
 | Check whether the OpenClaw system prompt changes per call | `cache_trace.jsonl` from `--wire-trace full` | Keeps a diagnostic record of every OpenClaw LLM call |
 | Check the request history and tools the model actually received | `wire_trace.jsonl` from `--wire-trace full` | Saves each JSON request body the proxy actually forwarded |
@@ -36,7 +36,7 @@ OpenClaw defaults are `--cache-trace --wire-trace actf --keep-thinking`; Codex
 disables web search by default and keeps the reasoning content or summary that
 is actually visible in the native session; Claude Code keeps plaintext thinking
 blocks from the native session. The main layout of a successful run is the same
-for all five Harnesses:
+for all six Harnesses:
 
 ```text
 <output>/<run-name>/
@@ -228,7 +228,7 @@ Uses and limits:
 - Suitable for tracing upstream fields, event order, and conversion issues;
 - The structure belongs to the Harness and is not a stable training schema;
 - It cannot by itself verify context compaction, tool-result pruning, or the
-  real request after provider adaptation. All five Harnesses should use
+  real request after provider adaptation. All six Harnesses should use
   `--wire-trace full`;
 - Chat Completions `reasoning` / `reasoning_text` may be normalized to
   `reasoning_content` before they enter OpenClaw, so later turns can be replayed.
@@ -790,3 +790,5 @@ Check at least the following:
 Hermes raw uses `roller.hermes-events/v1`: full request snapshots, model responses/usage, and tool messages recorded before context compression. It produces no `cache_trace.jsonl`. See [Hermes traces](../harnesses/hermes-configuration.md).
 
 OpenCode raw uses `roller.opencode-events/v1`: serialized provider requests, native message/part updates, and session exports. Updates are merged by native IDs for ACTF/SFT. It produces no `cache_trace.jsonl`. See [OpenCode traces](../harnesses/opencode-configuration.md).
+
+DeepSeek raw: `roller.deepseek-events/v1`, native SDK notifications and serialized requests; no OpenClaw cache trace. [DeepSeek Harness](../harnesses/deepseek-configuration.md).
