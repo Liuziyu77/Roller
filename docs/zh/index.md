@@ -42,15 +42,16 @@ Docker 中的 Agent Harness
 | Hermes | OpenAI Chat Completions | 原生请求与工具消息 → ACTF/SFT | 容器内 terminal/file；可作为 Agent 或 Simulator |
 | OpenCode | OpenAI Chat Completions | CLI session / tools → ACTF/SFT | 固定版本，文本与文件工具；支持 Agent / Simulator |
 | DeepSeek Harness | DeepSeek Chat Completions | 原生 SDK / 持久化 Bash → ACTF/SFT | sdk-minimal；支持 Agent / Simulator |
+| Pi Agent | OpenAI Chat Completions | 原生 AgentSession / 七种工具 → ACTF/SFT | 固定 SDK 版本；支持 Agent / Simulator |
 
-六者共享相同的 Task、Sample、ACTF、SFT、Viewer、重试和 Resume 边界。镜像、API 和 reasoning 参数见对应 Harness 指南。
+七者共享相同的 Task、Sample、ACTF、SFT、Viewer、重试和 Resume 边界。镜像、API 和 reasoning 参数见对应 Harness 指南。
 
 ## 阅读顺序
 
 | 阶段 | 阅读内容 | 完成标准 |
 | --- | --- | --- |
 | 1. 跑通 | [快速上手](start/getting-started.md) | 完成 dry-run、采集并打开 Viewer |
-| 2. 选 Harness | [OpenClaw](harnesses/openclaw-configuration.md)、[Codex](harnesses/codex-configuration.md) 或 [Claude Code](harnesses/claude-code-configuration.md)、[Hermes](harnesses/hermes-configuration.md) · [OpenCode](harnesses/opencode-configuration.md) · [DeepSeek](harnesses/deepseek-configuration.md) | 镜像、API 协议和 reasoning 参数匹配 |
+| 2. 选 Harness | [OpenClaw](harnesses/openclaw-configuration.md)、[Codex](harnesses/codex-configuration.md) 或 [Claude Code](harnesses/claude-code-configuration.md)、[Hermes](harnesses/hermes-configuration.md) · [OpenCode](harnesses/opencode-configuration.md) · [DeepSeek](harnesses/deepseek-configuration.md) · [Pi Agent](harnesses/pi-configuration.md) | 镜像、API 协议和 reasoning 参数匹配 |
 | 3. 写 Task | [Task 格式参考](tasks/task-format.md) | 能声明 prompt/messages、输入、Context 和输出目录 |
 | 4. 验收产物 | [轨迹产出文件指南](traces/trajectory-outputs.md) | 能区分 raw、ACTF、SFT、wire 与 results |
 | 5. 批量运行 | [Task Bundle 与结果存储](tasks/task-bundle-and-storage.md) | 理解快照、run lock、retry 与 Resume |
@@ -76,6 +77,7 @@ harnesses/claude-code-configuration
 harnesses/hermes-configuration
 harnesses/opencode-configuration
 harnesses/deepseek-configuration
+harnesses/pi-configuration
 ```
 
 ```{toctree}

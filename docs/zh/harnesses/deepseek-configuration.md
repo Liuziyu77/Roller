@@ -55,4 +55,4 @@ ROLLER_DEEPSEEK_DOCKER_TEST=1 PYTHONPATH=src \
   python -m unittest discover -s tests -p test_deepseek_docker.py -v
 ```
 
-Docker 测试以本地确定性 API 和虚构 Key 运行真实 SDK、Bash 与文件操作。输入样例共 204 条，其中非视觉 200 条；涉及 DeepSeek 的 11 种配对共 44 条，可使用 `--case 'simulators/pair/deepseek--*' --case 'simulators/pair/*--deepseek'` 选择。完整矩阵与运行方式见 [Coverage](https://github.com/Liuziyu77/Roller/blob/main/examples/coverage/README.md)。
+Docker 测试以本地确定性 API 和虚构 Key 运行真实 SDK、Bash 与文件操作。输入样例共 204 条，其中非视觉 200 条；涉及 DeepSeek 的 13 种配对共 52 条，可使用 `--case 'simulators/pair/deepseek--*' --case 'simulators/pair/*--deepseek'` 选择。完整矩阵与运行方式见 [Coverage](https://github.com/Liuziyu77/Roller/blob/main/examples/coverage/README.md)。

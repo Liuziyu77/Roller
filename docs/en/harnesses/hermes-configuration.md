@@ -79,4 +79,4 @@ ROLLER_HERMES_DOCKER_TEST=1 PYTHONPATH=src \
 
 The Docker test uses a localhost HTTP server and a synthetic key. It verifies actual terminal execution, read-only inputs, context/setup/environment, two-turn history, full and disabled wire capture, reasoning export, Resume/run-lock behavior, and timeout cleanup. No external model credentials or model charges are involved. It requires Docker host networking, as used by the adapter’s full wire mode.
 
-Use `--case '*/hermes' --exclude-case 'vision/*'` to select the 200 supported input tasks. Add `--case 'simulators/pair/*'` to include all 144 Agent/Simulator tasks (344 in total, requiring all six Harnesses). Both `suite.py` and `merge.py` accept these filters.
+Use `--case '*/hermes' --exclude-case 'vision/*'` to select the 200 supported input tasks. Add `--case 'simulators/pair/*'` to include all 196 Agent/Simulator tasks (396 in total, requiring all seven Harnesses). Both `suite.py` and `merge.py` accept these filters.
