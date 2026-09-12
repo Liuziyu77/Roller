@@ -1,0 +1,4 @@
+{"schema_version": "roller.task/v1", "prompt": "创建 outputs/a.txt，内容为 A1；创建 outputs/nested/b.txt，内容为 B1。 这是小型功能测试。不要联网、安装依赖或处理无关文件；完成指定操作后立即结束。", "id": "outputs__multiple__opencode__01", "harness": "opencode", "model": "replace-opencode-model"}
+{"schema_version": "roller.task/v1", "prompt": "创建 outputs/a.txt，内容为 A2；创建 outputs/nested/b.txt，内容为 B2。 这是小型功能测试。不要联网、安装依赖或处理无关文件；完成指定操作后立即结束。", "id": "outputs__multiple__opencode__02", "harness": "opencode", "model": "replace-opencode-model"}
+{"schema_version": "roller.task/v1", "prompt": "创建 outputs/a.txt，内容为 A3；创建 outputs/nested/b.txt，内容为 B3。 这是小型功能测试。不要联网、安装依赖或处理无关文件；完成指定操作后立即结束。", "id": "outputs__multiple__opencode__03", "harness": "opencode", "model": "replace-opencode-model"}
+{"schema_version": "roller.task/v1", "prompt": "创建 outputs/a.txt，内容为 A4；创建 outputs/nested/b.txt，内容为 B4。 这是小型功能测试。不要联网、安装依赖或处理无关文件；完成指定操作后立即结束。", "id": "outputs__multiple__opencode__04", "harness": "opencode", "model": "replace-opencode-model"}

@@ -1,7 +1,7 @@
 {
   "schema_version": "roller.examples-coverage/v1",
   "cases_per_group": 4,
-  "positive_tasks": 880,
+  "positive_tasks": 1120,
   "negative_tasks": 20,
   "source_files": 40,
   "cases": [
@@ -162,6 +162,45 @@
       ]
     },
     {
+      "key": "formats/jsonl/opencode",
+      "path": "cases/formats/jsonl/opencode.jsonl",
+      "scenario": "formats/jsonl",
+      "harness": "opencode",
+      "simulator": null,
+      "tier": "standard",
+      "description": "Task 清单格式：jsonl",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "3",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "formats__jsonl__opencode__01"
+        },
+        {
+          "reply": "4",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "formats__jsonl__opencode__02"
+        },
+        {
+          "reply": "5",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "formats__jsonl__opencode__03"
+        },
+        {
+          "reply": "6",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "formats__jsonl__opencode__04"
+        }
+      ]
+    },
+    {
       "key": "formats/json_array/openclaw",
       "path": "cases/formats/json_array/openclaw.json",
       "scenario": "formats/json_array",
@@ -314,6 +353,45 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "formats__json_array__hermes__04"
+        }
+      ]
+    },
+    {
+      "key": "formats/json_array/opencode",
+      "path": "cases/formats/json_array/opencode.json",
+      "scenario": "formats/json_array",
+      "harness": "opencode",
+      "simulator": null,
+      "tier": "standard",
+      "description": "Task 清单格式：json_array",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "3",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "formats__json_array__opencode__01"
+        },
+        {
+          "reply": "4",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "formats__json_array__opencode__02"
+        },
+        {
+          "reply": "5",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "formats__json_array__opencode__03"
+        },
+        {
+          "reply": "6",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "formats__json_array__opencode__04"
         }
       ]
     },
@@ -474,6 +552,45 @@
       ]
     },
     {
+      "key": "formats/json_object/opencode",
+      "path": "cases/formats/json_object/opencode.json",
+      "scenario": "formats/json_object",
+      "harness": "opencode",
+      "simulator": null,
+      "tier": "standard",
+      "description": "Task 清单格式：json_object",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "3",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "formats__json_object__opencode__01"
+        },
+        {
+          "reply": "4",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "formats__json_object__opencode__02"
+        },
+        {
+          "reply": "5",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "formats__json_object__opencode__03"
+        },
+        {
+          "reply": "6",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "formats__json_object__opencode__04"
+        }
+      ]
+    },
+    {
       "key": "formats/jsonl_bom/openclaw",
       "path": "cases/formats/jsonl_bom/openclaw.jsonl",
       "scenario": "formats/jsonl_bom",
@@ -630,6 +747,45 @@
       ]
     },
     {
+      "key": "formats/jsonl_bom/opencode",
+      "path": "cases/formats/jsonl_bom/opencode.jsonl",
+      "scenario": "formats/jsonl_bom",
+      "harness": "opencode",
+      "simulator": null,
+      "tier": "standard",
+      "description": "Task 清单格式：jsonl_bom",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "3",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "formats__jsonl_bom__opencode__01"
+        },
+        {
+          "reply": "4",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "formats__jsonl_bom__opencode__02"
+        },
+        {
+          "reply": "5",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "formats__jsonl_bom__opencode__03"
+        },
+        {
+          "reply": "6",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "formats__jsonl_bom__opencode__04"
+        }
+      ]
+    },
+    {
       "key": "dialogue/question/openclaw",
       "path": "cases/dialogue/question/openclaw.jsonl",
       "scenario": "dialogue/question",
@@ -782,6 +938,45 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "dialogue__question__hermes__04"
+        }
+      ]
+    },
+    {
+      "key": "dialogue/question/opencode",
+      "path": "cases/dialogue/question/opencode.jsonl",
+      "scenario": "dialogue/question",
+      "harness": "opencode",
+      "simulator": null,
+      "tier": "standard",
+      "description": "对话输入：question；最多两轮",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "3",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "dialogue__question__opencode__01"
+        },
+        {
+          "reply": "4",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "dialogue__question__opencode__02"
+        },
+        {
+          "reply": "5",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "dialogue__question__opencode__03"
+        },
+        {
+          "reply": "6",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "dialogue__question__opencode__04"
         }
       ]
     },
@@ -954,6 +1149,48 @@
       ]
     },
     {
+      "key": "dialogue/custom_keys/opencode",
+      "path": "cases/dialogue/custom_keys/opencode.jsonl",
+      "scenario": "dialogue/custom_keys",
+      "harness": "opencode",
+      "simulator": null,
+      "tier": "standard",
+      "description": "对话输入：custom_keys；最多两轮",
+      "count": 4,
+      "parser_options": {
+        "prompt_key": "instruction",
+        "id_key": "case_id"
+      },
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "3",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "dialogue__custom_keys__opencode__01"
+        },
+        {
+          "reply": "4",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "dialogue__custom_keys__opencode__02"
+        },
+        {
+          "reply": "5",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "dialogue__custom_keys__opencode__03"
+        },
+        {
+          "reply": "6",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "dialogue__custom_keys__opencode__04"
+        }
+      ]
+    },
+    {
       "key": "dialogue/messages_strings/openclaw",
       "path": "cases/dialogue/messages_strings/openclaw.jsonl",
       "scenario": "dialogue/messages_strings",
@@ -1106,6 +1343,45 @@
           "user_turns": 2,
           "status": "ok",
           "task_id": "dialogue__messages_strings__hermes__04"
+        }
+      ]
+    },
+    {
+      "key": "dialogue/messages_strings/opencode",
+      "path": "cases/dialogue/messages_strings/opencode.jsonl",
+      "scenario": "dialogue/messages_strings",
+      "harness": "opencode",
+      "simulator": null,
+      "tier": "standard",
+      "description": "对话输入：messages_strings；最多两轮",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "TOKEN_1",
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "dialogue__messages_strings__opencode__01"
+        },
+        {
+          "reply": "TOKEN_2",
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "dialogue__messages_strings__opencode__02"
+        },
+        {
+          "reply": "TOKEN_3",
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "dialogue__messages_strings__opencode__03"
+        },
+        {
+          "reply": "TOKEN_4",
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "dialogue__messages_strings__opencode__04"
         }
       ]
     },
@@ -1266,6 +1542,45 @@
       ]
     },
     {
+      "key": "dialogue/messages_objects/opencode",
+      "path": "cases/dialogue/messages_objects/opencode.jsonl",
+      "scenario": "dialogue/messages_objects",
+      "harness": "opencode",
+      "simulator": null,
+      "tier": "standard",
+      "description": "对话输入：messages_objects；最多两轮",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "TOKEN_1",
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "dialogue__messages_objects__opencode__01"
+        },
+        {
+          "reply": "TOKEN_2",
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "dialogue__messages_objects__opencode__02"
+        },
+        {
+          "reply": "TOKEN_3",
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "dialogue__messages_objects__opencode__03"
+        },
+        {
+          "reply": "TOKEN_4",
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "dialogue__messages_objects__opencode__04"
+        }
+      ]
+    },
+    {
       "key": "dialogue/multiline/openclaw",
       "path": "cases/dialogue/multiline/openclaw.jsonl",
       "scenario": "dialogue/multiline",
@@ -1418,6 +1733,45 @@
           "user_turns": 1,
           "status": "ok",
           "task_id": "dialogue__multiline__hermes__04"
+        }
+      ]
+    },
+    {
+      "key": "dialogue/multiline/opencode",
+      "path": "cases/dialogue/multiline/opencode.jsonl",
+      "scenario": "dialogue/multiline",
+      "harness": "opencode",
+      "simulator": null,
+      "tier": "standard",
+      "description": "对话输入：multiline；最多两轮",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "TOKEN_1",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "dialogue__multiline__opencode__01"
+        },
+        {
+          "reply": "TOKEN_2",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "dialogue__multiline__opencode__02"
+        },
+        {
+          "reply": "TOKEN_3",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "dialogue__multiline__opencode__03"
+        },
+        {
+          "reply": "TOKEN_4",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "dialogue__multiline__opencode__04"
         }
       ]
     },
@@ -1578,6 +1932,45 @@
       ]
     },
     {
+      "key": "routing/aliases/opencode",
+      "path": "cases/routing/aliases/opencode.jsonl",
+      "scenario": "routing/aliases",
+      "harness": "opencode",
+      "simulator": null,
+      "tier": "standard",
+      "description": "Harness / model / ID 声明：aliases",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "3",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "routing__aliases__opencode__01"
+        },
+        {
+          "reply": "4",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "routing__aliases__opencode__02"
+        },
+        {
+          "reply": "5",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "routing__aliases__opencode__03"
+        },
+        {
+          "reply": "6",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "routing__aliases__opencode__04"
+        }
+      ]
+    },
+    {
       "key": "routing/model_cli/openclaw",
       "path": "cases/routing/model_cli/openclaw.jsonl",
       "scenario": "routing/model_cli",
@@ -1734,6 +2127,45 @@
       ]
     },
     {
+      "key": "routing/model_cli/opencode",
+      "path": "cases/routing/model_cli/opencode.jsonl",
+      "scenario": "routing/model_cli",
+      "harness": "opencode",
+      "simulator": null,
+      "tier": "standard",
+      "description": "Harness / model / ID 声明：model_cli",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": true,
+      "expectations": [
+        {
+          "reply": "3",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "routing__model_cli__opencode__01"
+        },
+        {
+          "reply": "4",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "routing__model_cli__opencode__02"
+        },
+        {
+          "reply": "5",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "routing__model_cli__opencode__03"
+        },
+        {
+          "reply": "6",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "routing__model_cli__opencode__04"
+        }
+      ]
+    },
+    {
       "key": "routing/id_variants/openclaw",
       "path": "cases/routing/id_variants/openclaw.jsonl",
       "scenario": "routing/id_variants",
@@ -1855,6 +2287,45 @@
       "path": "cases/routing/id_variants/hermes.jsonl",
       "scenario": "routing/id_variants",
       "harness": "hermes",
+      "simulator": null,
+      "tier": "standard",
+      "description": "Harness / model / ID 声明：id_variants",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "3",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "101"
+        },
+        {
+          "reply": "4",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "中文 空格"
+        },
+        {
+          "reply": "5",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "a/b:c?d"
+        },
+        {
+          "reply": "6",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "long_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        }
+      ]
+    },
+    {
+      "key": "routing/id_variants/opencode",
+      "path": "cases/routing/id_variants/opencode.jsonl",
+      "scenario": "routing/id_variants",
+      "harness": "opencode",
       "simulator": null,
       "tier": "standard",
       "description": "Harness / model / ID 声明：id_variants",
@@ -2094,6 +2565,57 @@
       ]
     },
     {
+      "key": "data/csv/opencode",
+      "path": "cases/data/csv/opencode.jsonl",
+      "scenario": "data/csv",
+      "harness": "opencode",
+      "simulator": null,
+      "tier": "standard",
+      "description": "来自 Roller_Data 的小型 .csv 文件",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__csv__opencode__01"
+        },
+        {
+          "files": {
+            "answer.txt": "5"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__csv__opencode__02"
+        },
+        {
+          "files": {
+            "answer.txt": "3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__csv__opencode__03"
+        },
+        {
+          "files": {
+            "answer.txt": "4"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__csv__opencode__04"
+        }
+      ]
+    },
+    {
       "key": "data/html/openclaw",
       "path": "cases/data/html/openclaw.jsonl",
       "scenario": "data/html",
@@ -2294,6 +2816,57 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "data__html__hermes__04"
+        }
+      ]
+    },
+    {
+      "key": "data/html/opencode",
+      "path": "cases/data/html/opencode.jsonl",
+      "scenario": "data/html",
+      "harness": "opencode",
+      "simulator": null,
+      "tier": "standard",
+      "description": "来自 Roller_Data 的小型 .html 文件",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "<!doctype html>"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__html__opencode__01"
+        },
+        {
+          "files": {
+            "answer.txt": "<!DOCTYPE html>"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__html__opencode__02"
+        },
+        {
+          "files": {
+            "answer.txt": "<!doctype html>"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__html__opencode__03"
+        },
+        {
+          "files": {
+            "answer.txt": "<!DOCTYPE html>"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__html__opencode__04"
         }
       ]
     },
@@ -2502,6 +3075,57 @@
       ]
     },
     {
+      "key": "data/json/opencode",
+      "path": "cases/data/json/opencode.jsonl",
+      "scenario": "data/json",
+      "harness": "opencode",
+      "simulator": null,
+      "tier": "standard",
+      "description": "来自 Roller_Data 的小型 .json 文件",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__json__opencode__01"
+        },
+        {
+          "files": {
+            "answer.txt": "2"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__json__opencode__02"
+        },
+        {
+          "files": {
+            "answer.txt": "3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__json__opencode__03"
+        },
+        {
+          "files": {
+            "answer.txt": "2"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__json__opencode__04"
+        }
+      ]
+    },
+    {
       "key": "data/jsonl/openclaw",
       "path": "cases/data/jsonl/openclaw.jsonl",
       "scenario": "data/jsonl",
@@ -2702,6 +3326,57 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "data__jsonl__hermes__04"
+        }
+      ]
+    },
+    {
+      "key": "data/jsonl/opencode",
+      "path": "cases/data/jsonl/opencode.jsonl",
+      "scenario": "data/jsonl",
+      "harness": "opencode",
+      "simulator": null,
+      "tier": "standard",
+      "description": "来自 Roller_Data 的小型 .jsonl 文件",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "S1"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__jsonl__opencode__01"
+        },
+        {
+          "files": {
+            "answer.txt": "S2"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__jsonl__opencode__02"
+        },
+        {
+          "files": {
+            "answer.txt": "S3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__jsonl__opencode__03"
+        },
+        {
+          "files": {
+            "answer.txt": "S4"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__jsonl__opencode__04"
         }
       ]
     },
@@ -2910,6 +3585,57 @@
       ]
     },
     {
+      "key": "data/log/opencode",
+      "path": "cases/data/log/opencode.jsonl",
+      "scenario": "data/log",
+      "harness": "opencode",
+      "simulator": null,
+      "tier": "standard",
+      "description": "来自 Roller_Data 的小型 .log 文件",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "live-score sample payload:"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__log__opencode__01"
+        },
+        {
+          "files": {
+            "answer.txt": "2026-05-25 refund_check order=R-44 item_status=final_sale purchased_on=2026-05-10 payment_status=paid expected=false actual=true"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__log__opencode__02"
+        },
+        {
+          "files": {
+            "answer.txt": "dashboard rollup sample:"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__log__opencode__03"
+        },
+        {
+          "files": {
+            "answer.txt": "Smoke test failure:"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__log__opencode__04"
+        }
+      ]
+    },
+    {
       "key": "data/md/openclaw",
       "path": "cases/data/md/openclaw.jsonl",
       "scenario": "data/md",
@@ -3110,6 +3836,57 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "data__md__hermes__04"
+        }
+      ]
+    },
+    {
+      "key": "data/md/opencode",
+      "path": "cases/data/md/opencode.jsonl",
+      "scenario": "data/md",
+      "harness": "opencode",
+      "simulator": null,
+      "tier": "standard",
+      "description": "来自 Roller_Data 的小型 .md 文件",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "# 成绩边界说明"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__md__opencode__01"
+        },
+        {
+          "files": {
+            "answer.txt": "# 优先级排序说明"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__md__opencode__02"
+        },
+        {
+          "files": {
+            "answer.txt": "# 通知测试关注点"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__md__opencode__03"
+        },
+        {
+          "files": {
+            "answer.txt": "# SLA policy notes"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__md__opencode__04"
         }
       ]
     },
@@ -3318,6 +4095,57 @@
       ]
     },
     {
+      "key": "data/py/opencode",
+      "path": "cases/data/py/opencode.jsonl",
+      "scenario": "data/py",
+      "harness": "opencode",
+      "simulator": null,
+      "tier": "standard",
+      "description": "来自 Roller_Data 的小型 .py 文件",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "import json"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__py__opencode__01"
+        },
+        {
+          "files": {
+            "answer.txt": "def charge_customer(customer_id, amount):"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__py__opencode__02"
+        },
+        {
+          "files": {
+            "answer.txt": "import json"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__py__opencode__03"
+        },
+        {
+          "files": {
+            "answer.txt": "import csv"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__py__opencode__04"
+        }
+      ]
+    },
+    {
       "key": "data/svg/openclaw",
       "path": "cases/data/svg/openclaw.jsonl",
       "scenario": "data/svg",
@@ -3518,6 +4346,57 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "data__svg__hermes__04"
+        }
+      ]
+    },
+    {
+      "key": "data/svg/opencode",
+      "path": "cases/data/svg/opencode.jsonl",
+      "scenario": "data/svg",
+      "harness": "opencode",
+      "simulator": null,
+      "tier": "standard",
+      "description": "来自 Roller_Data 的小型 .svg 文件",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "720"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__svg__opencode__01"
+        },
+        {
+          "files": {
+            "answer.txt": "720"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__svg__opencode__02"
+        },
+        {
+          "files": {
+            "answer.txt": "740"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__svg__opencode__03"
+        },
+        {
+          "files": {
+            "answer.txt": "780"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__svg__opencode__04"
         }
       ]
     },
@@ -3726,6 +4605,57 @@
       ]
     },
     {
+      "key": "data/txt/opencode",
+      "path": "cases/data/txt/opencode.jsonl",
+      "scenario": "data/txt",
+      "harness": "opencode",
+      "simulator": null,
+      "tier": "standard",
+      "description": "来自 Roller_Data 的小型 .txt 文件",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "refund"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__txt__opencode__01"
+        },
+        {
+          "files": {
+            "answer.txt": "面试评价表"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__txt__opencode__02"
+        },
+        {
+          "files": {
+            "answer.txt": "2026-04-18 产品例会"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__txt__opencode__03"
+        },
+        {
+          "files": {
+            "answer.txt": "收银系统提示文案"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__txt__opencode__04"
+        }
+      ]
+    },
+    {
       "key": "data/yaml/openclaw",
       "path": "cases/data/yaml/openclaw.jsonl",
       "scenario": "data/yaml",
@@ -3926,6 +4856,57 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "data__yaml__hermes__04"
+        }
+      ]
+    },
+    {
+      "key": "data/yaml/opencode",
+      "path": "cases/data/yaml/opencode.jsonl",
+      "scenario": "data/yaml",
+      "harness": "opencode",
+      "simulator": null,
+      "tier": "standard",
+      "description": "来自 Roller_Data 的小型 .yaml 文件",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "service: \"billing-api\""
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__yaml__opencode__01"
+        },
+        {
+          "files": {
+            "answer.txt": "roles:"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__yaml__opencode__02"
+        },
+        {
+          "files": {
+            "answer.txt": "max_attempts: 4"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__yaml__opencode__03"
+        },
+        {
+          "files": {
+            "answer.txt": "licenses:"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__yaml__opencode__04"
         }
       ]
     },
@@ -4134,6 +5115,57 @@
       ]
     },
     {
+      "key": "inputs/object/opencode",
+      "path": "cases/inputs/object/opencode.jsonl",
+      "scenario": "inputs/object",
+      "harness": "opencode",
+      "simulator": null,
+      "tier": "standard",
+      "description": "文件包输入方式：object",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "TOKEN_1"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__object__opencode__01"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_2"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__object__opencode__02"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__object__opencode__03"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_4"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__object__opencode__04"
+        }
+      ]
+    },
+    {
       "key": "inputs/sha256/openclaw",
       "path": "cases/inputs/sha256/openclaw.jsonl",
       "scenario": "inputs/sha256",
@@ -4334,6 +5366,57 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "inputs__sha256__hermes__04"
+        }
+      ]
+    },
+    {
+      "key": "inputs/sha256/opencode",
+      "path": "cases/inputs/sha256/opencode.jsonl",
+      "scenario": "inputs/sha256",
+      "harness": "opencode",
+      "simulator": null,
+      "tier": "standard",
+      "description": "文件包输入方式：sha256",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "TOKEN_1"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__sha256__opencode__01"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_2"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__sha256__opencode__02"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__sha256__opencode__03"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_4"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__sha256__opencode__04"
         }
       ]
     },
@@ -4542,6 +5625,57 @@
       ]
     },
     {
+      "key": "inputs/multiple/opencode",
+      "path": "cases/inputs/multiple/opencode.jsonl",
+      "scenario": "inputs/multiple",
+      "harness": "opencode",
+      "simulator": null,
+      "tier": "standard",
+      "description": "文件包输入方式：multiple",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__multiple__opencode__01"
+        },
+        {
+          "files": {
+            "answer.txt": "3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__multiple__opencode__02"
+        },
+        {
+          "files": {
+            "answer.txt": "3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__multiple__opencode__03"
+        },
+        {
+          "files": {
+            "answer.txt": "3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__multiple__opencode__04"
+        }
+      ]
+    },
+    {
       "key": "inputs/directory/openclaw",
       "path": "cases/inputs/directory/openclaw.jsonl",
       "scenario": "inputs/directory",
@@ -4742,6 +5876,57 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "inputs__directory__hermes__04"
+        }
+      ]
+    },
+    {
+      "key": "inputs/directory/opencode",
+      "path": "cases/inputs/directory/opencode.jsonl",
+      "scenario": "inputs/directory",
+      "harness": "opencode",
+      "simulator": null,
+      "tier": "standard",
+      "description": "文件包输入方式：directory",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "a.txt\nnested/b.txt"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__directory__opencode__01"
+        },
+        {
+          "files": {
+            "answer.txt": "a.txt\nnested/b.txt"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__directory__opencode__02"
+        },
+        {
+          "files": {
+            "answer.txt": "a.txt\nnested/b.txt"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__directory__opencode__03"
+        },
+        {
+          "files": {
+            "answer.txt": "a.txt\nnested/b.txt"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__directory__opencode__04"
         }
       ]
     },
@@ -4950,6 +6135,57 @@
       ]
     },
     {
+      "key": "inputs/optional_missing/opencode",
+      "path": "cases/inputs/optional_missing/opencode.jsonl",
+      "scenario": "inputs/optional_missing",
+      "harness": "opencode",
+      "simulator": null,
+      "tier": "standard",
+      "description": "文件包输入方式：optional_missing",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "OK"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__optional_missing__opencode__01"
+        },
+        {
+          "files": {
+            "answer.txt": "OK"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__optional_missing__opencode__02"
+        },
+        {
+          "files": {
+            "answer.txt": "OK"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__optional_missing__opencode__03"
+        },
+        {
+          "files": {
+            "answer.txt": "OK"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__optional_missing__opencode__04"
+        }
+      ]
+    },
+    {
       "key": "inputs/unicode_paths/openclaw",
       "path": "cases/inputs/unicode_paths/openclaw.jsonl",
       "scenario": "inputs/unicode_paths",
@@ -5150,6 +6386,57 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "inputs__unicode_paths__hermes__04"
+        }
+      ]
+    },
+    {
+      "key": "inputs/unicode_paths/opencode",
+      "path": "cases/inputs/unicode_paths/opencode.jsonl",
+      "scenario": "inputs/unicode_paths",
+      "harness": "opencode",
+      "simulator": null,
+      "tier": "standard",
+      "description": "文件包输入方式：unicode_paths",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "TOKEN_1"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__unicode_paths__opencode__01"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_2"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__unicode_paths__opencode__02"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__unicode_paths__opencode__03"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_4"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__unicode_paths__opencode__04"
         }
       ]
     },
@@ -5358,6 +6645,57 @@
       ]
     },
     {
+      "key": "inputs/empty/opencode",
+      "path": "cases/inputs/empty/opencode.jsonl",
+      "scenario": "inputs/empty",
+      "harness": "opencode",
+      "simulator": null,
+      "tier": "standard",
+      "description": "文件包输入方式：empty",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "0"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__empty__opencode__01"
+        },
+        {
+          "files": {
+            "answer.txt": "0"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__empty__opencode__02"
+        },
+        {
+          "files": {
+            "answer.txt": "0"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__empty__opencode__03"
+        },
+        {
+          "files": {
+            "answer.txt": "0"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__empty__opencode__04"
+        }
+      ]
+    },
+    {
       "key": "inputs/default_root/openclaw",
       "path": "fixtures/openclaw-default-root.jsonl",
       "scenario": "inputs/default_root",
@@ -5558,6 +6896,57 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "inputs__default_root__hermes__04"
+        }
+      ]
+    },
+    {
+      "key": "inputs/default_root/opencode",
+      "path": "fixtures/opencode-default-root.jsonl",
+      "scenario": "inputs/default_root",
+      "harness": "opencode",
+      "simulator": null,
+      "tier": "standard",
+      "description": "文件包输入方式：default_root",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "TOKEN_1"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__default_root__opencode__01"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_2"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__default_root__opencode__02"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__default_root__opencode__03"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_4"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__default_root__opencode__04"
         }
       ]
     },
@@ -5770,6 +7159,58 @@
       "runtime_absolute_file_root": true
     },
     {
+      "key": "inputs/absolute_root/opencode",
+      "path": "cases/inputs/absolute_root/opencode.jsonl",
+      "scenario": "inputs/absolute_root",
+      "harness": "opencode",
+      "simulator": null,
+      "tier": "standard",
+      "description": "文件包输入方式：absolute_root",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "TOKEN_1"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__absolute_root__opencode__01"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_2"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__absolute_root__opencode__02"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__absolute_root__opencode__03"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_4"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__absolute_root__opencode__04"
+        }
+      ],
+      "runtime_absolute_file_root": true
+    },
+    {
       "key": "inputs/legacy_workspace/openclaw",
       "path": "cases/inputs/legacy_workspace/openclaw.jsonl",
       "scenario": "inputs/legacy_workspace",
@@ -5970,6 +7411,57 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "inputs__legacy_workspace__hermes__04"
+        }
+      ]
+    },
+    {
+      "key": "inputs/legacy_workspace/opencode",
+      "path": "cases/inputs/legacy_workspace/opencode.jsonl",
+      "scenario": "inputs/legacy_workspace",
+      "harness": "opencode",
+      "simulator": null,
+      "tier": "standard",
+      "description": "文件包输入方式：legacy_workspace",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "TOKEN_1"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__legacy_workspace__opencode__01"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_2"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__legacy_workspace__opencode__02"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__legacy_workspace__opencode__03"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_4"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__legacy_workspace__opencode__04"
         }
       ]
     },
@@ -6194,6 +7686,61 @@
       ]
     },
     {
+      "key": "context/full/opencode",
+      "path": "cases/context/full/opencode.jsonl",
+      "scenario": "context/full",
+      "harness": "opencode",
+      "simulator": null,
+      "tier": "standard",
+      "description": "Context 注入 / capture：full",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "TOKEN_1"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__full__opencode__01"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_2"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__full__opencode__02"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__full__opencode__03"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_4"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__full__opencode__04"
+        }
+      ]
+    },
+    {
       "key": "context/hash/openclaw",
       "path": "cases/context/hash/openclaw.jsonl",
       "scenario": "context/hash",
@@ -6410,6 +7957,61 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "context__hash__hermes__04"
+        }
+      ]
+    },
+    {
+      "key": "context/hash/opencode",
+      "path": "cases/context/hash/opencode.jsonl",
+      "scenario": "context/hash",
+      "harness": "opencode",
+      "simulator": null,
+      "tier": "standard",
+      "description": "Context 注入 / capture：hash",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "TOKEN_1"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__hash__opencode__01"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_2"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__hash__opencode__02"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__hash__opencode__03"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_4"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__hash__opencode__04"
         }
       ]
     },
@@ -6634,6 +8236,61 @@
       ]
     },
     {
+      "key": "context/none/opencode",
+      "path": "cases/context/none/opencode.jsonl",
+      "scenario": "context/none",
+      "harness": "opencode",
+      "simulator": null,
+      "tier": "standard",
+      "description": "Context 注入 / capture：none",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "TOKEN_1"
+          },
+          "resume_safe": false,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__none__opencode__01"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_2"
+          },
+          "resume_safe": false,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__none__opencode__02"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "resume_safe": false,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__none__opencode__03"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_4"
+          },
+          "resume_safe": false,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__none__opencode__04"
+        }
+      ]
+    },
+    {
       "key": "context/roles/openclaw",
       "path": "cases/context/roles/openclaw.jsonl",
       "scenario": "context/roles",
@@ -6850,6 +8507,61 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "context__roles__hermes__04"
+        }
+      ]
+    },
+    {
+      "key": "context/roles/opencode",
+      "path": "cases/context/roles/opencode.jsonl",
+      "scenario": "context/roles",
+      "harness": "opencode",
+      "simulator": null,
+      "tier": "standard",
+      "description": "Context 注入 / capture：roles",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "TOKEN_1"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__roles__opencode__01"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_2"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__roles__opencode__02"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__roles__opencode__03"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_4"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__roles__opencode__04"
         }
       ]
     },
@@ -7074,6 +8786,61 @@
       ]
     },
     {
+      "key": "context/skill/opencode",
+      "path": "cases/context/skill/opencode.jsonl",
+      "scenario": "context/skill",
+      "harness": "opencode",
+      "simulator": null,
+      "tier": "standard",
+      "description": "Context 注入 / capture：skill",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "TOKEN_1"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__skill__opencode__01"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_2"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__skill__opencode__02"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__skill__opencode__03"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_4"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__skill__opencode__04"
+        }
+      ]
+    },
+    {
       "key": "context/optional/openclaw",
       "path": "cases/context/optional/openclaw.jsonl",
       "scenario": "context/optional",
@@ -7294,6 +9061,61 @@
       ]
     },
     {
+      "key": "context/optional/opencode",
+      "path": "cases/context/optional/opencode.jsonl",
+      "scenario": "context/optional",
+      "harness": "opencode",
+      "simulator": null,
+      "tier": "standard",
+      "description": "Context 注入 / capture：optional",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "TOKEN_1"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__optional__opencode__01"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_2"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__optional__opencode__02"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__optional__opencode__03"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_4"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__optional__opencode__04"
+        }
+      ]
+    },
+    {
       "key": "runtime/setup_string/openclaw",
       "path": "cases/runtime/setup_string/openclaw.jsonl",
       "scenario": "runtime/setup_string",
@@ -7498,6 +9320,57 @@
       ]
     },
     {
+      "key": "runtime/setup_string/opencode",
+      "path": "cases/runtime/setup_string/opencode.jsonl",
+      "scenario": "runtime/setup_string",
+      "harness": "opencode",
+      "simulator": null,
+      "tier": "standard",
+      "description": "运行设置：setup_string",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "SETUP_1"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "runtime__setup_string__opencode__01"
+        },
+        {
+          "files": {
+            "answer.txt": "SETUP_2"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "runtime__setup_string__opencode__02"
+        },
+        {
+          "files": {
+            "answer.txt": "SETUP_3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "runtime__setup_string__opencode__03"
+        },
+        {
+          "files": {
+            "answer.txt": "SETUP_4"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "runtime__setup_string__opencode__04"
+        }
+      ]
+    },
+    {
       "key": "runtime/setup_list/openclaw",
       "path": "cases/runtime/setup_list/openclaw.jsonl",
       "scenario": "runtime/setup_list",
@@ -7698,6 +9571,57 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "runtime__setup_list__hermes__04"
+        }
+      ]
+    },
+    {
+      "key": "runtime/setup_list/opencode",
+      "path": "cases/runtime/setup_list/opencode.jsonl",
+      "scenario": "runtime/setup_list",
+      "harness": "opencode",
+      "simulator": null,
+      "tier": "standard",
+      "description": "运行设置：setup_list",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "SETUP_1"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "runtime__setup_list__opencode__01"
+        },
+        {
+          "files": {
+            "answer.txt": "SETUP_2"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "runtime__setup_list__opencode__02"
+        },
+        {
+          "files": {
+            "answer.txt": "SETUP_3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "runtime__setup_list__opencode__03"
+        },
+        {
+          "files": {
+            "answer.txt": "SETUP_4"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "runtime__setup_list__opencode__04"
         }
       ]
     },
@@ -7914,6 +9838,59 @@
       ]
     },
     {
+      "key": "runtime/env/opencode",
+      "path": "cases/runtime/env/opencode.jsonl",
+      "scenario": "runtime/env",
+      "harness": "opencode",
+      "simulator": null,
+      "tier": "standard",
+      "description": "运行设置：env",
+      "count": 4,
+      "parser_options": {},
+      "environment": {
+        "ROLLER_EXAMPLE_TOKEN": "ENV_OK"
+      },
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "ENV_OK1"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "runtime__env__opencode__01"
+        },
+        {
+          "files": {
+            "answer.txt": "ENV_OK2"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "runtime__env__opencode__02"
+        },
+        {
+          "files": {
+            "answer.txt": "ENV_OK3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "runtime__env__opencode__03"
+        },
+        {
+          "files": {
+            "answer.txt": "ENV_OK4"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "runtime__env__opencode__04"
+        }
+      ]
+    },
+    {
       "key": "runtime/thinking/openclaw",
       "path": "cases/runtime/thinking/openclaw.jsonl",
       "scenario": "runtime/thinking",
@@ -8066,6 +10043,45 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "runtime__thinking__hermes__04"
+        }
+      ]
+    },
+    {
+      "key": "runtime/thinking/opencode",
+      "path": "cases/runtime/thinking/opencode.jsonl",
+      "scenario": "runtime/thinking",
+      "harness": "opencode",
+      "simulator": null,
+      "tier": "standard",
+      "description": "运行设置：thinking",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "3",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "runtime__thinking__opencode__01"
+        },
+        {
+          "reply": "4",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "runtime__thinking__opencode__02"
+        },
+        {
+          "reply": "5",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "runtime__thinking__opencode__03"
+        },
+        {
+          "reply": "6",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "runtime__thinking__opencode__04"
         }
       ]
     },
@@ -8270,6 +10286,57 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "outputs__nested__hermes__04"
+        }
+      ]
+    },
+    {
+      "key": "outputs/nested/opencode",
+      "path": "cases/outputs/nested/opencode.jsonl",
+      "scenario": "outputs/nested",
+      "harness": "opencode",
+      "simulator": null,
+      "tier": "standard",
+      "description": "输出回收：nested",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "nested/answer.txt": "RESULT_1"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "outputs__nested__opencode__01"
+        },
+        {
+          "files": {
+            "nested/answer.txt": "RESULT_2"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "outputs__nested__opencode__02"
+        },
+        {
+          "files": {
+            "nested/answer.txt": "RESULT_3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "outputs__nested__opencode__03"
+        },
+        {
+          "files": {
+            "nested/answer.txt": "RESULT_4"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "outputs__nested__opencode__04"
         }
       ]
     },
@@ -8494,6 +10561,61 @@
       ]
     },
     {
+      "key": "outputs/multiple/opencode",
+      "path": "cases/outputs/multiple/opencode.jsonl",
+      "scenario": "outputs/multiple",
+      "harness": "opencode",
+      "simulator": null,
+      "tier": "standard",
+      "description": "输出回收：multiple",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "a.txt": "A1",
+            "nested/b.txt": "B1"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "outputs__multiple__opencode__01"
+        },
+        {
+          "files": {
+            "a.txt": "A2",
+            "nested/b.txt": "B2"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "outputs__multiple__opencode__02"
+        },
+        {
+          "files": {
+            "a.txt": "A3",
+            "nested/b.txt": "B3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "outputs__multiple__opencode__03"
+        },
+        {
+          "files": {
+            "a.txt": "A4",
+            "nested/b.txt": "B4"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "outputs__multiple__opencode__04"
+        }
+      ]
+    },
+    {
       "key": "outputs/no_files/openclaw",
       "path": "cases/outputs/no_files/openclaw.jsonl",
       "scenario": "outputs/no_files",
@@ -8662,6 +10784,49 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "outputs__no_files__hermes__04"
+        }
+      ]
+    },
+    {
+      "key": "outputs/no_files/opencode",
+      "path": "cases/outputs/no_files/opencode.jsonl",
+      "scenario": "outputs/no_files",
+      "harness": "opencode",
+      "simulator": null,
+      "tier": "standard",
+      "description": "输出回收：no_files",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "3",
+          "no_output_files": true,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "outputs__no_files__opencode__01"
+        },
+        {
+          "reply": "4",
+          "no_output_files": true,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "outputs__no_files__opencode__02"
+        },
+        {
+          "reply": "5",
+          "no_output_files": true,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "outputs__no_files__opencode__03"
+        },
+        {
+          "reply": "6",
+          "no_output_files": true,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "outputs__no_files__opencode__04"
         }
       ]
     },
@@ -8870,6 +11035,57 @@
       ]
     },
     {
+      "key": "binary/png/opencode",
+      "path": "cases/binary/png/opencode.jsonl",
+      "scenario": "binary/png",
+      "harness": "opencode",
+      "simulator": null,
+      "tier": "standard",
+      "description": "二进制 .png 传输和读取；不验证语义理解",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "97"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "binary__png__opencode__01"
+        },
+        {
+          "files": {
+            "answer.txt": "95"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "binary__png__opencode__02"
+        },
+        {
+          "files": {
+            "answer.txt": "95"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "binary__png__opencode__03"
+        },
+        {
+          "files": {
+            "answer.txt": "97"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "binary__png__opencode__04"
+        }
+      ]
+    },
+    {
       "key": "binary/pdf/openclaw",
       "path": "cases/binary/pdf/openclaw.jsonl",
       "scenario": "binary/pdf",
@@ -9070,6 +11286,57 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "binary__pdf__hermes__04"
+        }
+      ]
+    },
+    {
+      "key": "binary/pdf/opencode",
+      "path": "cases/binary/pdf/opencode.jsonl",
+      "scenario": "binary/pdf",
+      "harness": "opencode",
+      "simulator": null,
+      "tier": "standard",
+      "description": "二进制 .pdf 传输和读取；不验证语义理解",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "582"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "binary__pdf__opencode__01"
+        },
+        {
+          "files": {
+            "answer.txt": "582"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "binary__pdf__opencode__02"
+        },
+        {
+          "files": {
+            "answer.txt": "582"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "binary__pdf__opencode__03"
+        },
+        {
+          "files": {
+            "answer.txt": "582"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "binary__pdf__opencode__04"
         }
       ]
     },
@@ -9278,6 +11545,57 @@
       ]
     },
     {
+      "key": "binary/wav/opencode",
+      "path": "cases/binary/wav/opencode.jsonl",
+      "scenario": "binary/wav",
+      "harness": "opencode",
+      "simulator": null,
+      "tier": "standard",
+      "description": "二进制 .wav 传输和读取；不验证语义理解",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "80"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "binary__wav__opencode__01"
+        },
+        {
+          "files": {
+            "answer.txt": "160"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "binary__wav__opencode__02"
+        },
+        {
+          "files": {
+            "answer.txt": "240"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "binary__wav__opencode__03"
+        },
+        {
+          "files": {
+            "answer.txt": "320"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "binary__wav__opencode__04"
+        }
+      ]
+    },
+    {
       "key": "binary/zip/openclaw",
       "path": "cases/binary/zip/openclaw.jsonl",
       "scenario": "binary/zip",
@@ -9478,6 +11796,57 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "binary__zip__hermes__04"
+        }
+      ]
+    },
+    {
+      "key": "binary/zip/opencode",
+      "path": "cases/binary/zip/opencode.jsonl",
+      "scenario": "binary/zip",
+      "harness": "opencode",
+      "simulator": null,
+      "tier": "standard",
+      "description": "二进制 .zip 传输和读取；不验证语义理解",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "TOKEN_1"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "binary__zip__opencode__01"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_2"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "binary__zip__opencode__02"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "binary__zip__opencode__03"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_4"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "binary__zip__opencode__04"
         }
       ]
     },
@@ -9686,6 +12055,57 @@
       ]
     },
     {
+      "key": "vision/png/opencode",
+      "path": "cases/vision/png/opencode.jsonl",
+      "scenario": "vision/png",
+      "harness": "opencode",
+      "simulator": null,
+      "tier": "vision",
+      "description": "可选：真正调用图像查看工具识别纯色，需模型和工具支持视觉",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "red"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "vision__png__opencode__01"
+        },
+        {
+          "files": {
+            "answer.txt": "green"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "vision__png__opencode__02"
+        },
+        {
+          "files": {
+            "answer.txt": "blue"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "vision__png__opencode__03"
+        },
+        {
+          "files": {
+            "answer.txt": "yellow"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "vision__png__opencode__04"
+        }
+      ]
+    },
+    {
       "key": "bench/file_grader/openclaw",
       "path": "cases/bench/file_grader/openclaw.jsonl",
       "scenario": "bench/file_grader",
@@ -9886,6 +12306,57 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "bench__file_grader__hermes__04"
+        }
+      ]
+    },
+    {
+      "key": "bench/file_grader/opencode",
+      "path": "cases/bench/file_grader/opencode.jsonl",
+      "scenario": "bench/file_grader",
+      "harness": "opencode",
+      "simulator": null,
+      "tier": "standard",
+      "description": "容器销毁前用标准库评分；不调用 LLM judge",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "BENCH_1"
+          },
+          "score": 1.0,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "bench__file_grader__opencode__01"
+        },
+        {
+          "files": {
+            "answer.txt": "BENCH_2"
+          },
+          "score": 1.0,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "bench__file_grader__opencode__02"
+        },
+        {
+          "files": {
+            "answer.txt": "BENCH_3"
+          },
+          "score": 1.0,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "bench__file_grader__opencode__03"
+        },
+        {
+          "files": {
+            "answer.txt": "BENCH_4"
+          },
+          "score": 1.0,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "bench__file_grader__opencode__04"
         }
       ]
     },
@@ -10110,6 +12581,61 @@
       ]
     },
     {
+      "key": "simulators/pair/openclaw--opencode",
+      "path": "cases/simulators/pair/openclaw--opencode.jsonl",
+      "scenario": "simulators/pair",
+      "harness": "openclaw",
+      "simulator": "opencode",
+      "tier": "simulator",
+      "description": "四种短对话：纯文本 / 文件两轮 / Context+自定义输出 / max_turns；同 Harness 首例继承模型",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "SIM_1",
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__openclaw--opencode__01"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "3"
+          },
+          "rounds": 2,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "simulators__pair__openclaw--opencode__02"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__openclaw--opencode__03"
+        },
+        {
+          "reply": "SIM_4",
+          "rounds": 1,
+          "termination": "max_turns",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__openclaw--opencode__04"
+        }
+      ]
+    },
+    {
       "key": "simulators/pair/codex--openclaw",
       "path": "cases/simulators/pair/codex--openclaw.jsonl",
       "scenario": "simulators/pair",
@@ -10326,6 +12852,61 @@
           "user_turns": 1,
           "status": "ok",
           "task_id": "simulators__pair__codex--hermes__04"
+        }
+      ]
+    },
+    {
+      "key": "simulators/pair/codex--opencode",
+      "path": "cases/simulators/pair/codex--opencode.jsonl",
+      "scenario": "simulators/pair",
+      "harness": "codex",
+      "simulator": "opencode",
+      "tier": "simulator",
+      "description": "四种短对话：纯文本 / 文件两轮 / Context+自定义输出 / max_turns；同 Harness 首例继承模型",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "SIM_1",
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__codex--opencode__01"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "3"
+          },
+          "rounds": 2,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "simulators__pair__codex--opencode__02"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__codex--opencode__03"
+        },
+        {
+          "reply": "SIM_4",
+          "rounds": 1,
+          "termination": "max_turns",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__codex--opencode__04"
         }
       ]
     },
@@ -10550,6 +13131,61 @@
       ]
     },
     {
+      "key": "simulators/pair/claude-code--opencode",
+      "path": "cases/simulators/pair/claude-code--opencode.jsonl",
+      "scenario": "simulators/pair",
+      "harness": "claude-code",
+      "simulator": "opencode",
+      "tier": "simulator",
+      "description": "四种短对话：纯文本 / 文件两轮 / Context+自定义输出 / max_turns；同 Harness 首例继承模型",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "SIM_1",
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__claude-code--opencode__01"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "3"
+          },
+          "rounds": 2,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "simulators__pair__claude-code--opencode__02"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__claude-code--opencode__03"
+        },
+        {
+          "reply": "SIM_4",
+          "rounds": 1,
+          "termination": "max_turns",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__claude-code--opencode__04"
+        }
+      ]
+    },
+    {
       "key": "simulators/pair/hermes--openclaw",
       "path": "cases/simulators/pair/hermes--openclaw.jsonl",
       "scenario": "simulators/pair",
@@ -10766,6 +13402,336 @@
           "user_turns": 1,
           "status": "ok",
           "task_id": "simulators__pair__hermes--hermes__04"
+        }
+      ]
+    },
+    {
+      "key": "simulators/pair/hermes--opencode",
+      "path": "cases/simulators/pair/hermes--opencode.jsonl",
+      "scenario": "simulators/pair",
+      "harness": "hermes",
+      "simulator": "opencode",
+      "tier": "simulator",
+      "description": "四种短对话：纯文本 / 文件两轮 / Context+自定义输出 / max_turns；同 Harness 首例继承模型",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "SIM_1",
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__hermes--opencode__01"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "3"
+          },
+          "rounds": 2,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "simulators__pair__hermes--opencode__02"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__hermes--opencode__03"
+        },
+        {
+          "reply": "SIM_4",
+          "rounds": 1,
+          "termination": "max_turns",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__hermes--opencode__04"
+        }
+      ]
+    },
+    {
+      "key": "simulators/pair/opencode--openclaw",
+      "path": "cases/simulators/pair/opencode--openclaw.jsonl",
+      "scenario": "simulators/pair",
+      "harness": "opencode",
+      "simulator": "openclaw",
+      "tier": "simulator",
+      "description": "四种短对话：纯文本 / 文件两轮 / Context+自定义输出 / max_turns；同 Harness 首例继承模型",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "SIM_1",
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__opencode--openclaw__01"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "3"
+          },
+          "rounds": 2,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "simulators__pair__opencode--openclaw__02"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__opencode--openclaw__03"
+        },
+        {
+          "reply": "SIM_4",
+          "rounds": 1,
+          "termination": "max_turns",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__opencode--openclaw__04"
+        }
+      ]
+    },
+    {
+      "key": "simulators/pair/opencode--codex",
+      "path": "cases/simulators/pair/opencode--codex.jsonl",
+      "scenario": "simulators/pair",
+      "harness": "opencode",
+      "simulator": "codex",
+      "tier": "simulator",
+      "description": "四种短对话：纯文本 / 文件两轮 / Context+自定义输出 / max_turns；同 Harness 首例继承模型",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "SIM_1",
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__opencode--codex__01"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "3"
+          },
+          "rounds": 2,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "simulators__pair__opencode--codex__02"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__opencode--codex__03"
+        },
+        {
+          "reply": "SIM_4",
+          "rounds": 1,
+          "termination": "max_turns",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__opencode--codex__04"
+        }
+      ]
+    },
+    {
+      "key": "simulators/pair/opencode--claude-code",
+      "path": "cases/simulators/pair/opencode--claude-code.jsonl",
+      "scenario": "simulators/pair",
+      "harness": "opencode",
+      "simulator": "claude-code",
+      "tier": "simulator",
+      "description": "四种短对话：纯文本 / 文件两轮 / Context+自定义输出 / max_turns；同 Harness 首例继承模型",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "SIM_1",
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__opencode--claude-code__01"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "3"
+          },
+          "rounds": 2,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "simulators__pair__opencode--claude-code__02"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__opencode--claude-code__03"
+        },
+        {
+          "reply": "SIM_4",
+          "rounds": 1,
+          "termination": "max_turns",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__opencode--claude-code__04"
+        }
+      ]
+    },
+    {
+      "key": "simulators/pair/opencode--hermes",
+      "path": "cases/simulators/pair/opencode--hermes.jsonl",
+      "scenario": "simulators/pair",
+      "harness": "opencode",
+      "simulator": "hermes",
+      "tier": "simulator",
+      "description": "四种短对话：纯文本 / 文件两轮 / Context+自定义输出 / max_turns；同 Harness 首例继承模型",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "SIM_1",
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__opencode--hermes__01"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "3"
+          },
+          "rounds": 2,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "simulators__pair__opencode--hermes__02"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__opencode--hermes__03"
+        },
+        {
+          "reply": "SIM_4",
+          "rounds": 1,
+          "termination": "max_turns",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__opencode--hermes__04"
+        }
+      ]
+    },
+    {
+      "key": "simulators/pair/opencode--opencode",
+      "path": "cases/simulators/pair/opencode--opencode.jsonl",
+      "scenario": "simulators/pair",
+      "harness": "opencode",
+      "simulator": "opencode",
+      "tier": "simulator",
+      "description": "四种短对话：纯文本 / 文件两轮 / Context+自定义输出 / max_turns；同 Harness 首例继承模型",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "SIM_1",
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__opencode--opencode__01"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "3"
+          },
+          "rounds": 2,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "simulators__pair__opencode--opencode__02"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__opencode--opencode__03"
+        },
+        {
+          "reply": "SIM_4",
+          "rounds": 1,
+          "termination": "max_turns",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__opencode--opencode__04"
         }
       ]
     }

@@ -139,7 +139,7 @@ Instruction 不是第一轮 user message，而是 Simulator 每一轮都要遵�
 
 ## 7. 模型、并行与成本
 
-Task Agent 与 Simulator 可以分别设定 Harness 和 model。例如用 Codex 执行任务、用 OpenClaw 或 Claude Code 扮演用户；同一 Harness 下也可以设置不同 model。OpenClaw 的 model ref 仍来自 `--model-config`，Codex/Claude Code/Hermes 使用各自 API 参数。
+Task Agent 与 Simulator 可以分别设定 Harness 和 model。例如用 Codex 执行任务、用 OpenClaw 或 Claude Code 扮演用户；同一 Harness 下也可以设置不同 model。OpenClaw 的 model ref 仍来自 `--model-config`，Codex/Claude Code/Hermes/OpenCode 使用各自 API 参数。
 
 ```bash
 roller collect \

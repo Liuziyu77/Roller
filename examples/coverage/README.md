@@ -2,7 +2,7 @@
 
 [English](README.en.md) · [场景清单](COVERAGE.md) · [合并总 JSON](all_tasks.json) · [逐组预期](manifest.json) · [文件来源](sources.json) · [Examples](../README.md)
 
-可随仓库复用的小任务测试集：**880 条正常任务，220 组，每组 4 条；另有 20 条预期拒绝的输入**。覆盖 OpenClaw、Codex、Claude Code、Hermes 四种 Harness，以及全部 16 种 Task Agent × User Simulator 配对。
+可随仓库复用的小任务测试集：**1120 条正常任务，280 组，每组 4 条；另有 20 条预期拒绝的输入**。覆盖 OpenClaw、Codex、Claude Code、Hermes、OpenCode 五种 Harness，以及全部 25 种 Task Agent × User Simulator 配对。
 
 输入小文件已包含在仓库内，运行和重新生成均不需要原始 `Roller_Data`。公开任务使用模型占位值和相对路径。所有命令从 **Roller 项目根目录** 执行，需要 **Python 3.10+**。
 
@@ -17,7 +17,7 @@ python examples/coverage/validate_merged.py
 python examples/coverage/suite.py run --case '*' --dry-run
 ```
 
-预期：220 个正常组、880 条任务、20 条错误输入分别通过校验，40 份来源文件摘要匹配。检查包括清单解析、模型路由、文件打包、Context 的 Resume 策略、对话轮数和内嵌评分代码。`--dry-run` 不执行模型任务。
+预期：280 个正常组、1120 条任务、20 条错误输入分别通过校验，40 份来源文件摘要匹配。检查包括清单解析、模型路由、文件打包、Context 的 Resume 策略、对话轮数和内嵌评分代码。`--dry-run` 不执行模型任务。
 
 ## 2. 配置模型服务
 
@@ -29,6 +29,7 @@ python examples/coverage/suite.py run --case '*' --dry-run
 | Codex | Responses | `ROLLER_TEST_CODEX_MODEL` | `--codex-api-base`、`--codex-api-key-env` |
 | Claude Code | Anthropic Messages | `ROLLER_TEST_CLAUDE_CODE_MODEL` | `--claude-api-base`、`--claude-api-key-env` |
 | Hermes | Chat Completions | `ROLLER_TEST_HERMES_MODEL` | `--hermes-api-base`、`--hermes-api-key-env` |
+| OpenCode | Streaming Chat Completions | `ROLLER_TEST_OPENCODE_MODEL` | `--opencode-api-base`, `--opencode-api-key-env` |
 
 ```bash
 cp examples/coverage/config/.env.example examples/coverage/config/.env
@@ -38,7 +39,7 @@ source examples/coverage/config/.env
 set +a
 ```
 
-`.env` 已被 Git 忽略，Roller 不会自动加载它。OpenClaw 的模型 ID 和协议分别由 `ROLLER_TEST_OPENCLAW_MODEL_ID`、`ROLLER_TEST_OPENCLAW_API` 配置。镜像可用 `ROLLER_OPENCLAW_IMAGE`、`ROLLER_CODEX_IMAGE`、`ROLLER_CLAUDE_CODE_IMAGE`、`ROLLER_HERMES_IMAGE` 覆盖。模板不依赖私人镜像或固定代理端口。
+`.env` 已被 Git 忽略，Roller 不会自动加载它。OpenClaw 的模型 ID 和协议分别由 `ROLLER_TEST_OPENCLAW_MODEL_ID`、`ROLLER_TEST_OPENCLAW_API` 配置。镜像可用 `ROLLER_OPENCLAW_IMAGE`、`ROLLER_CODEX_IMAGE`、`ROLLER_CLAUDE_CODE_IMAGE`、`ROLLER_HERMES_IMAGE`、`ROLLER_OPENCODE_IMAGE` 覆盖。模板不依赖私人镜像或固定代理端口。
 
 ## 3. 先运行一组 4 条任务
 
@@ -64,6 +65,11 @@ python examples/coverage/suite.py run --case data/txt/hermes \
   -- --hermes-api-base "$ROLLER_HERMES_BASE_URL" \
      --hermes-api-key-env ROLLER_HERMES_API_KEY
 
+# OpenCode：4 条文本文件读取任务。
+python examples/coverage/suite.py run --case data/txt/opencode \
+  -- --opencode-api-base "$ROLLER_OPENCODE_BASE_URL" \
+     --opencode-api-key-env ROLLER_OPENCODE_API_KEY
+
 # Codex Agent + Claude Code Simulator：4 条短交互，最多两轮。
 python examples/coverage/suite.py run --case simulators/pair/codex--claude-code \
   -- --codex-api-base "$ROLLER_CODEX_BASE_URL" \
@@ -72,9 +78,9 @@ python examples/coverage/suite.py run --case simulators/pair/codex--claude-code 
      --claude-api-key-env ROLLER_ANTHROPIC_API_KEY
 ```
 
-`--case` 支持带引号的 glob，可重复指定；`--exclude-case` 可排除匹配组，例如 `--case '*/hermes' --exclude-case 'vision/*'` 选择 200 条 Hermes 非视觉任务。例如 `--case 'data/*/codex'` 选中 40 条任务，`--case 'simulators/pair/*'` 选中全部 64 条 Simulator 任务。默认输出在 `runs/coverage/<场景名__Harness>/`；可用 `--output` 隔离不同服务的结果。
+`--case` 支持带引号的 glob，可重复指定；`--exclude-case` 可排除匹配组，例如 `--case '*/hermes' --exclude-case 'vision/*'` 选择 200 条 Hermes 非视觉任务。例如 `--case 'data/*/codex'` 选中 40 条任务，`--case 'simulators/pair/*'` 选中全部 100 条 Simulator 任务。默认输出在 `runs/coverage/<场景名__Harness>/`；可用 `--output` 隔离不同服务的结果。
 
-`suite.py run` 从 `ROLLER_TEST_*_MODEL` 读取模型，也接受 `--openclaw-model`、`--codex-model`、`--claude-code-model`、`--hermes-model` 覆盖。脚本在临时任务副本中绑定 Agent 和 Simulator 模型，保留模型继承测试，并处理自定义解析参数和环境变量。`--` 后的参数传给 `roller collect`；改变任务数量、路由或模型展开的参数会被拒绝。
+`suite.py run` 从 `ROLLER_TEST_*_MODEL` 读取模型，也接受 `--openclaw-model`、`--codex-model`、`--claude-code-model`、`--hermes-model`、`--opencode-model` 覆盖。脚本在临时任务副本中绑定 Agent 和 Simulator 模型，保留模型继承测试，并处理自定义解析参数和环境变量。`--` 后的参数传给 `roller collect`；改变任务数量、路由或模型展开的参数会被拒绝。
 
 验收对应的四条结果：
 
@@ -88,7 +94,7 @@ python examples/coverage/suite.py check --case formats/jsonl/codex
 
 [all_tasks.json](all_tasks.json) 是全部样例的可迁移模板，包含 `tasks`、`negative_cases`、`coverage`、`models`、`environment`。`roller collect` 只读取其中的 `tasks`；错误输入由校验脚本逐条测试。
 
-先生成绑定本地模型的副本。下面选择四种 Harness 各 4 条加法任务，共 16 条；将 `--case 'formats/jsonl/*'` 改成 `--case '*'` 即生成完整 880 条。
+先生成绑定本地模型的副本。下面选择五种 Harness 各 4 条加法任务，共 20 条；将 `--case 'formats/jsonl/*'` 改成 `--case '*'` 即生成完整 1120 条。
 
 ```bash
 python examples/coverage/merge.py \
@@ -97,6 +103,7 @@ python examples/coverage/merge.py \
   --codex-model "$ROLLER_TEST_CODEX_MODEL" \
   --claude-code-model "$ROLLER_TEST_CLAUDE_CODE_MODEL" \
   --hermes-model "$ROLLER_TEST_HERMES_MODEL" \
+  --opencode-model "$ROLLER_TEST_OPENCODE_MODEL" \
   --absolute-roots \
   --output runs/coverage/merged/tasks.json
 
@@ -111,6 +118,8 @@ python -m roller collect \
   --claude-api-key-env ROLLER_ANTHROPIC_API_KEY \
   --hermes-api-base "$ROLLER_HERMES_BASE_URL" \
   --hermes-api-key-env ROLLER_HERMES_API_KEY \
+  --opencode-api-base "$ROLLER_OPENCODE_BASE_URL" \
+  --opencode-api-key-env ROLLER_OPENCODE_API_KEY \
   --parallel 2 --timeout 180 --retries 0 --wire-trace full \
   --output runs/coverage/merged --run-name collection
 ```
@@ -143,23 +152,24 @@ Resume 审计调用 Collector 的样本复用判定，不启动容器、不改�
 
 | 类别 | 场景 / 配对数 | 任务数 | 验证点 |
 | --- | ---: | ---: | --- |
-| 清单格式 | 4 | 64 | JSONL、JSON 数组、tasks 对象、BOM 与空行 |
-| 对话 | 5 | 80 | question、自定义 key、两种多轮消息、换行 |
-| 路由与 ID | 3 | 48 | Harness 别名、CLI model、特殊 ID |
-| 文本文件 | 10 | 160 | CSV、HTML、JSON、JSONL、LOG、MD、PY、SVG、TXT、YAML |
-| 文件包 | 10 | 160 | SHA-256、多文件、目录、可选缺失、中文空格路径、空文件、根目录、旧 workspace |
-| Context | 6 | 96 | full/hash/none、各角色、skill 目录、可选缺失 |
-| Runtime | 4 | 64 | setup、env 的字符串/列表形式、low thinking |
-| 产物 | 3 | 48 | 自定义目录、多文件、无文件产物 |
-| 二进制 | 4 | 64 | PNG/PDF 字节数、WAV 帧数、ZIP 内文本 |
-| 可选视觉 | 1 | 16 | 图像查看工具识别纯色 PNG |
-| 容器内评分 | 1 | 16 | 输出文件确定性评分 |
-| Simulator | 16 | 64 | 四种 Agent × 四种 Simulator |
+| 清单格式 | 4 | 80 | JSONL、JSON 数组、tasks 对象、BOM 与空行 |
+| 对话 | 5 | 100 | question、自定义 key、两种多轮消息、换行 |
+| 路由与 ID | 3 | 60 | Harness 别名、CLI model、特殊 ID |
+| 文本文件 | 10 | 200 | CSV、HTML、JSON、JSONL、LOG、MD、PY、SVG、TXT、YAML |
+| 文件包 | 10 | 200 | SHA-256、多文件、目录、可选缺失、中文空格路径、空文件、根目录、旧 workspace |
+| Context | 6 | 120 | full/hash/none、各角色、skill 目录、可选缺失 |
+| Runtime | 4 | 80 | setup、env 的字符串/列表形式、low thinking |
+| 产物 | 3 | 60 | 自定义目录、多文件、无文件产物 |
+| 二进制 | 4 | 80 | PNG/PDF 字节数、WAV 帧数、ZIP 内文本 |
+| 可选视觉 | 1 | 20 | 图像查看工具识别纯色 PNG |
+| 容器内评分 | 1 | 20 | 输出文件确定性评分 |
+| Simulator | 25 | 100 | 五种 Agent × 五种 Simulator |
 | 错误输入 | 5 | 20 | 对话、路径、完整性、目录冲突、配置的拒绝行为 |
 
 - Simulator 每组依次验证：一轮纯文本、CSV 两轮并保存答案、Memory 与自定义输出、`max_turns` 截断。同 Harness 第一条省略 Simulator model，验证继承。结束决策也会消耗模型调用。
 - 文件输入表示将文件放入工作区；`messages[].content` 目前只支持字符串。二进制读取不代表视觉、PDF 文本理解或语音识别。视觉组需要图像工具、模型和服务协议同时支持；OpenClaw 模型配置还需声明 `"input": ["text", "image"]`。可复制为被忽略的 `config/openclaw.local.json` 后修改。
 - Hermes 首版固定启用 `terminal`、`file`，不启用视觉工具；它的视觉组用于记录当前能力边界，不能作为要求全部通过的验收组。构建与限制见 [Hermes 指南](../../docs/zh/harnesses/hermes-configuration.md)。
+- OpenCode 首版支持文本与文件工具，视觉组记录暂不支持的验收范围；见 [OpenCode 指南](../../docs/zh/harnesses/opencode-configuration.md)。
 - 视觉工具可能产生当前 SFT 导出尚不支持的非文本内容，需结合 raw、ACTF 和错误信息定位。文本模型的视觉失败不能直接作为文件传输失败的证据。
 - Context/skill 任务显式要求读取注入文件，测试可访问性和 capture 策略。`context/none` 不可 Resume 是预期行为。
 - `bench/file_grader` 使用内嵌 Python 标准库评分，不依赖外部 benchmark；当前没有和 Simulator 组合。输入场景与全部 Simulator 配对未做完整笛卡尔积。
@@ -170,7 +180,7 @@ Resume 审计调用 Collector 的样本复用判定，不启动容器、不改�
 coverage/
 ├── README.md / README.en.md    中英文使用说明
 ├── COVERAGE.md / manifest.json 场景索引、解析参数和预期
-├── all_tasks.json              880 条任务 + 20 条负例的总模板
+├── all_tasks.json              1120 条任务 + 20 条负例的总模板
 ├── sources.json               来源相对路径、大小和 SHA-256
 ├── config/                    环境模板和 OpenClaw 配置
 ├── cases/                     每组 4 条的原始清单

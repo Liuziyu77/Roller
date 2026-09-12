@@ -47,7 +47,7 @@ roller collect --tasks tasks.jsonl --model provider/model ...
 | `--tasks PATH` | 必填 | JSON 或 JSONL task 清单 |
 | `--model MODEL` | task `model` | 可重复；为每条 task 运行所有指定模型 |
 | `--harness NAME` | task `harness` 或 `openclaw` | `openclaw`、`codex`、`claude-code` 或 `hermes`；显式提供时统一覆盖 Task Agent 的字段 |
-| `--docker-image IMAGE` | 对应 Harness 默认镜像 | 统一镜像覆盖；混合参与者可用 `--openclaw-image`、`--codex-image`、`--claude-code-image`、`--hermes-image` 分别指定 |
+| `--docker-image IMAGE` | 对应 Harness 默认镜像 | 统一镜像覆盖；混合参与者可用 `--openclaw-image`、`--codex-image`、`--claude-code-image`、`--hermes-image`、`--opencode-image` 分别指定 |
 | `--api-base URL` / `--api-key-env NAME` | 各 Harness 默认值 | 兼容旧用法；混合运行可用 `--codex-api-base`、`--claude-api-base` 及对应 `*-api-key-env` 分别指定 |
 | `--parallel N` | `1` | 最大并行 rollout 数，必须至少为 1 |
 | `--retries N` | `0` | 首次失败后的额外尝试次数 |
@@ -107,9 +107,9 @@ off | minimal | low | medium | high | xhigh | adaptive | max | ultra
 
 | 模式 | 产物与用途 |
 | --- | --- |
-| `off` | 不启动 request capture；ACTF tools/system 信息可能不完整 |
-| `actf` | 默认；提取 ACTF 需要的 system/tools 后删除中间 wire 文件 |
-| `full` | 额外保留 `wire_trace.jsonl`，用于审计模型实际请求 context |
+| `off` | 不启动 HTTP 代理采集；OpenCode/Hermes 仍保留原生请求中的 schema |
+| `actf` | 默认；保留 ACTF 需要的 system/tools，删除中间 wire 文件 |
+| `full` | 额外保留 `wire_trace.jsonl`，用于审计实际 HTTP 请求 |
 
 `full` 会保存 prompt、reasoning、工具参数与结果等完整请求文本，体积和敏感度都更高。参见 {ref}`轨迹产出文件指南 <wire-trace-jsonl>`。
 
@@ -172,11 +172,11 @@ thinking 使用 `--claude-signature-recovery`，不使用本选项。
 --external-thinking off|external|external_always
 ```
 
-| 模式 | OpenClaw | Codex | Claude Code | Hermes |
-| --- | --- | --- | --- | --- |
-| `off` | 支持，默认 | 支持，默认 | 唯一支持值 | 唯一支持值 |
-| `external` | Responses provider | Responses HTTP | 不支持 | 不支持 |
-| `external_always` | Responses provider | Responses HTTP | 不支持 | 不支持 |
+| 模式 | OpenClaw | Codex | Claude Code | Hermes | OpenCode |
+| --- | --- | --- | --- | --- | --- |
+| `off` | 支持，默认 | 支持，默认 | 唯一支持值 | 唯一支持值 | 唯一支持值 |
+| `external` | Responses provider | Responses HTTP | 不支持 | 不支持 | 不支持 |
+| `external_always` | Responses provider | Responses HTTP | 不支持 | 不支持 | 不支持 |
 
 启用后，Roller 关闭原生 reasoning，把 `deep_think` 工具参数标准化进 SFT 的 `reasoning_content`。阶段协议、验收和安全边界见 [External Thinking](../traces/external-thinking.md)。
 
@@ -237,3 +237,16 @@ roller bench report RUN_DIR [--output REPORT.json]
 | `--hermes-max-iterations` | `12` | 每条 user message 的模型迭代上限 |
 
 Hermes 接受 `off/minimal/low/medium/high/xhigh` reasoning 提示，最终由原生模型/provider 适配决定；暂不支持 external thinking。所有 wire 模式均保留原生请求中的工具 schema；`full` 额外保留 HTTP 轨迹，要求已配置 API base 和 host 网络。详见 [Hermes 配置](../harnesses/hermes-configuration.md)。
+
+## OpenCode
+
+| Option | Default |
+| --- | --- |
+| `--opencode-image` | `roller-opencode:1.18.30` |
+| `--opencode-api-base` | `--api-base` / `OPENAI_BASE_URL` |
+| `--opencode-api-key-env` | `--api-key-env` / `OPENAI_API_KEY` |
+| `--opencode-max-steps` | 12 |
+| `--opencode-context-length` | 128000 |
+| `--opencode-output-tokens` | 8192 |
+
+[原生会话、请求捕获和限制](../harnesses/opencode-configuration.md)。
