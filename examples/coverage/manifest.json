@@ -1,7 +1,7 @@
 {
   "schema_version": "roller.examples-coverage/v1",
   "cases_per_group": 4,
-  "positive_tasks": 1120,
+  "positive_tasks": 1368,
   "negative_tasks": 20,
   "source_files": 40,
   "cases": [
@@ -201,6 +201,45 @@
       ]
     },
     {
+      "key": "formats/jsonl/deepseek",
+      "path": "cases/formats/jsonl/deepseek.jsonl",
+      "scenario": "formats/jsonl",
+      "harness": "deepseek",
+      "simulator": null,
+      "tier": "standard",
+      "description": "Task 清单格式：jsonl",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "3",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "formats__jsonl__deepseek__01"
+        },
+        {
+          "reply": "4",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "formats__jsonl__deepseek__02"
+        },
+        {
+          "reply": "5",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "formats__jsonl__deepseek__03"
+        },
+        {
+          "reply": "6",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "formats__jsonl__deepseek__04"
+        }
+      ]
+    },
+    {
       "key": "formats/json_array/openclaw",
       "path": "cases/formats/json_array/openclaw.json",
       "scenario": "formats/json_array",
@@ -392,6 +431,45 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "formats__json_array__opencode__04"
+        }
+      ]
+    },
+    {
+      "key": "formats/json_array/deepseek",
+      "path": "cases/formats/json_array/deepseek.json",
+      "scenario": "formats/json_array",
+      "harness": "deepseek",
+      "simulator": null,
+      "tier": "standard",
+      "description": "Task 清单格式：json_array",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "3",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "formats__json_array__deepseek__01"
+        },
+        {
+          "reply": "4",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "formats__json_array__deepseek__02"
+        },
+        {
+          "reply": "5",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "formats__json_array__deepseek__03"
+        },
+        {
+          "reply": "6",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "formats__json_array__deepseek__04"
         }
       ]
     },
@@ -591,6 +669,45 @@
       ]
     },
     {
+      "key": "formats/json_object/deepseek",
+      "path": "cases/formats/json_object/deepseek.json",
+      "scenario": "formats/json_object",
+      "harness": "deepseek",
+      "simulator": null,
+      "tier": "standard",
+      "description": "Task 清单格式：json_object",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "3",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "formats__json_object__deepseek__01"
+        },
+        {
+          "reply": "4",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "formats__json_object__deepseek__02"
+        },
+        {
+          "reply": "5",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "formats__json_object__deepseek__03"
+        },
+        {
+          "reply": "6",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "formats__json_object__deepseek__04"
+        }
+      ]
+    },
+    {
       "key": "formats/jsonl_bom/openclaw",
       "path": "cases/formats/jsonl_bom/openclaw.jsonl",
       "scenario": "formats/jsonl_bom",
@@ -786,6 +903,45 @@
       ]
     },
     {
+      "key": "formats/jsonl_bom/deepseek",
+      "path": "cases/formats/jsonl_bom/deepseek.jsonl",
+      "scenario": "formats/jsonl_bom",
+      "harness": "deepseek",
+      "simulator": null,
+      "tier": "standard",
+      "description": "Task 清单格式：jsonl_bom",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "3",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "formats__jsonl_bom__deepseek__01"
+        },
+        {
+          "reply": "4",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "formats__jsonl_bom__deepseek__02"
+        },
+        {
+          "reply": "5",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "formats__jsonl_bom__deepseek__03"
+        },
+        {
+          "reply": "6",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "formats__jsonl_bom__deepseek__04"
+        }
+      ]
+    },
+    {
       "key": "dialogue/question/openclaw",
       "path": "cases/dialogue/question/openclaw.jsonl",
       "scenario": "dialogue/question",
@@ -977,6 +1133,45 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "dialogue__question__opencode__04"
+        }
+      ]
+    },
+    {
+      "key": "dialogue/question/deepseek",
+      "path": "cases/dialogue/question/deepseek.jsonl",
+      "scenario": "dialogue/question",
+      "harness": "deepseek",
+      "simulator": null,
+      "tier": "standard",
+      "description": "对话输入：question；最多两轮",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "3",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "dialogue__question__deepseek__01"
+        },
+        {
+          "reply": "4",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "dialogue__question__deepseek__02"
+        },
+        {
+          "reply": "5",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "dialogue__question__deepseek__03"
+        },
+        {
+          "reply": "6",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "dialogue__question__deepseek__04"
         }
       ]
     },
@@ -1191,6 +1386,48 @@
       ]
     },
     {
+      "key": "dialogue/custom_keys/deepseek",
+      "path": "cases/dialogue/custom_keys/deepseek.jsonl",
+      "scenario": "dialogue/custom_keys",
+      "harness": "deepseek",
+      "simulator": null,
+      "tier": "standard",
+      "description": "对话输入：custom_keys；最多两轮",
+      "count": 4,
+      "parser_options": {
+        "prompt_key": "instruction",
+        "id_key": "case_id"
+      },
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "3",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "dialogue__custom_keys__deepseek__01"
+        },
+        {
+          "reply": "4",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "dialogue__custom_keys__deepseek__02"
+        },
+        {
+          "reply": "5",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "dialogue__custom_keys__deepseek__03"
+        },
+        {
+          "reply": "6",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "dialogue__custom_keys__deepseek__04"
+        }
+      ]
+    },
+    {
       "key": "dialogue/messages_strings/openclaw",
       "path": "cases/dialogue/messages_strings/openclaw.jsonl",
       "scenario": "dialogue/messages_strings",
@@ -1382,6 +1619,45 @@
           "user_turns": 2,
           "status": "ok",
           "task_id": "dialogue__messages_strings__opencode__04"
+        }
+      ]
+    },
+    {
+      "key": "dialogue/messages_strings/deepseek",
+      "path": "cases/dialogue/messages_strings/deepseek.jsonl",
+      "scenario": "dialogue/messages_strings",
+      "harness": "deepseek",
+      "simulator": null,
+      "tier": "standard",
+      "description": "对话输入：messages_strings；最多两轮",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "TOKEN_1",
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "dialogue__messages_strings__deepseek__01"
+        },
+        {
+          "reply": "TOKEN_2",
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "dialogue__messages_strings__deepseek__02"
+        },
+        {
+          "reply": "TOKEN_3",
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "dialogue__messages_strings__deepseek__03"
+        },
+        {
+          "reply": "TOKEN_4",
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "dialogue__messages_strings__deepseek__04"
         }
       ]
     },
@@ -1581,6 +1857,45 @@
       ]
     },
     {
+      "key": "dialogue/messages_objects/deepseek",
+      "path": "cases/dialogue/messages_objects/deepseek.jsonl",
+      "scenario": "dialogue/messages_objects",
+      "harness": "deepseek",
+      "simulator": null,
+      "tier": "standard",
+      "description": "对话输入：messages_objects；最多两轮",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "TOKEN_1",
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "dialogue__messages_objects__deepseek__01"
+        },
+        {
+          "reply": "TOKEN_2",
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "dialogue__messages_objects__deepseek__02"
+        },
+        {
+          "reply": "TOKEN_3",
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "dialogue__messages_objects__deepseek__03"
+        },
+        {
+          "reply": "TOKEN_4",
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "dialogue__messages_objects__deepseek__04"
+        }
+      ]
+    },
+    {
       "key": "dialogue/multiline/openclaw",
       "path": "cases/dialogue/multiline/openclaw.jsonl",
       "scenario": "dialogue/multiline",
@@ -1772,6 +2087,45 @@
           "user_turns": 1,
           "status": "ok",
           "task_id": "dialogue__multiline__opencode__04"
+        }
+      ]
+    },
+    {
+      "key": "dialogue/multiline/deepseek",
+      "path": "cases/dialogue/multiline/deepseek.jsonl",
+      "scenario": "dialogue/multiline",
+      "harness": "deepseek",
+      "simulator": null,
+      "tier": "standard",
+      "description": "对话输入：multiline；最多两轮",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "TOKEN_1",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "dialogue__multiline__deepseek__01"
+        },
+        {
+          "reply": "TOKEN_2",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "dialogue__multiline__deepseek__02"
+        },
+        {
+          "reply": "TOKEN_3",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "dialogue__multiline__deepseek__03"
+        },
+        {
+          "reply": "TOKEN_4",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "dialogue__multiline__deepseek__04"
         }
       ]
     },
@@ -1971,6 +2325,45 @@
       ]
     },
     {
+      "key": "routing/aliases/deepseek",
+      "path": "cases/routing/aliases/deepseek.jsonl",
+      "scenario": "routing/aliases",
+      "harness": "deepseek",
+      "simulator": null,
+      "tier": "standard",
+      "description": "Harness / model / ID 声明：aliases",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "3",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "routing__aliases__deepseek__01"
+        },
+        {
+          "reply": "4",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "routing__aliases__deepseek__02"
+        },
+        {
+          "reply": "5",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "routing__aliases__deepseek__03"
+        },
+        {
+          "reply": "6",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "routing__aliases__deepseek__04"
+        }
+      ]
+    },
+    {
       "key": "routing/model_cli/openclaw",
       "path": "cases/routing/model_cli/openclaw.jsonl",
       "scenario": "routing/model_cli",
@@ -2166,6 +2559,45 @@
       ]
     },
     {
+      "key": "routing/model_cli/deepseek",
+      "path": "cases/routing/model_cli/deepseek.jsonl",
+      "scenario": "routing/model_cli",
+      "harness": "deepseek",
+      "simulator": null,
+      "tier": "standard",
+      "description": "Harness / model / ID 声明：model_cli",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": true,
+      "expectations": [
+        {
+          "reply": "3",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "routing__model_cli__deepseek__01"
+        },
+        {
+          "reply": "4",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "routing__model_cli__deepseek__02"
+        },
+        {
+          "reply": "5",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "routing__model_cli__deepseek__03"
+        },
+        {
+          "reply": "6",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "routing__model_cli__deepseek__04"
+        }
+      ]
+    },
+    {
       "key": "routing/id_variants/openclaw",
       "path": "cases/routing/id_variants/openclaw.jsonl",
       "scenario": "routing/id_variants",
@@ -2326,6 +2758,45 @@
       "path": "cases/routing/id_variants/opencode.jsonl",
       "scenario": "routing/id_variants",
       "harness": "opencode",
+      "simulator": null,
+      "tier": "standard",
+      "description": "Harness / model / ID 声明：id_variants",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "3",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "101"
+        },
+        {
+          "reply": "4",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "中文 空格"
+        },
+        {
+          "reply": "5",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "a/b:c?d"
+        },
+        {
+          "reply": "6",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "long_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        }
+      ]
+    },
+    {
+      "key": "routing/id_variants/deepseek",
+      "path": "cases/routing/id_variants/deepseek.jsonl",
+      "scenario": "routing/id_variants",
+      "harness": "deepseek",
       "simulator": null,
       "tier": "standard",
       "description": "Harness / model / ID 声明：id_variants",
@@ -2616,6 +3087,57 @@
       ]
     },
     {
+      "key": "data/csv/deepseek",
+      "path": "cases/data/csv/deepseek.jsonl",
+      "scenario": "data/csv",
+      "harness": "deepseek",
+      "simulator": null,
+      "tier": "standard",
+      "description": "来自 Roller_Data 的小型 .csv 文件",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__csv__deepseek__01"
+        },
+        {
+          "files": {
+            "answer.txt": "5"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__csv__deepseek__02"
+        },
+        {
+          "files": {
+            "answer.txt": "3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__csv__deepseek__03"
+        },
+        {
+          "files": {
+            "answer.txt": "4"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__csv__deepseek__04"
+        }
+      ]
+    },
+    {
       "key": "data/html/openclaw",
       "path": "cases/data/html/openclaw.jsonl",
       "scenario": "data/html",
@@ -2867,6 +3389,57 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "data__html__opencode__04"
+        }
+      ]
+    },
+    {
+      "key": "data/html/deepseek",
+      "path": "cases/data/html/deepseek.jsonl",
+      "scenario": "data/html",
+      "harness": "deepseek",
+      "simulator": null,
+      "tier": "standard",
+      "description": "来自 Roller_Data 的小型 .html 文件",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "<!doctype html>"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__html__deepseek__01"
+        },
+        {
+          "files": {
+            "answer.txt": "<!DOCTYPE html>"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__html__deepseek__02"
+        },
+        {
+          "files": {
+            "answer.txt": "<!doctype html>"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__html__deepseek__03"
+        },
+        {
+          "files": {
+            "answer.txt": "<!DOCTYPE html>"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__html__deepseek__04"
         }
       ]
     },
@@ -3126,6 +3699,57 @@
       ]
     },
     {
+      "key": "data/json/deepseek",
+      "path": "cases/data/json/deepseek.jsonl",
+      "scenario": "data/json",
+      "harness": "deepseek",
+      "simulator": null,
+      "tier": "standard",
+      "description": "来自 Roller_Data 的小型 .json 文件",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__json__deepseek__01"
+        },
+        {
+          "files": {
+            "answer.txt": "2"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__json__deepseek__02"
+        },
+        {
+          "files": {
+            "answer.txt": "3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__json__deepseek__03"
+        },
+        {
+          "files": {
+            "answer.txt": "2"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__json__deepseek__04"
+        }
+      ]
+    },
+    {
       "key": "data/jsonl/openclaw",
       "path": "cases/data/jsonl/openclaw.jsonl",
       "scenario": "data/jsonl",
@@ -3377,6 +4001,57 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "data__jsonl__opencode__04"
+        }
+      ]
+    },
+    {
+      "key": "data/jsonl/deepseek",
+      "path": "cases/data/jsonl/deepseek.jsonl",
+      "scenario": "data/jsonl",
+      "harness": "deepseek",
+      "simulator": null,
+      "tier": "standard",
+      "description": "来自 Roller_Data 的小型 .jsonl 文件",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "S1"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__jsonl__deepseek__01"
+        },
+        {
+          "files": {
+            "answer.txt": "S2"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__jsonl__deepseek__02"
+        },
+        {
+          "files": {
+            "answer.txt": "S3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__jsonl__deepseek__03"
+        },
+        {
+          "files": {
+            "answer.txt": "S4"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__jsonl__deepseek__04"
         }
       ]
     },
@@ -3636,6 +4311,57 @@
       ]
     },
     {
+      "key": "data/log/deepseek",
+      "path": "cases/data/log/deepseek.jsonl",
+      "scenario": "data/log",
+      "harness": "deepseek",
+      "simulator": null,
+      "tier": "standard",
+      "description": "来自 Roller_Data 的小型 .log 文件",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "live-score sample payload:"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__log__deepseek__01"
+        },
+        {
+          "files": {
+            "answer.txt": "2026-05-25 refund_check order=R-44 item_status=final_sale purchased_on=2026-05-10 payment_status=paid expected=false actual=true"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__log__deepseek__02"
+        },
+        {
+          "files": {
+            "answer.txt": "dashboard rollup sample:"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__log__deepseek__03"
+        },
+        {
+          "files": {
+            "answer.txt": "Smoke test failure:"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__log__deepseek__04"
+        }
+      ]
+    },
+    {
       "key": "data/md/openclaw",
       "path": "cases/data/md/openclaw.jsonl",
       "scenario": "data/md",
@@ -3887,6 +4613,57 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "data__md__opencode__04"
+        }
+      ]
+    },
+    {
+      "key": "data/md/deepseek",
+      "path": "cases/data/md/deepseek.jsonl",
+      "scenario": "data/md",
+      "harness": "deepseek",
+      "simulator": null,
+      "tier": "standard",
+      "description": "来自 Roller_Data 的小型 .md 文件",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "# 成绩边界说明"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__md__deepseek__01"
+        },
+        {
+          "files": {
+            "answer.txt": "# 优先级排序说明"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__md__deepseek__02"
+        },
+        {
+          "files": {
+            "answer.txt": "# 通知测试关注点"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__md__deepseek__03"
+        },
+        {
+          "files": {
+            "answer.txt": "# SLA policy notes"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__md__deepseek__04"
         }
       ]
     },
@@ -4146,6 +4923,57 @@
       ]
     },
     {
+      "key": "data/py/deepseek",
+      "path": "cases/data/py/deepseek.jsonl",
+      "scenario": "data/py",
+      "harness": "deepseek",
+      "simulator": null,
+      "tier": "standard",
+      "description": "来自 Roller_Data 的小型 .py 文件",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "import json"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__py__deepseek__01"
+        },
+        {
+          "files": {
+            "answer.txt": "def charge_customer(customer_id, amount):"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__py__deepseek__02"
+        },
+        {
+          "files": {
+            "answer.txt": "import json"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__py__deepseek__03"
+        },
+        {
+          "files": {
+            "answer.txt": "import csv"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__py__deepseek__04"
+        }
+      ]
+    },
+    {
       "key": "data/svg/openclaw",
       "path": "cases/data/svg/openclaw.jsonl",
       "scenario": "data/svg",
@@ -4397,6 +5225,57 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "data__svg__opencode__04"
+        }
+      ]
+    },
+    {
+      "key": "data/svg/deepseek",
+      "path": "cases/data/svg/deepseek.jsonl",
+      "scenario": "data/svg",
+      "harness": "deepseek",
+      "simulator": null,
+      "tier": "standard",
+      "description": "来自 Roller_Data 的小型 .svg 文件",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "720"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__svg__deepseek__01"
+        },
+        {
+          "files": {
+            "answer.txt": "720"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__svg__deepseek__02"
+        },
+        {
+          "files": {
+            "answer.txt": "740"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__svg__deepseek__03"
+        },
+        {
+          "files": {
+            "answer.txt": "780"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__svg__deepseek__04"
         }
       ]
     },
@@ -4656,6 +5535,57 @@
       ]
     },
     {
+      "key": "data/txt/deepseek",
+      "path": "cases/data/txt/deepseek.jsonl",
+      "scenario": "data/txt",
+      "harness": "deepseek",
+      "simulator": null,
+      "tier": "standard",
+      "description": "来自 Roller_Data 的小型 .txt 文件",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "refund"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__txt__deepseek__01"
+        },
+        {
+          "files": {
+            "answer.txt": "面试评价表"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__txt__deepseek__02"
+        },
+        {
+          "files": {
+            "answer.txt": "2026-04-18 产品例会"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__txt__deepseek__03"
+        },
+        {
+          "files": {
+            "answer.txt": "收银系统提示文案"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__txt__deepseek__04"
+        }
+      ]
+    },
+    {
       "key": "data/yaml/openclaw",
       "path": "cases/data/yaml/openclaw.jsonl",
       "scenario": "data/yaml",
@@ -4907,6 +5837,57 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "data__yaml__opencode__04"
+        }
+      ]
+    },
+    {
+      "key": "data/yaml/deepseek",
+      "path": "cases/data/yaml/deepseek.jsonl",
+      "scenario": "data/yaml",
+      "harness": "deepseek",
+      "simulator": null,
+      "tier": "standard",
+      "description": "来自 Roller_Data 的小型 .yaml 文件",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "service: \"billing-api\""
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__yaml__deepseek__01"
+        },
+        {
+          "files": {
+            "answer.txt": "roles:"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__yaml__deepseek__02"
+        },
+        {
+          "files": {
+            "answer.txt": "max_attempts: 4"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__yaml__deepseek__03"
+        },
+        {
+          "files": {
+            "answer.txt": "licenses:"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "data__yaml__deepseek__04"
         }
       ]
     },
@@ -5166,6 +6147,57 @@
       ]
     },
     {
+      "key": "inputs/object/deepseek",
+      "path": "cases/inputs/object/deepseek.jsonl",
+      "scenario": "inputs/object",
+      "harness": "deepseek",
+      "simulator": null,
+      "tier": "standard",
+      "description": "文件包输入方式：object",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "TOKEN_1"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__object__deepseek__01"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_2"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__object__deepseek__02"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__object__deepseek__03"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_4"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__object__deepseek__04"
+        }
+      ]
+    },
+    {
       "key": "inputs/sha256/openclaw",
       "path": "cases/inputs/sha256/openclaw.jsonl",
       "scenario": "inputs/sha256",
@@ -5417,6 +6449,57 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "inputs__sha256__opencode__04"
+        }
+      ]
+    },
+    {
+      "key": "inputs/sha256/deepseek",
+      "path": "cases/inputs/sha256/deepseek.jsonl",
+      "scenario": "inputs/sha256",
+      "harness": "deepseek",
+      "simulator": null,
+      "tier": "standard",
+      "description": "文件包输入方式：sha256",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "TOKEN_1"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__sha256__deepseek__01"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_2"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__sha256__deepseek__02"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__sha256__deepseek__03"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_4"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__sha256__deepseek__04"
         }
       ]
     },
@@ -5676,6 +6759,57 @@
       ]
     },
     {
+      "key": "inputs/multiple/deepseek",
+      "path": "cases/inputs/multiple/deepseek.jsonl",
+      "scenario": "inputs/multiple",
+      "harness": "deepseek",
+      "simulator": null,
+      "tier": "standard",
+      "description": "文件包输入方式：multiple",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__multiple__deepseek__01"
+        },
+        {
+          "files": {
+            "answer.txt": "3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__multiple__deepseek__02"
+        },
+        {
+          "files": {
+            "answer.txt": "3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__multiple__deepseek__03"
+        },
+        {
+          "files": {
+            "answer.txt": "3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__multiple__deepseek__04"
+        }
+      ]
+    },
+    {
       "key": "inputs/directory/openclaw",
       "path": "cases/inputs/directory/openclaw.jsonl",
       "scenario": "inputs/directory",
@@ -5927,6 +7061,57 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "inputs__directory__opencode__04"
+        }
+      ]
+    },
+    {
+      "key": "inputs/directory/deepseek",
+      "path": "cases/inputs/directory/deepseek.jsonl",
+      "scenario": "inputs/directory",
+      "harness": "deepseek",
+      "simulator": null,
+      "tier": "standard",
+      "description": "文件包输入方式：directory",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "a.txt\nnested/b.txt"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__directory__deepseek__01"
+        },
+        {
+          "files": {
+            "answer.txt": "a.txt\nnested/b.txt"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__directory__deepseek__02"
+        },
+        {
+          "files": {
+            "answer.txt": "a.txt\nnested/b.txt"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__directory__deepseek__03"
+        },
+        {
+          "files": {
+            "answer.txt": "a.txt\nnested/b.txt"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__directory__deepseek__04"
         }
       ]
     },
@@ -6186,6 +7371,57 @@
       ]
     },
     {
+      "key": "inputs/optional_missing/deepseek",
+      "path": "cases/inputs/optional_missing/deepseek.jsonl",
+      "scenario": "inputs/optional_missing",
+      "harness": "deepseek",
+      "simulator": null,
+      "tier": "standard",
+      "description": "文件包输入方式：optional_missing",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "OK"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__optional_missing__deepseek__01"
+        },
+        {
+          "files": {
+            "answer.txt": "OK"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__optional_missing__deepseek__02"
+        },
+        {
+          "files": {
+            "answer.txt": "OK"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__optional_missing__deepseek__03"
+        },
+        {
+          "files": {
+            "answer.txt": "OK"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__optional_missing__deepseek__04"
+        }
+      ]
+    },
+    {
       "key": "inputs/unicode_paths/openclaw",
       "path": "cases/inputs/unicode_paths/openclaw.jsonl",
       "scenario": "inputs/unicode_paths",
@@ -6437,6 +7673,57 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "inputs__unicode_paths__opencode__04"
+        }
+      ]
+    },
+    {
+      "key": "inputs/unicode_paths/deepseek",
+      "path": "cases/inputs/unicode_paths/deepseek.jsonl",
+      "scenario": "inputs/unicode_paths",
+      "harness": "deepseek",
+      "simulator": null,
+      "tier": "standard",
+      "description": "文件包输入方式：unicode_paths",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "TOKEN_1"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__unicode_paths__deepseek__01"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_2"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__unicode_paths__deepseek__02"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__unicode_paths__deepseek__03"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_4"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__unicode_paths__deepseek__04"
         }
       ]
     },
@@ -6696,6 +7983,57 @@
       ]
     },
     {
+      "key": "inputs/empty/deepseek",
+      "path": "cases/inputs/empty/deepseek.jsonl",
+      "scenario": "inputs/empty",
+      "harness": "deepseek",
+      "simulator": null,
+      "tier": "standard",
+      "description": "文件包输入方式：empty",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "0"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__empty__deepseek__01"
+        },
+        {
+          "files": {
+            "answer.txt": "0"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__empty__deepseek__02"
+        },
+        {
+          "files": {
+            "answer.txt": "0"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__empty__deepseek__03"
+        },
+        {
+          "files": {
+            "answer.txt": "0"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__empty__deepseek__04"
+        }
+      ]
+    },
+    {
       "key": "inputs/default_root/openclaw",
       "path": "fixtures/openclaw-default-root.jsonl",
       "scenario": "inputs/default_root",
@@ -6947,6 +8285,57 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "inputs__default_root__opencode__04"
+        }
+      ]
+    },
+    {
+      "key": "inputs/default_root/deepseek",
+      "path": "fixtures/deepseek-default-root.jsonl",
+      "scenario": "inputs/default_root",
+      "harness": "deepseek",
+      "simulator": null,
+      "tier": "standard",
+      "description": "文件包输入方式：default_root",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "TOKEN_1"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__default_root__deepseek__01"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_2"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__default_root__deepseek__02"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__default_root__deepseek__03"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_4"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__default_root__deepseek__04"
         }
       ]
     },
@@ -7211,6 +8600,58 @@
       "runtime_absolute_file_root": true
     },
     {
+      "key": "inputs/absolute_root/deepseek",
+      "path": "cases/inputs/absolute_root/deepseek.jsonl",
+      "scenario": "inputs/absolute_root",
+      "harness": "deepseek",
+      "simulator": null,
+      "tier": "standard",
+      "description": "文件包输入方式：absolute_root",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "TOKEN_1"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__absolute_root__deepseek__01"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_2"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__absolute_root__deepseek__02"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__absolute_root__deepseek__03"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_4"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__absolute_root__deepseek__04"
+        }
+      ],
+      "runtime_absolute_file_root": true
+    },
+    {
       "key": "inputs/legacy_workspace/openclaw",
       "path": "cases/inputs/legacy_workspace/openclaw.jsonl",
       "scenario": "inputs/legacy_workspace",
@@ -7462,6 +8903,57 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "inputs__legacy_workspace__opencode__04"
+        }
+      ]
+    },
+    {
+      "key": "inputs/legacy_workspace/deepseek",
+      "path": "cases/inputs/legacy_workspace/deepseek.jsonl",
+      "scenario": "inputs/legacy_workspace",
+      "harness": "deepseek",
+      "simulator": null,
+      "tier": "standard",
+      "description": "文件包输入方式：legacy_workspace",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "TOKEN_1"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__legacy_workspace__deepseek__01"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_2"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__legacy_workspace__deepseek__02"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__legacy_workspace__deepseek__03"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_4"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "inputs__legacy_workspace__deepseek__04"
         }
       ]
     },
@@ -7741,6 +9233,61 @@
       ]
     },
     {
+      "key": "context/full/deepseek",
+      "path": "cases/context/full/deepseek.jsonl",
+      "scenario": "context/full",
+      "harness": "deepseek",
+      "simulator": null,
+      "tier": "standard",
+      "description": "Context 注入 / capture：full",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "TOKEN_1"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__full__deepseek__01"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_2"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__full__deepseek__02"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__full__deepseek__03"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_4"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__full__deepseek__04"
+        }
+      ]
+    },
+    {
       "key": "context/hash/openclaw",
       "path": "cases/context/hash/openclaw.jsonl",
       "scenario": "context/hash",
@@ -8012,6 +9559,61 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "context__hash__opencode__04"
+        }
+      ]
+    },
+    {
+      "key": "context/hash/deepseek",
+      "path": "cases/context/hash/deepseek.jsonl",
+      "scenario": "context/hash",
+      "harness": "deepseek",
+      "simulator": null,
+      "tier": "standard",
+      "description": "Context 注入 / capture：hash",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "TOKEN_1"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__hash__deepseek__01"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_2"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__hash__deepseek__02"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__hash__deepseek__03"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_4"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__hash__deepseek__04"
         }
       ]
     },
@@ -8291,6 +9893,61 @@
       ]
     },
     {
+      "key": "context/none/deepseek",
+      "path": "cases/context/none/deepseek.jsonl",
+      "scenario": "context/none",
+      "harness": "deepseek",
+      "simulator": null,
+      "tier": "standard",
+      "description": "Context 注入 / capture：none",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "TOKEN_1"
+          },
+          "resume_safe": false,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__none__deepseek__01"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_2"
+          },
+          "resume_safe": false,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__none__deepseek__02"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "resume_safe": false,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__none__deepseek__03"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_4"
+          },
+          "resume_safe": false,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__none__deepseek__04"
+        }
+      ]
+    },
+    {
       "key": "context/roles/openclaw",
       "path": "cases/context/roles/openclaw.jsonl",
       "scenario": "context/roles",
@@ -8562,6 +10219,61 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "context__roles__opencode__04"
+        }
+      ]
+    },
+    {
+      "key": "context/roles/deepseek",
+      "path": "cases/context/roles/deepseek.jsonl",
+      "scenario": "context/roles",
+      "harness": "deepseek",
+      "simulator": null,
+      "tier": "standard",
+      "description": "Context 注入 / capture：roles",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "TOKEN_1"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__roles__deepseek__01"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_2"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__roles__deepseek__02"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__roles__deepseek__03"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_4"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__roles__deepseek__04"
         }
       ]
     },
@@ -8841,6 +10553,61 @@
       ]
     },
     {
+      "key": "context/skill/deepseek",
+      "path": "cases/context/skill/deepseek.jsonl",
+      "scenario": "context/skill",
+      "harness": "deepseek",
+      "simulator": null,
+      "tier": "standard",
+      "description": "Context 注入 / capture：skill",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "TOKEN_1"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__skill__deepseek__01"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_2"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__skill__deepseek__02"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__skill__deepseek__03"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_4"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__skill__deepseek__04"
+        }
+      ]
+    },
+    {
       "key": "context/optional/openclaw",
       "path": "cases/context/optional/openclaw.jsonl",
       "scenario": "context/optional",
@@ -9116,6 +10883,61 @@
       ]
     },
     {
+      "key": "context/optional/deepseek",
+      "path": "cases/context/optional/deepseek.jsonl",
+      "scenario": "context/optional",
+      "harness": "deepseek",
+      "simulator": null,
+      "tier": "standard",
+      "description": "Context 注入 / capture：optional",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "TOKEN_1"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__optional__deepseek__01"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_2"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__optional__deepseek__02"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__optional__deepseek__03"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_4"
+          },
+          "resume_safe": true,
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "context__optional__deepseek__04"
+        }
+      ]
+    },
+    {
       "key": "runtime/setup_string/openclaw",
       "path": "cases/runtime/setup_string/openclaw.jsonl",
       "scenario": "runtime/setup_string",
@@ -9371,6 +11193,57 @@
       ]
     },
     {
+      "key": "runtime/setup_string/deepseek",
+      "path": "cases/runtime/setup_string/deepseek.jsonl",
+      "scenario": "runtime/setup_string",
+      "harness": "deepseek",
+      "simulator": null,
+      "tier": "standard",
+      "description": "运行设置：setup_string",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "SETUP_1"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "runtime__setup_string__deepseek__01"
+        },
+        {
+          "files": {
+            "answer.txt": "SETUP_2"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "runtime__setup_string__deepseek__02"
+        },
+        {
+          "files": {
+            "answer.txt": "SETUP_3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "runtime__setup_string__deepseek__03"
+        },
+        {
+          "files": {
+            "answer.txt": "SETUP_4"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "runtime__setup_string__deepseek__04"
+        }
+      ]
+    },
+    {
       "key": "runtime/setup_list/openclaw",
       "path": "cases/runtime/setup_list/openclaw.jsonl",
       "scenario": "runtime/setup_list",
@@ -9622,6 +11495,57 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "runtime__setup_list__opencode__04"
+        }
+      ]
+    },
+    {
+      "key": "runtime/setup_list/deepseek",
+      "path": "cases/runtime/setup_list/deepseek.jsonl",
+      "scenario": "runtime/setup_list",
+      "harness": "deepseek",
+      "simulator": null,
+      "tier": "standard",
+      "description": "运行设置：setup_list",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "SETUP_1"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "runtime__setup_list__deepseek__01"
+        },
+        {
+          "files": {
+            "answer.txt": "SETUP_2"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "runtime__setup_list__deepseek__02"
+        },
+        {
+          "files": {
+            "answer.txt": "SETUP_3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "runtime__setup_list__deepseek__03"
+        },
+        {
+          "files": {
+            "answer.txt": "SETUP_4"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "runtime__setup_list__deepseek__04"
         }
       ]
     },
@@ -9891,6 +11815,59 @@
       ]
     },
     {
+      "key": "runtime/env/deepseek",
+      "path": "cases/runtime/env/deepseek.jsonl",
+      "scenario": "runtime/env",
+      "harness": "deepseek",
+      "simulator": null,
+      "tier": "standard",
+      "description": "运行设置：env",
+      "count": 4,
+      "parser_options": {},
+      "environment": {
+        "ROLLER_EXAMPLE_TOKEN": "ENV_OK"
+      },
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "ENV_OK1"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "runtime__env__deepseek__01"
+        },
+        {
+          "files": {
+            "answer.txt": "ENV_OK2"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "runtime__env__deepseek__02"
+        },
+        {
+          "files": {
+            "answer.txt": "ENV_OK3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "runtime__env__deepseek__03"
+        },
+        {
+          "files": {
+            "answer.txt": "ENV_OK4"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "runtime__env__deepseek__04"
+        }
+      ]
+    },
+    {
       "key": "runtime/thinking/openclaw",
       "path": "cases/runtime/thinking/openclaw.jsonl",
       "scenario": "runtime/thinking",
@@ -10082,6 +12059,45 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "runtime__thinking__opencode__04"
+        }
+      ]
+    },
+    {
+      "key": "runtime/thinking/deepseek",
+      "path": "cases/runtime/thinking/deepseek.jsonl",
+      "scenario": "runtime/thinking",
+      "harness": "deepseek",
+      "simulator": null,
+      "tier": "standard",
+      "description": "运行设置：thinking",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "3",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "runtime__thinking__deepseek__01"
+        },
+        {
+          "reply": "4",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "runtime__thinking__deepseek__02"
+        },
+        {
+          "reply": "5",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "runtime__thinking__deepseek__03"
+        },
+        {
+          "reply": "6",
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "runtime__thinking__deepseek__04"
         }
       ]
     },
@@ -10337,6 +12353,57 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "outputs__nested__opencode__04"
+        }
+      ]
+    },
+    {
+      "key": "outputs/nested/deepseek",
+      "path": "cases/outputs/nested/deepseek.jsonl",
+      "scenario": "outputs/nested",
+      "harness": "deepseek",
+      "simulator": null,
+      "tier": "standard",
+      "description": "输出回收：nested",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "nested/answer.txt": "RESULT_1"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "outputs__nested__deepseek__01"
+        },
+        {
+          "files": {
+            "nested/answer.txt": "RESULT_2"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "outputs__nested__deepseek__02"
+        },
+        {
+          "files": {
+            "nested/answer.txt": "RESULT_3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "outputs__nested__deepseek__03"
+        },
+        {
+          "files": {
+            "nested/answer.txt": "RESULT_4"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "outputs__nested__deepseek__04"
         }
       ]
     },
@@ -10616,6 +12683,61 @@
       ]
     },
     {
+      "key": "outputs/multiple/deepseek",
+      "path": "cases/outputs/multiple/deepseek.jsonl",
+      "scenario": "outputs/multiple",
+      "harness": "deepseek",
+      "simulator": null,
+      "tier": "standard",
+      "description": "输出回收：multiple",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "a.txt": "A1",
+            "nested/b.txt": "B1"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "outputs__multiple__deepseek__01"
+        },
+        {
+          "files": {
+            "a.txt": "A2",
+            "nested/b.txt": "B2"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "outputs__multiple__deepseek__02"
+        },
+        {
+          "files": {
+            "a.txt": "A3",
+            "nested/b.txt": "B3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "outputs__multiple__deepseek__03"
+        },
+        {
+          "files": {
+            "a.txt": "A4",
+            "nested/b.txt": "B4"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "outputs__multiple__deepseek__04"
+        }
+      ]
+    },
+    {
       "key": "outputs/no_files/openclaw",
       "path": "cases/outputs/no_files/openclaw.jsonl",
       "scenario": "outputs/no_files",
@@ -10827,6 +12949,49 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "outputs__no_files__opencode__04"
+        }
+      ]
+    },
+    {
+      "key": "outputs/no_files/deepseek",
+      "path": "cases/outputs/no_files/deepseek.jsonl",
+      "scenario": "outputs/no_files",
+      "harness": "deepseek",
+      "simulator": null,
+      "tier": "standard",
+      "description": "输出回收：no_files",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "3",
+          "no_output_files": true,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "outputs__no_files__deepseek__01"
+        },
+        {
+          "reply": "4",
+          "no_output_files": true,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "outputs__no_files__deepseek__02"
+        },
+        {
+          "reply": "5",
+          "no_output_files": true,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "outputs__no_files__deepseek__03"
+        },
+        {
+          "reply": "6",
+          "no_output_files": true,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "outputs__no_files__deepseek__04"
         }
       ]
     },
@@ -11086,6 +13251,57 @@
       ]
     },
     {
+      "key": "binary/png/deepseek",
+      "path": "cases/binary/png/deepseek.jsonl",
+      "scenario": "binary/png",
+      "harness": "deepseek",
+      "simulator": null,
+      "tier": "standard",
+      "description": "二进制 .png 传输和读取；不验证语义理解",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "97"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "binary__png__deepseek__01"
+        },
+        {
+          "files": {
+            "answer.txt": "95"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "binary__png__deepseek__02"
+        },
+        {
+          "files": {
+            "answer.txt": "95"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "binary__png__deepseek__03"
+        },
+        {
+          "files": {
+            "answer.txt": "97"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "binary__png__deepseek__04"
+        }
+      ]
+    },
+    {
       "key": "binary/pdf/openclaw",
       "path": "cases/binary/pdf/openclaw.jsonl",
       "scenario": "binary/pdf",
@@ -11337,6 +13553,57 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "binary__pdf__opencode__04"
+        }
+      ]
+    },
+    {
+      "key": "binary/pdf/deepseek",
+      "path": "cases/binary/pdf/deepseek.jsonl",
+      "scenario": "binary/pdf",
+      "harness": "deepseek",
+      "simulator": null,
+      "tier": "standard",
+      "description": "二进制 .pdf 传输和读取；不验证语义理解",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "582"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "binary__pdf__deepseek__01"
+        },
+        {
+          "files": {
+            "answer.txt": "582"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "binary__pdf__deepseek__02"
+        },
+        {
+          "files": {
+            "answer.txt": "582"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "binary__pdf__deepseek__03"
+        },
+        {
+          "files": {
+            "answer.txt": "582"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "binary__pdf__deepseek__04"
         }
       ]
     },
@@ -11596,6 +13863,57 @@
       ]
     },
     {
+      "key": "binary/wav/deepseek",
+      "path": "cases/binary/wav/deepseek.jsonl",
+      "scenario": "binary/wav",
+      "harness": "deepseek",
+      "simulator": null,
+      "tier": "standard",
+      "description": "二进制 .wav 传输和读取；不验证语义理解",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "80"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "binary__wav__deepseek__01"
+        },
+        {
+          "files": {
+            "answer.txt": "160"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "binary__wav__deepseek__02"
+        },
+        {
+          "files": {
+            "answer.txt": "240"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "binary__wav__deepseek__03"
+        },
+        {
+          "files": {
+            "answer.txt": "320"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "binary__wav__deepseek__04"
+        }
+      ]
+    },
+    {
       "key": "binary/zip/openclaw",
       "path": "cases/binary/zip/openclaw.jsonl",
       "scenario": "binary/zip",
@@ -11847,6 +14165,57 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "binary__zip__opencode__04"
+        }
+      ]
+    },
+    {
+      "key": "binary/zip/deepseek",
+      "path": "cases/binary/zip/deepseek.jsonl",
+      "scenario": "binary/zip",
+      "harness": "deepseek",
+      "simulator": null,
+      "tier": "standard",
+      "description": "二进制 .zip 传输和读取；不验证语义理解",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "TOKEN_1"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "binary__zip__deepseek__01"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_2"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "binary__zip__deepseek__02"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "binary__zip__deepseek__03"
+        },
+        {
+          "files": {
+            "answer.txt": "TOKEN_4"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "binary__zip__deepseek__04"
         }
       ]
     },
@@ -12106,6 +14475,57 @@
       ]
     },
     {
+      "key": "vision/png/deepseek",
+      "path": "cases/vision/png/deepseek.jsonl",
+      "scenario": "vision/png",
+      "harness": "deepseek",
+      "simulator": null,
+      "tier": "vision",
+      "description": "可选：真正调用图像查看工具识别纯色，需模型和工具支持视觉",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "red"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "vision__png__deepseek__01"
+        },
+        {
+          "files": {
+            "answer.txt": "green"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "vision__png__deepseek__02"
+        },
+        {
+          "files": {
+            "answer.txt": "blue"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "vision__png__deepseek__03"
+        },
+        {
+          "files": {
+            "answer.txt": "yellow"
+          },
+          "tool_calls_min": 1,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "vision__png__deepseek__04"
+        }
+      ]
+    },
+    {
       "key": "bench/file_grader/openclaw",
       "path": "cases/bench/file_grader/openclaw.jsonl",
       "scenario": "bench/file_grader",
@@ -12357,6 +14777,57 @@
           "status": "ok",
           "user_turns": 1,
           "task_id": "bench__file_grader__opencode__04"
+        }
+      ]
+    },
+    {
+      "key": "bench/file_grader/deepseek",
+      "path": "cases/bench/file_grader/deepseek.jsonl",
+      "scenario": "bench/file_grader",
+      "harness": "deepseek",
+      "simulator": null,
+      "tier": "standard",
+      "description": "容器销毁前用标准库评分；不调用 LLM judge",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "files": {
+            "answer.txt": "BENCH_1"
+          },
+          "score": 1.0,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "bench__file_grader__deepseek__01"
+        },
+        {
+          "files": {
+            "answer.txt": "BENCH_2"
+          },
+          "score": 1.0,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "bench__file_grader__deepseek__02"
+        },
+        {
+          "files": {
+            "answer.txt": "BENCH_3"
+          },
+          "score": 1.0,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "bench__file_grader__deepseek__03"
+        },
+        {
+          "files": {
+            "answer.txt": "BENCH_4"
+          },
+          "score": 1.0,
+          "status": "ok",
+          "user_turns": 1,
+          "task_id": "bench__file_grader__deepseek__04"
         }
       ]
     },
@@ -12636,6 +15107,61 @@
       ]
     },
     {
+      "key": "simulators/pair/openclaw--deepseek",
+      "path": "cases/simulators/pair/openclaw--deepseek.jsonl",
+      "scenario": "simulators/pair",
+      "harness": "openclaw",
+      "simulator": "deepseek",
+      "tier": "simulator",
+      "description": "四种短对话：纯文本 / 文件两轮 / Context+自定义输出 / max_turns；同 Harness 首例继承模型",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "SIM_1",
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__openclaw--deepseek__01"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "3"
+          },
+          "rounds": 2,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "simulators__pair__openclaw--deepseek__02"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__openclaw--deepseek__03"
+        },
+        {
+          "reply": "SIM_4",
+          "rounds": 1,
+          "termination": "max_turns",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__openclaw--deepseek__04"
+        }
+      ]
+    },
+    {
       "key": "simulators/pair/codex--openclaw",
       "path": "cases/simulators/pair/codex--openclaw.jsonl",
       "scenario": "simulators/pair",
@@ -12907,6 +15433,61 @@
           "user_turns": 1,
           "status": "ok",
           "task_id": "simulators__pair__codex--opencode__04"
+        }
+      ]
+    },
+    {
+      "key": "simulators/pair/codex--deepseek",
+      "path": "cases/simulators/pair/codex--deepseek.jsonl",
+      "scenario": "simulators/pair",
+      "harness": "codex",
+      "simulator": "deepseek",
+      "tier": "simulator",
+      "description": "四种短对话：纯文本 / 文件两轮 / Context+自定义输出 / max_turns；同 Harness 首例继承模型",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "SIM_1",
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__codex--deepseek__01"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "3"
+          },
+          "rounds": 2,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "simulators__pair__codex--deepseek__02"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__codex--deepseek__03"
+        },
+        {
+          "reply": "SIM_4",
+          "rounds": 1,
+          "termination": "max_turns",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__codex--deepseek__04"
         }
       ]
     },
@@ -13186,6 +15767,61 @@
       ]
     },
     {
+      "key": "simulators/pair/claude-code--deepseek",
+      "path": "cases/simulators/pair/claude-code--deepseek.jsonl",
+      "scenario": "simulators/pair",
+      "harness": "claude-code",
+      "simulator": "deepseek",
+      "tier": "simulator",
+      "description": "四种短对话：纯文本 / 文件两轮 / Context+自定义输出 / max_turns；同 Harness 首例继承模型",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "SIM_1",
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__claude-code--deepseek__01"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "3"
+          },
+          "rounds": 2,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "simulators__pair__claude-code--deepseek__02"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__claude-code--deepseek__03"
+        },
+        {
+          "reply": "SIM_4",
+          "rounds": 1,
+          "termination": "max_turns",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__claude-code--deepseek__04"
+        }
+      ]
+    },
+    {
       "key": "simulators/pair/hermes--openclaw",
       "path": "cases/simulators/pair/hermes--openclaw.jsonl",
       "scenario": "simulators/pair",
@@ -13461,6 +16097,61 @@
       ]
     },
     {
+      "key": "simulators/pair/hermes--deepseek",
+      "path": "cases/simulators/pair/hermes--deepseek.jsonl",
+      "scenario": "simulators/pair",
+      "harness": "hermes",
+      "simulator": "deepseek",
+      "tier": "simulator",
+      "description": "四种短对话：纯文本 / 文件两轮 / Context+自定义输出 / max_turns；同 Harness 首例继承模型",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "SIM_1",
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__hermes--deepseek__01"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "3"
+          },
+          "rounds": 2,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "simulators__pair__hermes--deepseek__02"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__hermes--deepseek__03"
+        },
+        {
+          "reply": "SIM_4",
+          "rounds": 1,
+          "termination": "max_turns",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__hermes--deepseek__04"
+        }
+      ]
+    },
+    {
       "key": "simulators/pair/opencode--openclaw",
       "path": "cases/simulators/pair/opencode--openclaw.jsonl",
       "scenario": "simulators/pair",
@@ -13732,6 +16423,391 @@
           "user_turns": 1,
           "status": "ok",
           "task_id": "simulators__pair__opencode--opencode__04"
+        }
+      ]
+    },
+    {
+      "key": "simulators/pair/opencode--deepseek",
+      "path": "cases/simulators/pair/opencode--deepseek.jsonl",
+      "scenario": "simulators/pair",
+      "harness": "opencode",
+      "simulator": "deepseek",
+      "tier": "simulator",
+      "description": "四种短对话：纯文本 / 文件两轮 / Context+自定义输出 / max_turns；同 Harness 首例继承模型",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "SIM_1",
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__opencode--deepseek__01"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "3"
+          },
+          "rounds": 2,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "simulators__pair__opencode--deepseek__02"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__opencode--deepseek__03"
+        },
+        {
+          "reply": "SIM_4",
+          "rounds": 1,
+          "termination": "max_turns",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__opencode--deepseek__04"
+        }
+      ]
+    },
+    {
+      "key": "simulators/pair/deepseek--openclaw",
+      "path": "cases/simulators/pair/deepseek--openclaw.jsonl",
+      "scenario": "simulators/pair",
+      "harness": "deepseek",
+      "simulator": "openclaw",
+      "tier": "simulator",
+      "description": "四种短对话：纯文本 / 文件两轮 / Context+自定义输出 / max_turns；同 Harness 首例继承模型",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "SIM_1",
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__deepseek--openclaw__01"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "3"
+          },
+          "rounds": 2,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "simulators__pair__deepseek--openclaw__02"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__deepseek--openclaw__03"
+        },
+        {
+          "reply": "SIM_4",
+          "rounds": 1,
+          "termination": "max_turns",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__deepseek--openclaw__04"
+        }
+      ]
+    },
+    {
+      "key": "simulators/pair/deepseek--codex",
+      "path": "cases/simulators/pair/deepseek--codex.jsonl",
+      "scenario": "simulators/pair",
+      "harness": "deepseek",
+      "simulator": "codex",
+      "tier": "simulator",
+      "description": "四种短对话：纯文本 / 文件两轮 / Context+自定义输出 / max_turns；同 Harness 首例继承模型",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "SIM_1",
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__deepseek--codex__01"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "3"
+          },
+          "rounds": 2,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "simulators__pair__deepseek--codex__02"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__deepseek--codex__03"
+        },
+        {
+          "reply": "SIM_4",
+          "rounds": 1,
+          "termination": "max_turns",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__deepseek--codex__04"
+        }
+      ]
+    },
+    {
+      "key": "simulators/pair/deepseek--claude-code",
+      "path": "cases/simulators/pair/deepseek--claude-code.jsonl",
+      "scenario": "simulators/pair",
+      "harness": "deepseek",
+      "simulator": "claude-code",
+      "tier": "simulator",
+      "description": "四种短对话：纯文本 / 文件两轮 / Context+自定义输出 / max_turns；同 Harness 首例继承模型",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "SIM_1",
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__deepseek--claude-code__01"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "3"
+          },
+          "rounds": 2,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "simulators__pair__deepseek--claude-code__02"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__deepseek--claude-code__03"
+        },
+        {
+          "reply": "SIM_4",
+          "rounds": 1,
+          "termination": "max_turns",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__deepseek--claude-code__04"
+        }
+      ]
+    },
+    {
+      "key": "simulators/pair/deepseek--hermes",
+      "path": "cases/simulators/pair/deepseek--hermes.jsonl",
+      "scenario": "simulators/pair",
+      "harness": "deepseek",
+      "simulator": "hermes",
+      "tier": "simulator",
+      "description": "四种短对话：纯文本 / 文件两轮 / Context+自定义输出 / max_turns；同 Harness 首例继承模型",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "SIM_1",
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__deepseek--hermes__01"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "3"
+          },
+          "rounds": 2,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "simulators__pair__deepseek--hermes__02"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__deepseek--hermes__03"
+        },
+        {
+          "reply": "SIM_4",
+          "rounds": 1,
+          "termination": "max_turns",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__deepseek--hermes__04"
+        }
+      ]
+    },
+    {
+      "key": "simulators/pair/deepseek--opencode",
+      "path": "cases/simulators/pair/deepseek--opencode.jsonl",
+      "scenario": "simulators/pair",
+      "harness": "deepseek",
+      "simulator": "opencode",
+      "tier": "simulator",
+      "description": "四种短对话：纯文本 / 文件两轮 / Context+自定义输出 / max_turns；同 Harness 首例继承模型",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "SIM_1",
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__deepseek--opencode__01"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "3"
+          },
+          "rounds": 2,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "simulators__pair__deepseek--opencode__02"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__deepseek--opencode__03"
+        },
+        {
+          "reply": "SIM_4",
+          "rounds": 1,
+          "termination": "max_turns",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__deepseek--opencode__04"
+        }
+      ]
+    },
+    {
+      "key": "simulators/pair/deepseek--deepseek",
+      "path": "cases/simulators/pair/deepseek--deepseek.jsonl",
+      "scenario": "simulators/pair",
+      "harness": "deepseek",
+      "simulator": "deepseek",
+      "tier": "simulator",
+      "description": "四种短对话：纯文本 / 文件两轮 / Context+自定义输出 / max_turns；同 Harness 首例继承模型",
+      "count": 4,
+      "parser_options": {},
+      "environment": {},
+      "cli_model_required": false,
+      "expectations": [
+        {
+          "reply": "SIM_1",
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__deepseek--deepseek__01"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "3"
+          },
+          "rounds": 2,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 2,
+          "status": "ok",
+          "task_id": "simulators__pair__deepseek--deepseek__02"
+        },
+        {
+          "reply": "DONE",
+          "files": {
+            "answer.txt": "TOKEN_3"
+          },
+          "rounds": 1,
+          "termination": "simulator_finished",
+          "tool_calls_min": 1,
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__deepseek--deepseek__03"
+        },
+        {
+          "reply": "SIM_4",
+          "rounds": 1,
+          "termination": "max_turns",
+          "user_turns": 1,
+          "status": "ok",
+          "task_id": "simulators__pair__deepseek--deepseek__04"
         }
       ]
     }

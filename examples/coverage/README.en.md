@@ -2,7 +2,7 @@
 
 [中文完整说明](README.md) · [Case matrix](COVERAGE.md) · [Merged tasks](all_tasks.json) · [Expectations](manifest.json) · [Fixture provenance](sources.json)
 
-This suite contains **1120 runnable tasks in 280 groups of four**, plus **20 isolated negative cases**. It covers OpenClaw, Codex, Claude Code, Hermes, OpenCode, and all 25 Agent/Simulator pairings. Tasks perform short arithmetic, file reads, or small writes; conversations have at most two Agent turns.
+This suite contains **1368 runnable tasks in 342 groups of four**, plus **20 isolated negative cases**. It covers OpenClaw, Codex, Claude Code, Hermes, OpenCode, DeepSeek, and all 36 Agent/Simulator pairings. Tasks perform short arithmetic, file reads, or small writes; conversations have at most two Agent turns.
 
 Fixtures are included. Running and regenerating does not require the original `Roller_Data` directory. Run commands from the **Roller repository root** using **Python 3.10+**.
 
@@ -46,14 +46,15 @@ The local `.env` is ignored by Git and must be explicitly exported. Defaults: co
 | Claude Code | Anthropic Messages | `ROLLER_TEST_CLAUDE_CODE_MODEL` | `--claude-api-base` and `--claude-api-key-env` |
 | Hermes | Chat Completions | `ROLLER_TEST_HERMES_MODEL` | `--hermes-api-base` and `--hermes-api-key-env` |
 | OpenCode | Streaming Chat Completions | `ROLLER_TEST_OPENCODE_MODEL` | `--opencode-api-base`, `--opencode-api-key-env` |
+| DeepSeek Harness | DeepSeek Chat Completions | `ROLLER_TEST_DEEPSEEK_MODEL` | `--deepseek-api-base`, `--deepseek-api-key-env` |
 
 OpenClaw's model ID and protocol are set by `ROLLER_TEST_OPENCLAW_MODEL_ID` and `ROLLER_TEST_OPENCLAW_API` in `.env`. One endpoint is not guaranteed to implement all protocols. The environment template also lists optional image overrides.
 
-`--exclude-case` excludes matching groups; for example, `--case '*/hermes' --exclude-case 'vision/*'` selects 200 Hermes tasks. `--case` accepts quoted globs and can be repeated: `--case 'data/*/codex'` selects 40 tasks; `--case 'simulators/pair/*'` selects 100 tasks and requires all five Harnesses. CLI options such as `--codex-model` override environment values. The runner binds both Agent and Simulator models while preserving inheritance cases.
+`--exclude-case` excludes matching groups; for example, `--case '*/hermes' --exclude-case 'vision/*'` selects 200 Hermes tasks. `--case` accepts quoted globs and can be repeated: `--case 'data/*/codex'` selects 40 tasks; `--case 'simulators/pair/*'` selects 144 tasks and requires all six Harnesses. CLI options such as `--codex-model` override environment values. The runner binds both Agent and Simulator models while preserving inheritance cases.
 
 ## One JSON for a mixed run
 
-`all_tasks.json` is the complete portable template with placeholder models. Create a local copy with your models; this example selects 20 arithmetic tasks:
+`all_tasks.json` is the complete portable template with placeholder models. Create a local copy with your models; this example selects 24 arithmetic tasks:
 
 ```bash
 python examples/coverage/merge.py \
@@ -63,6 +64,7 @@ python examples/coverage/merge.py \
   --claude-code-model "$ROLLER_TEST_CLAUDE_CODE_MODEL" \
   --hermes-model "$ROLLER_TEST_HERMES_MODEL" \
   --opencode-model "$ROLLER_TEST_OPENCODE_MODEL" \
+  --deepseek-model "$ROLLER_TEST_DEEPSEEK_MODEL" \
   --absolute-roots --output runs/coverage/merged/tasks.json
 
 python examples/coverage/validate_merged.py --tasks runs/coverage/merged/tasks.json
@@ -77,6 +79,8 @@ python -m roller collect --tasks runs/coverage/merged/tasks.json \
   --hermes-api-key-env ROLLER_HERMES_API_KEY \
   --opencode-api-base "$ROLLER_OPENCODE_BASE_URL" \
   --opencode-api-key-env ROLLER_OPENCODE_API_KEY \
+  --deepseek-api-base "$ROLLER_DEEPSEEK_BASE_URL" \
+  --deepseek-api-key-env ROLLER_DEEPSEEK_API_KEY \
   --parallel 2 --timeout 180 --retries 0 --wire-trace full \
   --output runs/coverage/merged --run-name collection
 
@@ -89,7 +93,7 @@ python examples/coverage/audit_resume.py runs/coverage/merged/collection \
   --output runs/coverage/merged/resume-audit.json
 ```
 
-Use `--case '*'` for all 1120 tasks, including optional vision cases. Add `--dry-run` to the collector command to check its plan first. `merge.py` uses explicit model arguments rather than environment defaults to keep regeneration deterministic. Export `ROLLER_EXAMPLE_TOKEN=ENV_OK` for `runtime/env` tasks; the supplied `.env` already does this.
+Use `--case '*'` for all 1368 tasks, including optional vision cases. Add `--dry-run` to the collector command to check its plan first. `merge.py` uses explicit model arguments rather than environment defaults to keep regeneration deterministic. Export `ROLLER_EXAMPLE_TOKEN=ENV_OK` for `runtime/env` tasks; the supplied `.env` already does this.
 
 Merging normalizes input formats, custom CLI keys and IDs. Use `suite.py` for original JSON/JSONL and ID coverage. Absolute-root cases are stored with relative paths and materialized by the runner; `--absolute-roots` does this for a local merged file. The merged JSON references bundled fixtures, so copying it alone is insufficient.
 
@@ -116,3 +120,5 @@ To import another complete dataset, use `generate.py --data-root /path/to/Roller
 Hermes uses the pinned `terminal` and `file` toolsets. Vision and external thinking are outside the initial adapter scope; Hermes vision cases document that boundary and are excluded from the required passing set. See the [Hermes guide](../../docs/en/harnesses/hermes-configuration.md).
 
 OpenCode uses native CLI sessions and text/file tools. Its vision cases are optional capability-boundary checks. See the [OpenCode guide](../../docs/en/harnesses/opencode-configuration.md).
+
+DeepSeek uses the official `sdk-minimal` profile with persistent Bash. Vision cases are outside initial acceptance. See the [DeepSeek guide](../../docs/en/harnesses/deepseek-configuration.md).

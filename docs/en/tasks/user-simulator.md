@@ -41,7 +41,7 @@ The two modes cannot appear in the same task. Single-turn and predefined multi-t
 | Field | Required | Default | Description |
 | --- | --- | --- | --- |
 | `instruction` | yes | none | Fixed identity, goal, interaction strategy, and completion criteria |
-| `harness` | no | `openclaw` | Harness used by the Simulator: `openclaw`, `codex`, `claude-code`, `hermes`, or `opencode` |
+| `harness` | no | `openclaw` | Harness used by the Simulator: `openclaw`, `codex`, `claude-code`, `hermes`, `opencode`, or `deepseek` |
 | `model` | no | Task Agent model | Model ref used by the Simulator |
 | `max_turns` | no | `6` | Maximum number of instructions sent to the Task Agent, range `1–100` |
 | `thinking` | no | CLI default | Overrides the Simulator only; uses the same logical levels and validation as [`--thinking`](../harnesses/openclaw-configuration.md#5-thinking-system-prompt-and-wire-trace) |
@@ -139,7 +139,7 @@ After the `max_turns`-th Agent turn, the Manager requests one more Simulator dec
 
 ## 7. Models, parallelism, and cost
 
-The Task Agent and the Simulator can each set their own Harness and model. For example, use Codex to execute the task and OpenClaw or Claude Code to play the user; the same Harness can also use different models. OpenClaw model refs still come from `--model-config`; Codex/Claude Code/Hermes/OpenCode use their own API parameters.
+The Task Agent and the Simulator can each set their own Harness and model. For example, use Codex to execute the task and OpenClaw or Claude Code to play the user; the same Harness can also use different models. OpenClaw model refs still come from `--model-config`; Codex/Claude Code/Hermes/OpenCode/DeepSeek use their own API parameters.
 
 ```bash
 roller collect \
@@ -209,3 +209,5 @@ The full rules are in [Files, Task Bundles, and result storage](task-bundle-and-
 When other Harnesses are added later, the Conversation Manager's turn, decision, and persistence boundaries can stay the same; the new Harness only needs to implement the interactive session interface.
 
 Hermes retains its container and restores native message history between turns. Each turn starts a new Python agent; process-local state such as background process handles is not restored. See [Hermes](../harnesses/hermes-configuration.md).
+
+DeepSeek Harness uses one SDK/runtime process and persistent Bash per participant across turns. [DeepSeek Harness](../harnesses/deepseek-configuration.md).
