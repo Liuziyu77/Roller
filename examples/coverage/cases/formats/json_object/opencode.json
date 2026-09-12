@@ -1,0 +1,32 @@
+{
+  "tasks": [
+    {
+      "schema_version": "roller.task/v1",
+      "prompt": "计算 1+2，只回复数字。 这是小型功能测试。不要联网、安装依赖或处理无关文件；完成指定操作后立即结束。",
+      "id": "formats__json_object__opencode__01",
+      "harness": "opencode",
+      "model": "replace-opencode-model"
+    },
+    {
+      "schema_version": "roller.task/v1",
+      "prompt": "计算 2+2，只回复数字。 这是小型功能测试。不要联网、安装依赖或处理无关文件；完成指定操作后立即结束。",
+      "id": "formats__json_object__opencode__02",
+      "harness": "opencode",
+      "model": "replace-opencode-model"
+    },
+    {
+      "schema_version": "roller.task/v1",
+      "prompt": "计算 3+2，只回复数字。 这是小型功能测试。不要联网、安装依赖或处理无关文件；完成指定操作后立即结束。",
+      "id": "formats__json_object__opencode__03",
+      "harness": "opencode",
+      "model": "replace-opencode-model"
+    },
+    {
+      "schema_version": "roller.task/v1",
+      "prompt": "计算 4+2，只回复数字。 这是小型功能测试。不要联网、安装依赖或处理无关文件；完成指定操作后立即结束。",
+      "id": "formats__json_object__opencode__04",
+      "harness": "opencode",
+      "model": "replace-opencode-model"
+    }
+  ]
+}

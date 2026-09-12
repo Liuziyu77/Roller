@@ -25,6 +25,29 @@ from roller.tasks import load_tasks
 from roller.usage import extract_openclaw_usage
 
 
+class GatewayReadinessTests(unittest.TestCase):
+    def test_slow_probe_retries_within_startup_budget(self):
+        runtime = mock.Mock()
+        runtime.run.side_effect = [subprocess.TimeoutExpired("docker exec", 2), subprocess.CompletedProcess([], 0)]
+        process = mock.Mock()
+        process.poll.return_value = None
+        harness = OpenClawHarness(OpenClawConfig(gateway_startup_timeout=10), 0, runtime=runtime)
+        with mock.patch("roller.harnesses.openclaw.time.monotonic", side_effect=[0, 0, 2]):
+            harness._wait_for_gateway("container", process)
+        self.assertEqual(runtime.run.call_count, 2)
+
+    def test_probe_timeouts_still_respect_startup_deadline(self):
+        runtime = mock.Mock()
+        runtime.run.side_effect = subprocess.TimeoutExpired("docker exec", 2)
+        process = mock.Mock()
+        process.poll.return_value = None
+        harness = OpenClawHarness(OpenClawConfig(gateway_startup_timeout=3), 0, runtime=runtime)
+        with mock.patch("roller.harnesses.openclaw.time.monotonic", side_effect=[0, 0, 2, 4]):
+            with self.assertRaisesRegex(TimeoutError, "gateway did not listen.*3s"):
+                harness._wait_for_gateway("container", process)
+        self.assertEqual(runtime.run.call_count, 2)
+
+
 class FakeProcess:
     def __init__(self, gateway: bool = False) -> None:
         self.gateway = gateway

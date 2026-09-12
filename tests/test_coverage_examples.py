@@ -12,6 +12,9 @@ import tempfile
 import unittest
 
 
+from roller.harness_registry import HARNESS_NAMES
+
+
 PROJECT = Path(__file__).resolve().parents[1]
 
 
@@ -70,19 +73,19 @@ class CoverageExamplesTests(unittest.TestCase):
         output = self.checkout / "runs" / "absolute" / "tasks.json"
         self.run_script("merge.py", "--case", "inputs/absolute_root/*", "--absolute-roots", "--output", output)
         payload = json.loads(output.read_text())
-        self.assertEqual(len(payload["tasks"]), 16)
+        self.assertEqual(len(payload["tasks"]), 4 * len(HARNESS_NAMES))
         for row in payload["tasks"]:
             self.assertEqual(Path(row["file_root"]), self.coverage / "fixtures")
         self.run_script("validate_merged.py", "--tasks", output)
 
     def test_subset_binds_all_simulator_pairs_and_preserves_inheritance(self):
         output = self.checkout / "runs" / "mixed" / "tasks.json"
-        models = {"openclaw": "example/provider-model", "codex": "example-codex", "claude-code": "example-claude", "hermes": "example-hermes"}
+        models = {"openclaw": "example/provider-model", "codex": "example-codex", "claude-code": "example-claude", "hermes": "example-hermes", "opencode": "example-opencode"}
         model_args = [arg for name, value in models.items() for arg in ("--" + name + "-model", value)]
         self.run_script("merge.py", "--case", "simulators/pair/*", *model_args, "--output", output)
         payload = json.loads(output.read_text())
         self.assertEqual(payload["models"], models)
-        self.assertEqual(len(payload["tasks"]), 64)
+        self.assertEqual(len(payload["tasks"]), 4 * len(HARNESS_NAMES) ** 2)
         self.assertEqual(len(payload["negative_cases"]), 20)
         inheritance = 0
         pairs = set()
@@ -97,8 +100,8 @@ class CoverageExamplesTests(unittest.TestCase):
             else:
                 inheritance += 1
                 self.assertEqual(agent, simulator["harness"])
-        self.assertEqual(len(pairs), 16)
-        self.assertEqual(inheritance, 4)
+        self.assertEqual(len(pairs), len(HARNESS_NAMES) ** 2)
+        self.assertEqual(inheritance, len(HARNESS_NAMES))
         self.run_script("validate_merged.py", "--tasks", output)
 
     def test_local_model_cannot_overwrite_public_template(self):
@@ -109,14 +112,16 @@ class CoverageExamplesTests(unittest.TestCase):
         self.run_script("merge.py", "--exclude-case", "vision/*", success=False)
         self.assertEqual(path.read_bytes(), original)
 
-    def test_hermes_nonvision_subset_is_easy_to_reproduce(self):
-        output = self.checkout / "runs" / "hermes" / "tasks.json"
-        self.run_script("merge.py", "--case", "*/hermes", "--exclude-case", "vision/*", "--output", output)
-        payload = json.loads(output.read_text())
-        self.assertEqual(len(payload["tasks"]), 200)
-        self.assertTrue(all(row["harness"] == "hermes" for row in payload["tasks"]))
-        self.assertTrue(all(row["tier"] != "vision" for row in payload["coverage"]))
-        self.run_script("suite.py", "list", "--case", "*/hermes", "--exclude-case", "*/hermes", success=False)
+    def test_nonvision_subsets_are_easy_to_reproduce(self):
+        for harness in ("hermes", "opencode"):
+            with self.subTest(harness=harness):
+                output = self.checkout / "runs" / harness / "tasks.json"
+                self.run_script("merge.py", "--case", "*/" + harness, "--exclude-case", "vision/*", "--output", output)
+                payload = json.loads(output.read_text())
+                self.assertEqual(len(payload["tasks"]), 200)
+                self.assertTrue(all(row["harness"] == harness for row in payload["tasks"]))
+                self.assertTrue(all(row["tier"] != "vision" for row in payload["coverage"]))
+                self.run_script("suite.py", "list", "--case", "*/" + harness, "--exclude-case", "*/" + harness, success=False)
 
 
 if __name__ == "__main__":

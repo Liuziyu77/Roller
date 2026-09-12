@@ -61,7 +61,7 @@ python examples/coverage/suite.py run --case data/txt/hermes \
 python examples/coverage/suite.py check --case data/txt/hermes
 ```
 
-矩阵新增 204 条 Hermes 输入任务和 28 条 Simulator 配对任务，覆盖文本、文件、Context、setup/env、二进制检查、产物、评分和短对话。完整矩阵为 880 条正向任务、20 条隔离负例。
+矩阵新增 204 条 Hermes 输入任务和 28 条 Simulator 配对任务，覆盖文本、文件、Context、setup/env、二进制检查、产物、评分和短对话。完整矩阵为 1120 条正向任务、20 条隔离负例。
 
 首版支持 Chat Completions 与文本/文件工具执行。视觉工具、直接多模态消息、external thinking、厂商专属认证、Hermes gateway、远程 terminal backend、持久 Memory 和 skill learning 暂不支持。Hermes 可选视觉组用于记录能力边界，不纳入要求全部通过的验收范围；二进制文件传输与媒体理解分开验证。
 
@@ -79,4 +79,4 @@ ROLLER_HERMES_DOCKER_TEST=1 PYTHONPATH=src \
 
 集成测试使用本地固定响应 HTTP 服务和虚构 Key，真实执行 Hermes 工具，覆盖输入只读、Context/setup/env、多轮历史、full/off wire、reasoning 导出、Resume/run lock，以及超时回收和清理。它不调用外部模型，不产生模型费用；需要 Docker host 网络。
 
-可用 `--case '*/hermes' --exclude-case 'vision/*'` 选中 200 条非视觉输入任务；追加 `--case 'simulators/pair/*'` 则包含全部 64 条 Agent/Simulator 任务，共 264 条，需要配置四种 Harness。`suite.py` 和 `merge.py` 均支持这些筛选参数。
+可用 `--case '*/hermes' --exclude-case 'vision/*'` 选中 200 条非视觉输入任务；追加 `--case 'simulators/pair/*'` 则包含全部 100 条 Agent/Simulator 任务，共 300 条，需要配置五种 Harness。`suite.py` 和 `merge.py` 均支持这些筛选参数。

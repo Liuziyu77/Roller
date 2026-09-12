@@ -926,7 +926,12 @@ exec node --input-type=module -e "$1"
         while time.monotonic() < deadline:
             if process.poll() is not None:
                 raise RuntimeError(f"OpenClaw gateway exited early with code {process.returncode}")
-            result = self.runtime.run(["exec", container, "python3", "-c", probe], timeout=2)
+            try:
+                result = self.runtime.run(["exec", container, "python3", "-c", probe], timeout=2)
+            except subprocess.TimeoutExpired:
+                # Docker exec can be slow while other Harness containers start.
+                # A single probe timeout must not discard the startup budget.
+                continue
             if result.returncode == 0:
                 return
             time.sleep(0.25)

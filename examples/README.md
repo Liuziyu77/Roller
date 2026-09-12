@@ -51,7 +51,7 @@ examples/
 
 [完整使用说明](coverage/README.md) · [English quickstart](coverage/README.en.md) · [场景清单](coverage/COVERAGE.md)
 
-Coverage 用于检查清单解析、文件和 Context 输入、Runtime 配置、产物回收、评分，以及多种 Harness 的执行与 Resume 行为。包含 **880 条正常任务，分为 220 组，每组 4 条**，另有 **20 条预期拒绝的输入**。其中 816 条覆盖 51 种场景在 OpenClaw、Codex、Claude Code、Hermes 上的执行，64 条覆盖全部 16 种 Task Agent × User Simulator 配对。
+Coverage 用于检查清单解析、文件和 Context 输入、Runtime 配置、产物回收、评分，以及多种 Harness 的执行与 Resume 行为。包含 **1120 条正常任务，分为 280 组，每组 4 条**，另有 **20 条预期拒绝的输入**。其中 1020 条覆盖 51 种场景在 OpenClaw、Codex、Claude Code、Hermes、OpenCode 上的执行，100 条覆盖全部 25 种 Task Agent × User Simulator 配对。
 
 任务以加法、读取小文件、写入短答案为主，对话最多两轮。输入文件已随仓库提供，下载后无需另行准备 `Roller_Data`。
 
@@ -68,7 +68,7 @@ python examples/coverage/validate_merged.py
 python examples/coverage/suite.py run --case formats/jsonl/codex --dry-run
 ```
 
-将 `--case formats/jsonl/codex` 改成 `--case '*'` 可遍历全部 220 组。错误输入由校验脚本逐条验证，不作为正常任务提交给模型。
+将 `--case formats/jsonl/codex` 改成 `--case '*'` 可遍历全部 280 组。错误输入由校验脚本逐条验证，不作为正常任务提交给模型。
 
 ### 配置后运行一组任务
 
@@ -99,7 +99,7 @@ python examples/coverage/suite.py check --case formats/jsonl/codex
 | 检查合并运行的结果 | 用 [report.py](coverage/report.py) 检查采集状态、答案、产物和轨迹；`--fail-on-check` 可用于 CI |
 | 检查已有样本能否 Resume | 用 [audit_resume.py](coverage/audit_resume.py) 做只读审计；实际恢复仍使用原采集命令加 `--resume` |
 
-总 JSON 中的模型名是占位值，合并时会统一原始清单格式和 ID；本地模型配置与任务副本的生成命令见 [混合 Harness 运行说明](coverage/README.md#4-使用一个总-json-运行混合-harness)。其中 16 条可选视觉任务需要模型、服务与图像工具支持；Hermes 首版的 4 条视觉任务用于记录暂不支持的能力边界；二进制文件读取测试仅验证文件访问能力。
+总 JSON 中的模型名是占位值，合并时会统一原始清单格式和 ID；本地模型配置与任务副本的生成命令见 [混合 Harness 运行说明](coverage/README.md#4-使用一个总-json-运行混合-harness)。其中 20 条可选视觉任务需要模型、服务与图像工具支持；Hermes 和 OpenCode 各 4 条视觉任务用于记录暂不支持的能力边界；二进制文件读取测试仅验证文件访问能力。
 
 ## 基础样例的采集准备
 
@@ -203,6 +203,19 @@ roller collect \
 MCP 模板。第四条 task 会通过 `codex exec resume --last` 延续 session。镜像、API 和 reasoning
 细节见 [Codex Harness 指南](../docs/zh/harnesses/codex-configuration.md)。
 
+## OpenCode：原生会话与文件工具
+
+按 [OpenCode 指南](../docs/zh/harnesses/opencode-configuration.md) 构建固定版本镜像，配置流式 Chat Completions 服务：
+
+```bash
+python examples/coverage/suite.py run --case data/txt/opencode \
+  -- --opencode-api-base "$ROLLER_OPENCODE_BASE_URL" \
+     --opencode-api-key-env ROLLER_OPENCODE_API_KEY
+python examples/coverage/suite.py check --case data/txt/opencode
+```
+
+支持 Agent、Simulator、原生 session 续聊、ACTF/SFT 和 Resume。暂不支持视觉验收和 external thinking。
+
 ## Hermes：文本、文件与多轮任务
 
 按 [Hermes 指南](../docs/zh/harnesses/hermes-configuration.md) 构建镜像，配置 Chat Completions API 后运行：
@@ -289,7 +302,7 @@ roller collect \
   --run-name examples-user-simulator
 ```
 
-Task 已内置 `model: my-openai-proxy/my-model`。动态对话会额外生成 `conversation.json` 和 `user_simulator/` 轨迹；Task Agent 与 Simulator 可在各自字段中选择 OpenClaw、Codex、Claude Code 或 Hermes。详见 [User Simulator](../docs/zh/tasks/user-simulator.md)。
+Task 已内置 `model: my-openai-proxy/my-model`。动态对话会额外生成 `conversation.json` 和 `user_simulator/` 轨迹；Task Agent 与 Simulator 可在各自字段中选择 OpenClaw、Codex、Claude Code、Hermes 或 OpenCode。详见 [User Simulator](../docs/zh/tasks/user-simulator.md)。
 
 ### 多模态输入
 
