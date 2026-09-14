@@ -57,7 +57,18 @@ def extract_openclaw_usage(trace_path: Path) -> dict[str, int | float]:
             totals["cache_write_tokens"] += _number(usage.get("cacheWrite"))
             total_tokens = _number(usage.get("totalTokens"), -1)
             if total_tokens == -1:
-                total_tokens = _number(usage.get("input")) + _number(usage.get("output"))
+                # OpenClaw's totalTokens includes the cache fields; every
+                # observed trace satisfies total = input+output+cacheRead+
+                # cacheWrite. Keep the fallback aligned with that semantic
+                # (and with _counts in openclaw_delivery) so a provider event
+                # missing the total is not undercounted next to a CLI mirror
+                # carrying an explicit one.
+                total_tokens = (
+                    _number(usage.get("input"))
+                    + _number(usage.get("output"))
+                    + _number(usage.get("cacheRead"))
+                    + _number(usage.get("cacheWrite"))
+                )
             totals["total_tokens"] += total_tokens
             cost = usage.get("cost")
             if isinstance(cost, dict):
