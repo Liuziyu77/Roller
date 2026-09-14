@@ -461,6 +461,56 @@ class OpenClawHelpersTests(unittest.TestCase):
         self.assertEqual(usage["total_tokens"], 16677)
         self.assertEqual(usage["cost_usd"], 0.05)
 
+    def test_missing_total_tokens_falls_back_to_cache_inclusive_sum(self) -> None:
+        events = [
+            {"type": "message", "message": {"role": "user", "content": "hello"}},
+            {
+                "type": "message",
+                "message": {
+                    "role": "assistant",
+                    "api": "openai-completions",
+                    "provider": "provider",
+                    "model": "model",
+                    "content": [{"type": "text", "text": "done"}],
+                    "stopReason": "stop",
+                    "usage": {"input": 10, "output": 2, "cacheRead": 3, "cacheWrite": 1},
+                },
+            },
+            {
+                "type": "message",
+                "message": {
+                    "role": "assistant",
+                    "api": "cli",
+                    "provider": "provider",
+                    "model": "model",
+                    "content": [{"type": "text", "text": "done"}],
+                    "stopReason": "stop",
+                    "usage": {
+                        "input": 10,
+                        "output": 2,
+                        "cacheRead": 3,
+                        "cacheWrite": 1,
+                        "totalTokens": 16,
+                    },
+                },
+            },
+        ]
+        with tempfile.TemporaryDirectory() as temporary:
+            trace = Path(temporary) / "trace.jsonl"
+            trace.write_text(
+                "\n".join(json.dumps(event) for event in events) + "\n",
+                encoding="utf-8",
+            )
+            usage = extract_openclaw_usage(trace)
+
+        # One model request: the mirror is deduplicated and the provider's
+        # fallback total is cache-inclusive, matching the CLI's explicit 16
+        # instead of the old input+output fallback (12) or a double count (28).
+        self.assertEqual(usage["request_count"], 1)
+        self.assertEqual(usage["total_tokens"], 16)
+        self.assertEqual(usage["cache_read_tokens"], 3)
+        self.assertEqual(usage["cache_write_tokens"], 1)
+
     def test_harness_collects_raw_trace_and_sends_messages_without_shell_quoting(self) -> None:
         task = Task(
             id="task",
