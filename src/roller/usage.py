@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from roller.openclaw_delivery import OpenClawDeliveryTracker
+
 
 ZERO_USAGE: dict[str, int | float] = {
     "input_tokens": 0,
@@ -24,6 +26,7 @@ def extract_openclaw_usage(trace_path: Path) -> dict[str, int | float]:
     """Sum usage blocks from raw OpenClaw assistant message events."""
 
     totals = dict(ZERO_USAGE)
+    delivery_tracker = OpenClawDeliveryTracker()
     if not trace_path.is_file():
         return totals
     with trace_path.open("r", encoding="utf-8", errors="replace") as stream:
@@ -32,10 +35,17 @@ def extract_openclaw_usage(trace_path: Path) -> dict[str, int | float]:
                 event = json.loads(raw_line)
             except (json.JSONDecodeError, TypeError):
                 continue
-            if not isinstance(event, dict) or event.get("type") != "message":
+            if not isinstance(event, dict):
+                continue
+            delivery = delivery_tracker.observe(event)
+            if event.get("type") != "message":
                 continue
             message = event.get("message")
             if not isinstance(message, dict) or message.get("role") != "assistant":
+                continue
+            if delivery.skip_usage:
+                # CLI-only replies are counted; verified mirrors and already
+                # recorded turn totals are not additional model requests.
                 continue
             usage = message.get("usage")
             if not isinstance(usage, dict):

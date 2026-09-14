@@ -100,6 +100,8 @@ class FakeDockerRuntime:
                 "type": "message",
                 "message": {
                     "role": "assistant",
+                    "api": "openai-completions",
+                    "content": [{"type": "text", "text": "done"}],
                     "usage": {"input": 3, "output": 2, "totalTokens": 5},
                 },
             }
@@ -130,6 +132,56 @@ class FakeCacheTraceRuntime(FakeDockerRuntime):
         if args and args[0] == "cp" and ":/tmp/roller-cache-trace.jsonl" in args[1]:
             Path(args[2]).write_text(
                 json.dumps({"options": {"apiKey": "secret"}}) + "\n",
+                encoding="utf-8",
+            )
+        return result
+
+
+class CliDeliveryCopyRuntime(FakeDockerRuntime):
+    """Transcripts that also record the CLI-delivered copy of each reply."""
+
+    def run(self, args, timeout=None):
+        result = super().run(args, timeout=timeout)
+        args = list(args)
+        if (
+            args
+            and args[0] == "cp"
+            and f":{TRANSCRIPT_EXPORT_CONTAINER_PATH}" in args[1]
+        ):
+            with Path(args[2]).open("a", encoding="utf-8") as stream:
+                stream.write(
+                    json.dumps(
+                        {
+                            "type": "message",
+                            "message": {
+                                "role": "assistant",
+                                "api": "cli",
+                                "content": [{"type": "text", "text": "done"}],
+                                "usage": {"input": 3, "output": 2, "totalTokens": 5},
+                            },
+                        }
+                    )
+                    + "\n"
+                )
+        return result
+
+
+class CliOnlyReplyRuntime(FakeDockerRuntime):
+    """A transcript with a real CLI reply and no provider original."""
+
+    def run(self, args, timeout=None):
+        result = super().run(args, timeout=timeout)
+        args = list(args)
+        if args and args[0] == "cp" and f":{TRANSCRIPT_EXPORT_CONTAINER_PATH}" in args[1]:
+            path = Path(args[2])
+            reply = json.loads(path.read_text(encoding="utf-8"))
+            reply["message"]["api"] = "cli"
+            user = {
+                "type": "message",
+                "message": {"role": "user", "content": self.agent_messages[0]},
+            }
+            path.write_text(
+                json.dumps(user) + "\n" + json.dumps(reply) + "\n",
                 encoding="utf-8",
             )
         return result
@@ -367,6 +419,48 @@ class OpenClawHelpersTests(unittest.TestCase):
         self.assertEqual(usage["request_count"], 2)
         self.assertEqual(usage["cost_usd"], 0.15)
 
+    def test_extracts_usage_skipping_cli_delivery_copies(self) -> None:
+        reply_usage = {
+            "input": 16000,
+            "output": 677,
+            "totalTokens": 16677,
+            "cost": {"total": 0.05},
+        }
+        events = [
+            {"type": "message", "message": {"role": "user", "content": "hello"}},
+            {
+                "type": "message",
+                "message": {
+                    "role": "assistant",
+                    "api": "openai-completions",
+                    "content": [{"type": "text", "text": "done"}],
+                    "usage": reply_usage,
+                },
+            },
+            {
+                "type": "message",
+                "message": {
+                    "role": "assistant",
+                    "api": "cli",
+                    "content": [{"type": "text", "text": "done"}],
+                    "usage": dict(reply_usage),
+                },
+            },
+        ]
+        with tempfile.TemporaryDirectory() as temporary:
+            trace = Path(temporary) / "trace.jsonl"
+            trace.write_text(
+                "\n".join(json.dumps(event) for event in events) + "\n",
+                encoding="utf-8",
+            )
+            usage = extract_openclaw_usage(trace)
+
+        self.assertEqual(usage["request_count"], 1)
+        self.assertEqual(usage["input_tokens"], 16000)
+        self.assertEqual(usage["output_tokens"], 677)
+        self.assertEqual(usage["total_tokens"], 16677)
+        self.assertEqual(usage["cost_usd"], 0.05)
+
     def test_harness_collects_raw_trace_and_sends_messages_without_shell_quoting(self) -> None:
         task = Task(
             id="task",
@@ -415,6 +509,64 @@ class OpenClawHelpersTests(unittest.TestCase):
         self.assertTrue(
             any("openclaw config set gateway.bind loopback" in command for command in flattened_commands)
         )
+
+    def test_harness_counts_single_request_when_transcript_has_cli_delivery_copy(self) -> None:
+        task = Task(id="task", prompts=("Summarize inputs",), source_index=0)
+        request = RunRequest(
+            index=0,
+            task=task,
+            model="provider/model",
+            timeout_seconds=30,
+        )
+        runtime = CliDeliveryCopyRuntime()
+        harness = OpenClawHarness(
+            OpenClawConfig(docker_image="test-image", set_image_model=False),
+            worker_slot=0,
+            runtime=runtime,
+        )
+
+        with tempfile.TemporaryDirectory() as temporary:
+            output_dir = Path(temporary)
+            result = harness.run(request, output_dir, attempt=1)
+            raw_trace = (output_dir / "rollout" / "trace.jsonl").read_text(
+                encoding="utf-8"
+            )
+            trajectory = json.loads(
+                (output_dir / "rollout" / "trace_ACTF.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+
+        self.assertEqual(result.status, "ok")
+        # The raw trace keeps both events for traceability...
+        self.assertEqual(raw_trace.count('"assistant"'), 2)
+        # ...while usage and the ACTF trajectory count the reply once.
+        self.assertEqual(result.usage["request_count"], 1)
+        self.assertEqual(result.usage["total_tokens"], 5)
+        self.assertEqual(len(trajectory["steps"]), 1)
+
+    def test_cli_only_reply_finalizes_as_successful_sft_sample(self) -> None:
+        from roller.collector import CollectionConfig, Collector
+
+        request = RunRequest(0, Task("cli-only", ("Summarize inputs",), 0), "provider/model", 30)
+        harness = OpenClawHarness(
+            OpenClawConfig(docker_image="test-image", set_image_model=False),
+            worker_slot=0,
+            runtime=CliOnlyReplyRuntime(),
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            collector = Collector(CollectionConfig(root), lambda slot: harness)
+            result = collector.collect([request])[0]
+            self.assertEqual(result["status"], "ok", result.get("error"))
+            self.assertEqual(result["usage"]["request_count"], 1)
+            self.assertEqual(result["usage"]["total_tokens"], 5)
+            sft = json.loads((root / "sft.jsonl").read_text(encoding="utf-8"))
+            self.assertEqual(
+                [message["role"] for message in sft["messages"]],
+                ["system", "user", "assistant"],
+            )
+            self.assertEqual(sft["messages"][-1]["content"], "done")
 
     def test_harness_passes_thinking_to_each_agent_turn_and_clears_retry_traces(self) -> None:
         task = Task(id="task", prompts=("first", "second"), source_index=0)
