@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
+from roller.openclaw_delivery import OpenClawDeliveryTracker
+
 
 def _event_time(value: Any) -> datetime | None:
     if isinstance(value, (int, float)) and not isinstance(value, bool):
@@ -175,6 +177,7 @@ def openclaw_events_to_actf(
     """
 
     rows = list(events)
+    delivery_tracker = OpenClawDeliveryTracker()
     system_prompt_list = list(system_prompts) if system_prompts is not None else []
     system_prompt = system_prompt_list[0] if system_prompt_list else ""
     first_time = next(
@@ -198,6 +201,7 @@ def openclaw_events_to_actf(
         current = None
 
     for row in rows:
+        delivery = delivery_tracker.observe(row) if isinstance(row, dict) else None
         message = _message_event(row)
         if message is None:
             continue
@@ -215,10 +219,19 @@ def openclaw_events_to_actf(
             pending_user_time = pending_user_time or message_time
             continue
         if role == "assistant":
+            if delivery is not None and delivery.skip_message:
+                # Same-content CLI delivery duplicate of the provider reply;
+                # skipping it before finish_current keeps the real step's
+                # finished_at derived from genuine conversation events only.
+                continue
             finish_current(message_time)
             content, reasoning, tool_calls = _assistant_parts(message.get("content"))
             usage = message.get("usage")
-            if not isinstance(usage, dict):
+            if not isinstance(usage, dict) or (
+                delivery is not None and delivery.skip_usage
+            ):
+                # A retained gap-fill reply can reuse already-recorded usage;
+                # preserve its text without duplicating the step token metrics.
                 usage = {}
             started_at = (
                 first_time or pending_user_time or message_time
