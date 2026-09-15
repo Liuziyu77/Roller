@@ -172,9 +172,10 @@ class OpenClawDeliveryTracker:
             row for row in self._providers if same_source(row.message)
         ]
         # Eligibility is separate from accounting history: after a failure,
-        # keep an independent CLI fallback even if its counters coincide.
+        # keep an independent CLI fallback even if its counters coincide,
+        # but keep the ledger intact so a later cumulative copy can still
+        # reconcile the calls recorded before that failure.
         if source_rows and _stop_reason(source_rows[-1].message) in {"error", "aborted"}:
-            self._reset()
             return DeliveryDecision()
         # After a later provider response, cumulative reports may include
         # usage/cost of failed calls too. Never filter them out of the ledger.
