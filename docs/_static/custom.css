@@ -3,6 +3,17 @@
     max-width: none;
 }
 
+/* Avoid white flashes and scroll-anchoring jumps during nav switches. */
+html,
+body,
+.wy-nav-content-wrap {
+    background: #fcfcfc;
+}
+
+.wy-side-scroll {
+    overflow-anchor: none;
+}
+
 .lang-switcher {
     position: fixed;
     top: 12px;

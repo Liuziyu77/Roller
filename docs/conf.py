@@ -49,13 +49,15 @@ exclude_patterns = [
 templates_path: list[str] = []
 html_static_path = ["_static"]
 html_css_files = ["custom.css"]
-html_js_files = ["language-switcher.js"]
+html_js_files = ["language-switcher.js", "sidebar-scroll.js"]
 
 html_theme = "sphinx_rtd_theme"
 html_theme_options = {
+    # Keep EN/ZH identical: nested sections with "+" expand controls.
+    # collapse_navigation=False avoids the sidebar shrinking when switching pages.
     "navigation_depth": 3,
     "collapse_navigation": False,
-    "sticky_navigation": True,
+    "sticky_navigation": False,
     "style_external_links": True,
 }
 html_show_sourcelink = False
