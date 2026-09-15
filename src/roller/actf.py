@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from roller.openclaw_delivery import OpenClawDeliveryTracker
+from roller.openclaw_usage import OpenClawUsage
 
 
 def _event_time(value: Any) -> datetime | None:
@@ -48,14 +49,6 @@ def _text(value: Any) -> str:
     if isinstance(value, dict) and isinstance(value.get("text"), str):
         return value["text"]
     return "" if value is None else str(value)
-
-
-def _usage_number(usage: dict[str, Any], *names: str) -> int:
-    for name in names:
-        value = usage.get(name)
-        if isinstance(value, (int, float)) and not isinstance(value, bool):
-            return int(value)
-    return 0
 
 
 def _tool_call(block: dict[str, Any]) -> dict[str, Any]:
@@ -226,13 +219,16 @@ def openclaw_events_to_actf(
                 continue
             finish_current(message_time)
             content, reasoning, tool_calls = _assistant_parts(message.get("content"))
-            usage = message.get("usage")
-            if not isinstance(usage, dict) or (
-                delivery is not None and delivery.skip_usage
-            ):
-                # A retained gap-fill reply can reuse already-recorded usage;
-                # preserve its text without duplicating the step token metrics.
-                usage = {}
+            # Malformed counters are sanitized by OpenClawUsage so they can
+            # neither crash (NaN/Infinity int() conversion) nor contaminate
+            # step metrics with negative values. skip_usage stays the only
+            # deduplication decision; a retained gap-fill reply keeps its
+            # text without duplicating the recorded step token metrics.
+            parsed = (
+                None
+                if delivery is not None and delivery.skip_usage
+                else OpenClawUsage.parse(message.get("usage"))
+            )
             started_at = (
                 first_time or pending_user_time or message_time
                 if not steps
@@ -247,8 +243,8 @@ def openclaw_events_to_actf(
                     "tool_calls": deepcopy(tool_calls),
                 },
                 "metric": {
-                    "prompt_tokens_len": _usage_number(usage, "input", "input_tokens"),
-                    "completion_tokens_len": _usage_number(usage, "output", "output_tokens"),
+                    "prompt_tokens_len": int(parsed.counts[0]) if parsed else 0,
+                    "completion_tokens_len": int(parsed.counts[1]) if parsed else 0,
                     "llm_infer_ms": None,
                     "env_action_ms": None,
                     "stop_reason": message.get("stopReason", message.get("stop_reason", "")),

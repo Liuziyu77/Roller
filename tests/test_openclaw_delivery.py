@@ -234,6 +234,44 @@ class OpenClawDeliveryTests(unittest.TestCase):
                 self.assertEqual(len(actf["steps"]), 2)
                 self.assertEqual(usage["request_count"], 2)
 
+    def test_fallback_after_a_later_provider_failure_is_counted(self) -> None:
+        # The failure boundary must keep an earlier successful call from
+        # absorbing a fallback whose counters coincide with it.
+        actf, _, usage = self._project([
+            _user(),
+            _reply("openai-completions"),
+            _reply("openai-completions", stopReason="error"),
+            _reply("cli"),
+        ])
+        self.assertEqual(len(actf["steps"]), 3)
+        self.assertEqual(usage["request_count"], 3)
+        self.assertEqual(usage["total_tokens"], 48)
+
+        # A later success closes the boundary; delivery copies of it dedupe.
+        actf, _, usage = self._project([
+            _user(),
+            _reply("openai-completions"),
+            _reply("openai-completions", stopReason="error"),
+            _reply("openai-completions", "done"),
+            _reply("cli"),
+        ])
+        self.assertEqual(len(actf["steps"]), 3)
+        self.assertEqual(usage["request_count"], 3)
+        self.assertEqual(usage["total_tokens"], 48)
+
+    def test_invalid_counters_cannot_break_or_contaminate_step_metrics(self) -> None:
+        for invalid in (True, -1, "10", float("nan"), float("inf")):
+            with self.subTest(invalid=invalid):
+                provider = _reply("openai-completions", usage={
+                    "input": invalid, "output": invalid, "totalTokens": invalid,
+                })
+                actf, _, usage = self._project([_user(), provider])
+                self.assertEqual(len(actf["steps"]), 1)
+                self.assertEqual(actf["steps"][0]["metric"]["prompt_tokens_len"], 0)
+                self.assertEqual(actf["steps"][0]["metric"]["completion_tokens_len"], 0)
+                self.assertEqual(usage["request_count"], 1)
+                self.assertEqual(usage["total_tokens"], 0)
+
     def test_known_cli_copy_without_usage_can_be_removed(self) -> None:
         actf, _, usage = self._project([
             _user(), _reply("openai-completions"), _reply("cli", usage=None),
