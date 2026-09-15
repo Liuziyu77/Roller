@@ -145,17 +145,6 @@ class ClaudeCodeHarnessTests(unittest.TestCase):
                 network="bridge",
             )
 
-    def test_signature_recovery_configuration_is_explicit_and_keeps_thinking(self) -> None:
-        config = ClaudeCodeConfig(
-            signature_recovery="prefer",
-            signature_recovery_attempts=2,
-            signature_recovery_max_tokens=12000,
-        )
-        self.assertEqual(config.signature_recovery, "prefer")
-        with self.assertRaisesRegex(ValueError, r"off\|fill\|prefer"):
-            ClaudeCodeConfig(signature_recovery="always")
-        with self.assertRaisesRegex(ValueError, "requires --keep-thinking"):
-            ClaudeCodeConfig(signature_recovery="fill", keep_thinking=False)
 
     @patch("roller.harnesses.claude_code.WireTraceProxy")
     def test_actf_wire_proxy_captures_tools_without_retaining_full_body(

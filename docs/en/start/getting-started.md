@@ -40,9 +40,9 @@ OpenClaw works with both Responses and Chat Completions, so it is a good first e
 
 Choose CoT settings based on how the model returns reasoning:
 
-- GPT reasoning models (for example `gpt-5.6-sol`): use OpenClaw/Codex `external` or `external_always` to capture explicit CoT;
-- Claude models (for example Claude Opus 4.8, sample ID `claude-opus-4-8`): use Claude Code signature recovery;
-- Open-source models such as Qwen and GLM: keep the default `--keep-thinking`. Plaintext reasoning returned by the service is written into ACTF/SFT `reasoning_content`; external thinking is not required.
+- GPT reasoning models: retain returned summary/content without expanding a compressed summary;
+- Claude models: retain visible thinking/summary without recovering signatures or ciphertext;
+- Open-source models such as Qwen and GLM: keep the default `--keep-thinking`. Plaintext reasoning returned by the service is written into ACTF/SFT `reasoning_content`; no additional CoT extraction step is needed.
 
 If the service only reports reasoning token counts and no plaintext reasoning, the third option will not produce CoT text.
 
@@ -310,7 +310,6 @@ Do not pass OpenClaw `--model-config` to a run that has no OpenClaw participant.
 - Copy more commands: [Examples](examples.md)
 - Write your own data: [Task format](../tasks/task-format.md)
 - Configure reasoning: [OpenClaw](../harnesses/openclaw-configuration.md#thinking-system-prompt-and-wire-trace) · [Codex](../harnesses/codex-configuration.md#reasoning-configuration) · [Claude Code](../harnesses/claude-code-configuration.md#thinking-and-effort)
-- Collect explicit CoT: [External Thinking](../traces/external-thinking.md)
 - Understand the training format: [SFT data format](../traces/sft-format.md)
 - See every CLI option: [CLI reference](cli-reference.md)
 

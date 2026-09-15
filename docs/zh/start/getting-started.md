@@ -40,9 +40,9 @@ OpenClaw 同时兼容 Responses 与 Chat Completions，适合作为首次环境�
 
 CoT 配置按模型返回形式选择：
 
-- GPT reasoning 系列（如 `gpt-5.6-sol`）：使用 OpenClaw/Codex 的 `external` 或 `external_always` 获取显式 CoT；
-- Claude 系列（如 Claude Opus 4.8，示例 ID `claude-opus-4-8`）：使用 Claude Code signature recovery；
-- Qwen、GLM 等开源模型：保持默认 `--keep-thinking`。服务返回的明文 reasoning 会进入 ACTF/SFT `reasoning_content`，无需 external thinking。
+- GPT reasoning 系列：保存服务返回的 summary/content，不扩写压缩 summary；
+- Claude 系列：保存可见 thinking/summary，不从签名或密文恢复内容；
+- Qwen、GLM 等开源模型：保持默认 `--keep-thinking`。服务返回的明文 reasoning 会进入 ACTF/SFT `reasoning_content`，无需额外的 CoT 获取步骤。
 
 如果服务只返回 reasoning token 数而没有明文 reasoning，第三种方式不会产生 CoT 文本。
 
@@ -310,7 +310,6 @@ roller collect \
 - 复制更多命令：[Examples](examples.md)
 - 写自己的数据：[Task 格式参考](../tasks/task-format.md)
 - 配置 reasoning：[OpenClaw](../harnesses/openclaw-configuration.md#5-thinkingsystem-prompt-与-wire-trace) · [Codex](../harnesses/codex-configuration.md#4-reasoning-配置) · [Claude Code](../harnesses/claude-code-configuration.md#4-thinking-与-effort)
-- 采集显式 CoT：[External Thinking](../traces/external-thinking.md)
 - 理解训练格式：[SFT 数据格式](../traces/sft-format.md)
 - 查全部命令行选项：[CLI 参数参考](cli-reference.md)
 

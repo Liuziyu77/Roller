@@ -125,10 +125,7 @@
     const failed = Number(counts.error || 0) + Number(counts.timeout || 0);
     const usage = run.usage || {};
     const progress = run.progress || {};
-    const externalThinking = run.configuration?.external_thinking;
-    const thinkingNote = externalThinking && externalThinking !== "off"
-      ? `${externalThinking} · native off`
-      : (run.configuration?.thinking || "model default");
+    const thinkingNote = run.configuration?.thinking || "model default";
     elements.metrics.innerHTML = [
       metric(
         "Run",

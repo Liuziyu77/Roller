@@ -320,14 +320,6 @@ class HermesCliTests(unittest.TestCase):
                 self.assertEqual(_collect(args), 0)
             self.assertEqual(json.loads(output.getvalue())["trajectories"], 3)
 
-    def test_unsupported_simulator_capability_rejected_before_docker(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "tasks.json"
-            path.write_text(json.dumps([{"harness": "codex", "model": "model", "user_simulator": {"harness": "hermes", "model": "model", "instruction": "Ask OK"}}]))
-            args = _build_parser().parse_args(["collect", "--tasks", str(path), "--external-thinking", "external", "--dry-run"])
-            with self.assertRaisesRegex(ValueError, "Hermes external thinking"):
-                _collect(args)
-
 
 if __name__ == "__main__":
     unittest.main()

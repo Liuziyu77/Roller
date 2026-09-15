@@ -88,8 +88,7 @@ OpenClaw 在 session 与 provider 调用之间发生 compaction、pruning、runt
 首条结果、之后每累计 25 条结果时更新；如果完成事件相隔至少 30 秒也会立即更新，并在
 中断/收尾时强制更新。
 Resume 后，sample 磁盘 `info.json` 仍保留原始 `status=ok`，Viewer 会用本次 run 索引中的
-`status=skipped` 覆盖显示，以便 Completed 卡片准确标出复用数量。External Thinking 开启
-时，Thinking 卡片显示 external 模式并注明 native thinking 实际为 `off`。
+`status=skipped` 覆盖显示，以便 Completed 卡片准确标出复用数量。Thinking 卡片显示保留策略（kept/stripped）和配置的原生 thinking 档位。
 
 run `info.json` 尚未正常收尾时，Viewer 还会扫描 `samples/<model>/<task>/info.json`，因此
 checkpoint 后新 finalize 的 sample 仍能显示。没有 sample `info.json` 的运行中临时目录

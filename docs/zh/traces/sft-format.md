@@ -1,6 +1,6 @@
 # SFT 数据格式
 
-[文档中心](../index.md) · [轨迹产物](trajectory-outputs.md) · [Task 格式](../tasks/task-format.md) · [External Thinking](external-thinking.md)
+[文档中心](../index.md) · [轨迹产物](trajectory-outputs.md) · [Task 格式](../tasks/task-format.md)
 
 Roller 在保留 raw trace 和 ACTF 的同时，为每条成功轨迹生成一份只用于训练的
 `trace_SFT.json`。Run 根目录的 `sft.jsonl` 按 request index 汇总所有成功 sample，
@@ -83,40 +83,6 @@ SFT record 不包含 schema version、task/model、usage、时间戳、step ID�
 `details` 不进入 SFT。工具错误的文本内容仍原样保留。GPT Responses 的 encrypted
 reasoning 不进入训练数据；只有 ACTF 中可见的 reasoning summary 会进入
 `reasoning_content`。
-
-启用 `--external-thinking` 时，raw/ACTF 保持真实 `deep_think` 调用协议，专用 SFT 则把它
-标准化成随后实际 action 对应 assistant 的 `reasoning_content`：
-
-```json
-{
-  "role": "assistant",
-  "reasoning_content": "完整、显式的中间推理",
-  "content": "",
-  "tool_calls": [{
-    "id": "call_business",
-    "type": "function",
-    "function": {
-      "name": "read",
-      "arguments": "{\"path\":\"input.txt\"}"
-    }
-  }]
-}
-```
-
-转换器删除 `deep_think` tool call、其 `------` result、顶层 schema 和 system prompt
-工具清单中的对应条目；独立 THINK message
-的 thoughts 合并进下一条 ACT assistant，同一 response 内与业务工具并列的 think 则合并进
-当前 assistant。业务 tool call/result 原样保留。若原有 `reasoning_content` 也非空，各段按
-顺序以空行连接；孤立且没有后续 action 的 think 会令 SFT 转换失败，不会静默丢失。
-
-Codex native raw 使用外层 programmatic `exec` 调用本地 MCP；ACTF 转换器先依据真实
-MCP completion event（`item_completed/McpToolCall` 或 `mcp_tool_call_end`）把它还原为
-canonical `deep_think`，之后与 OpenClaw 共用同一套 SFT 折叠逻辑。因此专用 SFT 不包含
-`exec` 包装、MCP server 名或 `------` 占位结果。
-
-这里的 `reasoning_content` 是 Roller 面向训练的标准化字段，不声称 provider 原生返回了
-该字段。`--no-keep-thinking` 不删除显式 external CoT；要排除它必须使用
-`--external-thinking off`。详细模式说明见 [External Thinking](external-thinking.md)。
 
 ## 4. 数据完整性
 

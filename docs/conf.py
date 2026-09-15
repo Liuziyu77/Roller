@@ -77,7 +77,6 @@ _HTML_REDIRECTS = {
     "user-simulator.html": "tasks/user-simulator.html",
     "trajectory-outputs.html": "traces/trajectory-outputs.html",
     "sft-format.html": "traces/sft-format.html",
-    "external-thinking.html": "traces/external-thinking.html",
     "viewer.html": "traces/viewer.html",
     "bench-format.html": "benches/bench-format.html",
 }

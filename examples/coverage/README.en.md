@@ -121,7 +121,7 @@ python examples/coverage/validate_merged.py
 
 To import another complete dataset, use `generate.py --data-root /path/to/Roller_Data`, then merge and validate. Add scenarios and four expectations in the generator, rather than editing generated JSON alone. Keep credentials, local configs and reports out of the public suite; `runs/` is ignored by Git.
 
-Hermes uses the pinned `terminal` and `file` toolsets. Vision and external thinking are outside the initial adapter scope; Hermes vision cases document that boundary and are excluded from the required passing set. See the [Hermes guide](../../docs/en/harnesses/hermes-configuration.md).
+Hermes uses the pinned `terminal` and `file` toolsets. Vision tools are outside the initial adapter scope; Hermes vision cases document that boundary and are excluded from the required passing set. See the [Hermes guide](../../docs/en/harnesses/hermes-configuration.md).
 
 OpenCode uses native CLI sessions and text/file tools. Its vision cases are optional capability-boundary checks. See the [OpenCode guide](../../docs/en/harnesses/opencode-configuration.md).
 

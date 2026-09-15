@@ -43,7 +43,7 @@ python -m roller collect \
 
 `trace.jsonl` 使用 `roller.deepseek-events/v1`，保存实际序列化请求及 SDK 原生通知。ACTF/SFT 使用实际 system prompt、工具 schema、reasoning、调用参数和工具结果。失败、截断、空回复、未完成工具调用及无法无损表示的非文本内容会被拒绝。超时停止整个容器并回收已有文件，Resume 按参与者分别验证，DeepSeek 不要求 OpenClaw cache trace。
 
-首版不支持 external thinking、直接多模态消息、视觉验收、交互登录、任意 profile/插件配置和跨任务的长期记忆。不同模型的 DeepSeek 协议兼容性仍需验证；关闭自动压缩的长任务应配置足够窗口。
+首版不支持 直接多模态消息、视觉验收、交互登录、任意 profile/插件配置和跨任务的长期记忆。不同模型的 DeepSeek 协议兼容性仍需验证；关闭自动压缩的长任务应配置足够窗口。
 
 ## 可复用验证
 

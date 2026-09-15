@@ -185,7 +185,6 @@ class OpenCodeHarnessTests(unittest.TestCase):
             tasks.write_text(json.dumps([{"id": "one", "harness": "opencode", "prompt": "hi", "model": "model"}, {"id": "two", "harness": "hermes", "user_simulator": {"harness": "opencode", "instruction": "finish", "max_turns": 1}, "model": "model"}]))
             args = ["collect", "--tasks", str(tasks), "--dry-run"]
             with contextlib.redirect_stdout(io.StringIO()):self.assertEqual(_collect(_build_parser().parse_args(args)), 0)
-            with self.assertRaisesRegex(ValueError, "external thinking"):_collect(_build_parser().parse_args(args+["--external-thinking", "external"]))
 
 
 if __name__ == "__main__":

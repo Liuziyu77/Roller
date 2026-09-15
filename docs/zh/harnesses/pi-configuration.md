@@ -52,7 +52,7 @@ Thinking 通过 `reasoning_effort` 发送，`off` 映射为 `none`，其他级�
 
 空响应、截断、API 错误、超出步数，以及未配对工具调用不会成为成功轨迹。转换器拒绝会改变 system prompt/schema 或丢失非文本内容的轨迹。超时停止容器并回收已生成文件；Pi 不要求 OpenClaw cache trace。
 
-首版以文本与文件任务为范围，不包含视觉验收、external thinking、交互登录、其他 Pi provider 协议、自定义扩展/插件或自动压缩。与底层 Pi 产品的完整能力范围不同。
+首版以文本与文件任务为范围，不包含视觉验收、交互登录、其他 Pi provider 协议、自定义扩展/插件或自动压缩。与底层 Pi 产品的完整能力范围不同。
 
 ## 可复用验证
 

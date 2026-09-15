@@ -149,41 +149,9 @@ roller collect \
   --run-name examples-claude-code
 ```
 
-`--claude-settings` 可以省略；示例只关闭 commit co-author 标记，不改变 permission mode、thinking 或工具行为。第四条 task 会通过 `claude --continue` 延续 session。镜像、endpoint、thinking 和 signature recovery 见 [Claude Code Harness 指南](../harnesses/claude-code-configuration.md)。
+`--claude-settings` 可以省略；示例只关闭 commit co-author 标记，不改变 permission mode、thinking 或工具行为。第四条 task 会通过 `claude --continue` 延续 session。镜像、endpoint、thinking 见 [Claude Code Harness 指南](../harnesses/claude-code-configuration.md)。
 
 ## 进阶案例
-
-### External thinking
-
-External thinking 推荐用于 `gpt-5.6-sol` 等 GPT reasoning 模型，以显式工具参数代替原生压缩 summary。以下命令只运行第一条 task，用 Codex 验收严格 THINK/ACT 交替：
-
-```bash
-roller collect \
-  --harness codex \
-  --tasks examples/tasks/tasks.jsonl \
-  --limit 1 \
-  --model gpt-5.6-sol \
-  --api-base "$ROLLER_CODEX_BASE_URL" \
-  --api-key-env ROLLER_CODEX_API_KEY \
-  --external-thinking external_always \
-  --wire-trace full \
-  --timeout 900 \
-  --output runs \
-  --run-name examples-codex-external
-```
-
-成功后，ACTF 保留 canonical `deep_think` call/result，SFT 则删除内部工具协议并把 thoughts 写入下一条 assistant 的 `reasoning_content`。完整验收方法见 [External Thinking](../traces/external-thinking.md#7-如何查看和验收)。
-
-### Claude signature recovery
-
-Claude 系列（如 Claude Opus 4.8，示例 ID `claude-opus-4-8`）的 native session 存在 signed thinking、但 reasoning 为空时，可在 Claude Code 命令中增加：
-
-```text
---claude-signature-recovery fill
---claude-signature-recovery-attempts 2
-```
-
-`fill` 是推荐的保守模式；它只填空值。该功能会增加独立 provider 请求，结果为 best effort，正式训练前应检查 `signature_recovery.jsonl`。详见 [Signature recovery](../harnesses/claude-code-configuration.md#5-signature-recovery实验性)。
 
 ### 动态 User Simulator
 
