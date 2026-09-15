@@ -36,8 +36,9 @@ class OpenClawUsage:
         matchable = all(_valid_number(value) for value in components)
         components = [value if _valid_number(value) else 0 for value in components]
         total = raw.get("totalTokens")
-        # OpenClaw's total includes cache reads and writes. Null and absent
-        # totals use the same fallback in both matching and accounting.
+        # Null/absent totals fall back to the component sum, including cache.
+        # Keep explicit totals: CLI aggregates can carry the last call's
+        # context total instead. Delivery matching handles that distinction.
         if total is None:
             total = sum(components)
         elif not _valid_number(total):
