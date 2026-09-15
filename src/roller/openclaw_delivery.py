@@ -156,10 +156,17 @@ class OpenClawDeliveryTracker:
         ) not in {None, "stop", "end_turn"}:
             self._reset()
             return DeliveryDecision()
-        candidates = [
-            row for row in self._providers
-            if same_source(row.message)
-            and row.message.get("stopReason", row.message.get("stop_reason"))
+        source_rows = [
+            row for row in self._providers if same_source(row.message)
+        ]
+        # A CLI reply following a failed same-source call is a fallback for
+        # that failure, not a delivery mirror of an earlier success; the
+        # failure is a boundary, so nothing before it may absorb its usage.
+        candidates = [] if source_rows and source_rows[-1].message.get(
+            "stopReason", source_rows[-1].message.get("stop_reason")
+        ) in {"error", "aborted"} else [
+            row for row in source_rows
+            if row.message.get("stopReason", row.message.get("stop_reason"))
             not in {"error", "aborted"}
         ]
         usage = OpenClawUsage.parse(message.get("usage"))
