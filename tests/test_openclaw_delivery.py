@@ -242,6 +242,85 @@ class OpenClawDeliveryTests(unittest.TestCase):
         self.assertEqual(sft["messages"][-1]["content"], "earlier")
         self.assertEqual(usage["request_count"], 2)
 
+    def test_null_total_tokens_is_normalized_like_missing(self) -> None:
+        for provider_total, cli_total in ((None, 16), (16, None), (None, None)):
+            with self.subTest(provider=provider_total, cli=cli_total):
+                actf, _, usage = self._project([
+                    _user(),
+                    _reply("openai-completions", usage={
+                        "input": 10, "output": 2, "cacheRead": 3,
+                        "cacheWrite": 1, "totalTokens": provider_total,
+                        "cost": {"total": 0.05},
+                    }),
+                    _reply("cli", usage={
+                        "input": 10, "output": 2, "cacheRead": 3,
+                        "cacheWrite": 1, "totalTokens": cli_total,
+                        "cost": {"total": 0.05},
+                    }),
+                ])
+                self.assertEqual(len(actf["steps"]), 1)
+                self.assertEqual(usage["request_count"], 1)
+                self.assertEqual(usage["total_tokens"], 16)
+                self.assertEqual(usage["cost_usd"], 0.05)
+
+    def test_mirror_cost_unrecorded_by_provider_is_preserved(self) -> None:
+        actf, _, usage = self._project([
+            _user(),
+            _reply("openai-completions", usage={
+                "input": 10, "output": 2, "cacheRead": 3,
+                "cacheWrite": 1, "totalTokens": 16,
+            }),
+            _reply("cli", usage={
+                "input": 10, "output": 2, "cacheRead": 3,
+                "cacheWrite": 1, "totalTokens": 16, "cost": {"total": 0.05},
+            }),
+        ])
+        self.assertEqual(len(actf["steps"]), 1)
+        self.assertEqual(usage["request_count"], 1)
+        self.assertEqual(usage["total_tokens"], 16)
+        self.assertEqual(usage["cost_usd"], 0.05)
+
+    def test_turn_total_mirror_cost_accounting(self) -> None:
+        for cli_cost, expected in ((None, 0.0), ({"total": 0.1}, 0.1), ({"total": 0.03}, 0.03)):
+            with self.subTest(cli_cost=cli_cost):
+                cli_usage = {
+                    "input": 20, "output": 4, "cacheRead": 6,
+                    "cacheWrite": 2, "totalTokens": 32,
+                }
+                if cli_cost is not None:
+                    cli_usage["cost"] = cli_cost
+                actf, _, usage = self._project([
+                    _user(),
+                    _reply("openai-completions", "first", usage={
+                        "input": 10, "output": 2, "cacheRead": 3,
+                        "cacheWrite": 1, "totalTokens": 16,
+                    }),
+                    _reply("openai-completions", "second", usage={
+                        "input": 10, "output": 2, "cacheRead": 3,
+                        "cacheWrite": 1, "totalTokens": 16,
+                    }),
+                    _reply("cli", "second", usage=cli_usage),
+                ])
+                self.assertEqual(len(actf["steps"]), 2)
+                self.assertEqual(usage["request_count"], 2)
+                self.assertEqual(usage["total_tokens"], 32)
+                self.assertEqual(usage["cost_usd"], expected)
+
+    def test_turn_total_cost_already_recorded_is_not_counted_twice(self) -> None:
+        actf, _, usage = self._project([
+            _user(),
+            _reply("openai-completions", "first"),
+            _reply("openai-completions", "second"),
+            _reply("cli", "second", usage={
+                "input": 20, "output": 4, "cacheRead": 6,
+                "cacheWrite": 2, "totalTokens": 32, "cost": {"total": 0.1},
+            }),
+        ])
+        self.assertEqual(len(actf["steps"]), 2)
+        self.assertEqual(usage["request_count"], 2)
+        self.assertEqual(usage["total_tokens"], 32)
+        self.assertEqual(usage["cost_usd"], 0.1)
+
 
 if __name__ == "__main__":
     unittest.main()

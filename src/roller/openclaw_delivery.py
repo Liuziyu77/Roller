@@ -8,6 +8,9 @@ from typing import Any
 class DeliveryDecision:
     skip_message: bool = False
     skip_usage: bool = False
+    # Cost carried by a suppressed mirror that the matched provider rows
+    # never recorded; usage accounting keeps it instead of dropping it.
+    unmatched_cost: float = 0.0
 
 
 def _text(message: dict[str, Any], *, plain_only: bool) -> str | None:
@@ -49,10 +52,26 @@ def _counts(usage: Any) -> tuple[int | float, ...] | None:
         for value in values
     ):
         return None
-    total = usage.get("totalTokens", sum(values))
+    # A serialized null total means the same as an absent one; fall back to
+    # the component sum like extract_openclaw_usage, not to an invalid block.
+    total = usage.get("totalTokens")
+    if total is None:
+        total = sum(values)
     if isinstance(total, bool) or not isinstance(total, (int, float)) or total < 0:
         return None
     return (*values, total)
+
+
+def _cost(usage: Any) -> float:
+    if not isinstance(usage, dict):
+        return 0.0
+    cost = usage.get("cost")
+    if not isinstance(cost, dict):
+        return 0.0
+    total = cost.get("total")
+    if isinstance(total, bool) or not isinstance(total, (int, float)) or total < 0:
+        return 0.0
+    return float(total)
 
 
 class OpenClawDeliveryTracker:
@@ -62,6 +81,9 @@ class OpenClawDeliveryTracker:
     Keep their content unless the latest provider reply already contains it.
     A gap fill can carry that call's usage or the whole turn's accumulated
     usage; suppress only accounting that matches recorded provider counts.
+    Cost on a suppressed mirror that those rows never recorded is reported
+    as unmatched instead of dropped. Cost never decides the match itself:
+    aggregate mirrors omit it and serialized floats only match by luck.
     Ambiguous events are retained. No raw event is changed.
     """
 
@@ -114,15 +136,28 @@ class OpenClawDeliveryTracker:
         counts = _counts(message.get("usage"))
         recorded = [_counts(row.get("usage")) for row in candidates]
         repeated_usage = False
+        unmatched_cost = 0.0
         if counts is not None and any(counts) and recorded:
-            repeated_usage = counts == recorded[-1]
+            cli_cost = _cost(message.get("usage"))
+            if counts == recorded[-1]:
+                repeated_usage = True
+                unmatched_cost = max(
+                    cli_cost - _cost(candidates[-1].get("usage")), 0.0
+                )
             known_counts = [item for item in recorded if item is not None]
             if len(known_counts) == len(recorded):
                 total = tuple(
                     sum(item[index] for item in known_counts)
                     for index in range(len(counts))
                 )
-                repeated_usage = repeated_usage or counts == total
+                if counts == total:
+                    if not repeated_usage:
+                        unmatched_cost = max(
+                            cli_cost
+                            - sum(_cost(row.get("usage")) for row in candidates),
+                            0.0,
+                        )
+                    repeated_usage = True
         latest = self._latest
         same_text = bool(
             visible and latest is not None and same_source(latest)
@@ -138,4 +173,6 @@ class OpenClawDeliveryTracker:
             # A retained CLI reply is a new boundary, not a provider response
             # against which later independent CLI invocations can be deduped.
             self._reset()
-        return DeliveryDecision(skip_message, repeated_usage or skip_message)
+        return DeliveryDecision(
+            skip_message, repeated_usage or skip_message, unmatched_cost
+        )

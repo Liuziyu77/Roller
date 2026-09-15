@@ -46,6 +46,9 @@ def extract_openclaw_usage(trace_path: Path) -> dict[str, int | float]:
             if delivery.skip_usage:
                 # CLI-only replies are counted; verified mirrors and already
                 # recorded turn totals are not additional model requests.
+                # A suppressed mirror can still carry cost the recorded rows
+                # never included; keep that part of the accounting.
+                totals["cost_usd"] += delivery.unmatched_cost
                 continue
             usage = message.get("usage")
             if not isinstance(usage, dict):
