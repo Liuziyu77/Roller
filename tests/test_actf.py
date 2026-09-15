@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 
 from roller.actf import openclaw_events_to_actf
+from roller.sft import actf_to_sft
 
 
 def _events() -> list[dict]:
@@ -123,6 +124,78 @@ class ActfConversionTests(unittest.TestCase):
 
         kept = openclaw_events_to_actf(_events(), keep_thinking=True)
         self.assertEqual(kept["steps"][0]["assistant_content"]["reasoning_content"], "inspect")
+
+    def test_cli_delivery_copy_excluded_from_steps_and_sft(self) -> None:
+        reply_usage = {"input": 15, "output": 1}
+        events = [
+            {"type": "session", "timestamp": "1970-01-01T00:00:00Z"},
+            {
+                "type": "message",
+                "message": {"role": "user", "content": "hi", "timestamp": 1000},
+            },
+            {
+                "type": "message",
+                "message": {
+                    "role": "assistant",
+                    "api": "openai-completions",
+                    "content": [{"type": "text", "text": "done"}],
+                    "usage": reply_usage,
+                    "stopReason": "stop",
+                    "timestamp": 1100,
+                },
+            },
+            {
+                "type": "message",
+                "message": {
+                    "role": "assistant",
+                    "api": "cli",
+                    "content": [{"type": "text", "text": "done"}],
+                    "usage": dict(reply_usage),
+                    "stopReason": "stop",
+                    "timestamp": 1150,
+                },
+            },
+        ]
+
+        trajectory = openclaw_events_to_actf(events, user_messages=("hi",))
+
+        self.assertEqual(len(trajectory["steps"]), 1)
+        step = trajectory["steps"][0]
+        self.assertEqual(step["assistant_content"]["content"], "done")
+        self.assertEqual(step["metric"]["prompt_tokens_len"], 15)
+        self.assertEqual(step["finished_at"], "1970-01-01 00:00:01.100000")
+
+        sft = actf_to_sft(trajectory)
+        self.assertEqual(
+            [message["role"] for message in sft["messages"]],
+            ["system", "user", "assistant"],
+        )
+
+    def test_cli_delivery_copy_after_tool_turn_preserves_grouping(self) -> None:
+        events = [
+            *_events(),
+            {
+                "type": "message",
+                "message": {
+                    "role": "assistant",
+                    "api": "cli",
+                    "content": [{"type": "text", "text": "done"}],
+                    "usage": {"input": 15, "output": 1},
+                    "stopReason": "stop",
+                    "timestamp": 2200,
+                },
+            },
+        ]
+
+        trajectory = openclaw_events_to_actf(
+            events, user_messages=("clean first", "clean second")
+        )
+
+        self.assertEqual(len(trajectory["steps"]), 2)
+        self.assertEqual(trajectory["steps"][1]["assistant_content"]["content"], "done")
+        self.assertEqual(
+            trajectory["steps"][1]["finished_at"], "1970-01-01 00:00:02.100000"
+        )
 
 
 if __name__ == "__main__":

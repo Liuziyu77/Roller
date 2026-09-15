@@ -6,6 +6,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
+from roller.openclaw_delivery import OpenClawDeliveryTracker
+from roller.openclaw_usage import OpenClawUsage
+
 
 def _event_time(value: Any) -> datetime | None:
     if isinstance(value, (int, float)) and not isinstance(value, bool):
@@ -46,14 +49,6 @@ def _text(value: Any) -> str:
     if isinstance(value, dict) and isinstance(value.get("text"), str):
         return value["text"]
     return "" if value is None else str(value)
-
-
-def _usage_number(usage: dict[str, Any], *names: str) -> int:
-    for name in names:
-        value = usage.get(name)
-        if isinstance(value, (int, float)) and not isinstance(value, bool):
-            return int(value)
-    return 0
 
 
 def _tool_call(block: dict[str, Any]) -> dict[str, Any]:
@@ -175,6 +170,7 @@ def openclaw_events_to_actf(
     """
 
     rows = list(events)
+    delivery_tracker = OpenClawDeliveryTracker()
     system_prompt_list = list(system_prompts) if system_prompts is not None else []
     system_prompt = system_prompt_list[0] if system_prompt_list else ""
     first_time = next(
@@ -198,6 +194,7 @@ def openclaw_events_to_actf(
         current = None
 
     for row in rows:
+        delivery = delivery_tracker.observe(row) if isinstance(row, dict) else None
         message = _message_event(row)
         if message is None:
             continue
@@ -215,11 +212,23 @@ def openclaw_events_to_actf(
             pending_user_time = pending_user_time or message_time
             continue
         if role == "assistant":
+            if delivery is not None and delivery.skip_message:
+                # Same-content CLI delivery duplicate of the provider reply;
+                # skipping it before finish_current keeps the real step's
+                # finished_at derived from genuine conversation events only.
+                continue
             finish_current(message_time)
             content, reasoning, tool_calls = _assistant_parts(message.get("content"))
-            usage = message.get("usage")
-            if not isinstance(usage, dict):
-                usage = {}
+            # Malformed counters are sanitized by OpenClawUsage so they can
+            # neither crash (NaN/Infinity int() conversion) nor contaminate
+            # step metrics with negative values. skip_usage stays the only
+            # deduplication decision; a retained gap-fill reply keeps its
+            # text without duplicating the recorded step token metrics.
+            parsed = (
+                None
+                if delivery is not None and delivery.skip_usage
+                else OpenClawUsage.parse(message.get("usage"))
+            )
             started_at = (
                 first_time or pending_user_time or message_time
                 if not steps
@@ -234,8 +243,8 @@ def openclaw_events_to_actf(
                     "tool_calls": deepcopy(tool_calls),
                 },
                 "metric": {
-                    "prompt_tokens_len": _usage_number(usage, "input", "input_tokens"),
-                    "completion_tokens_len": _usage_number(usage, "output", "output_tokens"),
+                    "prompt_tokens_len": int(parsed.counts[0]) if parsed else 0,
+                    "completion_tokens_len": int(parsed.counts[1]) if parsed else 0,
                     "llm_infer_ms": None,
                     "env_action_ms": None,
                     "stop_reason": message.get("stopReason", message.get("stop_reason", "")),
