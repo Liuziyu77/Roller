@@ -6,6 +6,19 @@ from roller.openclaw_usage import OpenClawUsage
 
 
 class OpenClawUsageTests(unittest.TestCase):
+    def test_legacy_aliases_and_native_precedence(self) -> None:
+        for raw, expected, matchable in (
+            ({"input_tokens": 10, "output_tokens": 2}, (10, 2, 0, 0, 12), True),
+            ({"input": 10, "output_tokens": 2}, (10, 2, 0, 0, 12), True),
+            ({"input": 0, "input_tokens": 10}, (0, 0, 0, 0, 0), True),
+            ({"input": -1, "input_tokens": 10}, (0, 0, 0, 0, 0), False),
+            ({"input_tokens": float("nan")}, (0, 0, 0, 0, 0), False),
+        ):
+            with self.subTest(raw=raw):
+                usage = OpenClawUsage.parse(raw)
+                self.assertEqual(usage.counts, expected)
+                self.assertEqual(usage.matchable, matchable)
+
     def test_absent_usage_differs_from_cost_only_usage(self) -> None:
         self.assertIsNone(OpenClawUsage.parse(None))
         self.assertIsNone(OpenClawUsage.parse("invalid"))

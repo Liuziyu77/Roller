@@ -411,9 +411,19 @@ kept here.
 OpenClaw sessions sometimes record an already delivered reply again with
 `api=cli`; genuine CLI-backend replies use that marker too. Roller does not
 drop messages based on the marker alone. It deduplicates tokens and request
-counts only when a call matches within the same turn and provider/model, and
-omits the message only when the final text also matches. Gap fills with new
-text remain in ACTF/SFT without repeating matched tokens in step metrics.
+counts only when usage matches within the same turn and the CLI source matches
+the latest provider reply's provider/model. A message is omitted only when its
+final text matches the delivered text. Matched gap fills keep new text without
+repeating step tokens and update the delivered text, so repeated delivery adds
+neither another message nor usage.
+
+Independent, structured, failed, or cross-source CLI replies keep their content
+and usage and suspend delivery matching until another provider reply arrives.
+They do not clear the provider accounting history. Only user, session, and
+compaction events clear the turn history; late delivery from an older source is
+not inferred. Token parsing also accepts `input_tokens/output_tokens`. Explicit
+native `input/output` fields take precedence, including malformed values, so
+aliases cannot hide invalid native counters.
 
 OpenClaw 2026.7.1 CLI aggregates can combine cumulative input/output/cache
 counts with the last call's `totalTokens` (context usage). Aggregate matching

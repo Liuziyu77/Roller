@@ -18,6 +18,11 @@ def _stop_reason(message: dict[str, Any]) -> Any:
     return message.get("stopReason", message.get("stop_reason"))
 
 
+def _same_source(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    # Missing identifiers match only other missing identifiers in legacy raw.
+    return all(left.get(key) == right.get(key) for key in ("provider", "model"))
+
+
 def _text(message: dict[str, Any], *, plain_only: bool) -> str | None:
     content = message.get("content")
     if isinstance(content, str):
@@ -114,25 +119,30 @@ def _credit_cost(
 
 
 class OpenClawDeliveryTracker:
-    """Recognize CLI mirrors using preceding events in the same user turn.
+    """Project delivery copies without rewriting raw or inferring late delivery.
 
-    ``api=cli`` also marks genuine CLI-backend replies and embedded gap fills.
-    Keep their content unless the latest provider reply already contains it.
-    A gap fill can carry that call's usage or the whole turn's accumulated
-    usage; suppress only accounting that matches recorded provider counts.
-    Cost on a suppressed mirror is credited once across overlapping reports.
-    Cost never decides the match itself:
-    aggregate mirrors omit it and serialized floats only match by luck.
-    Ambiguous events are retained. No raw event is changed.
+    Three invariants define the supported session grammar:
+    - Only the latest provider's same-source plain CLI reply can be matched.
+    - Independent CLI replies invalidate delivery eligibility, not accounting.
+    - Only user/session/compaction boundaries clear the turn's provider ledger.
+
+    Matched gap fills keep new text and update the delivered text, while their
+    usage/cost stays attached to the matched provider calls. Cost never decides
+    a match. Unknown CLI replies (including CLI-only backends) are retained.
     """
 
     def __init__(self) -> None:
         self._providers: list[_ProviderRecord] = []
         self._latest: dict[str, Any] | None = None
+        self._delivered_text: str | None = None
+
+    def _invalidate_delivery(self) -> None:
+        self._latest = None
+        self._delivered_text = None
 
     def _reset(self) -> None:
         self._providers.clear()
-        self._latest = None
+        self._invalidate_delivery()
 
     def observe(self, event: dict[str, Any]) -> DeliveryDecision:
         if event.get("type") in {"session", "compaction"}:
@@ -153,40 +163,30 @@ class OpenClawDeliveryTracker:
                 message, usage, usage.cost_usd if usage is not None else 0.0,
             ))
             self._latest = message
-            return DeliveryDecision()
-
-        def same_source(other: dict[str, Any]) -> bool:
-            # Missing identifiers match only other missing identifiers, for
-            # legacy traces. Never infer an identity from just one side.
-            return all(
-                message.get(key) == other.get(key) for key in ("provider", "model")
+            self._delivered_text = (
+                _text(message, plain_only=False)
+                if _stop_reason(message) in {None, "stop", "end_turn"} else None
             )
+            return DeliveryDecision()
 
-        # Delivery mirrors are plain final replies. Failed or structured CLI
-        # responses are not evidence of an already-accounted model request.
+        latest = self._latest
         visible = _text(message, plain_only=True)
-        if visible is None or _stop_reason(message) not in {None, "stop", "end_turn"}:
-            self._reset()
+        if (
+            latest is None or not _same_source(message, latest)
+            or _stop_reason(latest) in {"error", "aborted"}
+            or visible is None or _stop_reason(message) not in {None, "stop", "end_turn"}
+        ):
+            self._invalidate_delivery()
             return DeliveryDecision()
+
+        # Keep failed calls in this ledger: a later successful retry's
+        # aggregate can include their already recorded usage and cost.
         source_rows = [
-            row for row in self._providers if same_source(row.message)
+            row for row in self._providers if _same_source(message, row.message)
         ]
-        # Eligibility is separate from accounting history: after a failure,
-        # keep an independent CLI fallback even if its counters coincide,
-        # but keep the ledger intact so a later cumulative copy can still
-        # reconcile the calls recorded before that failure.
-        if source_rows and _stop_reason(source_rows[-1].message) in {"error", "aborted"}:
-            return DeliveryDecision()
-        # After a later provider response, cumulative reports may include
-        # usage/cost of failed calls too. Never filter them out of the ledger.
         usage = OpenClawUsage.parse(message.get("usage"))
         scope = _match_usage(usage, source_rows)
-        latest = self._latest
-        same_text = bool(
-            visible and latest is not None and same_source(latest)
-            and _stop_reason(latest) in {None, "stop", "end_turn"}
-            and visible == _text(latest, plain_only=False)
-        )
+        same_text = bool(visible and visible == self._delivered_text)
         no_usage = message.get("usage") is None or (
             usage is not None and usage.matchable and not any(usage.counts)
         )
@@ -195,16 +195,17 @@ class OpenClawDeliveryTracker:
             # No counters means no token evidence, not no cost. The text
             # match identifies the latest call for a cost-only delivery.
             scope = "last_call"
+        if scope is None:
+            self._invalidate_delivery()
+            return DeliveryDecision()
+
         additional_cost = (
             _credit_cost(source_rows, scope, usage.cost_usd)
-            if scope is not None and usage is not None else 0.0
+            if usage is not None else 0.0
         )
-        if not skip_message:
-            # A retained CLI reply is a new boundary, not a provider response
-            # against which later independent CLI invocations can be deduped.
-            self._reset()
+        self._delivered_text = visible
         return DeliveryDecision(
             skip_message=skip_message,
-            skip_usage=scope is not None,
+            skip_usage=True,
             additional_cost_usd=additional_cost,
         )
