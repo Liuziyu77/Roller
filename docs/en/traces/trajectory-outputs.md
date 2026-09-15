@@ -408,6 +408,25 @@ elapsed time, relative paths to raw/ACTF/SFT, output recovery information,
 runtime, and input provenance. Metadata that training data deliberately drops is
 kept here.
 
+OpenClaw sessions sometimes record an already delivered reply again with
+`api=cli`; genuine CLI-backend replies use that marker too. Roller does not
+drop messages based on the marker alone. It deduplicates tokens and request
+counts only when a call matches within the same turn and provider/model, and
+omits the message only when the final text also matches. Gap fills with new
+text remain in ACTF/SFT without repeating matched tokens in step metrics.
+
+`cost_usd` credits only the missing amount for the matched call or the turn's
+calls so far. If a provider omits cost and two CLI mirrors each report `$0.05`
+for that call, the total remains `$0.05`. Per-call costs and later turn totals
+covering those calls do not add up twice. A cost-only CLI mirror without token
+fields is credited to the latest call only when final text and source match.
+Conflicting cost reports retain the higher known amount rather than applying
+refunds; these are session-reported costs, not reconciliation with a provider's
+billing records.
+
+Raw is unchanged. Re-parsing retained raw after upgrading can produce updated
+statistics, but resume does not recompute usage cached in existing `info.json`.
+
 ### 5.4 `cache_trace.jsonl`
 
 OpenClaw `diagnostics.cacheTrace` records the assembled system prompt of every

@@ -1,16 +1,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
+
+from roller.openclaw_usage import OpenClawUsage
 
 
 @dataclass(frozen=True)
 class DeliveryDecision:
     skip_message: bool = False
     skip_usage: bool = False
-    # Cost carried by a suppressed mirror that the matched provider rows
-    # never recorded; usage accounting keeps it instead of dropping it.
-    unmatched_cost: float = 0.0
+    # Incremental cost, after crediting both provider rows and prior mirrors.
+    additional_cost_usd: float = 0.0
 
 
 def _text(message: dict[str, Any], *, plain_only: bool) -> str | None:
@@ -41,37 +42,61 @@ def _text(message: dict[str, Any], *, plain_only: bool) -> str | None:
     return "\n".join(parts).strip()
 
 
-def _counts(usage: Any) -> tuple[int | float, ...] | None:
-    if not isinstance(usage, dict):
-        return None
-    values = tuple(
-        usage.get(key, 0) for key in ("input", "output", "cacheRead", "cacheWrite")
-    )
-    if any(
-        isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0
-        for value in values
-    ):
-        return None
-    # A serialized null total means the same as an absent one; fall back to
-    # the component sum like extract_openclaw_usage, not to an invalid block.
-    total = usage.get("totalTokens")
-    if total is None:
-        total = sum(values)
-    if isinstance(total, bool) or not isinstance(total, (int, float)) or total < 0:
-        return None
-    return (*values, total)
+@dataclass
+class _ProviderRecord:
+    message: dict[str, Any]
+    usage: OpenClawUsage | None
+    call_cost: float
+    # Aggregate cost through this record, within the same provider/model.
+    prefix_cost: float = 0.0
 
 
-def _cost(usage: Any) -> float:
-    if not isinstance(usage, dict):
-        return 0.0
-    cost = usage.get("cost")
-    if not isinstance(cost, dict):
-        return 0.0
-    total = cost.get("total")
-    if isinstance(total, bool) or not isinstance(total, (int, float)) or total < 0:
-        return 0.0
-    return float(total)
+_MatchScope = Literal["last_call", "turn_total"]
+
+
+def _match_usage(
+    usage: OpenClawUsage | None, records: list[_ProviderRecord]
+) -> _MatchScope | None:
+    if usage is None or not usage.matchable or not any(usage.counts) or not records:
+        return None
+    last = records[-1].usage
+    if last is not None and last.matchable and usage.counts == last.counts:
+        return "last_call"
+    known = [
+        record.usage.counts for record in records
+        if record.usage is not None and record.usage.matchable
+    ]
+    if len(known) == len(records):
+        total = tuple(sum(column) for column in zip(*known))
+        if usage.counts == total:
+            return "turn_total"
+    return None
+
+
+def _accounted_cost(records: list[_ProviderRecord]) -> float:
+    total = 0.0
+    for record in records:
+        total = max(total + record.call_cost, record.prefix_cost)
+    return total
+
+
+def _credit_cost(
+    records: list[_ProviderRecord], scope: _MatchScope, cost: float
+) -> float:
+    """Credit only a new cost increment for the matched calls.
+
+    Single-call and aggregate reports are overlapping cost floors, not
+    separate charges. Prefix floors let an aggregate cover later per-call
+    reports without absorbing costs of NEW calls beyond that prefix.
+    Only tracker-owned state changes; raw provider usage stays untouched.
+    """
+    before = _accounted_cost(records)
+    last = records[-1]
+    if scope == "last_call":
+        last.call_cost = max(last.call_cost, cost)
+    else:
+        last.prefix_cost = max(last.prefix_cost, cost)
+    return max(_accounted_cost(records) - before, 0.0)
 
 
 class OpenClawDeliveryTracker:
@@ -81,14 +106,14 @@ class OpenClawDeliveryTracker:
     Keep their content unless the latest provider reply already contains it.
     A gap fill can carry that call's usage or the whole turn's accumulated
     usage; suppress only accounting that matches recorded provider counts.
-    Cost on a suppressed mirror that those rows never recorded is reported
-    as unmatched instead of dropped. Cost never decides the match itself:
+    Cost on a suppressed mirror is credited once across overlapping reports.
+    Cost never decides the match itself:
     aggregate mirrors omit it and serialized floats only match by luck.
     Ambiguous events are retained. No raw event is changed.
     """
 
     def __init__(self) -> None:
-        self._providers: list[dict[str, Any]] = []
+        self._providers: list[_ProviderRecord] = []
         self._latest: dict[str, Any] | None = None
 
     def _reset(self) -> None:
@@ -109,7 +134,10 @@ class OpenClawDeliveryTracker:
         if message.get("role") != "assistant":
             return DeliveryDecision()
         if message.get("api") != "cli":
-            self._providers.append(message)
+            usage = OpenClawUsage.parse(message.get("usage"))
+            self._providers.append(_ProviderRecord(
+                message, usage, usage.cost_usd if usage is not None else 0.0,
+            ))
             self._latest = message
             return DeliveryDecision()
 
@@ -130,34 +158,12 @@ class OpenClawDeliveryTracker:
             return DeliveryDecision()
         candidates = [
             row for row in self._providers
-            if same_source(row)
-            and row.get("stopReason", row.get("stop_reason")) not in {"error", "aborted"}
+            if same_source(row.message)
+            and row.message.get("stopReason", row.message.get("stop_reason"))
+            not in {"error", "aborted"}
         ]
-        counts = _counts(message.get("usage"))
-        recorded = [_counts(row.get("usage")) for row in candidates]
-        repeated_usage = False
-        unmatched_cost = 0.0
-        if counts is not None and any(counts) and recorded:
-            cli_cost = _cost(message.get("usage"))
-            if counts == recorded[-1]:
-                repeated_usage = True
-                unmatched_cost = max(
-                    cli_cost - _cost(candidates[-1].get("usage")), 0.0
-                )
-            known_counts = [item for item in recorded if item is not None]
-            if len(known_counts) == len(recorded):
-                total = tuple(
-                    sum(item[index] for item in known_counts)
-                    for index in range(len(counts))
-                )
-                if counts == total:
-                    if not repeated_usage:
-                        unmatched_cost = max(
-                            cli_cost
-                            - sum(_cost(row.get("usage")) for row in candidates),
-                            0.0,
-                        )
-                    repeated_usage = True
+        usage = OpenClawUsage.parse(message.get("usage"))
+        scope = _match_usage(usage, candidates)
         latest = self._latest
         same_text = bool(
             visible and latest is not None and same_source(latest)
@@ -166,13 +172,23 @@ class OpenClawDeliveryTracker:
             and visible == _text(latest, plain_only=False)
         )
         no_usage = message.get("usage") is None or (
-            counts is not None and not any(counts)
+            usage is not None and usage.matchable and not any(usage.counts)
         )
-        skip_message = same_text and (repeated_usage or no_usage)
+        skip_message = same_text and (scope is not None or no_usage)
+        if skip_message and scope is None:
+            # No counters means no token evidence, not no cost. The text
+            # match identifies the latest call for a cost-only delivery.
+            scope = "last_call"
+        additional_cost = (
+            _credit_cost(candidates, scope, usage.cost_usd)
+            if scope is not None and usage is not None else 0.0
+        )
         if not skip_message:
             # A retained CLI reply is a new boundary, not a provider response
             # against which later independent CLI invocations can be deduped.
             self._reset()
         return DeliveryDecision(
-            skip_message, repeated_usage or skip_message, unmatched_cost
+            skip_message=skip_message,
+            skip_usage=scope is not None,
+            additional_cost_usd=additional_cost,
         )
