@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from roller.openclaw_delivery import OpenClawDeliveryTracker
+from roller.openclaw_usage import OpenClawUsage
 
 
 ZERO_USAGE: dict[str, int | float] = {
@@ -46,36 +47,18 @@ def extract_openclaw_usage(trace_path: Path) -> dict[str, int | float]:
             if delivery.skip_usage:
                 # CLI-only replies are counted; verified mirrors and already
                 # recorded turn totals are not additional model requests.
-                # A suppressed mirror can still carry cost the recorded rows
-                # never included; keep that part of the accounting.
-                totals["cost_usd"] += delivery.unmatched_cost
+                totals["cost_usd"] += delivery.additional_cost_usd
                 continue
-            usage = message.get("usage")
-            if not isinstance(usage, dict):
+            usage = OpenClawUsage.parse(message.get("usage"))
+            if usage is None:
                 continue
             totals["request_count"] += 1
-            totals["input_tokens"] += _number(usage.get("input"))
-            totals["output_tokens"] += _number(usage.get("output"))
-            totals["cache_read_tokens"] += _number(usage.get("cacheRead"))
-            totals["cache_write_tokens"] += _number(usage.get("cacheWrite"))
-            total_tokens = _number(usage.get("totalTokens"), -1)
-            if total_tokens == -1:
-                # OpenClaw's totalTokens includes the cache fields; every
-                # observed trace satisfies total = input+output+cacheRead+
-                # cacheWrite. Keep the fallback aligned with that semantic
-                # (and with _counts in openclaw_delivery) so a provider event
-                # missing the total is not undercounted next to a CLI mirror
-                # carrying an explicit one.
-                total_tokens = (
-                    _number(usage.get("input"))
-                    + _number(usage.get("output"))
-                    + _number(usage.get("cacheRead"))
-                    + _number(usage.get("cacheWrite"))
-                )
-            totals["total_tokens"] += total_tokens
-            cost = usage.get("cost")
-            if isinstance(cost, dict):
-                totals["cost_usd"] += _number(cost.get("total"), 0.0)
+            for key, value in zip((
+                "input_tokens", "output_tokens", "cache_read_tokens",
+                "cache_write_tokens", "total_tokens",
+            ), usage.counts):
+                totals[key] += value
+            totals["cost_usd"] += usage.cost_usd
     totals["cost_usd"] = round(float(totals["cost_usd"]), 6)
     return totals
 
