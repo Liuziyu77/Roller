@@ -415,6 +415,15 @@ counts only when a call matches within the same turn and provider/model, and
 omits the message only when the final text also matches. Gap fills with new
 text remain in ACTF/SFT without repeating matched tokens in step metrics.
 
+OpenClaw 2026.7.1 CLI aggregates can combine cumulative input/output/cache
+counts with the last call's `totalTokens` (context usage). Aggregate matching
+requires all four components to match individually, and the total must equal
+either the recorded cumulative total or the last call's positive total. Roller keeps
+the provider-call accounting without adding that context total again. When
+the latest same-source call failed, a CLI fallback is still counted separately.
+After a provider retry succeeds, aggregate matching includes valid usage and
+cost reported by earlier failed calls as well.
+
 `cost_usd` credits only the missing amount for the matched call or the turn's
 calls so far. If a provider omits cost and two CLI mirrors each report `$0.05`
 for that call, the total remains `$0.05`. Per-call costs and later turn totals

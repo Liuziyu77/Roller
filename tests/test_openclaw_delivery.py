@@ -151,6 +151,115 @@ class OpenClawDeliveryTests(unittest.TestCase):
         self.assertEqual(usage["request_count"], 1)
         self.assertEqual(usage["total_tokens"], 16)
 
+    def test_cumulative_components_allow_last_call_total(self) -> None:
+        # OpenClaw 2026.7.1 buildUsageAgentMetaFields keeps cumulative input,
+        # output and cache fields, but replaces total with lastTurnTotal.
+        # persistCliTurnTranscript writes that mixed snapshot unchanged.
+        for total in (32, 48):
+            for text, steps in (("second", 2), ("final answer", 3)):
+                with self.subTest(total=total, text=text):
+                    mirror = _priced_reply("cli", None, calls=3, text=text)
+                    mirror["message"]["usage"]["totalTokens"] = total
+                    actf, sft, usage = self._project([
+                        _user(), _priced_reply("openai-completions", 0.05),
+                        _priced_reply("openai-completions", 0.1, calls=2, text="second"),
+                        mirror,
+                    ])
+                    self.assertEqual(usage, {
+                        "input_tokens": 30, "output_tokens": 6,
+                        "cache_read_tokens": 9, "cache_write_tokens": 3,
+                        "total_tokens": 48, "cost_usd": 0.15, "request_count": 2,
+                    })
+                    self.assertEqual(len(actf["steps"]), steps)
+                    self.assertEqual(sft["messages"][-1]["content"], text)
+                    self.assertEqual(sum(
+                        step["metric"]["prompt_tokens_len"] for step in actf["steps"]
+                    ), 30)
+                    self.assertEqual(sum(
+                        step["metric"]["completion_tokens_len"] for step in actf["steps"]
+                    ), 6)
+
+    def test_cumulative_match_still_requires_valid_total_and_all_components(self) -> None:
+        for changes in (
+            {"totalTokens": 16},  # Earlier call, not latest or accumulated.
+            {"totalTokens": 47},
+            {"totalTokens": 0},
+            {"totalTokens": float("nan")},
+            {"cacheRead": 8, "cacheWrite": 4},  # Same sum, different fields.
+            {"input": 29},
+        ):
+            with self.subTest(changes=changes):
+                mirror = _priced_reply("cli", None, calls=3)
+                mirror["message"]["usage"].update(totalTokens=32)
+                mirror["message"]["usage"].update(changes)
+                actf, _, usage = self._project([
+                    _user(), _priced_reply("openai-completions", None),
+                    _priced_reply("openai-completions", None, calls=2), mirror,
+                ])
+                self.assertEqual(usage["request_count"], 3)
+                self.assertEqual(len(actf["steps"]), 3)
+
+    def test_retried_turn_keeps_failed_usage_in_accounting_history(self) -> None:
+        for reason in ("error", "aborted"):
+            for reason_key in ("stopReason", "stop_reason"):
+                for total in (16, 48):
+                    with self.subTest(reason=reason, reason_key=reason_key, total=total):
+                        failed = _priced_reply("openai-completions", 0.02)
+                        failed["message"].pop("stopReason")
+                        failed["message"][reason_key] = reason
+                        mirror = _priced_reply("cli", 0.15, calls=3)
+                        mirror["message"]["usage"]["totalTokens"] = total
+                        actf, _, usage = self._project([
+                            _user(), _priced_reply("openai-completions", None),
+                            _priced_reply("cli", 0.05), failed,
+                            _priced_reply("openai-completions", None),
+                            mirror, mirror, _priced_reply("cli", 0.08),
+                        ])
+                        self.assertEqual(usage, {
+                            "input_tokens": 30, "output_tokens": 6,
+                            "cache_read_tokens": 9, "cache_write_tokens": 3,
+                            "total_tokens": 48, "cost_usd": 0.15, "request_count": 3,
+                        })
+                        self.assertEqual(len(actf["steps"]), 3)
+
+    def test_failed_latest_call_cannot_absorb_cumulative_cli_fallback(self) -> None:
+        for total in (16, 32):
+            with self.subTest(total=total):
+                fallback = _priced_reply("cli", 0.1, calls=2)
+                fallback["message"]["usage"]["totalTokens"] = total
+                actf, _, usage = self._project([
+                    _user(), _reply("openai-completions"),
+                    _reply("openai-completions", stopReason="error"), fallback,
+                ])
+                self.assertEqual(usage["request_count"], 3)
+                self.assertEqual(usage["cost_usd"], 0.2)
+                self.assertEqual(usage["total_tokens"], 32 + total)
+                self.assertEqual(len(actf["steps"]), 3)
+
+    def test_retry_aggregate_requires_complete_valid_accounting_history(self) -> None:
+        for failed_usage in (None, {"input": -1}):
+            with self.subTest(failed_usage=failed_usage):
+                mirror = _priced_reply("cli", None, calls=2)
+                mirror["message"]["usage"]["totalTokens"] = 16
+                actf, _, usage = self._project([
+                    _user(), _reply("openai-completions"),
+                    _reply("openai-completions", stopReason="error", usage=failed_usage),
+                    _reply("openai-completions"), mirror,
+                ])
+                self.assertEqual(len(actf["steps"]), 4)
+                self.assertEqual(usage["input_tokens"], 40)
+                self.assertEqual(usage["request_count"], 3 if failed_usage is None else 4)
+
+    def test_context_total_override_requires_positive_latest_total(self) -> None:
+        # Native buildUsageAgentMetaFields overrides total only when > 0.
+        latest = _reply("openai-completions")
+        latest["message"]["usage"]["totalTokens"] = 0
+        mirror = _priced_reply("cli", None, calls=2)
+        mirror["message"]["usage"]["totalTokens"] = 0
+        actf, _, usage = self._project([_user(), _reply("openai-completions"), latest, mirror])
+        self.assertEqual(usage["request_count"], 3)
+        self.assertEqual(len(actf["steps"]), 3)
+
     def test_different_or_missing_source_identity_is_not_deduped(self) -> None:
         for fields in (
             {"provider": "another"}, {"model": "another"},

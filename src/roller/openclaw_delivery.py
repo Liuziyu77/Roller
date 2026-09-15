@@ -14,6 +14,10 @@ class DeliveryDecision:
     additional_cost_usd: float = 0.0
 
 
+def _stop_reason(message: dict[str, Any]) -> Any:
+    return message.get("stopReason", message.get("stop_reason"))
+
+
 def _text(message: dict[str, Any], *, plain_only: bool) -> str | None:
     content = message.get("content")
     if isinstance(content, str):
@@ -69,6 +73,16 @@ def _match_usage(
     if len(known) == len(records):
         total = tuple(sum(column) for column in zip(*known))
         if usage.counts == total:
+            return "turn_total"
+        # OpenClaw 2026.7.1 buildUsageAgentMetaFields reports cumulative
+        # input/output/cache but the LAST call's total (context size).
+        # Accept this specific shape, not arbitrary mismatched totals.
+        components, reported_total = usage.counts[:-1], usage.counts[-1]
+        latest_total = known[-1][-1]
+        if (
+            any(components) and components == total[:-1]
+            and latest_total > 0 and reported_total == latest_total
+        ):
             return "turn_total"
     return None
 
@@ -151,31 +165,25 @@ class OpenClawDeliveryTracker:
         # Delivery mirrors are plain final replies. Failed or structured CLI
         # responses are not evidence of an already-accounted model request.
         visible = _text(message, plain_only=True)
-        if visible is None or message.get(
-            "stopReason", message.get("stop_reason")
-        ) not in {None, "stop", "end_turn"}:
+        if visible is None or _stop_reason(message) not in {None, "stop", "end_turn"}:
             self._reset()
             return DeliveryDecision()
         source_rows = [
             row for row in self._providers if same_source(row.message)
         ]
-        # A CLI reply following a failed same-source call is a fallback for
-        # that failure, not a delivery mirror of an earlier success; the
-        # failure is a boundary, so nothing before it may absorb its usage.
-        candidates = [] if source_rows and source_rows[-1].message.get(
-            "stopReason", source_rows[-1].message.get("stop_reason")
-        ) in {"error", "aborted"} else [
-            row for row in source_rows
-            if row.message.get("stopReason", row.message.get("stop_reason"))
-            not in {"error", "aborted"}
-        ]
+        # Eligibility is separate from accounting history: after a failure,
+        # keep an independent CLI fallback even if its counters coincide.
+        if source_rows and _stop_reason(source_rows[-1].message) in {"error", "aborted"}:
+            self._reset()
+            return DeliveryDecision()
+        # After a later provider response, cumulative reports may include
+        # usage/cost of failed calls too. Never filter them out of the ledger.
         usage = OpenClawUsage.parse(message.get("usage"))
-        scope = _match_usage(usage, candidates)
+        scope = _match_usage(usage, source_rows)
         latest = self._latest
         same_text = bool(
             visible and latest is not None and same_source(latest)
-            and latest.get("stopReason", latest.get("stop_reason"))
-            in {None, "stop", "end_turn"}
+            and _stop_reason(latest) in {None, "stop", "end_turn"}
             and visible == _text(latest, plain_only=False)
         )
         no_usage = message.get("usage") is None or (
@@ -187,7 +195,7 @@ class OpenClawDeliveryTracker:
             # match identifies the latest call for a cost-only delivery.
             scope = "last_call"
         additional_cost = (
-            _credit_cost(candidates, scope, usage.cost_usd)
+            _credit_cost(source_rows, scope, usage.cost_usd)
             if scope is not None and usage is not None else 0.0
         )
         if not skip_message:
