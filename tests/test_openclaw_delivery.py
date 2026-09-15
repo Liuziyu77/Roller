@@ -368,6 +368,26 @@ class OpenClawDeliveryTests(unittest.TestCase):
         self.assertEqual(usage["request_count"], 3)
         self.assertEqual(usage["total_tokens"], 48)
 
+    def test_cumulative_after_fallback_and_retry_reconciles_history(self) -> None:
+        # An independently counted fallback must not wipe the ledger: after
+        # a successful retry, a cumulative copy still reconciles the usage
+        # already recorded for the calls before the failure.
+        actf, _, usage = self._project([
+            _user(),
+            _reply("openai-completions"),
+            _reply("openai-completions", stopReason="error"),
+            _reply("cli"),
+            _reply("openai-completions"),
+            _reply("cli", usage={
+                "input": 30, "output": 6, "cacheRead": 9,
+                "cacheWrite": 3, "totalTokens": 48, "cost": {"total": 0.15},
+            }),
+        ])
+        self.assertEqual(len(actf["steps"]), 4)
+        self.assertEqual(usage["request_count"], 4)
+        self.assertEqual(usage["total_tokens"], 64)
+        self.assertEqual(usage["cost_usd"], 0.2)
+
     def test_invalid_counters_cannot_break_or_contaminate_step_metrics(self) -> None:
         for invalid in (True, -1, "10", float("nan"), float("inf")):
             with self.subTest(invalid=invalid):
