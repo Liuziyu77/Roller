@@ -149,41 +149,9 @@ roller collect \
   --run-name examples-claude-code
 ```
 
-`--claude-settings` can be omitted; the example only turns off the commit co-author marker and does not change permission mode, thinking, or tool behavior. The fourth task continues the session with `claude --continue`. Image, endpoint, thinking, and signature recovery are in the [Claude Code Harness guide](../harnesses/claude-code-configuration.md).
+`--claude-settings` can be omitted; the example only turns off the commit co-author marker and does not change permission mode, thinking, or tool behavior. The fourth task continues the session with `claude --continue`. Image, endpoint, and thinking are in the [Claude Code Harness guide](../harnesses/claude-code-configuration.md).
 
 ## Advanced examples
-
-### External thinking
-
-External thinking is recommended for GPT reasoning models such as `gpt-5.6-sol`, using explicit tool arguments instead of the native compressed summary. The command below runs only the first task and uses Codex to check a strict THINK/ACT alternation:
-
-```bash
-roller collect \
-  --harness codex \
-  --tasks examples/tasks/tasks.jsonl \
-  --limit 1 \
-  --model gpt-5.6-sol \
-  --api-base "$ROLLER_CODEX_BASE_URL" \
-  --api-key-env ROLLER_CODEX_API_KEY \
-  --external-thinking external_always \
-  --wire-trace full \
-  --timeout 900 \
-  --output runs \
-  --run-name examples-codex-external
-```
-
-After success, ACTF keeps the canonical `deep_think` call/result, while SFT strips the internal tool protocol and writes thoughts into the next assistant `reasoning_content`. Full check procedure: [External Thinking](../traces/external-thinking.md#how-to-inspect-and-accept).
-
-### Claude signature recovery
-
-For Claude models (for example Claude Opus 4.8, sample ID `claude-opus-4-8`), when a native session has signed thinking but empty reasoning, add these flags to the Claude Code command:
-
-```text
---claude-signature-recovery fill
---claude-signature-recovery-attempts 2
-```
-
-`fill` is the recommended conservative mode; it only fills empty values. This feature issues extra provider requests and is best effort; inspect `signature_recovery.jsonl` before using the data for training. See [Signature recovery](../harnesses/claude-code-configuration.md#signature-recovery-experimental).
 
 ### Dynamic User Simulator
 

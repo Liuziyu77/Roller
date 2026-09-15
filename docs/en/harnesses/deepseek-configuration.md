@@ -42,7 +42,7 @@ The official `sdk-minimal` profile advertises only persistent `bash`; file tasks
 
 `trace.jsonl` uses `roller.deepseek-events/v1`, retaining serialized requests and native SDK notifications. ACTF/SFT preserve actual system prompts, schemas, reasoning, calls, and results. Errors, truncated or empty replies, incomplete tool calls, and content that cannot be represented losslessly as text are rejected. Timeouts stop the container and recover available artifacts. Resume validates each participant's artifacts; DeepSeek does not produce OpenClaw cache traces.
 
-External thinking, direct multimodal messages, visual acceptance, interactive login, arbitrary profiles/plugins, and cross-task memory are outside this integration. Provider compatibility must be checked for each model. Long tasks need sufficient context because compaction is disabled.
+Direct multimodal messages, visual acceptance, interactive login, arbitrary profiles/plugins, and cross-task memory are outside this integration. Provider compatibility must be checked for each model. Long tasks need sufficient context because compaction is disabled.
 
 ## Validation
 

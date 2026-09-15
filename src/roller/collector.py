@@ -12,7 +12,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterator
 
-from roller.external_thinking import external_thinking_mode_from_metadata
 from roller.harnesses.base import Harness
 from roller.integrity import validate_resumable_sample
 from roller.models import HarnessResult, RunRequest
@@ -151,7 +150,7 @@ class Collector:
             "trace.jsonl",
             "trace_ACTF.json",
             "trace_SFT.json",
-            "signature_recovery.jsonl",
+            "signature_recovery.jsonl",  # Preserve historical artifacts; never generated now.
             "info.json",
             "results",
             "conversation.json",
@@ -203,11 +202,7 @@ class Collector:
                 trajectory = json.loads(actf_path.read_text(encoding="utf-8"))
                 if not isinstance(trajectory, dict):
                     raise ValueError("canonical ACTF trajectory must be a JSON object")
-                write_sft(
-                    sft_path,
-                    trajectory,
-                    external_thinking=external_thinking_mode_from_metadata(metadata),
-                )
+                write_sft(sft_path, trajectory)
             except Exception as exc:
                 logger.exception(
                     "[%s | %s] trajectory conversion failed",
@@ -420,6 +415,27 @@ class Collector:
         write_jsonl(self.run_dir / "sft.jsonl", rows())
 
     def collect(self, requests: list[RunRequest]) -> list[dict[str, Any]]:
+        # Legacy CoT projections cannot be validated with the native-only SFT
+        # exporter. Stop before checkpointing or scheduling any replacement run.
+        for request in requests:
+            sample_dir = self._sample_dir(request)
+            for base in (sample_dir, sample_dir / "user_simulator"):
+                info_path = base / "info.json"
+                try:
+                    info = json.loads(info_path.read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    continue
+                runtime = info.get("runtime") if isinstance(info, dict) else None
+                if not isinstance(runtime, dict):
+                    continue
+                for key in ("external_thinking", "signature_recovery"):
+                    value = runtime.get(key)
+                    mode = value.get("mode") if isinstance(value, dict) else value
+                    if mode in ("external", "external_always", "fill", "prefer"):
+                        raise ValueError(
+                            f"{info_path}: {key}={mode} is retired; use a new run "
+                            "directory. Existing trajectory files were not changed."
+                        )
         self.run_dir.mkdir(parents=True, exist_ok=True)
         total_requests = len(requests)
         self._write_run_info(

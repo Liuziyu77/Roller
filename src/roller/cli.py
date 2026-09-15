@@ -24,7 +24,6 @@ from roller.benches import (
 from roller.benches.grading import GradedHarness
 from roller.bundles import BundlePolicy, TaskBundleStore
 from roller.conversation import ConversationManager
-from roller.external_thinking import validate_external_thinking_provider
 from roller.harnesses.claude_code import (
     COMMON_ENV_NAMES as CLAUDE_CODE_COMMON_ENV_NAMES,
     DEFAULT_CLAUDE_CODE_IMAGE,
@@ -213,16 +212,6 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     runtime.add_argument(
-        "--external-thinking",
-        choices=("off", "external", "external_always"),
-        default="off",
-        help=(
-            "tool-based CoT for OpenAI Responses in OpenClaw or Codex: external "
-            "forces the first deep_think call; external_always pairs every action "
-            "with deep_think; Claude Code, Hermes and OpenCode currently accept only 'off'"
-        ),
-    )
-    runtime.add_argument(
         "--pass-env",
         action="append",
         default=[],
@@ -237,8 +226,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "wire-level recording through a local reverse proxy: 'actf' (default) embeds "
             "the tools schema into trace_ACTF.json and keeps no extra file, 'full' "
             "additionally saves wire_trace.jsonl with every request body, 'off' disables "
-            "(OpenClaw uses model-config baseUrl; Codex uses --api-base; external "
-            "thinking always uses an internal protocol proxy)"
+            "(OpenClaw uses model-config baseUrl; Codex uses --api-base)"
         ),
     )
     runtime.add_argument(
@@ -367,27 +355,6 @@ def _build_parser() -> argparse.ArgumentParser:
         "--claude-max-thinking-tokens",
         type=int,
         help="optional MAX_THINKING_TOKENS value passed to Claude Code",
-    )
-    claude.add_argument(
-        "--claude-signature-recovery",
-        choices=("off", "fill", "prefer"),
-        default="off",
-        help=(
-            "experimental post-run replay of signed Claude thinking: 'fill' only "
-            "fills missing reasoning, 'prefer' replaces native summaries, 'off' disables"
-        ),
-    )
-    claude.add_argument(
-        "--claude-signature-recovery-attempts",
-        type=int,
-        default=1,
-        help="maximum replay attempts per signed thinking block (default: 1)",
-    )
-    claude.add_argument(
-        "--claude-signature-recovery-max-tokens",
-        type=int,
-        default=8192,
-        help="maximum visible tokens for each signature replay request (default: 8192)",
     )
     claude.add_argument(
         "--claude-permission-mode",
@@ -606,9 +573,6 @@ def _collect(args: argparse.Namespace) -> int:
         for name in selected_harnesses
     }
     args.docker_image = args.docker_image or images[args.harness]
-    for name in HARNESS_NAMES:
-        if name in selected_harnesses and args.external_thinking != "off" and not HARNESSES[name].external_thinking:
-            raise ValueError(f"{HARNESSES[name].label} external thinking is not implemented; use --external-thinking off")
     if args.collect_path and "openclaw" not in selected_harnesses:
         raise ValueError("--collect-path requires an OpenClaw participant")
 
@@ -645,10 +609,6 @@ def _collect(args: argparse.Namespace) -> int:
         claude_settings_fingerprint = hashlib.blake2b(
             claude_settings_path.read_bytes(), digest_size=16
         ).hexdigest()
-    if "claude-code" not in selected_harnesses and args.claude_signature_recovery != "off":
-        raise ValueError(
-            "--claude-signature-recovery is only valid when a Claude Code participant is selected"
-        )
 
     hermes_config: HermesConfig | None = None
     opencode_config: OpenCodeConfig | None = None
@@ -658,13 +618,6 @@ def _collect(args: argparse.Namespace) -> int:
     codex_config: CodexConfig | None = None
     claude_code_config: ClaudeCodeConfig | None = None
     if "openclaw" in selected_harnesses:
-        for request in requests:
-            agent_harness = cli_harness or request.task.harness
-            if agent_harness == "openclaw":
-                validate_external_thinking_provider(model_config, request.model, args.external_thinking)
-            spec = request.task.user_simulator
-            if spec is not None and spec.harness == "openclaw":
-                validate_external_thinking_provider(model_config, spec.model or request.model, args.external_thinking)
         openclaw_config = OpenClawConfig(
             docker_image=images["openclaw"],
             container_user=(
@@ -679,7 +632,6 @@ def _collect(args: argparse.Namespace) -> int:
             pass_env=_deduplicate((*OPENCLAW_COMMON_ENV_NAMES, *args.pass_env)),
             search_provider=args.search_provider,
             thinking=args.thinking,
-            external_thinking=args.external_thinking,
             capture_cache_trace=args.cache_trace,
             wire_trace_mode=args.wire_trace,
             keep_thinking=args.keep_thinking,
@@ -705,7 +657,6 @@ def _collect(args: argparse.Namespace) -> int:
             reasoning_summary=args.reasoning_summary,
             web_search=args.codex_web_search,
             supports_websockets=args.codex_websockets,
-            external_thinking=args.external_thinking,
             wire_trace_mode=args.wire_trace,
             keep_thinking=args.keep_thinking,
             keep_container_on_error=args.keep_container_on_error,
@@ -733,9 +684,6 @@ def _collect(args: argparse.Namespace) -> int:
             permission_mode=args.claude_permission_mode,
             wire_trace_mode=args.wire_trace,
             keep_thinking=args.keep_thinking,
-            signature_recovery=args.claude_signature_recovery,
-            signature_recovery_attempts=args.claude_signature_recovery_attempts,
-            signature_recovery_max_tokens=args.claude_signature_recovery_max_tokens,
             keep_container_on_error=args.keep_container_on_error,
             docker_binary=args.docker_binary,
         )
@@ -862,7 +810,6 @@ def _collect(args: argparse.Namespace) -> int:
             "session_id": args.session_id,
             "search_provider": args.search_provider,
             "thinking": args.thinking,
-            "external_thinking": args.external_thinking,
             "keep_thinking": args.keep_thinking,
             "cache_trace": args.cache_trace,
             "wire_trace": args.wire_trace,
@@ -880,7 +827,6 @@ def _collect(args: argparse.Namespace) -> int:
             "api_key_env": codex_api_key_env,
             "reasoning_effort": args.thinking,
             "reasoning_summary": args.reasoning_summary,
-            "external_thinking": args.external_thinking,
             "wire_trace": args.wire_trace,
             "keep_thinking": args.keep_thinking,
             "web_search": args.codex_web_search,
@@ -906,14 +852,8 @@ def _collect(args: argparse.Namespace) -> int:
             "max_thinking_tokens": args.claude_max_thinking_tokens,
             "max_turns": args.claude_max_turns,
             "permission_mode": args.claude_permission_mode,
-            "external_thinking": "off",
             "wire_trace": args.wire_trace,
             "keep_thinking": args.keep_thinking,
-            "signature_recovery": args.claude_signature_recovery,
-            "signature_recovery_attempts": args.claude_signature_recovery_attempts,
-            "signature_recovery_max_tokens": (
-                args.claude_signature_recovery_max_tokens
-            ),
             "pass_env_names": list(claude_code_config.pass_env),
         }
 
@@ -925,7 +865,7 @@ def _collect(args: argparse.Namespace) -> int:
             "max_iterations": args.hermes_max_iterations, "hermes_revision": HERMES_REVISION,
             "context_length": args.hermes_context_length,
             "toolsets": ["terminal", "file"], "api_mode": "chat_completions",
-            "external_thinking": "off", "wire_trace": args.wire_trace,
+            "wire_trace": args.wire_trace,
             "keep_thinking": args.keep_thinking, "pass_env_names": list(hermes_config.pass_env),
         }
 
@@ -937,7 +877,7 @@ def _collect(args: argparse.Namespace) -> int:
             "max_steps": args.opencode_max_steps, "opencode_version": OPENCODE_VERSION,
             "context_length": args.opencode_context_length, "output_tokens": args.opencode_output_tokens,
             "tools": list(OPENCODE_TOOLS), "api_mode": "chat_completions",
-            "external_thinking": "off", "wire_trace": args.wire_trace,
+            "wire_trace": args.wire_trace,
             "keep_thinking": args.keep_thinking, "pass_env_names": list(opencode_config.pass_env),
             "compaction": {"auto": False, "prune": False},
         }
@@ -950,7 +890,7 @@ def _collect(args: argparse.Namespace) -> int:
             "max_steps": args.deepseek_max_steps, "deepseek_version": DEEPSEEK_VERSION,
             "context_length": args.deepseek_context_length, "output_tokens": args.deepseek_output_tokens,
             "tools": list(DEEPSEEK_TOOLS), "api_mode": "chat_completions",
-            "external_thinking": "off", "wire_trace": args.wire_trace,
+            "wire_trace": args.wire_trace,
             "keep_thinking": args.keep_thinking, "pass_env_names": list(deepseek_config.pass_env),
             "profile": "sdk-minimal", "retry_count": 0,
         }
@@ -963,7 +903,7 @@ def _collect(args: argparse.Namespace) -> int:
             "max_steps": args.pi_max_steps, "pi_version": PI_VERSION,
             "context_length": args.pi_context_length, "output_tokens": args.pi_output_tokens,
             "tools": list(PI_TOOLS), "api_mode": "chat_completions",
-            "external_thinking": "off", "wire_trace": args.wire_trace,
+            "wire_trace": args.wire_trace,
             "keep_thinking": args.keep_thinking, "pass_env_names": list(pi_config.pass_env),
             "compaction": {"auto": False}, "retry_count": 0,
         }

@@ -105,9 +105,7 @@ completion events are at least 30 seconds apart. It force-updates on interrupt
 and during finalization.
 After Resume, the sample's on-disk `info.json` still keeps the original
 `status=ok`. The Viewer overlays `status=skipped` from this run's index so the
-Completed card can mark the reuse count accurately. When External Thinking is
-on, the Thinking card shows the external mode and notes that native thinking is
-actually `off`.
+Completed card can mark the reuse count accurately. The Thinking card shows the retention policy (kept/stripped) and configured native thinking level.
 
 When run `info.json` has not finished a normal close-out, the Viewer also scans
 `samples/<model>/<task>/info.json`, so samples finalized after a checkpoint

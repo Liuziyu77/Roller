@@ -8,12 +8,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
-from roller.external_thinking import (
-    CODEX_DEEP_THINK_SERVER_NAME,
-    DEEP_THINK_RESULT,
-    DEEP_THINK_TOOL,
-    DEEP_THINK_TOOL_NAME,
-)
 from roller.storage import atomic_write_json
 
 
@@ -179,19 +173,6 @@ def _tool_schemas(steps: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
                         fields.setdefault(key, _json_type(item))
     schemas: list[dict[str, Any]] = []
     for name, fields in sorted(properties.items()):
-        if name == DEEP_THINK_TOOL_NAME:
-            schemas.append(
-                {
-                    "type": "function",
-                    "function": {
-                        "name": DEEP_THINK_TOOL["name"],
-                        "description": DEEP_THINK_TOOL["description"],
-                        "parameters": deepcopy(DEEP_THINK_TOOL["parameters"]),
-                        "strict": True,
-                    },
-                }
-            )
-            continue
         schemas.append(
             {
                 "type": "function",
@@ -207,49 +188,6 @@ def _tool_schemas(steps: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
             }
         )
     return schemas
-
-
-def _external_mcp_completion(
-    payload: Mapping[str, Any],
-) -> tuple[Mapping[str, Any], Any, bool] | None:
-    """Return a normalized deep-think MCP completion from Codex native events.
-
-    Codex 0.149 can persist the same MCP completion either as the lower-level
-    ``mcp_tool_call_end`` event or as an ``item_completed`` event containing an
-    ``McpToolCall`` item.  Both are native facts; accepting both keeps the ACTF
-    projection independent of which session writer path produced the rollout.
-    """
-
-    payload_type = payload.get("type")
-    if payload_type == "mcp_tool_call_end":
-        invocation = payload.get("invocation")
-        if not isinstance(invocation, Mapping):
-            return None
-        server = invocation.get("server")
-        tool = invocation.get("tool")
-        result = payload.get("result")
-        is_error = isinstance(result, Mapping) and "Err" in result
-    elif payload_type == "item_completed":
-        invocation = payload.get("item")
-        if (
-            not isinstance(invocation, Mapping)
-            or invocation.get("type") != "McpToolCall"
-        ):
-            return None
-        server = invocation.get("server")
-        tool = invocation.get("tool")
-        result = invocation.get("result")
-        is_error = invocation.get("status") != "completed" or (
-            isinstance(result, Mapping) and result.get("isError") is True
-        )
-    else:
-        return None
-    if (
-        server != CODEX_DEEP_THINK_SERVER_NAME
-        or tool != DEEP_THINK_TOOL_NAME
-    ):
-        return None
-    return invocation, result, is_error
 
 
 def codex_events_to_actf(
@@ -353,77 +291,28 @@ def codex_events_to_actf(
             payload_type = payload.get("type")
             if payload_type == "token_count":
                 close_group(payload, timestamp)
-            else:
-                mcp_completion = _external_mcp_completion(payload)
-                if mcp_completion is not None:
-                    invocation, _result, is_error = mcp_completion
-                    arguments = invocation.get("arguments")
-                    normalized_arguments = (
-                        deepcopy(arguments) if isinstance(arguments, dict) else {}
-                    )
-                    target = group(timestamp)
-                    wrapped = next(
-                        (
-                            call
-                            for call in reversed(target["tool_calls"])
-                            if call.get("name") == "exec"
-                            and call.get("output") is None
+            elif payload_type == "web_search_end":
+                call_id = payload.get("call_id")
+                if isinstance(call_id, str) and call_id:
+                    action = payload.get("action")
+                    arguments: dict[str, Any] = {}
+                    if isinstance(payload.get("query"), str):
+                        arguments["query"] = payload["query"]
+                    if action is not None:
+                        arguments["action"] = deepcopy(action)
+                    call = {
+                        "type": "toolCall",
+                        "id": call_id,
+                        "name": "web_search",
+                        "arguments": arguments,
+                        "output": json.dumps(
+                            payload.get("results", []), ensure_ascii=False
                         ),
-                        None,
-                    )
-                    if wrapped is None:
-                        call_id = payload.get("call_id")
-                        wrapped = {
-                            "type": "toolCall",
-                            "id": (
-                                call_id
-                                if isinstance(call_id, str) and call_id
-                                else f"deep_think-{len(calls_by_id) + 1}"
-                            ),
-                            "name": DEEP_THINK_TOOL_NAME,
-                            "arguments": normalized_arguments,
-                            "raw_arguments": arguments,
-                            "output": DEEP_THINK_RESULT,
-                            "output_time": timestamp,
-                            "is_error": is_error,
-                            "external_deep_think": True,
-                        }
-                        target["tool_calls"].append(wrapped)
-                        calls_by_id[wrapped["id"]] = wrapped
-                    else:
-                        wrapped.update(
-                            {
-                                "name": DEEP_THINK_TOOL_NAME,
-                                "arguments": normalized_arguments,
-                                "raw_arguments": arguments,
-                                "output": DEEP_THINK_RESULT,
-                                "output_time": timestamp,
-                                "is_error": is_error,
-                                "external_deep_think": True,
-                            }
-                        )
-                elif payload_type == "web_search_end":
-                    call_id = payload.get("call_id")
-                    if isinstance(call_id, str) and call_id:
-                        action = payload.get("action")
-                        arguments: dict[str, Any] = {}
-                        if isinstance(payload.get("query"), str):
-                            arguments["query"] = payload["query"]
-                        if action is not None:
-                            arguments["action"] = deepcopy(action)
-                        call = {
-                            "type": "toolCall",
-                            "id": call_id,
-                            "name": "web_search",
-                            "arguments": arguments,
-                            "output": json.dumps(
-                                payload.get("results", []), ensure_ascii=False
-                            ),
-                            "output_time": timestamp,
-                            "is_error": False,
-                        }
-                        group(timestamp)["tool_calls"].append(call)
-                        calls_by_id[call_id] = call
+                        "output_time": timestamp,
+                        "is_error": False,
+                    }
+                    group(timestamp)["tool_calls"].append(call)
+                    calls_by_id[call_id] = call
             continue
 
         if event_type != "response_item":
@@ -495,9 +384,6 @@ def codex_events_to_actf(
             call_id = payload.get("call_id")
             call = calls_by_id.get(call_id) if isinstance(call_id, str) else None
             if call is None:
-                continue
-            if call.get("external_deep_think"):
-                call["output_time"] = timestamp or call.get("output_time")
                 continue
             output, metadata = _output_text(payload.get("output"))
             call["output"] = output

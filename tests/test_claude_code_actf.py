@@ -87,44 +87,23 @@ def _events() -> list[dict]:
 
 
 class ClaudeCodeActfTests(unittest.TestCase):
-    def test_signature_recovery_fill_and_prefer_modes(self) -> None:
-        fill = claude_code_events_to_actf(
-            _events(),
-            user_messages=["inspect input.txt"],
-            recovered_reasoning={"msg-1": "recovered full working"},
-            signature_recovery_mode="fill",
-        )
-        self.assertEqual(
-            fill["steps"][0]["assistant_content"]["reasoning_content"],
-            "I should read it.",
-        )
+    def test_signed_thinking_preserves_only_native_text_and_does_not_mutate_raw(self) -> None:
+        for native in ("", "Visible summary."):
+            with self.subTest(native=native):
+                events = _events()
+                events[1]["message"]["content"] = [
+                    {"type": "thinking", "thinking": native, "signature": "opaque-signature"},
+                    {"type": "redacted_thinking", "data": "opaque-ciphertext"},
+                    {"type": "text", "text": "answer"},
+                ]
+                before = json.dumps(events)
+                trajectory = claude_code_events_to_actf(events)
+                record = actf_to_sft(trajectory)
+                assistant = next(m for m in record["messages"] if m["role"] == "assistant")
+                self.assertEqual(assistant["reasoning_content"], native)
+                self.assertNotIn("opaque-", json.dumps(record))
+                self.assertEqual(json.dumps(events), before)
 
-        prefer = claude_code_events_to_actf(
-            _events(),
-            user_messages=["inspect input.txt"],
-            recovered_reasoning={"msg-1": "recovered full working"},
-            signature_recovery_mode="prefer",
-        )
-        first = prefer["steps"][0]
-        self.assertEqual(
-            first["assistant_content"]["reasoning_content"],
-            "recovered full working",
-        )
-        self.assertEqual(first["extra"]["reasoning_source"], "signature_recovery")
-        self.assertEqual(first["extra"]["native_reasoning_chars"], 17)
-
-        empty_native_events = _events()
-        empty_native_events[1]["message"]["content"][0]["thinking"] = ""
-        filled = claude_code_events_to_actf(
-            empty_native_events,
-            user_messages=["inspect input.txt"],
-            recovered_reasoning={"msg-1": "recovered full working"},
-            signature_recovery_mode="fill",
-        )
-        self.assertEqual(
-            filled["steps"][0]["assistant_content"]["reasoning_content"],
-            "recovered full working",
-        )
 
     def test_converts_thinking_tools_results_usage_and_sft(self) -> None:
         trajectory = claude_code_events_to_actf(

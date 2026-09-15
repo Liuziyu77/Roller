@@ -17,7 +17,6 @@ analysis, and debugging.
 | Inspect the first system prompt captured into ACTF | Top level of `trace_ACTF.json` | Taken from whichever native/cache/wire source each Harness can obtain, frozen once |
 | Check whether the OpenClaw system prompt changes per call | `cache_trace.jsonl` from `--wire-trace full` | Keeps a diagnostic record of every OpenClaw LLM call |
 | Check the request history and tools the model actually received | `wire_trace.jsonl` from `--wire-trace full` | Saves each JSON request body the proxy actually forwarded |
-| Audit Claude signature recovery | `signature_recovery.jsonl` | Saves attempt, quality, usage, and recovered text for each signed block; does not copy the signature |
 | Inspect Task Agent delivered files | `results/` | Recovers only the output directories the task declared plus extra collect paths |
 | Inspect the dialogue both sides can see | `conversation.json` | Does not include hidden reasoning, tool calls, or tool results |
 
@@ -49,7 +48,6 @@ for all seven Harnesses:
             ├── trace.jsonl
             ├── trace_ACTF.json
             ├── trace_SFT.json
-            ├── signature_recovery.jsonl  # Claude Code 显式开启 recovery 时存在
             ├── info.json
             └── results/                 # Task 输出含文件或目录时存在
 ```
@@ -71,7 +69,6 @@ request proxy. Claude Code temporarily captures the Anthropic system and full
 ├── trace.jsonl
 ├── trace_ACTF.json
 ├── trace_SFT.json
-├── signature_recovery.jsonl       # Claude Code 显式开启 recovery 时存在
 ├── cache_trace.jsonl              # 仅 OpenClaw
 ├── wire_trace.jsonl
 ├── info.json
@@ -119,8 +116,6 @@ Harness session store ────────────────> trace.js
                                                 │
                                                 v
 trace.jsonl + Harness 可取得的 system/tools ──> trace_ACTF.json
-Claude signed block ──> 独立 provider replay ──> signature_recovery.jsonl
-                                              └─> ACTF reasoning（fill/prefer 成功时）
 trace_ACTF.json ────────────────────────────────> trace_SFT.json
 全部成功/Resume sample 的 trace_SFT.json ───────> run/sft.jsonl
 ```
@@ -239,14 +234,6 @@ Uses and limits:
   redaction switch. OpenClaw can also strip later request history at the wire
   layer; Codex and Claude Code only control the export and do not rewrite
   `resume` / `--continue` context.
-- Full thoughts from external thinking are explicit model output and are not
-  stripped by `--no-keep-thinking`. OpenClaw raw stores `deep_think` tool call
-  arguments directly; Codex raw stores the outer `exec` custom call and stores
-  the real thoughts in the arguments of `item_completed/McpToolCall` or
-  `mcp_tool_call_end`. ACTF unifies both as a canonical `deep_think` call; SFT
-  then folds them into the following action assistant's `reasoning_content`.
-  `info.json.runtime.external_thinking` stores the mode, protocol validation
-  status, think count, and THINK/ACT pair count.
 
 ### 4.2 `trace_ACTF.json`: unified analysis trace
 
@@ -271,17 +258,11 @@ Generation conditions:
   and `<environment_context>` before the first turn. The task user message is
   matched to the corresponding turn by content. The native session does not
   contain a full tool schema, so a permissive schema is generated from actual
-  call names and argument fields. An outer programmatic `exec` for external MCP
-  is restored to canonical `deep_think` from the native MCP completion event, so
-  the training layer does not see the Harness transport wrapper.
+  call names and argument fields.
 - Claude Code merges streamed native events that share the same `message.id`,
   writes plaintext `thinking/reasoning/analysis` into `reasoning_content`, and
   associates `tool_use_id` with a later `tool_result`. Ciphertext
   `redacted_thinking` stays in raw and is never guessed into plaintext.
-  When signature recovery is explicitly enabled, `fill` only fills native empty
-  values; `prefer` replaces the native summary with recovered text that passes
-  refusal and minimum-length checks. A step that adopts recovery marks the
-  source in `extra.reasoning_source`.
   When wire is present, system/tools come from the Anthropic request; otherwise
   system is `""` and a permissive schema is derived from actual `tool_use`.
 
@@ -316,12 +297,6 @@ not a snapshot of each provider request. It is suitable for training, but not
 for per-request replay or for proving that an earlier tool result was still
 visible in a later model call.
 
-External thinking has one more training-only projection: the `deep_think` call,
-the fixed placeholder result, the tool schema, and the matching system-prompt
-tool-list entry are removed. Thoughts are merged into the assistant
-`reasoning_content` of the same logical action. Business tool calls and results
-are unchanged. raw/ACTF still keep the actual execution structure, so do not
-substitute SFT for them when auditing the protocol.
 
 Generation conditions:
 
@@ -487,13 +462,9 @@ service:
 
 For a parseable JSON request, the proxy first applies the semantic rewrites the
 current rollout needs, then records and forwards the same body. OpenClaw
-`--no-keep-thinking` strips historical reasoning first; external thinking turns
-off native reasoning and sets THINK/ACT instructions, tools, and tool choice.
-In Codex full wire, `input[].type="additional_tools"` is the programmatic tool
-namespace. The external THINK phase keeps only `functions.exec`; the ACT phase
-restores the original namespace. Full wire therefore shows the semantic JSON
-the Roller client actually handed to the model API, not the Harness draft before
-rewriting.
+`--no-keep-thinking` strips historical reasoning first. Codex full wire may include
+`input[].type="additional_tools"`, the programmatic tool namespace, which Roller leaves unchanged.
+Full wire shows the semantic JSON forwarded to the model API, not the Harness request before processing.
 
 Claude Code full wire saves the Anthropic `/v1/messages` request `system`,
 `messages`, `tools`, thinking/output config, and sampling parameters. Roller
@@ -519,30 +490,9 @@ Limits:
 - Multi-turn requests repeat history, so file size is close to O(N²). Use it
   only for audit and debugging.
 
-### 5.6 `signature_recovery.jsonl` (Claude Code)
+### 5.6 Historical CoT artifacts
 
-Created only by `--claude-signature-recovery fill|prefer`. After the original
-task has fully finished, Roller reads native `thinking.signature` and uses a
-separate Anthropic Messages request so the provider can unseal it and the model
-can transcribe it mechanically. This is not local decryption and does not modify
-the Claude Code session. Each line stores:
-
-- Native `message_id`, block index, model, and sidechain flag;
-- `status`, quality class, and native/signature/recovered lengths;
-- Status, stop reason, token usage, and error for each attempt;
-- `recovered_reasoning`.
-
-The file does not store the original signature value again, and it does not
-store the API key. `status=ok` still does not guarantee a verbatim restore.
-`rewrite_or_unverified/unverified` must be sampled before training. `fill`
-records `skipped_native` when native reasoning already exists and does not make
-an extra model call. Common refusals, responses shorter than 32 characters, or
-responses that only repeat the visible answer are not projected into ACTF/SFT.
-Recovery tokens are counted in the sample usage `signature_recovery_*` fields.
-The extra dollar cost of those requests is not included in the Claude CLI
-`cost_usd`. Recovery is host-side post-processing over a direct connection. It
-is not written to Claude Code `wire_trace.jsonl`; that full wire still represents
-only the original Agent rollout request history.
+New runs no longer generate `signature_recovery.jsonl`. Existing files remain historical diagnostics; upgrading does not bulk-delete or rewrite saved trajectories.
 
 ### 5.7 How to audit context compaction or rewriting
 
@@ -628,42 +578,17 @@ does not return a reasoning summary/content, ACTF/SFT have no
 `reasoning_content` to save. A GPT compacted summary enters that field as-is;
 encrypted reasoning does not enter SFT.
 
-Recommended paths by model class:
-
-- GPT reasoning series (for example `gpt-5.6-sol`): use `external` /
-  `external_always` to obtain explicit CoT;
-- Claude series (for example Claude Opus 4.8, example ID `claude-opus-4-8`): use
-  signature recovery;
-- Open models such as Qwen and GLM that return plaintext reasoning: keep the
-  default `--keep-thinking` so CoT goes directly into ACTF/SFT
-  `reasoning_content`.
+Native reasoning is retained with the default `--keep-thinking`. This applies to GPT summaries, Claude visible thinking, and plaintext reasoning returned by open models.
 
 Even with `--wire-trace off`, `--no-keep-thinking` must still start a proxy to
 strip request history, so OpenClaw still requires a proxyable `baseUrl` in
 `--model-config`. Codex and Claude Code do not perform that history stripping.
 
-`--external-thinking external|external_always` is a separate path: native
-reasoning is forced off, explicit thoughts are stored as tool calls in raw/ACTF,
-and they are folded back into `reasoning_content` in SFT.
-`--no-keep-thinking` does not delete those explicit thoughts.
+### 6.3 Retired CoT acquisition modes
 
-Claude Code currently supports only native thinking.
-`external/external_always` is rejected before Docker starts.
+`external` / `external_always` and Claude signature recovery are retired. Roller no longer injects thinking tools, rewrites THINK/ACT stages, calls signature recovery APIs, or folds tool arguments into reasoning. Ordinary tools with the same names remain tool calls.
 
-### 6.3 Claude signature recovery
-
-| Flag | Extra calls | ACTF/SFT reasoning | raw |
-| --- | --- | --- | --- |
-| `off` (default) | None | Native thinking/summary | Kept as-is |
-| `fill` | Request only signed blocks whose native reasoning is empty | Fill empties on success; keep empty on failure | Kept as-is |
-| `prefer` | Request every signed block | Replace the native summary on success; fall back to native on failure | Kept as-is |
-
-Recovery is an independent call after the task finishes. It does not enter
-`--continue` history. It requires `--keep-thinking` and is bounded by the
-remaining `--timeout` budget of the rollout. Mode, attempt count, and max tokens
-are written into the run lock. Resume cannot mix different recovery
-configurations. Full semantics:
-[Claude Code Signature recovery](../harnesses/claude-code-configuration.md#signature-recovery-experimental).
+Old CLI flags are errors, including `off`. Old run locks do not match the new configuration. Direct Collector calls also refuse to overwrite Agent/Simulator samples whose runtime metadata enabled these features. Use a new run directory for collection. Existing raw/ACTF/SFT remain available for offline inspection; re-exporting ACTF no longer applies special tool-folding rules.
 
 ### 6.4 Cache trace (OpenClaw)
 
@@ -782,25 +707,6 @@ adaptation. After debugging, prefer to keep raw/ACTF/SFT. Delete full cache/wire
 once request-level audit is no longer needed, to reduce duplicated data and
 sensitive-information exposure.
 
-### Fill missing Claude Code reasoning
-
-```bash
-roller collect \
-  --harness claude-code \
-  --tasks tasks.jsonl \
-  --model claude-opus-4-8 \
-  --api-base http://your-api.example/v1/messages \
-  --api-key-env ROLLER_ANTHROPIC_KEY \
-  --thinking high \
-  --claude-signature-recovery fill \
-  --claude-signature-recovery-attempts 2 \
-  --timeout 1200 \
-  --output recovered-runs
-```
-
-For batch training, start with `fill`. Use `prefer` only when you explicitly
-accept rewrite risk and will audit `signature_recovery.jsonl.quality`.
-
 ## 9. Checks before publishing a training set
 
 Check at least the following:
@@ -821,9 +727,6 @@ Check at least the following:
 9. If the dataset claims to reproduce model-visible context, confirm collection
    used `--wire-trace full`, wire `seq` is contiguous, and the request count
    matches expectations. Do not substitute ACTF/SFT for per-request evidence;
-10. If you used Claude signature recovery, filter `status!=ok`, sample-check
-    `rewrite_or_unverified/unverified`, and account for the extra API cost
-    separately.
 
 Hermes raw uses `roller.hermes-events/v1`: full request snapshots, model responses/usage, and tool messages recorded before context compression. It produces no `cache_trace.jsonl`. See [Hermes traces](../harnesses/hermes-configuration.md).
 

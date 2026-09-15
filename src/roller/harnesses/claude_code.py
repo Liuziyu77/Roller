@@ -17,11 +17,6 @@ from urllib.parse import urlsplit, urlunsplit
 
 from roller.artifacts import ArtifactCollectionResult, collect_output_directory
 from roller.claude_code_actf import convert_claude_code_trace
-from roller.claude_signature_recovery import (
-    SIGNATURE_RECOVERY_MODES,
-    SignatureRecoverySummary,
-    recover_claude_signatures,
-)
 from roller.harnesses.base import Harness, InteractiveHarness, InteractiveSession, TurnResult
 from roller.harnesses.docker import DockerRuntime
 from roller.models import HarnessResult, RunRequest
@@ -131,9 +126,6 @@ class ClaudeCodeConfig:
     permission_mode: str = "bypassPermissions"
     wire_trace_mode: str = "actf"
     keep_thinking: bool = True
-    signature_recovery: str = "off"
-    signature_recovery_attempts: int = 1
-    signature_recovery_max_tokens: int = 8192
     keep_container_on_error: bool = False
     docker_binary: str = "docker"
 
@@ -171,18 +163,6 @@ class ClaudeCodeConfig:
             )
         if self.wire_trace_mode not in {"off", "actf", "full"}:
             raise ValueError("Claude Code wire trace mode must be off|actf|full")
-        if self.signature_recovery not in SIGNATURE_RECOVERY_MODES:
-            raise ValueError("Claude signature recovery mode must be off|fill|prefer")
-        if self.signature_recovery_attempts <= 0:
-            raise ValueError("Claude signature recovery attempts must be greater than zero")
-        if self.signature_recovery_max_tokens <= 0:
-            raise ValueError(
-                "Claude signature recovery max tokens must be greater than zero"
-            )
-        if self.signature_recovery != "off" and not self.keep_thinking:
-            raise ValueError(
-                "Claude signature recovery requires --keep-thinking"
-            )
         if self.wire_trace_mode == "full" and not self.api_base:
             raise ValueError("Claude Code --wire-trace full requires --api-base")
         if (
@@ -663,10 +643,6 @@ class ClaudeCodeHarness(InteractiveHarness):
         claude_version = ""
         environment: dict[str, str] = {}
         image_digest = self._image_digest()
-        recovery_summary: SignatureRecoverySummary | None = None
-        recovery_error: str | None = None
-        recovery_path = output_dir / "signature_recovery.jsonl"
-        recovery_path.unlink(missing_ok=True)
         stream_path = output_dir / "rollout" / f"claude-code.attempt-{attempt}.jsonl"
         stream_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -734,25 +710,6 @@ class ClaudeCodeHarness(InteractiveHarness):
                 )
 
         if trace_path is not None:
-            if self.config.signature_recovery != "off":
-                remaining = request.timeout_seconds - (time.monotonic() - started)
-                if remaining <= 0:
-                    recovery_error = "task timeout budget exhausted before signature recovery"
-                else:
-                    try:
-                        recovery_summary = recover_claude_signatures(
-                            trace_path,
-                            recovery_path,
-                            api_base=self.config.api_base,
-                            api_key=os.environ[self.config.api_key_env],
-                            default_model=self._model_name(request),
-                            attempts=self.config.signature_recovery_attempts,
-                            max_tokens=self.config.signature_recovery_max_tokens,
-                            timeout_seconds=remaining,
-                            only_missing=self.config.signature_recovery == "fill",
-                        )
-                    except Exception as exc:
-                        recovery_error = str(exc)[:1000]
             try:
                 trajectory_path = output_dir / "rollout" / "trace_ACTF.json"
                 trajectory = convert_claude_code_trace(
@@ -761,12 +718,6 @@ class ClaudeCodeHarness(InteractiveHarness):
                     user_messages=request.task.prompts,
                     wire_trace=output_dir / "wire_trace.jsonl",
                     keep_thinking=self.config.keep_thinking,
-                    recovered_reasoning=(
-                        recovery_summary.recovered_by_message
-                        if recovery_summary is not None
-                        else None
-                    ),
-                    signature_recovery_mode=self.config.signature_recovery,
                 )
                 if not trajectory.get("steps"):
                     raise ValueError(
@@ -807,50 +758,7 @@ class ClaudeCodeHarness(InteractiveHarness):
             if trace_path is not None
             else dict(ZERO_USAGE)
         )
-        if recovery_summary is not None:
-            recovery_usage = recovery_summary.usage
-            for name in (
-                "input_tokens",
-                "output_tokens",
-                "cache_read_tokens",
-                "cache_write_tokens",
-                "total_tokens",
-                "request_count",
-            ):
-                usage[name] += recovery_usage[name]
-                usage[f"signature_recovery_{name}"] = recovery_usage[name]
         usage["elapsed_seconds"] = round(elapsed, 3)
-        recovered_count = (
-            recovery_summary.recovered_count if recovery_summary is not None else 0
-        )
-        applied_count = 0
-        if recovery_summary is not None:
-            applied_count = sum(
-                record.get("status") == "ok"
-                and (
-                    self.config.signature_recovery == "prefer"
-                    or record.get("native_reasoning_chars") == 0
-                )
-                for record in recovery_summary.records
-            )
-        recovery_metadata = {
-            "mode": self.config.signature_recovery,
-            "attempts": self.config.signature_recovery_attempts,
-            "max_tokens": self.config.signature_recovery_max_tokens,
-            "candidate_count": (
-                recovery_summary.candidate_count if recovery_summary is not None else 0
-            ),
-            "recovered_count": recovered_count,
-            "applied_count": applied_count,
-            "artifact": (
-                "signature_recovery.jsonl"
-                if recovery_path.is_file()
-                else None
-            ),
-            "error": recovery_error,
-            "exactness": "best_effort",
-            "cost_usd_included": False,
-        }
         output_metadata = (
             {
                 "mode": "all",
@@ -898,7 +806,6 @@ class ClaudeCodeHarness(InteractiveHarness):
             ),
             "environment_names": sorted(environment),
             "attempt": attempt,
-            "signature_recovery_mode": self.config.signature_recovery,
             "started_at": started_at,
             "finished_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         }
@@ -929,7 +836,6 @@ class ClaudeCodeHarness(InteractiveHarness):
                 "permission_mode": self.config.permission_mode,
                 "wire_trace": self.config.wire_trace_mode,
                 "keep_thinking": self.config.keep_thinking,
-                "signature_recovery": recovery_metadata,
                 "settings_fingerprint": self.config.settings_fingerprint,
                 "output_collection": output_metadata,
                 "output_copy_error": output_copy_error,
@@ -971,9 +877,6 @@ class ClaudeCodeSession(InteractiveSession):
         self.started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
         self.started_monotonic = time.monotonic()
         self.stream_path = output_dir / "rollout" / f"claude-code.attempt-{attempt}.jsonl"
-        self.recovery_path = output_dir / "signature_recovery.jsonl"
-        self.recovery_summary: SignatureRecoverySummary | None = None
-        self.recovery_error: str | None = None
         self._finished: HarnessResult | None = None
 
     def start(self) -> None:
@@ -981,7 +884,6 @@ class ClaudeCodeSession(InteractiveSession):
             raise RuntimeError("Claude Code session has already started")
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.stream_path.parent.mkdir(parents=True, exist_ok=True)
-        self.recovery_path.unlink(missing_ok=True)
         for relative in (
             "rollout/trace.jsonl",
             f"rollout/trace.attempt-{self.attempt}.jsonl",
@@ -1011,7 +913,6 @@ class ClaudeCodeSession(InteractiveSession):
             user_messages=[*self.messages, self._pending_message],
             wire_trace=self.output_dir / "wire_trace.jsonl",
             keep_thinking=self.harness.config.keep_thinking,
-            signature_recovery_mode="off",
         )
         steps = trajectory.get("steps")
         if not isinstance(steps, list):
@@ -1077,25 +978,6 @@ class ClaudeCodeSession(InteractiveSession):
                     output_copy_error = str(exc)
                     logger.warning("[%s] Claude Code output collection failed: %s", self.request.task.id, exc)
         if trace_path is not None:
-            if config.signature_recovery != "off":
-                remaining = self.request.timeout_seconds - (time.monotonic() - self.started_monotonic)
-                if remaining <= 0:
-                    self.recovery_error = "task timeout budget exhausted before signature recovery"
-                else:
-                    try:
-                        self.recovery_summary = recover_claude_signatures(
-                            trace_path,
-                            self.recovery_path,
-                            api_base=config.api_base,
-                            api_key=os.environ[config.api_key_env],
-                            default_model=self.harness._model_name(self.request),
-                            attempts=config.signature_recovery_attempts,
-                            max_tokens=config.signature_recovery_max_tokens,
-                            timeout_seconds=remaining,
-                            only_missing=config.signature_recovery == "fill",
-                        )
-                    except Exception as exc:
-                        self.recovery_error = str(exc)[:1000]
             try:
                 trajectory_path = self.output_dir / "rollout" / "trace_ACTF.json"
                 trajectory = convert_claude_code_trace(
@@ -1104,11 +986,6 @@ class ClaudeCodeSession(InteractiveSession):
                     user_messages=self.messages,
                     wire_trace=self.output_dir / "wire_trace.jsonl",
                     keep_thinking=config.keep_thinking,
-                    recovered_reasoning=(
-                        self.recovery_summary.recovered_by_message
-                        if self.recovery_summary is not None else None
-                    ),
-                    signature_recovery_mode=config.signature_recovery,
                 )
                 if not trajectory.get("steps"):
                     raise ValueError("Claude Code native trace produced no assistant steps")
@@ -1135,13 +1012,6 @@ class ClaudeCodeSession(InteractiveSession):
             extract_claude_code_usage(trace_path, self.stream_path)
             if trace_path is not None else dict(ZERO_USAGE)
         )
-        if self.recovery_summary is not None:
-            for name in (
-                "input_tokens", "output_tokens", "cache_read_tokens",
-                "cache_write_tokens", "total_tokens", "request_count",
-            ):
-                usage[name] += self.recovery_summary.usage[name]
-                usage[f"signature_recovery_{name}"] = self.recovery_summary.usage[name]
         usage["elapsed_seconds"] = round(elapsed, 3)
         output_metadata = None
         if artifact_result is not None:
@@ -1158,26 +1028,6 @@ class ClaudeCodeSession(InteractiveSession):
                 "files": list(artifact_result.files),
                 "errors": list(artifact_result.errors),
             }
-        recovered_count = self.recovery_summary.recovered_count if self.recovery_summary else 0
-        applied_count = 0
-        if self.recovery_summary is not None:
-            applied_count = sum(
-                record.get("status") == "ok"
-                and (config.signature_recovery == "prefer" or record.get("native_reasoning_chars") == 0)
-                for record in self.recovery_summary.records
-            )
-        recovery_metadata = {
-            "mode": config.signature_recovery,
-            "attempts": config.signature_recovery_attempts,
-            "max_tokens": config.signature_recovery_max_tokens,
-            "candidate_count": self.recovery_summary.candidate_count if self.recovery_summary else 0,
-            "recovered_count": recovered_count,
-            "applied_count": applied_count,
-            "artifact": "signature_recovery.jsonl" if self.recovery_path.is_file() else None,
-            "error": self.recovery_error,
-            "exactness": "best_effort",
-            "cost_usd_included": False,
-        }
         provenance = {
             "schema_version": "roller.provenance/v1",
             "roller_version": __version__,
@@ -1195,7 +1045,6 @@ class ClaudeCodeSession(InteractiveSession):
             "api_base_urls": [redact_anthropic_base_url(config.api_base)] if config.api_base else [],
             "environment_names": sorted(self.environment),
             "attempt": self.attempt,
-            "signature_recovery_mode": config.signature_recovery,
             "started_at": self.started_at,
             "finished_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         }
@@ -1222,7 +1071,6 @@ class ClaudeCodeSession(InteractiveSession):
                 "permission_mode": config.permission_mode,
                 "wire_trace": config.wire_trace_mode,
                 "keep_thinking": config.keep_thinking,
-                "signature_recovery": recovery_metadata,
                 "settings_fingerprint": config.settings_fingerprint,
                 "output_collection": output_metadata,
                 "output_copy_error": output_copy_error,

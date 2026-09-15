@@ -52,7 +52,7 @@ Automatic compaction, session/provider retries, telemetry, remote model catalog 
 
 Empty replies, truncation, API errors, step limits, and unmatched tool calls do not produce successful trajectories. Conversion rejects changes to the system prompt/tool schemas and non-text content that would be lost. Timeouts stop the container and recover existing output files. Pi does not require an OpenClaw cache trace.
 
-The initial scope is text and file tasks. It excludes visual acceptance, external thinking, interactive login, other Pi provider protocols, custom extensions/plugins, and automatic compaction; it does not expose every feature of the underlying Pi product.
+The initial scope is text and file tasks. It excludes visual acceptance, interactive login, other Pi provider protocols, custom extensions/plugins, and automatic compaction; it does not expose every feature of the underlying Pi product.
 
 ## Reusable verification
 

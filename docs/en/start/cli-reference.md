@@ -142,7 +142,7 @@ Default image precedence: `--docker-image` → `ROLLER_OPENCLAW_IMAGE` → `ghcr
 
 Default image precedence: `--docker-image` → `ROLLER_CODEX_IMAGE` → `roller-codex:0.149.0`.
 
-Custom OpenAI-compatible APIs default to Responses HTTP streaming. External thinking or full wire trace requires an explicit `--api-base`, the default host network, and `--no-codex-websockets`.
+Custom OpenAI-compatible APIs default to Responses HTTP streaming. Full wire trace requires an explicit `--api-base`, the default host network, and `--no-codex-websockets`.
 
 ## 7. Claude Code-only flags
 
@@ -154,31 +154,12 @@ Custom OpenAI-compatible APIs default to Responses HTTP streaming. External thin
 | `--claude-max-turns N` | None | Claude agent turn cap per predefined user message |
 | `--claude-max-thinking-tokens N` | None | `MAX_THINKING_TOKENS` inside the container |
 | `--claude-permission-mode MODE` | `bypassPermissions` | Claude Code permission mode |
-| `--claude-signature-recovery MODE` | `off` | `off`, `fill`, or `prefer` |
-| `--claude-signature-recovery-attempts N` | `1` | Maximum replay attempts per signed block |
-| `--claude-signature-recovery-max-tokens N` | `8192` | Maximum visible output tokens per replay |
 
 Default image precedence: `--docker-image` → `ROLLER_CLAUDE_CODE_IMAGE` → `roller-claude-code:2.1.222`.
 
-Signature recovery must keep `--keep-thinking` on. It is an extra provider request after the task finishes, not local decryption; see the [Claude Code guide](../harnesses/claude-code-configuration.md#signature-recovery-experimental).
+## 8. Retired CoT options
 
-## 8. External thinking
-
-This option is mainly for GPT reasoning models such as `gpt-5.6-sol`. When an open-source model API such as Qwen or GLM returns
-plaintext reasoning, keep the default `--keep-thinking` and do not use external thinking. Claude signed
-thinking uses `--claude-signature-recovery`, not this option.
-
-```text
---external-thinking off|external|external_always
-```
-
-| Mode | OpenClaw | Codex | Claude Code | Hermes | OpenCode |
-| --- | --- | --- | --- | --- | --- |
-| `off` | Supported, default | Supported, default | Only supported value | Only supported value | Only supported value |
-| `external` | Responses provider | Responses HTTP | Not supported | Not supported | Not supported |
-| `external_always` | Responses provider | Responses HTTP | Not supported | Not supported | Not supported |
-
-When enabled, Roller turns off native reasoning and normalizes `deep_think` tool arguments into SFT `reasoning_content`. Stage protocol, checks, and safety bounds are in [External Thinking](../traces/external-thinking.md).
+`--external-thinking` (including `off`) and `--claude-signature-recovery*` have been removed. Delete them from old commands; passing them is an argument error. Native `--thinking`, `--reasoning-summary`, and `--keep-thinking` are unchanged.
 
 ## 9. Resume
 
@@ -236,7 +217,7 @@ Field semantics, scoring timeline, `stage` leak-prevention rules, and aggregatio
 | `--hermes-context-length` | Provider metadata | Optional context window override, at least 64000 tokens |
 | `--hermes-max-iterations` | `12` | Model iterations per user turn; must be positive |
 
-Hermes accepts `off/minimal/low/medium/high/xhigh` thinking hints, subject to native provider/model handling. External thinking is unsupported. Native request snapshots preserve tool schemas in every wire mode; `full` also retains the HTTP trace and requires an explicit API base and host networking. See [Hermes configuration](../harnesses/hermes-configuration.md).
+Hermes accepts `off/minimal/low/medium/high/xhigh` thinking hints, subject to native provider/model handling. Native request snapshots preserve tool schemas in every wire mode; `full` also retains the HTTP trace and requires an explicit API base and host networking. See [Hermes configuration](../harnesses/hermes-configuration.md).
 
 ## OpenCode
 
