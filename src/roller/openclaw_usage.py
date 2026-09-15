@@ -8,6 +8,7 @@ from typing import Any
 
 
 TOKEN_FIELDS = ("input", "output", "cacheRead", "cacheWrite", "totalTokens")
+_ALIASES = {"input": "input_tokens", "output": "output_tokens"}
 TokenCounts = tuple[int | float, ...]
 
 
@@ -32,7 +33,12 @@ class OpenClawUsage:
     def parse(cls, raw: Any) -> OpenClawUsage | None:
         if not isinstance(raw, dict):
             return None
-        components = [raw.get(key, 0) for key in TOKEN_FIELDS[:-1]]
+        # Preserve the ACTF converter's legacy spellings. An explicitly
+        # supplied native field wins; aliases cannot hide a malformed value.
+        components = [
+            raw.get(key, raw.get(_ALIASES.get(key, key), 0))
+            for key in TOKEN_FIELDS[:-1]
+        ]
         matchable = all(_valid_number(value) for value in components)
         components = [value if _valid_number(value) else 0 for value in components]
         total = raw.get("totalTokens")

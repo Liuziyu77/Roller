@@ -339,9 +339,15 @@ CLI 在正式采集前写入初始 run 信息；Collector 在首条结果、之�
 runtime 和输入 provenance。训练数据刻意删除的 metadata 在这里保留。
 
 OpenClaw session 有时会用 `api=cli` 再记录一次已交付的回复，但真正的 CLI backend 回复
-也使用这个标记。Roller 不会按这个字段直接删除消息：只有在同一轮、相同 provider/model
-下匹配到已记录的调用，才去重 token 和 request count；最终文本也一致时才省略重复消息。
-补全了新文本的回复仍进入 ACTF/SFT，但已匹配的 token 不会再计入 step metric。
+也使用这个标记。Roller 不会按这个字段直接删除消息：只有在同一轮、与最新 provider 回复
+的 provider/model 相同，且匹配到已记录用量时，才去重 token 和 request count。
+最终文本与已交付文本一致时省略重复消息；gap-fill 的新文本仍进入 ACTF/SFT，但不重复
+计入 step metric。匹配到的 gap-fill 会更新已交付文本，重复投递不再增加消息或用量。
+
+边界规则固定为：独立、结构化、失败或跨来源的 CLI 回复保留原文和用量，并暂停投递匹配，
+直到下一条 provider 回复。它们不清空 provider 记账历史。只有 user、session、compaction
+事件清空整轮历史；不推断旧来源的迟到投递。计数同时兼容 `input_tokens/output_tokens`，
+原生 `input/output` 字段存在时优先使用，非法原生值不会被别名掩盖。
 
 OpenClaw 2026.7.1 的 CLI 累计报告可同时包含四项 token 分量的整轮累加值，以及最后一次
 调用的 `totalTokens`（上下文用量）。匹配整轮报告时，四项分量必须逐项一致；total 只接受
