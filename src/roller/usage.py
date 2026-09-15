@@ -4,6 +4,9 @@ import json
 from pathlib import Path
 from typing import Any
 
+from roller.openclaw_delivery import OpenClawDeliveryTracker
+from roller.openclaw_usage import OpenClawUsage
+
 
 ZERO_USAGE: dict[str, int | float] = {
     "input_tokens": 0,
@@ -24,6 +27,7 @@ def extract_openclaw_usage(trace_path: Path) -> dict[str, int | float]:
     """Sum usage blocks from raw OpenClaw assistant message events."""
 
     totals = dict(ZERO_USAGE)
+    delivery_tracker = OpenClawDeliveryTracker()
     if not trace_path.is_file():
         return totals
     with trace_path.open("r", encoding="utf-8", errors="replace") as stream:
@@ -32,26 +36,29 @@ def extract_openclaw_usage(trace_path: Path) -> dict[str, int | float]:
                 event = json.loads(raw_line)
             except (json.JSONDecodeError, TypeError):
                 continue
-            if not isinstance(event, dict) or event.get("type") != "message":
+            if not isinstance(event, dict):
+                continue
+            delivery = delivery_tracker.observe(event)
+            if event.get("type") != "message":
                 continue
             message = event.get("message")
             if not isinstance(message, dict) or message.get("role") != "assistant":
                 continue
-            usage = message.get("usage")
-            if not isinstance(usage, dict):
+            if delivery.skip_usage:
+                # CLI-only replies are counted; verified mirrors and already
+                # recorded turn totals are not additional model requests.
+                totals["cost_usd"] += delivery.additional_cost_usd
+                continue
+            usage = OpenClawUsage.parse(message.get("usage"))
+            if usage is None:
                 continue
             totals["request_count"] += 1
-            totals["input_tokens"] += _number(usage.get("input"))
-            totals["output_tokens"] += _number(usage.get("output"))
-            totals["cache_read_tokens"] += _number(usage.get("cacheRead"))
-            totals["cache_write_tokens"] += _number(usage.get("cacheWrite"))
-            total_tokens = _number(usage.get("totalTokens"), -1)
-            if total_tokens == -1:
-                total_tokens = _number(usage.get("input")) + _number(usage.get("output"))
-            totals["total_tokens"] += total_tokens
-            cost = usage.get("cost")
-            if isinstance(cost, dict):
-                totals["cost_usd"] += _number(cost.get("total"), 0.0)
+            for key, value in zip((
+                "input_tokens", "output_tokens", "cache_read_tokens",
+                "cache_write_tokens", "total_tokens",
+            ), usage.counts):
+                totals[key] += value
+            totals["cost_usd"] += usage.cost_usd
     totals["cost_usd"] = round(float(totals["cost_usd"]), 6)
     return totals
 

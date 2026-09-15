@@ -338,6 +338,32 @@ CLI 在正式采集前写入初始 run 信息；Collector 在首条结果、之�
 最终状态、错误、attempt 历史、usage、耗时、raw/ACTF/SFT 相对路径、输出回收信息、
 runtime 和输入 provenance。训练数据刻意删除的 metadata 在这里保留。
 
+OpenClaw session 有时会用 `api=cli` 再记录一次已交付的回复，但真正的 CLI backend 回复
+也使用这个标记。Roller 不会按这个字段直接删除消息：只有在同一轮、与最新 provider 回复
+的 provider/model 相同，且匹配到已记录用量时，才去重 token 和 request count。
+最终文本与已交付文本一致时省略重复消息；gap-fill 的新文本仍进入 ACTF/SFT，但不重复
+计入 step metric。匹配到的 gap-fill 会更新已交付文本，重复投递不再增加消息或用量。
+
+边界规则固定为：独立、结构化、失败或跨来源的 CLI 回复保留原文和用量，并暂停投递匹配，
+直到下一条 provider 回复。它们不清空 provider 记账历史。只有 user、session、compaction
+事件清空整轮历史；不推断旧来源的迟到投递。计数同时兼容 `input_tokens/output_tokens`，
+原生 `input/output` 字段存在时优先使用，非法原生值不会被别名掩盖。
+
+OpenClaw 2026.7.1 的 CLI 累计报告可同时包含四项 token 分量的整轮累加值，以及最后一次
+调用的 `totalTokens`（上下文用量）。匹配整轮报告时，四项分量必须逐项一致；total 只接受
+已记录的整轮总和或最后一次调用的正值。Roller 保留 provider 调用的统计，不把这个上下文 total
+再加一遍。最后一次同源调用失败时，CLI 兜底仍独立计数；若随后 provider 重试成功，整轮
+匹配会包含先前失败调用已经报告的有效 usage 和费用。
+
+`cost_usd` 按匹配的单次调用或截至当时的整轮调用补记差额，不把费用镜像当作新收费。
+例如 provider 未报费用，CLI 连续两次报告同一调用花费 `$0.05`，最终仍只记 `$0.05`；
+先收到单次费用、再收到包含它的整轮费用，也不会重复累加。没有 token 字段、只有费用的
+CLI 镜像，只有在最终文本和来源匹配时才按最近一次调用补记。相互矛盾的费用报告保留已知
+较高值，不执行退款；这是 session 中报告的费用，不是服务端账单核对结果。
+
+这些处理不改写 raw。升级后重新解析保留的 raw 可以得到新统计，但 resume 不会重算已有
+`info.json` 中缓存的 usage。
+
 ### 5.4 `cache_trace.jsonl`
 
 OpenClaw 的 `diagnostics.cacheTrace` 记录每次 LLM call 组装后的 system prompt。默认启用，

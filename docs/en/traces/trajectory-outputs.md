@@ -408,6 +408,44 @@ elapsed time, relative paths to raw/ACTF/SFT, output recovery information,
 runtime, and input provenance. Metadata that training data deliberately drops is
 kept here.
 
+OpenClaw sessions sometimes record an already delivered reply again with
+`api=cli`; genuine CLI-backend replies use that marker too. Roller does not
+drop messages based on the marker alone. It deduplicates tokens and request
+counts only when usage matches within the same turn and the CLI source matches
+the latest provider reply's provider/model. A message is omitted only when its
+final text matches the delivered text. Matched gap fills keep new text without
+repeating step tokens and update the delivered text, so repeated delivery adds
+neither another message nor usage.
+
+Independent, structured, failed, or cross-source CLI replies keep their content
+and usage and suspend delivery matching until another provider reply arrives.
+They do not clear the provider accounting history. Only user, session, and
+compaction events clear the turn history; late delivery from an older source is
+not inferred. Token parsing also accepts `input_tokens/output_tokens`. Explicit
+native `input/output` fields take precedence, including malformed values, so
+aliases cannot hide invalid native counters.
+
+OpenClaw 2026.7.1 CLI aggregates can combine cumulative input/output/cache
+counts with the last call's `totalTokens` (context usage). Aggregate matching
+requires all four components to match individually, and the total must equal
+either the recorded cumulative total or the last call's positive total. Roller keeps
+the provider-call accounting without adding that context total again. When
+the latest same-source call failed, a CLI fallback is still counted separately.
+After a provider retry succeeds, aggregate matching includes valid usage and
+cost reported by earlier failed calls as well.
+
+`cost_usd` credits only the missing amount for the matched call or the turn's
+calls so far. If a provider omits cost and two CLI mirrors each report `$0.05`
+for that call, the total remains `$0.05`. Per-call costs and later turn totals
+covering those calls do not add up twice. A cost-only CLI mirror without token
+fields is credited to the latest call only when final text and source match.
+Conflicting cost reports retain the higher known amount rather than applying
+refunds; these are session-reported costs, not reconciliation with a provider's
+billing records.
+
+Raw is unchanged. Re-parsing retained raw after upgrading can produce updated
+statistics, but resume does not recompute usage cached in existing `info.json`.
+
 ### 5.4 `cache_trace.jsonl`
 
 OpenClaw `diagnostics.cacheTrace` records the assembled system prompt of every
