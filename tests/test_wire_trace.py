@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import io
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 from roller.wire_trace import (
     REDACTED_VALUE,
@@ -18,6 +20,28 @@ from roller.wire_trace import (
 
 
 class ForwardPathTests(unittest.TestCase):
+    def test_native_request_is_forwarded_once_without_cot_rewrites(self) -> None:
+        body = json.dumps({
+            "model": "model",
+            "reasoning": {"effort": "high", "summary": "detailed"},
+            "input": [{"role": "user", "content": "Inspect the file"}],
+            "tools": [{"type": "function", "name": "read", "parameters": {}}],
+            "tool_choice": "auto",
+        }).encode()
+        handler = MagicMock()
+        handler.server.proxy = WireTraceProxy("http://example.test/v1", Path("/tmp/unused-wire.jsonl"))
+        handler.headers = {"Content-Length": str(len(body)), "Content-Type": "application/json"}
+        handler.rfile = io.BytesIO(body)
+        handler.path = "/v1/responses"
+        handler.command = "POST"
+        response = MagicMock(status=200, headers={})
+        response.read.return_value = b""
+        with patch("roller.wire_trace.urllib_request.urlopen", return_value=response) as send:
+            _ProxyHandler._handle(handler)
+        send.assert_called_once()
+        self.assertEqual(send.call_args.args[0].data, body)
+        handler._record.assert_called_once_with(body)
+
     def test_drops_only_scoped_query_parameters(self) -> None:
         proxy = WireTraceProxy(
             "http://example.test",

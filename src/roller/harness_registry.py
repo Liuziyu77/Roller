@@ -8,12 +8,11 @@ from dataclasses import dataclass
 class HarnessCapabilities:
     label: str
     cache_trace: bool = False
-    external_thinking: bool = False
 
 
 HARNESSES = {
-    "openclaw": HarnessCapabilities("OpenClaw", cache_trace=True, external_thinking=True),
-    "codex": HarnessCapabilities("Codex", external_thinking=True),
+    "openclaw": HarnessCapabilities("OpenClaw", cache_trace=True),
+    "codex": HarnessCapabilities("Codex"),
     "claude-code": HarnessCapabilities("Claude Code"),
     "hermes": HarnessCapabilities("Hermes"),
     "opencode": HarnessCapabilities("OpenCode"),

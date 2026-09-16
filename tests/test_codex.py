@@ -91,21 +91,6 @@ class CodexHarnessTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "absolute http"):
             CodexConfig(api_base="example.test/v1")
 
-    def test_external_thinking_requires_http_proxy_compatible_settings(self) -> None:
-        with self.assertRaisesRegex(ValueError, "requires --api-base"):
-            CodexConfig(external_thinking="external")
-        with self.assertRaisesRegex(ValueError, "no-codex-websockets"):
-            CodexConfig(
-                api_base="http://example.test/v1",
-                external_thinking="external",
-                supports_websockets=True,
-            )
-        with self.assertRaisesRegex(ValueError, "network host"):
-            CodexConfig(
-                api_base="http://example.test/v1",
-                external_thinking="external_always",
-                network="bridge",
-            )
 
     def test_full_wire_trace_requires_api_base_and_host_network(self) -> None:
         with self.assertRaisesRegex(ValueError, "full requires --api-base"):
@@ -117,61 +102,6 @@ class CodexHarnessTests(unittest.TestCase):
                 network=None,
             )
 
-    def test_external_command_disables_native_reasoning_and_registers_mcp(self) -> None:
-        harness = CodexHarness(
-            CodexConfig(
-                api_base="http://example.test/v1",
-                reasoning_effort="high",
-                reasoning_summary="detailed",
-                external_thinking="external_always",
-            ),
-            0,
-        )
-        harness._wire_proxy = MagicMock(
-            proxy_base_url="http://127.0.0.1:32100/v1"
-        )
-
-        command = harness._codex_command(
-            "container", self._request("xhigh"), "hello", resume=False
-        )
-
-        self.assertNotIn('model_reasoning_effort="high"', command)
-        self.assertFalse(any("model_reasoning_effort" in item for item in command))
-        self.assertFalse(any("model_reasoning_summary" in item for item in command))
-        self.assertIn(
-            'model_providers.roller_api.base_url="http://127.0.0.1:32100/v1"',
-            command,
-        )
-        self.assertIn(
-            'mcp_servers.roller_external_thinking.command="node"', command
-        )
-        self.assertIn(
-            'mcp_servers.roller_external_thinking.enabled_tools=["deep_think"]',
-            command,
-        )
-        self.assertIsNone(harness._effective_effort(self._request("xhigh")))
-
-    @patch("roller.harnesses.codex.WireTraceProxy")
-    def test_external_proxy_uses_codex_mcp_transport(self, proxy_class) -> None:
-        proxy = proxy_class.return_value
-        harness = CodexHarness(
-            CodexConfig(
-                api_base="http://example.test/v1",
-                external_thinking="external",
-            ),
-            0,
-        )
-
-        harness._start_wire_proxy(Path("/tmp/codex-external-test"))
-
-        self.assertEqual(
-            proxy_class.call_args.kwargs["external_thinking_transport"],
-            "codex_mcp",
-        )
-        self.assertEqual(
-            proxy_class.call_args.kwargs["external_thinking_mode"], "external"
-        )
-        proxy.start.assert_called_once_with()
 
     def test_wire_proxy_shutdown_redacts_sensitive_body_fields(self) -> None:
         harness = CodexHarness(CodexConfig(), 0)

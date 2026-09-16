@@ -142,7 +142,7 @@ off | minimal | low | medium | high | xhigh | adaptive | max | ultra
 
 默认镜像优先级：`--docker-image` → `ROLLER_CODEX_IMAGE` → `roller-codex:0.149.0`。
 
-自定义 OpenAI-compatible API 默认使用 Responses HTTP streaming。External thinking 或 full wire trace 要求显式 `--api-base`、默认 host network 和 `--no-codex-websockets`。
+自定义 OpenAI-compatible API 默认使用 Responses HTTP streaming。Full wire trace 要求显式 `--api-base`、默认 host network 和 `--no-codex-websockets`。
 
 ## 7. Claude Code 专属参数
 
@@ -154,31 +154,12 @@ off | minimal | low | medium | high | xhigh | adaptive | max | ultra
 | `--claude-max-turns N` | 无 | 每条预定义 user message 的 Claude agent turn 上限 |
 | `--claude-max-thinking-tokens N` | 无 | 容器内 `MAX_THINKING_TOKENS` |
 | `--claude-permission-mode MODE` | `bypassPermissions` | Claude Code permission mode |
-| `--claude-signature-recovery MODE` | `off` | `off`、`fill` 或 `prefer` |
-| `--claude-signature-recovery-attempts N` | `1` | 每个 signed block 的最大 replay 次数 |
-| `--claude-signature-recovery-max-tokens N` | `8192` | 每次 replay 的最大可见输出 token |
 
 默认镜像优先级：`--docker-image` → `ROLLER_CLAUDE_CODE_IMAGE` → `roller-claude-code:2.1.222`。
 
-Signature recovery 必须同时保持 `--keep-thinking`。它是任务结束后的额外 provider 请求，不是本地解密；详见 [Claude Code 指南](../harnesses/claude-code-configuration.md#5-signature-recovery实验性)。
+## 8. 已下线的 CoT 选项
 
-## 8. External thinking
-
-该选项主要面向 `gpt-5.6-sol` 等 GPT reasoning 模型。Qwen、GLM 等开源模型的 API 返回
-明文 reasoning 时，保持默认 `--keep-thinking`，无需使用 external thinking。Claude signed
-thinking 使用 `--claude-signature-recovery`，不使用本选项。
-
-```text
---external-thinking off|external|external_always
-```
-
-| 模式 | OpenClaw | Codex | Claude Code | Hermes | OpenCode |
-| --- | --- | --- | --- | --- | --- |
-| `off` | 支持，默认 | 支持，默认 | 唯一支持值 | 唯一支持值 | 唯一支持值 |
-| `external` | Responses provider | Responses HTTP | 不支持 | 不支持 | 不支持 |
-| `external_always` | Responses provider | Responses HTTP | 不支持 | 不支持 | 不支持 |
-
-启用后，Roller 关闭原生 reasoning，把 `deep_think` 工具参数标准化进 SFT 的 `reasoning_content`。阶段协议、验收和安全边界见 [External Thinking](../traces/external-thinking.md)。
+`--external-thinking`（包括 `off`）和 `--claude-signature-recovery*` 已移除。旧命令需要删除这些参数；继续传入会报参数错误。原生 `--thinking`、`--reasoning-summary`、`--keep-thinking` 不受影响。
 
 ## 9. Resume
 
@@ -236,7 +217,7 @@ roller bench report RUN_DIR [--output REPORT.json]
 | `--hermes-context-length` | 由 Hermes 读取模型信息 | 可选窗口覆盖，至少 64000 tokens |
 | `--hermes-max-iterations` | `12` | 每条 user message 的模型迭代上限 |
 
-Hermes 接受 `off/minimal/low/medium/high/xhigh` reasoning 提示，最终由原生模型/provider 适配决定；暂不支持 external thinking。所有 wire 模式均保留原生请求中的工具 schema；`full` 额外保留 HTTP 轨迹，要求已配置 API base 和 host 网络。详见 [Hermes 配置](../harnesses/hermes-configuration.md)。
+Hermes 接受 `off/minimal/low/medium/high/xhigh` reasoning 提示，最终由原生模型/provider 适配决定。所有 wire 模式均保留原生请求中的工具 schema；`full` 额外保留 HTTP 轨迹，要求已配置 API base 和 host 网络。详见 [Hermes 配置](../harnesses/hermes-configuration.md)。
 
 ## OpenCode
 

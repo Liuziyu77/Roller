@@ -9,7 +9,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from roller.external_thinking import external_thinking_mode_from_metadata
 from roller.harnesses.base import Harness, InteractiveHarness
 from roller.models import HarnessResult, RunRequest, Task, UserSimulatorSpec
 from roller.sft import write_sft
@@ -166,13 +165,7 @@ class ConversationManager(Harness):
             trajectory = json.loads(actf_path.read_text(encoding="utf-8"))
             if not isinstance(trajectory, dict):
                 raise ValueError("canonical ACTF trajectory must be a JSON object")
-            write_sft(
-                sft_path,
-                trajectory,
-                external_thinking=external_thinking_mode_from_metadata(
-                    result.metadata
-                ),
-            )
+            write_sft(sft_path, trajectory)
         rollout_dir = simulator_dir / "rollout"
         if rollout_dir.exists():
             shutil.rmtree(rollout_dir)

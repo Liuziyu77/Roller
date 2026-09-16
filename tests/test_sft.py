@@ -149,6 +149,25 @@ def _external_trajectory() -> dict:
 
 
 class SFTConversionTests(unittest.TestCase):
+    def test_deep_think_is_an_ordinary_tool_not_reasoning(self) -> None:
+        trajectory = _external_trajectory()
+        record = actf_to_sft(trajectory)
+        assistants = [m for m in record["messages"] if m["role"] == "assistant"]
+        self.assertEqual(len(assistants), len(trajectory["steps"]))
+        for message, step in zip(assistants, trajectory["steps"]):
+            self.assertEqual(
+                message["reasoning_content"],
+                step["assistant_content"]["reasoning_content"],
+            )
+        self.assertEqual(record["messages"][0]["content"], trajectory["system_prompt"])
+        self.assertIn("deep_think", [tool["function"]["name"] for tool in record["tools"]])
+        self.assertEqual(assistants[0]["tool_calls"][0]["function"]["name"], "deep_think")
+        self.assertEqual(
+            json.loads(assistants[0]["tool_calls"][0]["function"]["arguments"]),
+            {"thoughts": "First inspect."},
+        )
+        self.assertEqual(len([m for m in record["messages"] if m["role"] == "tool"]), 3)
+
     def test_projects_minimal_messages_and_tools(self) -> None:
         record = actf_to_sft(_trajectory())
 
@@ -188,70 +207,6 @@ class SFTConversionTests(unittest.TestCase):
             expected = write_sft(path, _trajectory())
             self.assertEqual(json.loads(path.read_text()), expected)
 
-    def test_folds_external_thinking_into_following_assistant_reasoning(self) -> None:
-        record = actf_to_sft(
-            _external_trajectory(), external_thinking="external_always"
-        )
-
-        self.assertEqual(
-            [message["role"] for message in record["messages"]],
-            ["system", "user", "assistant", "tool", "assistant"],
-        )
-        first_assistant = record["messages"][2]
-        self.assertEqual(first_assistant["reasoning_content"], "First inspect.")
-        self.assertEqual(
-            [call["function"]["name"] for call in first_assistant["tool_calls"]],
-            ["read"],
-        )
-        self.assertEqual(record["messages"][4]["reasoning_content"], "Now answer.")
-        self.assertEqual(record["messages"][4]["content"], "Done")
-        self.assertEqual(
-            [tool["function"]["name"] for tool in record["tools"]], ["read"]
-        )
-        self.assertNotIn("deep_think", json.dumps(record))
-        self.assertNotIn("------", json.dumps(record))
-
-    def test_keeps_deep_think_as_a_tool_when_external_mode_is_off(self) -> None:
-        record = actf_to_sft(_external_trajectory())
-
-        self.assertIn(
-            "deep_think", [tool["function"]["name"] for tool in record["tools"]]
-        )
-        self.assertIn("- deep_think", record["messages"][0]["content"])
-        self.assertEqual(
-            record["messages"][2]["tool_calls"][0]["function"]["name"],
-            "deep_think",
-        )
-
-    def test_folds_external_think_batched_with_a_business_tool(self) -> None:
-        trajectory = _external_trajectory()
-        think_step = trajectory["steps"][0]
-        business_step = trajectory["steps"][1]
-        think_step["assistant_content"]["tool_calls"].extend(
-            business_step["assistant_content"]["tool_calls"]
-        )
-        think_step["observation"].extend(business_step["observation"])
-        trajectory["steps"] = [think_step]
-
-        record = actf_to_sft(trajectory, external_thinking="external")
-
-        assistant = record["messages"][2]
-        self.assertEqual(assistant["reasoning_content"], "First inspect.")
-        self.assertEqual(
-            [call["function"]["name"] for call in assistant["tool_calls"]],
-            ["read"],
-        )
-        self.assertEqual(
-            record["messages"][3],
-            {"role": "tool", "tool_call_id": "read-1", "content": "file contents"},
-        )
-
-    def test_rejects_external_thought_without_following_action(self) -> None:
-        trajectory = _external_trajectory()
-        trajectory["steps"] = trajectory["steps"][:1]
-
-        with self.assertRaisesRegex(SFTConversionError, "following assistant action"):
-            actf_to_sft(trajectory, external_thinking="external")
 
     def test_allows_empty_tools_only_without_calls(self) -> None:
         trajectory = _trajectory()

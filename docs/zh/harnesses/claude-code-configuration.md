@@ -2,9 +2,9 @@
 
 [文档中心](../index.md) · [快速上手](../start/getting-started.md) · [OpenClaw](openclaw-configuration.md) · [Codex](codex-configuration.md) · [CLI 参数](../start/cli-reference.md)
 
-本页只说明 Claude Code 专属的镜像、Anthropic Messages API、thinking、signature recovery、native session 和排错。Task 字段见 [Task 格式参考](../tasks/task-format.md)，所有 Harness 共用的产物语义见 [轨迹产出文件指南](../traces/trajectory-outputs.md)。
+本页只说明 Claude Code 专属的镜像、Anthropic Messages API、thinking、native session 和排错。Task 字段见 [Task 格式参考](../tasks/task-format.md)，所有 Harness 共用的产物语义见 [轨迹产出文件指南](../traces/trajectory-outputs.md)。
 
-> 快速定位：支持范围（第 1 节）· 镜像（第 2 节）· API（第 3 节）· thinking（第 4 节）· signature recovery（第 5 节）· native/ACTF/SFT/wire（第 8–9 节）· 排错（第 10 节）
+> 快速定位：支持范围（第 1 节）· 镜像（第 2 节）· API（第 3 节）· thinking（第 4–5 节）· native/ACTF/SFT/wire（第 8–9 节）· 排错（第 10 节）
 
 ## 1. 当前支持范围
 
@@ -21,15 +21,11 @@ Claude Code Harness 支持：
 - 动态 User Simulator 和 Task Agent；两者可使用不同 model，Simulator 通过
   `user_simulator.harness` 独立选择 Harness；
 - Claude Code `settings.json`、`--max-turns`、`MAX_THINKING_TOKENS` 和 permission mode；
-- 显式开启的 `thinking.signature` provider replay，把 best-effort 恢复文本投影到 ACTF/SFT。
 
 当前不支持：
 
-- `external` / `external_always`；Claude Code 运行必须使用
-  `--external-thinking off`，也是默认值；
 - 只有 OpenAI Chat Completions/Responses、没有 Anthropic `/v1/messages` 的 API；
-- 在本地解密 Anthropic `redacted_thinking`/`thinking.signature`。密文始终保留在 raw；可选
-  recovery 是把 signature 发回 provider 请求其解封和转录，不是客户端密码学解密。
+- 从 `redacted_thinking` 或 `thinking.signature` 恢复明文。密文保留在 raw，不写入 ACTF/SFT reasoning；不发起额外恢复请求。
 
 ## 2. 构建固定版本镜像
 
@@ -172,81 +168,9 @@ ACTF/SFT 的 `reasoning_content`。以下情况不会产生可训练明文：
 Roller 不根据 token 数、最终文本或签名推测隐藏 reasoning。`--no-keep-thinking` 会清空 ACTF/SFT
 中的 reasoning，但不修改 raw session，也不修改后续 `--continue` 使用的 Claude Code context。
 
-## 5. Signature recovery（实验性）
+## 5. Reasoning 的保存边界
 
-该实现参考 [open-open-reasoning](https://github.com/5SSjw/open-open-reasoning)。某些
-provider/模型会在 Claude Code native session 中保存 `thinking.signature`，但只给出压缩
-summary，甚至把 `thinking` 文本留空。Signature 本身是 provider 可解封的不透明载荷，Roller
-不能在本地解密。可显式启用第二次 Anthropic Messages 请求：把 signature 原样放回
-`assistant.thinking` block，再要求模型机械转录该 block 表示的 working。
-
-Signature recovery 专用于 Claude 系列的 signed thinking，例如 Claude Opus 4.8（示例服务
-ID：`claude-opus-4-8`）。它不用于 GPT 或默认返回明文 reasoning 的开源模型；GPT 使用
-external thinking，开源模型保持默认 `--keep-thinking`。
-
-```bash
-roller collect \
-  --harness claude-code \
-  --tasks tasks.jsonl \
-  --model claude-opus-4-8 \
-  --api-base http://your-api.example/v1/messages \
-  --api-key-env ROLLER_ANTHROPIC_KEY \
-  --thinking high \
-  --claude-signature-recovery prefer \
-  --claude-signature-recovery-attempts 2 \
-  --claude-signature-recovery-max-tokens 8192 \
-  --timeout 1200 \
-  --output runs \
-  --run-name claude-recovered
-```
-
-### 5.1 模式
-
-| 模式 | 行为 | 推荐用途 |
-| --- | --- | --- |
-| `off` | 默认；不产生第二次请求，直接使用 native thinking | 普通采集、成本敏感任务 |
-| `fill` | 只对 native reasoning 为空的 signed block 发 replay；已有 summary 不请求也不替换 | 保守填空，推荐先使用 |
-| `prefer` | 对每个 signed block 请求恢复；成功时用 recovered text 替换 native summary | 专门研究更深 reasoning 的数据集 |
-
-`--claude-signature-recovery-attempts` 是每个 signed block 的最大 elicitation 次数。默认 `1`
-意味着一个原始模型调用最多增加一个 recovery 调用；一个 Agent task 有多个 signed model step
-时，总请求数会相应增加。`--claude-signature-recovery-max-tokens` 控制每次 recovery 的可见输出
-上限。Recovery 与原任务共享 `--timeout` 的剩余预算。
-
-### 5.2 执行边界
-
-Recovery 在全部预定义用户轮次、工具调用和 `--continue` 完成后，于宿主机发起独立 Messages
-请求。因此 recovery prompt 不会进入 Claude Code session，不会影响后续工具选择、最终答案或
-交付文件。Native `trace.jsonl` 不改写；ACTF 转换时才按 `fill/prefer` 决定是否使用恢复文本。
-
-每个候选由 native `message.id` 关联。Replay 使用该消息的模型名、signature、同一 native
-消息的可见文本和之前的用户文本。API Key 仍从 `--api-key-env` 读取，不写入任何产物。
-`signature_recovery.jsonl` 不重复保存 signature，只记录 `message_id`、signature 长度、尝试
-状态、usage、质量类别及 recovered text；signature 原值只留在 native raw。
-Recovery 请求由宿主机后处理直接发出，不经过 Claude Code rollout-local wire proxy，因此即使
-使用 `--wire-trace full`，`wire_trace.jsonl` 也只记录原始 Agent 请求，不记录 replay body。
-
-### 5.3 质量语义与失败回退
-
-这项功能是 provider-assisted elicitation，不是确定性解密 API。Provider 接受 signature 只说明
-它能在服务端验证/解封该载荷；模型仍可能拒绝、摘要、改写、重新求解或漏掉部分 working。
-Roller 因此：
-
-- 把成功文本标记为 `exact`、`superset`、`subset`、`rewrite_or_unverified` 或 `unverified`；
-- 拒绝常见的“没有 prior thinking/不能分享”响应；
-- 拒绝短于 32 字符或只重复 visible answer 的结果；
-- 所有尝试失败时保留原生 reasoning，不把 sample 改成失败；
-- `prefer` 只在 recovery 通过上述检查时替换，`fill` 只填原生空值；
-- 要求保持 `--keep-thinking`；与 `--no-keep-thinking` 同时使用会在启动 Docker 前报错。
-
-SFT 仍只有 `messages` 和 `tools`，不会加入 recovery metadata。采用恢复文本的 ACTF step 会在
-`extra.reasoning_source=signature_recovery` 标记来源，SFT 的 `reasoning_content` 直接使用该
-文本。Recovery token 会加入 sample 总 usage，并同时保存在
-`signature_recovery_*` 细分字段；Claude Code CLI 报告的 `cost_usd` 不包含宿主机发起的额外
-replay 费用，`info.json.runtime.signature_recovery.cost_usd_included=false` 会明确记录这一点。
-
-正式训练前应根据 `signature_recovery.jsonl.quality`、长度、正确性抽样和任务类型自行过滤。
-不要把 `rewrite_or_unverified` 当作逐字原始 CoT。
+Roller 只保存服务实际返回的可见 thinking/summary，不还原签名、不补写 CoT，也不在任务结束后追加模型调用。`--keep-thinking` 默认保留这些文本；`--no-keep-thinking` 只清空 ACTF/SFT reasoning，raw 不变。
 
 ## 6. Claude settings 与权限
 
@@ -295,7 +219,6 @@ Docker 容器和 `$CLAUDE_CONFIG_DIR`，不会读取宿主机的 Claude 登录�
 ├── trace.jsonl
 ├── trace_ACTF.json
 ├── trace_SFT.json
-├── signature_recovery.jsonl  # 仅显式开启 recovery 时存在
 ├── info.json
 └── results/                 # 有输出时
 ```
@@ -315,13 +238,6 @@ Roller 从 `$CLAUDE_CONFIG_DIR/projects/**/<session-id>.jsonl` 选择本 rollout
 
 Raw 保留 plaintext thinking、加密 thinking envelope、tool metadata、usage 和 sidechain 私有
 字段，结构不保证跨 Claude Code 版本稳定。
-
-### `signature_recovery.jsonl`
-
-仅在 `--claude-signature-recovery fill|prefer` 时生成并保留。每行对应一个 native signed
-thinking block；`status=ok` 才会进入候选投影。`fill` 模式下已有 native reasoning 的 block
-记录为 `skipped_native` 且不发 API 请求。文件保存 recovered text 和质量诊断，但不复制
-signature 原值，也不是 provider response 的逐字 raw。
 
 ### `trace_ACTF.json`
 
@@ -387,12 +303,6 @@ messages、tools、thinking/output config 和 sampling 参数。它记录的是�
 - Bash、Read 工具调用及结果进入 native session；
 - 第二条 CLI 调用使用 `--continue` 后复用同一 session；
 - 合并后的 ACTF/SFT 保留两条 user message、thinking、三个工具动作和最终回复。
-- `claude-opus-4-8` 的 Claude Code native session 可保存 signature；真实 `prefer` 测试把
-  847 字符 native summary 与 1636 字符 signature 送入独立 replay，得到 1122 字符完整数学
-  working，并仅在 ACTF/SFT 中采用恢复文本；native raw 未改写。
-- 最终空-summary 测试从 1336 字符 signature 恢复 924 字符 working，ACTF/SFT
-  `reasoning_content` 均为 924 字符；同配置 Resume 通过 artifact 完整性检查并直接 skip，未
-  再次调用模型。
 
 常见错误：
 
@@ -406,8 +316,3 @@ messages、tools、thinking/output config 和 sampling 参数。它记录的是�
 - model 拒绝 `budget_tokens` 或要求 adaptive thinking：移除
   `--claude-max-thinking-tokens`，只使用该模型支持的 `--thinking` effort；
 - ACTF 有 thinking token 但 `reasoning_content` 为空：服务没有返回明文，不是转换器丢失；
-- `signature_recovery` 的 `candidate_count=0`：该次 native session 没有返回 signature；high
-  effort 不保证每个简单问题都产生 signed thinking；
-- recovery `status=refusal/insufficient`：provider 接受了请求，但模型未给出足够 working；增加
-  attempts 可能改善随机拒绝，仍不能保证逐字恢复；
-- `external thinking is not implemented`：本 Harness 当前只支持原生 Claude thinking。

@@ -249,14 +249,12 @@ config validation. Qwen-compatible services that use `enable_thinking` can set
 When using native thinking, Roller sets `reasoning: true` on the model-config copy injected for this
 rollout. The Chat Completions adapter sends `reasoning_effort`; the Responses adapter
 sends a reasoning config. Legacy `tags: ["reasoning"]` is automatically converted to the boolean field
-current OpenClaw accepts. Enabling external thinking in the next section does the opposite: the selected
-model copy sets `reasoning: false`, and both OpenClaw thinking and wire `reasoning.effort` are pinned to `off`/`none`.
+current OpenClaw accepts.
 
 The backend must actually return reasoning content. Chat Completions usually stream `reasoning_content` (also compatible with `reasoning` and `reasoning_text`). The Responses API uses reasoning items. If the service only reports `reasoning_tokens` in usage and returns no summary/content, there is no text to write into the trajectory.
 
 For open-source models such as Qwen and GLM that can return plaintext reasoning, the default `--keep-thinking` keeps that
-text in ACTF/SFT `reasoning_content` without enabling external thinking. External thinking is mainly for
-GPT reasoning models such as `gpt-5.6-sol` that only expose a compressed reasoning summary.
+text in ACTF/SFT `reasoning_content`.
 
 For GPT reasoning models that expose a compressed reasoning summary through the Responses API, use:
 
@@ -268,49 +266,6 @@ For GPT reasoning models that expose a compressed reasoning summary through the 
 ```
 
 The same model on Chat Completions may produce reasoning tokens without returning visible `reasoning_content`. Roller will not reconstruct thinking from hidden tokens.
-
-### External Thinking: save explicit CoT in tool arguments
-
-GPT Responses reasoning items usually expose only a summary to the client, not the full generation process.
-Roller can turn off native reasoning and load a local `deep_think(thoughts)`
-tool into the one-shot OpenClaw container, using the text the model writes into `thoughts` as an explicit scratchpad:
-
-```bash
-roller collect \
-  --tasks tasks.jsonl \
-  --model my-gpt-proxy/gpt-5.6-sol \
-  --model-config examples/config/openclaw/models-reasoning.json \
-  --external-thinking external_always \
-  --timeout 1200
-```
-
-| Mode | Request protocol | Guarantee |
-| --- | --- | --- |
-| `off` | Native OpenClaw behavior | Default; `--thinking` decides provider reasoning |
-| `external` | The first request forces `deep_think`; later requests keep the tool and allow parallel business tools | raw validation requires the first response to contain exactly one non-empty think; later calls are autonomous per instructions |
-| `external_always` | Each logical step is split into THINK and ACT; THINK is forced and only allows `deep_think`; ACT removes it from tools | raw validation requires strict THINK/ACT alternation, non-empty thoughts, and no orphan THINK |
-
-Both external modes require the selected provider's `api` to be exactly `openai-responses` and a proxyable
-absolute `baseUrl`. Roller overrides task/CLI `--thinking` and turns off native reasoning in three places:
-
-1. the selected model in the rollout sets `reasoning: false`;
-2. OpenClaw defaults and every `openclaw agent` call use `--thinking off`;
-3. the Responses body actually forwarded by the proxy pins `reasoning.effort: "none"`.
-
-The plugin is copied from Roller's own package data into the one-shot container, loaded via `plugins.load.paths`, and
-rewritten to the container main-process uid/gid before Gateway starts. Neither the image source nor the host OpenClaw
-install is modified. In `full` mode, `wire_trace.jsonl` adds `external_thinking_phase` on each request so you can check
-`think`, `act`, or `optional`.
-
-In the actual inference protocol, `deep_think` is an ordinary function tool, so thoughts in raw and ACTF live in
-tool-call arguments, and the matching tool result is always `------`. The dedicated SFT projection deletes this internal
-call/result pair and the top-level `deep_think` schema, then merges thoughts into the following real action's assistant
-`reasoning_content`. Business tools are unchanged. That field is a training-format normalization result; it does not mean
-the provider natively returned a field of the same name. `--no-keep-thinking` only strips native thinking; it does
-not remove explicit external CoT. If you do not want to keep it, use `--external-thinking off`.
-
-For the full security boundary, SFT shape, and differences from the claw-eval reference implementation, see
-[External Thinking guide](../traces/external-thinking.md).
 
 ### Keep vs strip
 
@@ -404,7 +359,6 @@ roller collect ... --gateway-port 22000 --gateway-port-step 10
 | --- | --- | --- |
 | `--docker-image` | `ROLLER_OPENCLAW_IMAGE` or the built-in value | OpenClaw image |
 | `--container-user` | `0` | User inside the one-shot task container; `image` uses the image default user |
-| `--external-thinking` | `off` | `external` or `external_always` enables explicit `deep_think` CoT |
 | `--docker-binary` | `docker` | Docker CLI name or path |
 | `--model-config` | none | Custom provider/model JSON |
 | `--network` | `host` | Container network mode |
