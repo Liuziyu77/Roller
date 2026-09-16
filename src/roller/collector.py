@@ -30,6 +30,36 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def _sample_directory(run_dir: Path, request: RunRequest) -> Path:
+    model_dir = safe_component(request.model)
+    task_dir = f"{request.task.source_index:08d}_{safe_component(request.task.id)}"
+    return run_dir / "samples" / model_dir / task_dir
+
+
+def check_retired_cot_samples(run_dir: Path, requests: list[RunRequest]) -> None:
+    """Reject retired projections before either CLI or Collector writes anything."""
+
+    for request in requests:
+        sample_dir = _sample_directory(run_dir, request)
+        for base in (sample_dir, sample_dir / "user_simulator"):
+            info_path = base / "info.json"
+            try:
+                info = json.loads(info_path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            runtime = info.get("runtime") if isinstance(info, dict) else None
+            if not isinstance(runtime, dict):
+                continue
+            for key in ("external_thinking", "signature_recovery"):
+                value = runtime.get(key)
+                mode = value.get("mode") if isinstance(value, dict) else value
+                if mode in ("external", "external_always", "fill", "prefer"):
+                    raise ValueError(
+                        f"{info_path}: {key}={mode} is retired; use a new run "
+                        "directory. Existing trajectory files were not changed."
+                    )
+
+
 @dataclass(frozen=True)
 class CollectionConfig:
     run_dir: Path
@@ -80,9 +110,7 @@ class Collector:
         return self.harness_factory(worker_slot)
 
     def _sample_dir(self, request: RunRequest) -> Path:
-        model_dir = safe_component(request.model)
-        task_dir = f"{request.task.source_index:08d}_{safe_component(request.task.id)}"
-        return self.run_dir / "samples" / model_dir / task_dir
+        return _sample_directory(self.run_dir, request)
 
     def _load_resumable(
         self, sample_dir: Path, request: RunRequest
@@ -415,27 +443,7 @@ class Collector:
         write_jsonl(self.run_dir / "sft.jsonl", rows())
 
     def collect(self, requests: list[RunRequest]) -> list[dict[str, Any]]:
-        # Legacy CoT projections cannot be validated with the native-only SFT
-        # exporter. Stop before checkpointing or scheduling any replacement run.
-        for request in requests:
-            sample_dir = self._sample_dir(request)
-            for base in (sample_dir, sample_dir / "user_simulator"):
-                info_path = base / "info.json"
-                try:
-                    info = json.loads(info_path.read_text(encoding="utf-8"))
-                except (OSError, ValueError):
-                    continue
-                runtime = info.get("runtime") if isinstance(info, dict) else None
-                if not isinstance(runtime, dict):
-                    continue
-                for key in ("external_thinking", "signature_recovery"):
-                    value = runtime.get(key)
-                    mode = value.get("mode") if isinstance(value, dict) else value
-                    if mode in ("external", "external_always", "fill", "prefer"):
-                        raise ValueError(
-                            f"{info_path}: {key}={mode} is retired; use a new run "
-                            "directory. Existing trajectory files were not changed."
-                        )
+        check_retired_cot_samples(self.run_dir, requests)
         self.run_dir.mkdir(parents=True, exist_ok=True)
         total_requests = len(requests)
         self._write_run_info(

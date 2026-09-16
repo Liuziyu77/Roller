@@ -588,7 +588,7 @@ strip request history, so OpenClaw still requires a proxyable `baseUrl` in
 
 `external` / `external_always` and Claude signature recovery are retired. Roller no longer injects thinking tools, rewrites THINK/ACT stages, calls signature recovery APIs, or folds tool arguments into reasoning. Ordinary tools with the same names remain tool calls.
 
-Old CLI flags are errors, including `off`. Old run locks do not match the new configuration. Direct Collector calls also refuse to overwrite Agent/Simulator samples whose runtime metadata enabled these features. Use a new run directory for collection. Existing raw/ACTF/SFT remain available for offline inspection; re-exporting ACTF no longer applies special tool-folding rules.
+Old CLI flags are errors, including `off`; remove them from commands. Retired lock fields explicitly set to `off`, and the auxiliary parameters of disabled recovery, are ignored only during comparison. The saved lock is not rewritten. All other configuration and sample-integrity checks remain strict, so native runs can still resume. Runs that enabled retired modes require a new run directory. The CLI checks target Agent/Simulator samples before writing any lock or run metadata; direct Collector calls perform the same check. Existing raw/ACTF/SFT remain available for offline inspection; re-exporting ACTF no longer applies special tool-folding rules.
 
 ### 6.4 Cache trace (OpenClaw)
 

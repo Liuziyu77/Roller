@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
 
-from roller.collector import CollectionConfig, Collector
+from roller.collector import CollectionConfig, Collector, check_retired_cot_samples
 from roller.benches import (
     binding_from_task_row,
     format_report,
@@ -783,6 +783,8 @@ def _collect(args: argparse.Namespace) -> int:
     existing_run = run_dir.exists() and any(run_dir.iterdir())
     if run_dir.exists() and not args.resume:
         raise FileExistsError(f"run directory already exists; use --resume or another --run-name: {run_dir}")
+    if existing_run:
+        check_retired_cot_samples(run_dir, requests)
     output_root.mkdir(parents=True, exist_ok=True)
 
     previous_info: dict[str, object] = {}
