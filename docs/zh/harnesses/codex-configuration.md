@@ -4,7 +4,7 @@
 
 本页只说明 Codex 专属的镜像、Responses API、reasoning、native session 和排错。Task 字段见 [Task 格式参考](../tasks/task-format.md)，所有 Harness 共用的产物语义见 [轨迹产出文件指南](../traces/trajectory-outputs.md)。
 
-> 快速定位：支持范围（第 1 节）· 镜像（第 2 节）· API（第 3 节）· reasoning/external thinking（第 4 节）· native/ACTF/SFT/wire（第 7–8 节）· 排错（第 9 节）
+> 快速定位：支持范围（第 1 节）· 镜像（第 2 节）· API（第 3 节）· reasoning（第 4 节）· native/ACTF/SFT/wire（第 7–8 节）· 排错（第 9 节）
 
 ## 1. 当前支持范围
 
@@ -15,7 +15,7 @@ Codex Harness 支持：
 - Task Bundle、只读 inputs、Context、`runtime.setup` 和完整 `output_dir` 回收；
 - 并行、retry、run lock、Resume 完整性检查；
 - Codex native session JSONL、`ACTF_v1.0`、单条 SFT 和 run 级 `sft.jsonl`；
-- `external` / `external_always` 显式 CoT，以及 request-side `--wire-trace full`；
+- request-side `--wire-trace full`；
 - 动态 User Simulator 和 Task Agent；Simulator 可通过 `user_simulator.harness`
   独立选择并使用不同 model；
 - Viewer 展示可见 reasoning、工具调用、工具结果和最终回复。
@@ -119,8 +119,7 @@ provenance。
 提供 `--api-base` 时，Roller 会创建一个隔离的 Codex custom provider，固定使用
 `wire_api="responses"`，并默认设置 `supports_websockets=false`。这可兼容只实现
 Responses HTTP streaming、没有 WebSocket 握手的 OpenAI-compatible 服务。只有确认服务
-支持 Responses WebSocket 时才增加 `--codex-websockets`。`--external-thinking` 和
-`--wire-trace full` 使用 rollout-local HTTP 代理，因此必须显式提供 `--api-base`、保持
+支持 Responses WebSocket 时才增加 `--codex-websockets`。`--wire-trace full` 使用 rollout-local HTTP 代理，因此必须显式提供 `--api-base`、保持
 `--no-codex-websockets` 与默认 `--network host`。未设置 `--api-base` 时，Codex 使用自己的
 内置 OpenAI provider 和 transport 策略。
 
@@ -177,49 +176,11 @@ Codex native session 可能保存明文 `response_item.reasoning.content`、可�
 `--keep-thinking` 保存它。
 
 开源 Responses 模型如果返回明文 reasoning content，默认 `--keep-thinking` 会直接将其投影到
-ACTF/SFT `reasoning_content`。External thinking 主要用于 `gpt-5.6-sol` 等只暴露压缩
-summary 的 GPT reasoning 模型。
+ACTF/SFT `reasoning_content`。
 
 `--no-keep-thinking` 会在 native raw→ACTF 时清空 `reasoning_content`。Codex native
 `trace.jsonl` 仍保持原样，而且该选项目前不改写 Codex 自己用于后续 `resume` 的上下文；
 因此它是导出控制，不是 raw 脱敏或双向 context 剥离开关。
-
-### External thinking
-
-如果希望绕过只暴露压缩 summary 的 native reasoning，可让模型把显式中间推理写入
-Roller 的本地 `deep_think` MCP 工具：
-
-```bash
-export ROLLER_CODEX_KEY='...'
-
-roller collect \
-  --harness codex \
-  --tasks tasks.jsonl \
-  --model gpt-5.6-sol \
-  --api-base http://your-api.example/v1 \
-  --api-key-env ROLLER_CODEX_KEY \
-  --external-thinking external_always \
-  --wire-trace full \
-  --timeout 1200
-```
-
-- `external`：首次请求强制一次成功的 deep-think MCP 调用，之后按需；
-- `external_always`：每个业务动作或 final answer 前都要求一个独立 THINK response；
-- 两种模式都忽略 CLI/task 的 reasoning effort，最终请求固定
-  `reasoning.effort="none"`，`--reasoning-summary` 也不会下发；
-- Roller 自动把无权限的 stdio MCP server 复制到一次性容器并用 CLI override 注册，不需要
-  修改 Codex 镜像或用户的 `config.toml`；
-- ACTF 保留 canonical `deep_think` call/result，SFT 删除工具协议并把 thoughts 合并进下一条
-  assistant 的 `reasoning_content`。
-
-详细的阶段协议、raw 事件形态和校验规则见
-[External Thinking 指南](../traces/external-thinking.md)。
-
-建议先用一条短 task 配合 `--wire-trace full` 验收。成功的 `external_always` 在 sample
-`info.json` 中应为 `validated=true`，wire phase 应严格按 `think/act` 交替；Viewer 展示
-ACTF 中的 canonical `deep_think` 工具步骤，折叠后的训练 reasoning 则位于
-`trace_SFT.json`。可复制的检查命令见
-[如何查看和验收](../traces/external-thinking.md#7-如何查看和验收)。
 
 ## 5. Web search
 
@@ -279,13 +240,6 @@ Codex native session 不提供每个工具的完整原始 JSON Schema。为了�
 基于实际调用名和参数字段生成 permissive function schema；它足以保持 tool call 的名称、
 参数和结果，但不能当作 Codex 内置工具接口的完整权威定义。
 
-external thinking 在 native raw 中保持 Codex 的真实两层 transport：外层是模型生成的
-`custom_tool_call(name="exec")`，内层成功调用由
-`event_msg.item_completed` 的 `McpToolCall` item 记录，也可能由另一条 native writer 路径
-写成 `event_msg.mcp_tool_call_end`。ACTF 转换器兼容两者，用 native event 的 server、tool
-和 arguments 将其规范化为直接的 `deep_think` call；不会依赖或猜测 JavaScript 字符串中
-的 thoughts。
-
 ### `trace_SFT.json` 与 `sft.jsonl`
 
 和 OpenClaw 一样，单条 SFT 顶层严格只有 `messages` 和 `tools`。Assistant 固定包含
@@ -300,8 +254,7 @@ tool result，或把内部事件转换为 Responses input。`trace.jsonl` 和由
 
 Codex Harness 支持 `--wire-trace full`：Roller 把 custom provider 的 API base 临时指向
 rollout-local 代理，在转发给真实 `--api-base` 前保存脱敏后的完整 JSON request body。
-Codex 请求中的工具定义位于 `input` 的 `additional_tools` item；external THINK 阶段只保留
-programmatic `functions.exec`，ACT 阶段恢复原始工具。该文件是 request-side 证据，不保存
+Codex 请求中的工具定义可位于 `input` 的 `additional_tools` item。该文件是 request-side 证据，不保存
 上游 response body，也不能说明模型服务内部如何再次截断、路由或 tokenize。
 
 默认 `--wire-trace actf` 不保留额外 wire 文件；Codex ACTF 的工具 schema 来自 native 实际
@@ -330,9 +283,3 @@ sample 保留的错误和 `--keep-container-on-error` 容器，再核对 `codex_
 Codex 可作为 Task Agent 或 User Simulator。Task Agent 在 task 顶层设置
 `"harness": "codex"`，Simulator 则在 `user_simulator.harness` 设置；两者的
 `model` 也可以分别指定。动态 session 使用 Codex 的 `resume --last` 保持上下文。
-
-### external thinking 报 programmatic custom exec 缺失
-
-所用 Codex 版本没有暴露 Roller 已验证的 programmatic custom `exec`，或启动参数关闭了
-相关能力。优先使用固定的 `roller-codex:0.149.0`；升级 Codex 后应重新跑阶段控制与 native
-事件转换测试，不要静默退化为未受控的普通工具调用。

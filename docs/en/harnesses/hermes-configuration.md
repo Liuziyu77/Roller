@@ -63,7 +63,7 @@ python examples/coverage/suite.py check --case data/txt/hermes
 
 The matrix contains 204 Hermes input tasks and 28 additional mixed Simulator tasks (seven new pairings, four cases each). Tasks include text, files, context, setup/environment, binary inspection, output collection, grading, and short conversations. The complete project matrix is 1368 positive tasks and 20 isolated negative cases.
 
-The initial adapter supports Chat Completions and text-oriented terminal/file execution. Vision tools, direct multimodal messages, external thinking, provider-specific authentication flows, Hermes gateways, remote terminal backends, persistent memory, and skill learning are outside this scope. The optional Hermes vision group records that capability boundary and is excluded from the required passing set. Binary file access is tested separately from media understanding.
+The initial adapter supports Chat Completions and text-oriented terminal/file execution. Vision tools, direct multimodal messages, provider-specific authentication flows, Hermes gateways, remote terminal backends, persistent memory, and skill learning are outside this scope. The optional Hermes vision group records that capability boundary and is excluded from the required passing set. Binary file access is tested separately from media understanding.
 
 Build networks can set `--build-arg PIP_INDEX_URL=...` and `--build-arg PYPI_DOWNLOAD_BASE=...`. The latter replaces the download origin in `uv.lock` while preserving package versions and SHA-256 hashes; use a mirror with the same `/packages/` layout.
 

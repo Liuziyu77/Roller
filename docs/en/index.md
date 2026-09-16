@@ -36,9 +36,9 @@ Current scope: Python 3.10+, task schema `roller.task/v1`, trace format `ACTF_v1
 
 | Harness | Model API | Best for | Capabilities and limits |
 | --- | --- | --- | --- |
-| OpenClaw (default) | OpenAI Responses or Chat Completions | Custom/open models, dynamic User Simulator, multimodal input | Supports `external` / `external_always`; models are configured in JSON |
-| Codex | Responses | Codex CLI tool traces, GPT and Responses-compatible services | Supports external thinking; can be the task agent or the User Simulator |
-| Claude Code | Anthropic `/v1/messages` | Claude Code tool traces and native thinking | Experimental signature recovery; can be the task agent or the User Simulator |
+| OpenClaw (default) | OpenAI Responses or Chat Completions | Custom/open models, dynamic User Simulator, multimodal input | Models are configured in JSON; preserves native reasoning |
+| Codex | Responses | Codex CLI tool traces, GPT and Responses-compatible services | Preserves native reasoning; can be the task agent or the User Simulator |
+| Claude Code | Anthropic `/v1/messages` | Claude Code tool traces and native thinking | Preserves native thinking; can be the task agent or the User Simulator |
 | Hermes | OpenAI Chat Completions | Native request/message journal → ACTF/SFT | Local terminal/file tools; Agent and Simulator |
 | OpenCode | OpenAI Chat Completions | Native CLI sessions and tools → ACTF/SFT | Pinned version; Task Agent or User Simulator |
 | DeepSeek Harness | DeepSeek Chat Completions | Native SDK / persistent Bash → ACTF/SFT | sdk-minimal; Agent / Simulator |
@@ -95,7 +95,6 @@ tasks/user-simulator
 
 traces/trajectory-outputs
 traces/sft-format
-traces/external-thinking
 traces/viewer
 ```
 

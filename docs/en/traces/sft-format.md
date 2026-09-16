@@ -1,6 +1,6 @@
 # SFT data format
 
-[Documentation home](../index.md) · [Trajectory outputs](trajectory-outputs.md) · [Task format](../tasks/task-format.md) · [External Thinking](external-thinking.md)
+[Documentation home](../index.md) · [Trajectory outputs](trajectory-outputs.md) · [Task format](../tasks/task-format.md)
 
 While keeping the raw trace and ACTF, Roller also generates one training-only
 `trace_SFT.json` for every successful trajectory. Run-root `sft.jsonl` aggregates
@@ -90,47 +90,6 @@ the adjacent `info.json` and `trace_ACTF.json`.
 and `details` do not enter SFT. The text of a tool error is still kept as-is.
 GPT Responses encrypted reasoning does not enter the training data. Only the
 visible reasoning summary in ACTF enters `reasoning_content`.
-
-When `--external-thinking` is enabled, raw/ACTF keep the real `deep_think` call
-protocol. Dedicated SFT normalizes it into the `reasoning_content` of the
-assistant that corresponds to the following actual action:
-
-```json
-{
-  "role": "assistant",
-  "reasoning_content": "完整、显式的中间推理",
-  "content": "",
-  "tool_calls": [{
-    "id": "call_business",
-    "type": "function",
-    "function": {
-      "name": "read",
-      "arguments": "{\"path\":\"input.txt\"}"
-    }
-  }]
-}
-```
-
-The converter deletes the `deep_think` tool call, its `------` result, the
-top-level schema, and the matching entry in the system-prompt tool list.
-Thoughts from a standalone THINK message are merged into the next ACT
-assistant. A think that sits beside a business tool in the same response is
-merged into the current assistant. Business tool calls/results are kept as-is.
-If existing `reasoning_content` is also non-empty, the segments are joined in
-order with a blank line. An isolated think with no following action fails SFT
-conversion; the content is not silently dropped.
-
-Codex native raw uses an outer programmatic `exec` to call local MCP. The ACTF
-converter first restores it to canonical `deep_think` from the real MCP
-completion event (`item_completed/McpToolCall` or `mcp_tool_call_end`), then
-shares the same SFT folding logic with OpenClaw. Dedicated SFT therefore
-contains no `exec` wrapper, MCP server name, or `------` placeholder result.
-
-The `reasoning_content` here is Roller's training-oriented normalized field. It
-does not claim the provider natively returned that field.
-`--no-keep-thinking` does not delete explicit external CoT. To exclude it you
-must use `--external-thinking off`. See [External Thinking](external-thinking.md)
-for the full mode description.
 
 ## 4. Data integrity
 

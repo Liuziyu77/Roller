@@ -11,7 +11,7 @@
 | `en/start/` · `zh/start/` | 快速上手、Examples、CLI 参数 |
 | `en/harnesses/` · `zh/harnesses/` | OpenClaw、Codex、Claude Code、Hermes、OpenCode、DeepSeek、Pi Agent |
 | `en/tasks/` · `zh/tasks/` | Task 格式、Bundle 与存储、User Simulator |
-| `en/traces/` · `zh/traces/` | 轨迹产物、SFT、External Thinking、Viewer |
+| `en/traces/` · `zh/traces/` | 轨迹产物、SFT、Viewer |
 | `en/benches/` · `zh/benches/` | Bench 接入与各 bench 说明 |
 
 ## 阅读顺序
@@ -78,8 +78,6 @@ python -m http.server -d _build/html 8000
 | 知道每个产物何时生成、应该看哪个 | [轨迹产出文件指南](zh/traces/trajectory-outputs.md) |
 | 直接训练 `messages` + `tools` 数据 | [SFT 数据格式](zh/traces/sft-format.md) |
 | 核对模型实际收到的请求 context | [Wire trace 与 context 审计](zh/traces/trajectory-outputs.md#32-session-历史不等于模型请求-context) |
-| 用工具参数保存显式 CoT | [External Thinking](zh/traces/external-thinking.md) |
-| 恢复 Claude signed thinking | [Claude Signature Recovery](zh/harnesses/claude-code-configuration.md#5-signature-recovery实验性) |
 | 在网页中检查 reasoning 和工具步骤 | [Viewer](zh/traces/viewer.md) |
 
 ## 按 Harness 选择
@@ -90,20 +88,20 @@ python -m http.server -d _build/html 8000
 | 模型配置入口 | `--model-config` | `--api-base` + `--api-key-env` | `--api-base` + `--api-key-env` | `--hermes-api-base` + `--hermes-api-key-env` | `--opencode-api-base` + `--opencode-api-key-env` | `--deepseek-api-base` + `--deepseek-api-key-env` | `--pi-api-base` + `--pi-api-key-env` |
 | 单轮 / 预定义多轮 | 是 / 是 | 是 / 是 | 是 / 是 | 是 / 是 | 是 / 是 | 是 / 是 | 是 / 是 |
 | 动态 User Simulator | 是 | 是 | 是 | 是 | 是 | 是 | 是 |
-| External thinking | 是 | 是 | 否 | 否 | 否 | 否 | 否 |
-| Signature recovery | 否 | 否 | 实验性 | 否 | 否 | 否 | 否 |
 | Wire request capture | 是 | 是 | 是 | 是 | 是 | 是 | 是 |
 | Harness 专属指南 | [打开](zh/harnesses/openclaw-configuration.md) | [打开](zh/harnesses/codex-configuration.md) | [打开](zh/harnesses/claude-code-configuration.md) | [打开](zh/harnesses/hermes-configuration.md) | [打开](zh/harnesses/opencode-configuration.md) | [打开](zh/harnesses/deepseek-configuration.md) | [打开](zh/harnesses/pi-configuration.md) |
 
-## CoT 路径选择
+## Reasoning 采集
 
-| 场景 | 推荐配置 |
+默认 `--keep-thinking` 保存服务实际返回的可见 reasoning；`--thinking` 控制原生推理档位，不能保证返回完整 CoT。
+
+| 模型类型 | ACTF/SFT 保存内容 |
 | --- | --- |
-| GPT reasoning 系列（如 `gpt-5.6-sol`）需要比压缩 summary 更完整的显式 CoT | OpenClaw/Codex `--external-thinking external\|external_always` |
-| Claude 系列（如 Claude Opus 4.8，示例 ID `claude-opus-4-8`）存在 signed thinking | Claude Code `--claude-signature-recovery fill\|prefer` |
-| Qwen、GLM 等开源模型的 API 返回明文 reasoning | 默认 `--keep-thinking`，直接写入 ACTF/SFT `reasoning_content` |
+| GPT reasoning 系列 | 服务返回的可见 summary/content，不扩写压缩 summary |
+| Claude 系列 | 可见 thinking/summary，不从 signature 或密文恢复内容 |
+| Qwen、GLM 等开源模型 | 服务实际返回的明文 reasoning |
 
-第三种路径要求后端返回明文 `reasoning_content`、`reasoning` 或 `reasoning_text`。Reasoning token 数本身不能转换成 CoT。
+只返回 reasoning token 数或加密状态时，`reasoning_content` 可以为空。工具参数不会转换成 reasoning。
 
 ## 核心概念
 

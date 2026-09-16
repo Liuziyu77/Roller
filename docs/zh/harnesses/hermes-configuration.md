@@ -63,7 +63,7 @@ python examples/coverage/suite.py check --case data/txt/hermes
 
 矩阵新增 204 条 Hermes 输入任务和 28 条 Simulator 配对任务，覆盖文本、文件、Context、setup/env、二进制检查、产物、评分和短对话。完整矩阵为 1368 条正向任务、20 条隔离负例。
 
-首版支持 Chat Completions 与文本/文件工具执行。视觉工具、直接多模态消息、external thinking、厂商专属认证、Hermes gateway、远程 terminal backend、持久 Memory 和 skill learning 暂不支持。Hermes 可选视觉组用于记录能力边界，不纳入要求全部通过的验收范围；二进制文件传输与媒体理解分开验证。
+首版支持 Chat Completions 与文本/文件工具执行。视觉工具、直接多模态消息、厂商专属认证、Hermes gateway、远程 terminal backend、持久 Memory 和 skill learning 暂不支持。Hermes 可选视觉组用于记录能力边界，不纳入要求全部通过的验收范围；二进制文件传输与媒体理解分开验证。
 
 网络受限时可设置构建参数 `PIP_INDEX_URL` 和 `PYPI_DOWNLOAD_BASE`。后者仅替换 `uv.lock` 下载地址的域名前缀，保留版本与 SHA-256 校验，镜像站需兼容 `/packages/` 布局。
 
