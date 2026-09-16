@@ -6,6 +6,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from roller.actf import convert_openclaw_trace
 from roller.collector import CollectionConfig, Collector
@@ -175,6 +176,39 @@ class CollectorTests(unittest.TestCase):
             ]
             self.assertEqual(len(dataset), 4)
             self.assertEqual(dataset[0], sft)
+
+    def test_sft_failure_does_not_overwrite_existing_harness_error(self) -> None:
+        class FailedHarness(FakeHarness):
+            def run(
+                self,
+                request: RunRequest,
+                output_dir: Path,
+                attempt: int,
+            ) -> HarnessResult:
+                result = super().run(request, output_dir, attempt)
+                result.status = "error"
+                result.error = "agent turn failed"
+                return result
+
+        with tempfile.TemporaryDirectory() as temporary:
+            state = self._state()
+            collector = Collector(
+                CollectionConfig(run_dir=Path(temporary) / "run"),
+                lambda slot: FailedHarness(state, slot),
+            )
+            with patch(
+                "roller.collector.write_sft",
+                side_effect=ValueError("empty terminal assistant"),
+            ):
+                result = collector.collect(make_requests()[:1])[0]
+
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["error"], "agent turn failed")
+        self.assertEqual(result["attempts"][-1]["error"], "agent turn failed")
+        self.assertEqual(
+            result["runtime"]["trajectory_conversion_error"],
+            "empty terminal assistant",
+        )
 
     def test_retries_then_resumes_completed_samples(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

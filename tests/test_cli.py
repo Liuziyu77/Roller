@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from roller.cli import _build_parser, _collect, _docker_preflight
+from roller.cli import _bench, _build_parser, _collect, _docker_preflight
 
 
 class CliTests(unittest.TestCase):
@@ -176,6 +176,67 @@ class CliTests(unittest.TestCase):
         self.assertEqual(result, 0)
         self.assertEqual(payload["harness"], "codex")
         self.assertEqual(payload["plan"][0]["harness"], "codex")
+
+    def test_bench_export_repeats_tasks_and_preserves_metadata(self) -> None:
+        class FakeAdapter:
+            name = "fake"
+
+            def load(self, root, *, categories=None, task_ids=None):
+                self.call = (root, categories, task_ids)
+                return [
+                    {
+                        "schema_version": "roller.task/v1",
+                        "id": "task_a",
+                        "prompt": "Do the task.",
+                        "bench": {
+                            "name": self.name,
+                            "category": "demo",
+                            "metadata": {"preserved": "value"},
+                        },
+                    }
+                ]
+
+        adapter = FakeAdapter()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output_path = root / "tasks.jsonl"
+            args = _build_parser().parse_args(
+                [
+                    "bench",
+                    "export",
+                    "fake",
+                    str(root),
+                    "--output",
+                    str(output_path),
+                    "--category",
+                    "demo",
+                    "--task-id",
+                    "task_a",
+                    "--runs-per-task",
+                    "2",
+                ]
+            )
+            with patch("roller.cli.get_bench", return_value=adapter):
+                self.assertEqual(_bench(args), 0)
+            rows = [
+                json.loads(line)
+                for line in output_path.read_text(encoding="utf-8").splitlines()
+            ]
+
+        self.assertEqual(
+            adapter.call,
+            (root.resolve(), ["demo"], ["task_a"]),
+        )
+        self.assertEqual([row["id"] for row in rows], ["task_a__run_01", "task_a__run_02"])
+        self.assertEqual(
+            [row["bench"]["metadata"]["run_index"] for row in rows],
+            [1, 2],
+        )
+        for row in rows:
+            metadata = row["bench"]["metadata"]
+            self.assertEqual(metadata["upstream_task_id"], "task_a")
+            self.assertEqual(metadata["runs_per_task"], 2)
+            self.assertEqual(metadata["preserved"], "value")
 
     @patch("roller.cli.subprocess.run")
     @patch("roller.cli.shutil.which", return_value="/usr/bin/docker")

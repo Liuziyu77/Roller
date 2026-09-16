@@ -205,6 +205,27 @@ class ClaudeCodeHarnessTests(unittest.TestCase):
             rows = [json.loads(line) for line in destination.read_text().splitlines()]
         self.assertEqual([row["uuid"] for row in rows], ["u1", "u2", "dupe"])
 
+    def test_failed_turn_still_records_user_message_for_trace_conversion(self) -> None:
+        harness = ClaudeCodeHarness(ClaudeCodeConfig(wire_trace_mode="off"), 0)
+        with tempfile.TemporaryDirectory() as temporary:
+            session = harness.create_session(
+                self._request(),
+                Path(temporary),
+                1,
+            )
+            session.started = True
+            session.container_started = True
+            with patch.object(
+                harness,
+                "_run_turn",
+                side_effect=RuntimeError("maximum number of turns"),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "maximum number of turns"):
+                    session.send("hello", 30)
+
+        self.assertEqual(session.messages, ["hello"])
+        self.assertEqual(session._pending_message, "")
+
     def test_wire_proxy_shutdown_redacts_body_credentials(self) -> None:
         harness = ClaudeCodeHarness(ClaudeCodeConfig(wire_trace_mode="off"), 0)
         with tempfile.TemporaryDirectory() as temporary:

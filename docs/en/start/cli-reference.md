@@ -208,7 +208,8 @@ Listening on `0.0.0.0` exposes trajectory contents to the network. For remote ac
 
 ```bash
 roller bench list
-roller bench export NAME ROOT --output TASKS.jsonl [--category CAT]... [--task-id ID]...
+roller bench export NAME ROOT --output TASKS.jsonl [--category CAT]... \
+  [--task-id ID]... [--runs-per-task N]
 roller bench report RUN_DIR [--output REPORT.json]
 ```
 
@@ -219,10 +220,14 @@ roller bench report RUN_DIR [--output REPORT.json]
 | `--output` / `-o` | Required for export | Task JSONL written by export; optional report JSON for report |
 | `--category CAT` | Unlimited | Export only this category; repeatable |
 | `--task-id ID` | Unlimited | Export only this task; repeatable; a wrong id errors instead of being skipped silently |
+| `--runs-per-task N` | `1` | Emit N independent rollouts per selected task; ids end in `__run_01`, etc. |
 | `RUN_DIR` | Required | Completed run directory; a **positional argument** (not `--run`) |
 
 `bench export` only translates; it does not run any task, go online, or start a container.
 When collecting, remember `--task-timeouts`, and use `--pass-env` to pass through variables the grader needs.
+`swebench-pro` adds runtime image adaptation: export remains offline, but the
+first `collect` for each instance pulls the official image and builds a local
+OpenClaw-derived image.
 
 Field semantics, scoring timeline, `stage` leak-prevention rules, and aggregation rules are in [Bench integration and scoring](../benches/bench-format.md).
 

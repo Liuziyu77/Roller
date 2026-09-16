@@ -139,6 +139,11 @@ class FakeRuntime:
 
 
 class PiHarnessTests(unittest.TestCase):
+    def test_sdk_runner_uses_the_api_key_value_from_environment(self):
+        source = RUNNER_PATH.with_name("runner.mjs").read_text(encoding="utf-8")
+        self.assertIn("apiKey: process.env.PI_API_KEY", source)
+        self.assertNotIn('apiKey: "PI_API_KEY"', source)
+
     def test_session_outputs_cleanup_and_redaction(self):
         runtime = FakeRuntime()
         harness = PiHarness(PiConfig(api_key_env="LOCAL_TEST_KEY", wire_trace_mode="off"), 0, runtime)

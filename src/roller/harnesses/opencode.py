@@ -34,6 +34,7 @@ RUNNER_PATH = Path(__file__).resolve().parents[1] / "assets" / "opencode" / "run
 STATE = "/roller/opencode-state"
 RUNNER = "/roller/opencode_runner.py"
 PLUGIN = "/roller/opencode_journal.mjs"
+RAW_EXPORT = "opencode_export.raw.json"
 OPENCODE_TOOLS = ("bash", "read", "write", "edit", "apply_patch", "glob", "grep")
 ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
@@ -293,11 +294,35 @@ class OpenCodeSession(InteractiveSession):
             return self._result
         config, runtime = self.harness.config, self.harness.runtime
         trace = trajectory = None
+        raw_export = None
         output_metadata = None
         usage = dict(ZERO_USAGE)
         problems = []
         try:
             if self.container_started:
+                raw_export = self.output_dir / RAW_EXPORT
+                copied = runtime.run(
+                    [
+                        "cp",
+                        f"{self.container}:{STATE}/session-export.raw.json",
+                        str(raw_export),
+                    ],
+                    timeout=30,
+                )
+                if (
+                    copied.returncode
+                    or not raw_export.is_file()
+                    or not raw_export.stat().st_size
+                ):
+                    raw_export.unlink(missing_ok=True)
+                    raw_export = None
+                else:
+                    raw_export.write_text(
+                        self.redact(
+                            raw_export.read_text(encoding="utf-8", errors="replace")
+                        ),
+                        encoding="utf-8",
+                    )
                 try:
                     trace = self.output_dir / "rollout" / "trace.jsonl"
                     trace.parent.mkdir(parents=True, exist_ok=True)
@@ -370,6 +395,7 @@ class OpenCodeSession(InteractiveSession):
             trajectory_path=trajectory.relative_to(self.output_dir).as_posix() if trajectory else None,
             metadata={"raw_trace_schema": "roller.opencode-events/v1", "opencode_version": self.opencode_version,
                 "provenance": provenance, "output_collection": output_metadata, "turn_count": self.turns,
+                "raw_export": raw_export.name if raw_export else None,
                 "retained_container": self.container if retained else None,
                 "settings": {"reasoning_effort": resolve_thinking(self.request.task.thinking, config.reasoning_effort), "max_steps": config.max_steps, "context_length": config.context_length, "output_tokens": config.output_tokens, "tools": list(OPENCODE_TOOLS), "keep_thinking": config.keep_thinking}},
         )

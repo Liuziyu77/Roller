@@ -18,6 +18,12 @@ def atomic_json(path, value):
     temporary.replace(path)
 
 
+def atomic_text(path, value):
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text(value, encoding="utf-8")
+    temporary.replace(path)
+
+
 def native_reply(export):
     messages = export.get("messages", [])
     users = [m for m in messages if m.get("info", {}).get("role") == "user"]
@@ -37,6 +43,84 @@ def native_reply(export):
     if not content.strip():
         raise ValueError("OpenCode turn returned an empty reply")
     return content
+
+
+def journal_export(path, session_id):
+    messages = {}
+    parts = {}
+    with path.open("r", encoding="utf-8", errors="replace") as stream:
+        for line_number, line in enumerate(stream, 1):
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise ValueError(
+                    f"OpenCode journal line {line_number} is invalid JSON"
+                ) from exc
+            if row.get("type") == "session_export":
+                exported = row.get("data")
+                if not isinstance(exported, dict):
+                    continue
+                for message in exported.get("messages", []):
+                    if not isinstance(message, dict):
+                        continue
+                    info = message.get("info")
+                    if not isinstance(info, dict) or info.get("sessionID") != session_id:
+                        continue
+                    message_id = info.get("id")
+                    if not isinstance(message_id, str) or not message_id:
+                        continue
+                    messages[message_id] = info
+                    for part in message.get("parts", []):
+                        if isinstance(part, dict) and isinstance(part.get("id"), str):
+                            parts[part["id"]] = part
+                continue
+            if row.get("type") != "event":
+                continue
+            event = row.get("event")
+            if not isinstance(event, dict):
+                continue
+            properties = event.get("properties")
+            if not isinstance(properties, dict):
+                continue
+            if event.get("type") == "message.updated":
+                info = properties.get("info")
+                if (
+                    isinstance(info, dict)
+                    and info.get("sessionID") == session_id
+                    and isinstance(info.get("id"), str)
+                ):
+                    messages[info["id"]] = info
+            elif event.get("type") == "message.part.updated":
+                part = properties.get("part")
+                if (
+                    isinstance(part, dict)
+                    and part.get("sessionID", session_id) == session_id
+                    and isinstance(part.get("id"), str)
+                ):
+                    parts[part["id"]] = part
+    ordered = sorted(
+        messages.values(),
+        key=lambda info: (info.get("time", {}).get("created", 0), info["id"]),
+    )
+    return {
+        "info": {"id": session_id},
+        "messages": [
+            {
+                "info": info,
+                "parts": sorted(
+                    (
+                        part
+                        for part in parts.values()
+                        if part.get("messageID") == info["id"]
+                    ),
+                    key=lambda part: part["id"],
+                ),
+            }
+            for info in ordered
+        ],
+    }
 
 
 def run_turn(config, state):
@@ -102,18 +186,52 @@ def run_turn(config, state):
         raise ValueError("OpenCode CLI did not return exactly the expected session")
     session_id = ids.pop()
     atomic_json(session_file, {"id": session_id})
+    errors = [e.get("error") for e in events if e.get("type") == "error"]
+    if process.returncode or errors:
+        raise RuntimeError(
+            "OpenCode CLI failed: " + json.dumps(errors, ensure_ascii=False)[:2000]
+        )
     exported = subprocess.run(["opencode", "export", session_id], capture_output=True, text=True, timeout=remaining())
+    raw_export_path = state / "session-export.raw.json"
+    atomic_text(raw_export_path, exported.stdout)
     if exported.returncode:
         raise RuntimeError("OpenCode session export failed: " + exported.stderr[-1000:])
-    export = json.loads(exported.stdout)
+    try:
+        export = json.loads(exported.stdout)
+    except json.JSONDecodeError as exc:
+        try:
+            export = journal_export(state / "trace.jsonl", session_id)
+            content = native_reply(export)
+        except (OSError, TypeError, ValueError, KeyError) as recovery_error:
+            raise ValueError(
+                f"OpenCode export JSON is invalid ({exc}); "
+                f"journal recovery failed: {recovery_error}"
+            ) from recovery_error
+        with (state / "trace.jsonl").open("a", encoding="utf-8") as journal:
+            journal.write(
+                json.dumps(
+                    {
+                        "type": "export_recovery",
+                        "session_id": session_id,
+                        "error": str(exc),
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
+        return {
+            "ok": True,
+            "content": content,
+            "session_id": session_id,
+            "export_recovered": True,
+        }
+    if not isinstance(export, dict):
+        raise ValueError("OpenCode export must be a JSON object")
     if export.get("info", {}).get("id") != session_id:
         raise ValueError("OpenCode exported a different session")
     atomic_json(state / "session-export.json", export)
     with (state / "trace.jsonl").open("a", encoding="utf-8") as journal:
         journal.write(json.dumps({"type": "session_export", "data": export}, ensure_ascii=False) + "\n")
-    errors = [e.get("error") for e in events if e.get("type") == "error"]
-    if process.returncode or errors:
-        raise RuntimeError("OpenCode CLI failed: " + json.dumps(errors, ensure_ascii=False)[:2000])
     return {"ok": True, "content": native_reply(export), "session_id": session_id}
 
 

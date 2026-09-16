@@ -226,10 +226,9 @@ def binding_from_task_row(row: dict[str, Any]) -> BenchBinding | None:
 class BenchAdapter(ABC):
     """Turn an upstream benchmark into ``roller.task/v1`` rows plus scorers.
 
-    Adapters never execute anything. They translate a checked-out benchmark
-    into task rows that Roller's existing collect path already understands,
-    embedding each task's scorer in its ``bench.grade`` block so grading
-    travels with the task instead of needing a parallel lookup at runtime.
+    ``load()`` translates a checked-out benchmark into task rows that Roller's
+    collect path understands. ``wrap_harness()`` may adapt execution for
+    benches that require per-task runtime images or workspaces.
     """
 
     name: str
@@ -254,6 +253,15 @@ class BenchAdapter(ABC):
             if binding is not None and binding.category:
                 seen.setdefault(binding.category, None)
         return list(seen)
+
+    def wrap_harness(self, harness: Any, binding: BenchBinding) -> Any:
+        """Prepare a harness for this bench and attach its live-container grader."""
+
+        if binding.grade is None:
+            return harness
+        from roller.benches.grading import GradedHarness
+
+        return GradedHarness(harness, binding)
 
     def aggregate(self, samples: Iterable[dict[str, Any]]) -> dict[str, Any]:
         """Summarize per-sample scores; override to match upstream reporting."""

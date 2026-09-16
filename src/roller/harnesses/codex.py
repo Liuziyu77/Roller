@@ -948,19 +948,26 @@ class CodexSession(InteractiveSession):
         prompt = message.strip()
         turn_started = time.monotonic()
         self._pending_message = prompt
-        self.return_codes.append(
-            self.harness._run_turn(
-                self.container,
-                self.request,
-                prompt,
-                resume=bool(self.messages),
-                timeout_seconds=timeout_seconds,
-                log_path=self.log_path,
+        try:
+            self.return_codes.append(
+                self.harness._run_turn(
+                    self.container,
+                    self.request,
+                    prompt,
+                    resume=bool(self.messages),
+                    timeout_seconds=timeout_seconds,
+                    log_path=self.log_path,
+                )
             )
-        )
-        reply = self._latest_reply()
-        self.messages.append(prompt)
-        return TurnResult(reply, time.monotonic() - turn_started, self.return_codes[-1])
+            reply = self._latest_reply()
+            return TurnResult(
+                reply,
+                time.monotonic() - turn_started,
+                self.return_codes[-1],
+            )
+        finally:
+            self.messages.append(prompt)
+            self._pending_message = ""
 
     def finish(self, status: str, error: str | None = None) -> HarnessResult:
         if self._finished is not None:

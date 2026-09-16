@@ -533,12 +533,26 @@ class WildClawBenchAdapter(BenchAdapter):
             return None, None, None
         seed = declared / SEED_DIR_NAME
         if not seed.is_dir():
-            # Every upstream task ships ``exec/``, but a trimmed checkout may
-            # not. Falling back to the declared directory keeps such a task
-            # runnable, so warn loudly about what that exposes.
+            fixtures = declared / FIXTURES_DIR_NAME
+            answer_key = declared / ANSWER_KEY_DIR_NAME
+            if fixtures.is_dir() or answer_key.is_dir():
+                # A workspace containing reserved grading/fixture directories
+                # must never be mounted wholesale. Some upstream tasks
+                # intentionally start empty but still ship ``gt/``.
+                logger.warning(
+                    "[%s] workspace has no %s/ directory; task will start with "
+                    "an empty workspace and reserved data will remain isolated",
+                    task_id,
+                    SEED_DIR_NAME,
+                )
+                return (
+                    None,
+                    fixtures if fixtures.is_dir() else None,
+                    answer_key if answer_key.is_dir() else None,
+                )
+            # Legacy workspaces may place seed files directly at their root.
             logger.warning(
-                "[%s] workspace has no %s/ directory; mounting %s wholesale, which "
-                "may expose grading data to the agent",
+                "[%s] workspace has no %s/ directory; mounting legacy workspace %s",
                 task_id,
                 SEED_DIR_NAME,
                 declared,

@@ -152,6 +152,7 @@ class Collector:
             "trace_ACTF.json",
             "trace_SFT.json",
             "signature_recovery.jsonl",
+            "opencode_export.raw.json",
             "info.json",
             "results",
             "conversation.json",
@@ -214,8 +215,13 @@ class Collector:
                     request.task.id,
                     request.model,
                 )
-                final.status = "error"
-                final.error = f"trajectory conversion failed: {exc}"
+                conversion_error = f"trajectory conversion failed: {exc}"
+                metadata["trajectory_conversion_error"] = str(exc)
+                if final.status == "ok":
+                    final.status = "error"
+                    final.error = conversion_error
+                elif not final.error:
+                    final.error = conversion_error
         if attempts and attempts[-1].get("status") != final.status:
             attempts[-1]["status"] = final.status
             attempts[-1]["error"] = final.error

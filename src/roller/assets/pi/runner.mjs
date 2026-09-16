@@ -52,7 +52,7 @@ async function serve(config) {
     modelsStorePath: `${agentDir}/models-store.json`, allowModelNetwork: false, refreshOnCreate: false,
   });
   modelRuntime.registerProvider("roller", {
-    api: "openai-completions", baseUrl: process.env.PI_BASE_URL, apiKey: "PI_API_KEY",
+    api: "openai-completions", baseUrl: process.env.PI_BASE_URL, apiKey: process.env.PI_API_KEY,
     models: [{id: config.model, name: config.model, reasoning: true, input: ["text"],
       thinkingLevelMap: {off: "none", xhigh: "xhigh", max: "max"},
       cost: {input: 0, output: 0, cacheRead: 0, cacheWrite: 0},

@@ -345,6 +345,12 @@ system/runtime injection, compaction, tool-result pruning, context-engine/hook p
 adaptation may still happen before a model call. So a message present in `trace.jsonl` is not guaranteed to enter each
 request verbatim. ACTF/SFT are projected from that session file and also cannot prove which full history the model saw at the time.
 
+If an interrupted upstream request leaves only a trailing empty assistant
+placeholder with an `aborted` or `error` stop reason, ACTF omits that
+non-semantic terminal step so the preceding complete steps can still produce
+SFT. The raw event remains in `trace.jsonl`, the sample retains the original
+Agent error, and nonterminal empty messages are never silently discarded.
+
 Use `full` when you need to audit the real request context. The proxy sits between the OpenClaw provider adapter and the
 real model API. For valid JSON, it records and forwards the same request body after optional historical-thinking
 stripping. `wire_trace.jsonl` therefore stores the messages/input, tools, and parameters Roller's client actually

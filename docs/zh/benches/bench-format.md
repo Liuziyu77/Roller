@@ -173,8 +173,8 @@ class MyBenchAdapter(BenchAdapter):
         return rows
 ```
 
-然后在 `src/roller/benches/__init__.py` 的注册表里加一行。可选覆盖 `categories()`
-和 `aggregate()`（要匹配上游报法时才需要）。
+然后在 `src/roller/benches/__init__.py` 的注册表里加一行。可选覆盖 `categories()`、
+`aggregate()`，以及需要按任务替换执行镜像或工作目录时使用的 `wrap_harness()`。
 
 几条经验：
 
@@ -215,6 +215,8 @@ roller bench list
 roller bench export wildclawbench /path/to/WildClawBench --output tasks/wcb.jsonl
 roller bench export wildclawbench /path/to/WildClawBench -o /tmp/one.jsonl \
     --category 03_Social_Interaction --task-id 03_Social_Interaction_task_2_group_chat_zh
+roller bench export qwenclawbench /path/to/QwenClawBench -o /tmp/qcb.jsonl \
+    --runs-per-task 3
 
 # 采集并评分。--task-timeouts 让每行用自己的 timeout_seconds
 roller collect --tasks tasks/wcb.jsonl --model <provider>/<model> \
@@ -227,7 +229,8 @@ roller bench report runs/<run-name>
 roller bench report runs/<run-name> --output report.json
 ```
 
-`--category` 和 `--task-id` 都可重复。`--task-timeouts` 是 bench 跑的关键：
+`--category` 和 `--task-id` 都可重复。`--runs-per-task N` 为每个选中的上游任务
+生成 N 行独立 rollout，并保留原始 task id 和运行序号。`--task-timeouts` 是 bench 跑的关键：
 bench 的每个任务自带超时（WildClawBench 实测有 300/360/600/900/1200 五档），
 而 `build_requests` 平时只吃一个全局 `--timeout`；不加这个开关，
 短任务会被给过多时间、长任务会被墙钟砍掉，砍掉的样子跟模型不会做很像。
@@ -243,6 +246,8 @@ grader 需要的环境变量要用 `--pass-env` 透传（哪些变量由 bench �
 | Bench | `--harness` | README | 一句话 |
 | --- | --- | --- | --- |
 | `wildclawbench` | `openclaw` | [WildClawBench](wildclawbench.md) | 60 个真实场景任务，6 类；grader 在容器里跑，26 个任务的 `gt/` 走 `stage` |
+| `qwenclawbench` | `openclaw` | [QwenClawBench](qwenclawbench.md) | 100 个任务，8 类；支持 automated/hybrid、惩罚式评分和每题重复运行 |
+| `swebench-pro` | `openclaw` | [SWE-Bench Pro](swebench-pro.md) | 731 个软件工程任务，11 个仓库；官方实例镜像、隐藏测试和 resolved 评分 |
 
 接入前先读对应 README 的"上游旋钮 → Roller 对应"表和"未搬"清单 ——
 少一个旋钮不会报错，只会让分数不可比。

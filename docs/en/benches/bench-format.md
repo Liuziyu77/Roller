@@ -201,8 +201,8 @@ class MyBenchAdapter(BenchAdapter):
 ```
 
 Then add one line to the registry in `src/roller/benches/__init__.py`. Optionally
-override `categories()` and `aggregate()` (only when you need to match the
-upstream reporting method).
+override `categories()`, `aggregate()`, and `wrap_harness()` when a task must
+replace the execution image or workspace.
 
 A few lessons:
 
@@ -257,6 +257,8 @@ roller bench list
 roller bench export wildclawbench /path/to/WildClawBench --output tasks/wcb.jsonl
 roller bench export wildclawbench /path/to/WildClawBench -o /tmp/one.jsonl \
     --category 03_Social_Interaction --task-id 03_Social_Interaction_task_2_group_chat_zh
+roller bench export qwenclawbench /path/to/QwenClawBench -o /tmp/qcb.jsonl \
+    --runs-per-task 3
 
 # 采集并评分。--task-timeouts 让每行用自己的 timeout_seconds
 roller collect --tasks tasks/wcb.jsonl --model <provider>/<model> \
@@ -269,7 +271,9 @@ roller bench report runs/<run-name>
 roller bench report runs/<run-name> --output report.json
 ```
 
-`--category` and `--task-id` can both be repeated. `--task-timeouts` is the key
+`--category` and `--task-id` can both be repeated. `--runs-per-task N` emits
+N independent rollout rows for each selected upstream task while preserving
+the original task id and run index. `--task-timeouts` is the key
 switch for a bench run: each bench task carries its own timeout (WildClawBench
 has five measured values: 300/360/600/900/1200), while `build_requests`
 normally consumes only one global `--timeout`. Without this flag, short tasks
@@ -289,6 +293,8 @@ section is only an index.
 | Bench | `--harness` | README | One-liner |
 | --- | --- | --- | --- |
 | `wildclawbench` | `openclaw` | [WildClawBench](wildclawbench.md) | 60 real-scenario tasks in 6 categories; the grader runs in the container; `gt/` for 26 tasks goes through `stage` |
+| `qwenclawbench` | `openclaw` | [QwenClawBench](qwenclawbench.md) | 100 tasks in 8 domains; automated/hybrid grading, penalized scores, and repeated runs |
+| `swebench-pro` | `openclaw` | [SWE-Bench Pro](swebench-pro.md) | 731 software-engineering tasks across 11 repositories; official instance images, hidden tests, and resolved scoring |
 
 Read the matching README's "upstream knobs → Roller equivalents" table and the
 "not ported" list before integrating. A missing knob does not error. It only

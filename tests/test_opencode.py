@@ -13,7 +13,12 @@ import unittest
 from unittest.mock import Mock, patch
 
 from roller.cli import _build_parser, _collect
-from roller.harnesses.opencode import OpenCodeConfig, OpenCodeHarness, RUNNER_PATH
+from roller.harnesses.opencode import (
+    RAW_EXPORT,
+    OpenCodeConfig,
+    OpenCodeHarness,
+    RUNNER_PATH,
+)
 from roller.opencode_actf import convert_opencode_trace, extract_opencode_usage, opencode_events_to_actf
 from roller.models import RunRequest, Task
 from roller.sft import actf_to_sft
@@ -118,6 +123,87 @@ class OpenCodeTraceTests(unittest.TestCase):
             changed = deepcopy(export);changed["messages"][-1]["info"][field] = value
             with self.assertRaises(ValueError):runner.native_reply(changed)
 
+    def test_malformed_export_recovers_only_from_complete_native_journal(self):
+        spec = importlib.util.spec_from_file_location("opencode_runner_test", RUNNER_PATH)
+        runner = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(runner)
+        messages = sample_events()[-1]["data"]["messages"]
+        updates = []
+        for message in messages:
+            updates.append(
+                {
+                    "type": "event",
+                    "event": {
+                        "type": "message.updated",
+                        "properties": {"info": message["info"]},
+                    },
+                }
+            )
+            updates.extend(
+                {
+                    "type": "event",
+                    "event": {
+                        "type": "message.part.updated",
+                        "properties": {"part": part},
+                    },
+                }
+                for part in message["parts"]
+            )
+
+        class Process:
+            returncode = 0
+
+            def __init__(self, output):
+                self.output = output
+
+            def communicate(self, message, timeout):
+                del message, timeout
+                self.output.write(json.dumps({"sessionID": "s1"}) + "\n")
+                self.output.flush()
+
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            write_events(state / "trace.jsonl", updates)
+            config = {
+                "timeout_seconds": 30,
+                "thinking": None,
+                "model": "test-model",
+                "context_length": 128000,
+                "output_tokens": 8192,
+                "max_steps": 12,
+                "system_prompt": "test",
+                "message": "Read token",
+            }
+            with patch.object(
+                runner.subprocess,
+                "Popen",
+                side_effect=lambda *args, **kwargs: Process(kwargs["stdout"]),
+            ):
+                with patch.object(
+                    runner.subprocess,
+                    "run",
+                    return_value=subprocess.CompletedProcess(
+                        [], 0, '{"truncated": "', ""
+                    ),
+                ):
+                    with patch.dict(
+                        runner.os.environ,
+                        {"OPENAI_BASE_URL": "http://example.test/v1"},
+                    ):
+                        result = runner.run_turn(config, state)
+
+            self.assertTrue(result["export_recovered"])
+            self.assertEqual(result["content"], "TOKEN")
+            self.assertEqual(
+                (state / "session-export.raw.json").read_text(),
+                '{"truncated": "',
+            )
+            rows = [
+                json.loads(line)
+                for line in (state / "trace.jsonl").read_text().splitlines()
+            ]
+            self.assertEqual(rows[-1]["type"], "export_recovery")
+
 
 class FakeRuntime:
     def __init__(self):
@@ -131,6 +217,7 @@ class FakeRuntime:
         elif args[-1] == "--check":stdout = "1.18.30"
         elif args[-1].endswith("/result.json"):stdout = json.dumps(self.result)
         elif args[0] == "cp" and args[1].endswith(":/roller/opencode-state/trace.jsonl"):write_events(Path(args[2]))
+        elif args[0] == "cp" and args[1].endswith(":/roller/opencode-state/session-export.raw.json"):Path(args[2]).write_text('{"raw": true}')
         elif args[0] == "cp" and args[1].endswith("/outputs/."):(Path(args[2])/"answer.txt").write_text("TOKEN")
         return subprocess.CompletedProcess(args, 0, stdout, "")
 
@@ -149,6 +236,8 @@ class OpenCodeHarnessTests(unittest.TestCase):
             self.assertEqual(result.status, "ok", result.error)
             self.assertEqual(result.metadata["turn_count"], 2)
             self.assertEqual((Path(tmp)/"results/answer.txt").read_text(), "TOKEN")
+            self.assertEqual(result.metadata["raw_export"], RAW_EXPORT)
+            self.assertEqual((Path(tmp)/RAW_EXPORT).read_text(), '{"raw": true}')
             self.assertFalse((Path(tmp)/".opencode-turn.json").exists())
             self.assertTrue(any(a[:2] == ["rm", "-f"] for a in runtime.calls))
             runtime.result = {"ok": False, "error": "failed test-secret"}

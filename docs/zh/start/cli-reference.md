@@ -208,7 +208,8 @@ roller view RUN_DIR [--host HOST] [--port PORT]
 
 ```bash
 roller bench list
-roller bench export NAME ROOT --output TASKS.jsonl [--category CAT]... [--task-id ID]...
+roller bench export NAME ROOT --output TASKS.jsonl [--category CAT]... \
+  [--task-id ID]... [--runs-per-task N]
 roller bench report RUN_DIR [--output REPORT.json]
 ```
 
@@ -219,10 +220,13 @@ roller bench report RUN_DIR [--output REPORT.json]
 | `--output` / `-o` | export 必填 | export 写出的 task JSONL；report 时为可选的报告 JSON |
 | `--category CAT` | 不限制 | 只导出该类别，可重复 |
 | `--task-id ID` | 不限制 | 只导出该 task，可重复；写错的 id 会报错而不是静默跳过 |
+| `--runs-per-task N` | `1` | 每个选中 task 生成 N 个独立 rollout；id 后缀为 `__run_01` 等 |
 | `RUN_DIR` | 必填 | 已完成的 run 目录，**位置参数**（不是 `--run`） |
 
 `bench export` 只做翻译，不执行任何任务、不联网、不启容器。
 采集时记得加 `--task-timeouts`，并用 `--pass-env` 透传 grader 需要的变量。
+`swebench-pro` 是例外的运行期镜像适配：导出仍然离线，但 `collect` 首次处理每个实例时
+会拉取官方镜像并构建带 OpenClaw 的本地派生镜像。
 
 字段语义、评分时序、`stage` 防泄漏规则和聚合口径见 [Bench 接入与评分](../benches/bench-format.md)。
 
