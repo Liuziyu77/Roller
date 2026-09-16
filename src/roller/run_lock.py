@@ -9,6 +9,7 @@ from typing import Any, Mapping, Sequence
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from roller.models import RunRequest
+from roller.harness_registry import HARNESS_NAMES
 from roller.storage import atomic_write_json
 from roller.wire_trace import redact_sensitive_values
 
@@ -197,6 +198,30 @@ def _differences(recorded: Any, current: Any, path: str = "$", limit: int = 8) -
     ]
 
 
+def _without_disabled_cot_options(lock: Any) -> Any:
+    """Ignore retired no-ops for comparison only; never rewrite the saved lock."""
+
+    if not isinstance(lock, dict) or not isinstance(lock.get("execution"), dict):
+        return lock
+    execution = dict(lock["execution"])
+    for name in HARNESS_NAMES:
+        settings = execution.get(name)
+        if not isinstance(settings, dict):
+            continue
+        settings = dict(settings)
+        if settings.get("external_thinking") == "off":
+            settings.pop("external_thinking")
+        if name == "claude-code" and settings.get("signature_recovery") == "off":
+            for key in (
+                "signature_recovery",
+                "signature_recovery_attempts",
+                "signature_recovery_max_tokens",
+            ):
+                settings.pop(key, None)
+        execution[name] = settings
+    return {**lock, "execution": execution}
+
+
 def ensure_run_lock(
     path: Path,
     expected: Mapping[str, Any],
@@ -220,8 +245,13 @@ def ensure_run_lock(
             raise ValueError(
                 f"existing run lock cannot be parsed; refusing to overwrite {path}: {exc}"
             ) from exc
-        if recorded != expected_row:
-            details = "\n".join(f"- {row}" for row in _differences(recorded, expected_row))
+        recorded_comparison = _without_disabled_cot_options(recorded)
+        expected_comparison = _without_disabled_cot_options(expected_row)
+        if recorded_comparison != expected_comparison:
+            details = "\n".join(
+                f"- {row}"
+                for row in _differences(recorded_comparison, expected_comparison)
+            )
             raise FileExistsError(
                 "run directory cannot be resumed with different resolved inputs; "
                 f"lock mismatch at {path}:\n{details}"

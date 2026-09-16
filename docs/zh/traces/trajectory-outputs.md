@@ -486,7 +486,7 @@ OpenClaw 仍要求 `--model-config` 中存在可代理 `baseUrl`；Codex 和 Cla
 
 `external` / `external_always` 和 Claude signature recovery 已下线：不再注入思考工具、改写 THINK/ACT 阶段、调用签名恢复 API，或把工具参数折叠为 reasoning。普通同名工具仍按工具调用导出。
 
-旧 CLI 参数会报错，不能用 `off` 兼容。旧 run lock 与新配置不兼容；未经过 CLI lock 检查而直接调用 Collector 时，也会拒绝覆盖运行记录中启用了这些功能的 Agent/Simulator sample。继续采集请使用新 run 目录。旧 raw/ACTF/SFT 可继续离线查看；重新导出 ACTF 时，工具调用不再享有特殊折叠规则。
+旧 CLI 参数会报错，包括 `off`，需要从命令中删除。旧锁中明确为 `off` 的退休字段及已关闭 recovery 的附属参数只在比较时忽略，原锁不会被重写；其余配置和样本完整性检查仍严格执行，原生采集可继续 Resume。启用了旧模式的运行不能混用新配置，应使用新 run 目录。CLI 会在写入锁或运行元数据之前检查目标 Agent/Simulator sample，直接调用 Collector 时也执行同一检查。旧 raw/ACTF/SFT 可继续离线查看；重新导出 ACTF 时，工具调用不再享有特殊折叠规则。
 
 ### 6.4 Cache trace（OpenClaw）
 
