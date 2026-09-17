@@ -211,6 +211,35 @@ class QwenClawGraderTests(unittest.TestCase):
         with patch.dict(os.environ, self._judge_env()):
             return namespace["roller_grade"](transcript or [], str(workspace))
 
+    def test_removes_unused_yaml_import_from_automated_grader(self) -> None:
+        markdown = _task_markdown().replace(
+            "def grade(transcript, workspace_path):\n"
+            "    return {\"file_check\": 1.0}",
+            "def grade(transcript, workspace_path):\n"
+            "    import os, re, yaml\n"
+            "    return {\"file_check\": 1.0}",
+        )
+        task = parse_task_markdown(markdown, "unused-yaml.md")
+
+        source = build_grader_source(task)
+
+        self.assertIn("import os, re", source)
+        self.assertNotIn("import os, re, yaml", source)
+
+    def test_keeps_yaml_import_when_automated_grader_uses_it(self) -> None:
+        markdown = _task_markdown().replace(
+            "def grade(transcript, workspace_path):\n"
+            "    return {\"file_check\": 1.0}",
+            "def grade(transcript, workspace_path):\n"
+            "    import yaml\n"
+            "    return {\"file_check\": float(bool(yaml.safe_load(\"ok: true\")))}",
+        )
+        task = parse_task_markdown(markdown, "used-yaml.md")
+
+        source = build_grader_source(task)
+
+        self.assertIn("import yaml", source)
+
     def test_hybrid_grader_uses_openai_contract_and_snapshots_workspace(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
