@@ -244,6 +244,7 @@ grader 需要的环境变量要用 `--pass-env` 透传（哪些变量由 bench �
 | Bench | `--harness` | README | 一句话 |
 | --- | --- | --- | --- |
 | `wildclawbench` | `openclaw` | [WildClawBench](wildclawbench.md) | 60 个真实场景任务，6 类；grader 在容器里跑，26 个任务的 `gt/` 走 `stage` |
+| `swebench-pro` | `openclaw` | [SWE-Bench Pro](swebench-pro.md) | 731 个软件工程任务，11 个仓库；官方实例镜像、隐藏测试和 resolved 评分 |
 
 接入前先读对应 README 的"上游旋钮 → Roller 对应"表和"未搬"清单 ——
 少一个旋钮不会报错，只会让分数不可比。

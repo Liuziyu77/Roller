@@ -225,6 +225,8 @@ roller bench report RUN_DIR [--output REPORT.json]
 
 `bench export` 只做翻译，不执行任何任务、不联网、不启容器。
 采集时记得加 `--task-timeouts`，并用 `--pass-env` 透传 grader 需要的变量。
+`swebench-pro` 是例外的运行期镜像适配：导出仍然离线，但 `collect` 首次处理每个实例时
+会拉取官方镜像并构建带 OpenClaw 的本地派生镜像。
 
 字段语义、评分时序、`stage` 防泄漏规则和聚合口径见 [Bench 接入与评分](../benches/bench-format.md)。
 

@@ -8,6 +8,7 @@
 | --- | --- |
 | 跑通模型服务、Harness 和轨迹采集 | [基础 Task 清单](#基础-task-清单)：4 条文本、文件、Context 和多轮任务 |
 | 检查不同输入形式和 Harness 组合的功能 | [Coverage 功能测试](#coverage-功能测试)：按场景选择任务，附离线校验和结果验收 |
+| 一条命令导出、运行并汇总 benchmark | [Benchmark 一键运行](#benchmark-一键运行)：SWE-Bench Pro |
 
 以下命令均从 **Roller 项目根目录** 执行。
 
@@ -46,6 +47,32 @@ examples/
                 ├── USER.md
                 └── MEMORY.md
 ```
+
+## Benchmark 一键运行
+
+SWE-Bench Pro 脚本会依次执行 `bench export`、`collect` 和 `bench report`，
+临时 task 清单退出时自动删除，报告写入
+`<OUTPUT_ROOT>/<RUN_NAME>/report.json`：
+
+```bash
+# SWE-Bench Pro：先选一个实例验证镜像和评分链路。
+SWEBENCH_PRO_ROOT=/path/to/SWE-bench_Pro \
+MODEL=my-openai-proxy/my-model \
+MODEL_CONFIG=examples/config/openclaw/models.json \
+MY_PROXY_BASE_URL=https://api.example.com/v1 \
+MY_PROXY_API_KEY=replace-me \
+TASK_IDS=instance_flipt-io__flipt-a0cbc0cb65ae601270bdbe3f5313e2dfd49c80e4 \
+./scripts/run-swebench-pro.sh
+```
+
+`HARNESS` 默认为 `openclaw`。使用其他 Harness 时设置 `API_BASE` 和
+`API_KEY_ENV`；后者是保存 Key 的环境变量名，不是 Key 本身。通用变量还有
+`PARALLEL`、`RETRIES`、`OUTPUT_ROOT`、`RUN_NAME`、`TASK_IDS`、
+`CATEGORIES` 和可选的 `MAX_STEPS`。脚本后的参数会原样追加给
+`roller collect`，例如 `./scripts/run-swebench-pro.sh --resume`。
+
+完整的运行与评分约束见
+[SWE-Bench Pro 文档](../docs/zh/benches/swebench-pro.md)。
 
 ## Coverage 功能测试
 

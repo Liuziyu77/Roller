@@ -23,10 +23,15 @@ from roller.benches.report import (
     read_scores,
     sample_score,
 )
+from roller.benches.swebench_pro import SWEBenchProAdapter
 from roller.benches.wildclaw import WildClawBenchAdapter
 
 BENCHES: dict[str, BenchAdapter] = {
-    adapter.name: adapter for adapter in (WildClawBenchAdapter(),)
+    adapter.name: adapter
+    for adapter in (
+        SWEBenchProAdapter(),
+        WildClawBenchAdapter(),
+    )
 }
 
 
@@ -50,6 +55,7 @@ __all__ = [
     "BenchBinding",
     "BenchFormatError",
     "GradeSpec",
+    "SWEBenchProAdapter",
     "WildClawBenchAdapter",
     "binding_from_task_row",
     "format_report",

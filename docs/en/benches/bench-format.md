@@ -291,6 +291,7 @@ section is only an index.
 | Bench | `--harness` | README | One-liner |
 | --- | --- | --- | --- |
 | `wildclawbench` | `openclaw` | [WildClawBench](wildclawbench.md) | 60 real-scenario tasks in 6 categories; the grader runs in the container; `gt/` for 26 tasks goes through `stage` |
+| `swebench-pro` | `openclaw` | [SWE-Bench Pro](swebench-pro.md) | 731 software-engineering tasks across 11 repositories; official instance images, hidden tests, and resolved scoring |
 
 Read the matching README's "upstream knobs → Roller equivalents" table and the
 "not ported" list before integrating. A missing knob does not error. It only

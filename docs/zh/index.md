@@ -105,4 +105,5 @@ traces/viewer
 
 benches/bench-format
 benches/wildclawbench
+benches/swebench-pro
 ```

@@ -20,6 +20,11 @@ classifiers = [
 ]
 dependencies = []
 
+[project.optional-dependencies]
+swebench-pro = [
+  "pyarrow>=14",
+]
+
 [project.scripts]
 roller = "roller.cli:main"
 
