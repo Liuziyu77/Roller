@@ -2,13 +2,12 @@
 
 [文档中心](../index.md) · [轨迹产物](trajectory-outputs.md) · [Task 格式](../tasks/task-format.md)
 
-Roller 在保留 raw trace 和 ACTF 的同时，为每条成功轨迹生成一份只用于训练的
-`trace_SFT.json`。Run 根目录的 `sft.jsonl` 按 request index 汇总所有成功 sample，
+Roller 为每条成功轨迹生成训练文件 `trace_SFT.json`，同时保留 raw trace 和 ACTF。Run 根目录的 `sft.jsonl` 按 request index 汇总所有成功 sample，
 每行与对应的 `trace_SFT.json` 内容相同。
 
 ## 1. 顶层结构
 
-SFT record 顶层严格只有 `messages` 和 `tools`：
+SFT record 的顶层只包含 `messages` 和 `tools`：
 
 ```json
 {
@@ -94,8 +93,8 @@ reasoning 不进入训练数据；只有 ACTF 中可见的 reasoning summary 会
 - arguments 可以编码为 JSON object；
 - 工具结果只包含字符串或 text blocks。
 
-遇到 image 等非文本工具结果时，Roller 不会静默删除内容，而是将该 sample 标记为
-trajectory conversion error。多模态 SFT 需要单独定义 content-block schema。
+遇到 image 等非文本工具结果时，Roller 会将该 sample 标记为 trajectory conversion error，
+避免在导出时丢失内容。多模态 SFT 需要单独定义 content-block schema。
 
 ## 5. 文件位置
 

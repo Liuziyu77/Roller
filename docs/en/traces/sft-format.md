@@ -2,14 +2,14 @@
 
 [Documentation home](../index.md) · [Trajectory outputs](trajectory-outputs.md) · [Task format](../tasks/task-format.md)
 
-While keeping the raw trace and ACTF, Roller also generates one training-only
-`trace_SFT.json` for every successful trajectory. Run-root `sft.jsonl` aggregates
+Roller generates a training file, `trace_SFT.json`, for each successful trajectory,
+alongside the raw trace and ACTF. Run-root `sft.jsonl` aggregates
 every successful sample in request-index order. Each line is identical to the
 corresponding `trace_SFT.json`.
 
 ## 1. Top-level structure
 
-An SFT record has strictly only `messages` and `tools` at the top level:
+An SFT record contains only `messages` and `tools` at the top level:
 
 ```json
 {
@@ -101,9 +101,8 @@ The exporter requires:
 - Arguments can be encoded as a JSON object;
 - Tool results contain only strings or text blocks.
 
-When Roller encounters a non-text tool result such as an image, it does not
-silently delete the content. The sample is marked as a trajectory conversion
-error. Multimodal SFT needs a separately defined content-block schema.
+A non-text tool result, such as an image, causes a trajectory conversion error
+so that content is not lost during export. Multimodal SFT needs a separately defined content-block schema.
 
 ## 5. File locations
 

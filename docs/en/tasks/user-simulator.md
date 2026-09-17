@@ -2,9 +2,9 @@
 
 [Documentation home](../index.md) · [Task format](task-format.md) · [Examples](../start/examples.md#dynamic-user-simulator) · [Output files](../traces/trajectory-outputs.md)
 
-The User Simulator is a separately running Harness that uses a model to play the user. It does not generate the full conversation in advance. After the Task Agent finishes the current instruction, it reads the full context up to the current turn and then decides whether to make a new request or end the task.
+The User Simulator uses a model in a separate Harness to play the user. After the Task Agent completes an instruction, it reads the conversation so far and decides whether to make another request or end the task. The conversation develops one turn at a time.
 
-This mode is suited to collecting traces where requirements are revealed gradually, revised repeatedly, and delivered collaboratively — for example recruitment ads, requirements interviews, customer support, tutoring, and interactive code review.
+Use this mode for tasks that introduce requirements gradually or revise them in response to the Agent, such as drafting recruitment ads, requirements interviews, customer support, tutoring, and interactive code review.
 
 ## 1. Difference from predefined multi-turn
 
@@ -97,7 +97,7 @@ The Simulator must send at least one instruction to the Task Agent before it can
 
 ## 5. How to write a good instruction
 
-The instruction is not the first-turn user message. It is the fixed policy the Simulator must follow on every turn. Spell out all five of these:
+The instruction guides the Simulator on every turn. It tells the Simulator how to generate user messages, rather than serving as the first message itself. Include:
 
 1. **Identity**: who the Simulator is and what information it holds.
 2. **Goal**: what the Agent must ultimately complete.
@@ -115,7 +115,7 @@ In the HR example, a reasonable interaction might be:
 | Accept | Check completeness and require a write to `outputs/recruitment-ad.md` |
 | Finish | Return `finish` after the Agent clearly completes delivery |
 
-Do not put “reveal requirements gradually” in the same instruction as a first-turn script that already contains every detail, or the dynamic interaction collapses into an ordinary single-turn task. Also do not write only a vague identity and omit the finish condition, or the Simulator will keep asking until `max_turns` for no good reason.
+Do not put “reveal requirements gradually” in the same instruction as a first-turn script that already contains every detail, or the Simulator may give all requirements in its first message. Also do not write only a vague identity and omit the finish condition, or the Simulator may keep asking until it reaches `max_turns`.
 
 A runnable version in this repository is [`examples/tasks/user-simulator.jsonl`](../../../examples/tasks/user-simulator.jsonl).
 
@@ -156,7 +156,7 @@ roller collect \
 
 ## 8. Saving and using traces
 
-A dynamic sample adds a clean conversation file and a Simulator subdirectory on top of the ordinary files:
+A dynamic sample also saves the conversation visible to both participants and adds a Simulator subdirectory:
 
 ```text
 samples/<task-agent-model>/<index>_<task>/
@@ -206,7 +206,7 @@ The full rules are in [Files, Task Bundles, and result storage](task-bundle-and-
 - The current protocol maps one decision to one user message and does not support multiple simulated users at once;
 - `max_turns` is the number of instructions given to the Task Agent and does not include the final `finish` check.
 
-When other Harnesses are added later, the Conversation Manager's turn, decision, and persistence boundaries can stay the same; the new Harness only needs to implement the interactive session interface.
+A new Harness needs to implement the interactive session interface. The Conversation Manager can then reuse its existing turn scheduling, decision protocol, and storage rules.
 
 Hermes retains its container and restores native message history between turns. Each turn starts a new Python agent; process-local state such as background process handles is not restored. See [Hermes](../harnesses/hermes-configuration.md).
 

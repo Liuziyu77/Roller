@@ -2,9 +2,9 @@
 
 [文档中心](../index.md) · [Task 格式](task-format.md) · [示例](../start/examples.md#动态-user-simulator) · [产物说明](../traces/trajectory-outputs.md)
 
-User Simulator 是一个独立运行的 Harness，用模型扮演用户。它不会提前生成完整对话，而是在任务 Agent 完成当前指令后读取截至当前轮的完整上下文，再决定提出新要求或结束任务。
+User Simulator 在独立的 Harness 中用模型扮演用户。任务 Agent 完成当前指令后，它读取截至当前轮的完整对话，再决定提出新要求或结束任务。对话随任务进展逐轮生成。
 
-这种模式适合收集需求逐步暴露、反复修改和协作交付的轨迹，例如招聘广告、需求访谈、客服对话、教学辅导和交互式代码评审。
+当任务需要逐步补充需求或根据回复修改要求时，可以使用这种模式，例如撰写招聘广告、需求访谈、客服对话、教学辅导和交互式代码评审。
 
 ## 1. 与预定义多轮的区别
 
@@ -97,7 +97,7 @@ Simulator 至少需要给 Task Agent 发出一条指令，之后才能结束。
 
 ## 5. 如何写好 instruction
 
-Instruction 不是第一轮 user message，而是 Simulator 每一轮都要遵守的固定策略。建议同时写清五类信息：
+Instruction 是 Simulator 每轮遵守的固定策略，用来指导它生成 user message，而非直接作为第一轮消息发送。建议写清以下信息：
 
 1. **身份**：Simulator 扮演谁，掌握哪些信息。
 2. **目标**：最终要让 Agent 完成什么任务。
@@ -115,7 +115,7 @@ Instruction 不是第一轮 user message，而是 Simulator 每一轮都要遵�
 | 验收 | 检查内容完整，并要求写入 `outputs/recruitment-ad.md` |
 | 结束 | Agent 明确完成交付后返回 `finish` |
 
-不要把“逐步披露需求”和一份已经包含所有细节的第一轮话术同时写进 instruction，否则动态交互会退化成普通单轮任务。也不要只写宽泛身份而省略结束条件，否则 Simulator 容易无意义地持续追问到 `max_turns`。
+不要把“逐步披露需求”和一份已经包含所有细节的第一轮话术同时写进 instruction，否则 Simulator 可能在第一轮就给出全部需求。也不要只写宽泛身份而省略结束条件，否则 Simulator 可能持续追问，直到达到 `max_turns`。
 
 仓库中的可运行版本见 [`examples/tasks/user-simulator.jsonl`](../../../examples/tasks/user-simulator.jsonl)。
 
@@ -156,7 +156,7 @@ roller collect \
 
 ## 8. 保存与使用轨迹
 
-动态 sample 在普通文件之外增加干净对话和 Simulator 子目录：
+动态 sample 还会保存双方可见的对话，并增加 Simulator 子目录：
 
 ```text
 samples/<task-agent-model>/<index>_<task>/
@@ -206,7 +206,7 @@ Task Bundle digest 会变化，run lock 检查会拒绝把新配置混入旧 run
 - 当前协议是一次决策对应一条 user message，不支持多个模拟用户同时参与；
 - `max_turns` 是交给 Task Agent 的指令数，不包含最终的 `finish` 检查。
 
-后续接入其他 Harness 时，Conversation Manager 的轮次、决策和保存边界可以保持不变，只需由新的 Harness 实现 interactive session 接口。
+接入新的 Harness 需要实现 interactive session 接口；Conversation Manager 可继续使用现有的轮次调度、决策协议和保存规则。
 
 Hermes 保留同一个容器，每轮启动 Python agent 并恢复原生消息历史；后台进程句柄等进程内状态不会恢复。详见 [Hermes](../harnesses/hermes-configuration.md)。
 

@@ -77,7 +77,7 @@ examples/tasks/files/product_summary/
 {"schema_version":"roller.task/v1","id":"hello","prompt":"计算 2+3，只回复数字。"}
 ```
 
-如果希望把 Task Agent 的设置集中表达，也可以使用
+Task Agent 的设置也可以集中写在一个对象中：
 `"task_agent": {"harness": "codex", "model": "provider/model"}`；它与顶层
 `harness`/`model` 等价，重复声明时必须保持一致。`agent` 是兼容别名。
 
@@ -214,7 +214,7 @@ dataset/
 
 ## 6. Context 与系统文件
 
-`files.context` 用于需要 Harness 语义注入的内容：
+`files.context` 声明由 Harness 加载的 Context 文件：
 
 ```json
 {
@@ -267,9 +267,9 @@ OpenClaw adapter 会把 Context 注入 `/root/<target>` 与 `/tmp_workspace/<tar
 
 `output_dir` 默认是 `outputs`，可以是更深的相对路径，例如 `deliverables/final`。Roller 会在 `/tmp_workspace/<output_dir>/` 创建可写目录，并把 `/roller/task/outputs` 链接到同一位置。
 
-任务结束后，该目录内的全部安全文件与空目录会进入 sample 的 `results/`。不需要也不能预先声明固定输出文件名；旧字段 `files.outputs` 已停止支持。
+任务结束后，该目录内的全部安全文件与空目录会进入 sample 的 `results/`。无需预先列出输出文件名；用于声明这些文件名的旧字段 `files.outputs` 已停止支持。
 
-`files.output_dir` 与 CLI `--output` 解决不同问题：前者是 Agent 工作区里的可回收目录，后者是宿主机上保存整个 run 的根目录。例如 `files.output_dir=outputs`、`--output /data/roller-runs --run-name demo` 会把 Agent 的 `outputs/report.md` 保存到 `/data/roller-runs/demo/samples/.../results/report.md`。
+`files.output_dir` 指定 Agent 工作区中需要回收的目录；CLI `--output` 指定宿主机上保存整个 run 的根目录。例如 `files.output_dir=outputs`、`--output /data/roller-runs --run-name demo` 会把 Agent 的 `outputs/report.md` 保存到 `/data/roller-runs/demo/samples/.../results/report.md`。
 
 ## 8. Runtime
 
@@ -325,4 +325,4 @@ Roller 仍可读取 Interns2_data 风格的部分旧字段：
 - `persona`
 - `warmup`
 
-新数据建议使用 `prompt`、`file_root`、`files.inputs`、`files.context`、`files.output_dir` 和 `runtime.setup`，这样路径、快照和 Resume 行为更明确。
+新数据建议使用 `prompt`、`file_root`、`files.inputs`、`files.context`、`files.output_dir` 和 `runtime.setup`，以便明确指定文件路径、生成输入快照并检查 Resume 条件。

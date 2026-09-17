@@ -1,6 +1,6 @@
 # Roller 文档
 
-Roller 是面向多模型、多 Harness 的 Agent 轨迹采集框架。它把 task 清单与模型列表展开为独立 rollout，在一次性 Docker 容器中运行 Agent，并同时保存：
+Roller 支持用多种模型和 Harness 采集 Agent 轨迹。每个 task 与模型的组合在独立的一次性 Docker 容器中运行，并保存：
 
 - `trace.jsonl`：Harness 原始轨迹
 - `trace_ACTF.json`：统一分析与可视化格式（`ACTF_v1.0`）
@@ -21,7 +21,7 @@ Docker 中的 Agent Harness
         └─ info.json         状态、usage 与运行来源
 ```
 
-当前范围：Python 3.10+、Task schema `roller.task/v1`、轨迹格式 `ACTF_v1.0`。项目处于 Alpha 阶段，许可证为 Apache 2.0。源码见 [GitHub](https://github.com/Liuziyu77/Roller)。
+Roller 需要 Python 3.10+，使用 Task schema `roller.task/v1` 和轨迹格式 `ACTF_v1.0`。项目处于 Alpha 阶段，许可证为 Apache 2.0。源码见 [GitHub](https://github.com/Liuziyu77/Roller)。
 
 ## 核心用途
 
@@ -29,8 +29,8 @@ Docker 中的 Agent Harness
 - 同一批 task 对比多个模型或 Harness
 - 生成顶层严格为 `messages` 和 `tools` 的 SFT JSONL
 - 保存 reasoning、工具调用、工具结果与任务文件产物
-- 用 run lock、重试和 Resume 构建可恢复的数据生产流程
-- 在内置 Viewer 中逐步检查每个 task 的思考与行动轨迹
+- 用 run lock 检查运行配置，通过重试和 Resume 继续采集
+- 在内置 Viewer 中逐步查看每个 task 的 reasoning 和工具操作
 
 ## 选择 Harness
 
@@ -44,7 +44,7 @@ Docker 中的 Agent Harness
 | DeepSeek Harness | DeepSeek Chat Completions | 原生 SDK / 持久化 Bash → ACTF/SFT | sdk-minimal；支持 Agent / Simulator |
 | Pi Agent | OpenAI Chat Completions | 原生 AgentSession / 七种工具 → ACTF/SFT | 固定 SDK 版本；支持 Agent / Simulator |
 
-七者共享相同的 Task、Sample、ACTF、SFT、Viewer、重试和 Resume 边界。镜像、API 和 reasoning 参数见对应 Harness 指南。
+七种 Harness 使用相同的 Task、Sample、ACTF 和 SFT 格式，也共用 Viewer、重试和 Resume 流程。镜像、API 和 reasoning 参数见对应 Harness 指南。
 
 ## 阅读顺序
 

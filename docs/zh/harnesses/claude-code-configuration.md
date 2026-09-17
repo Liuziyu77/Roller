@@ -2,7 +2,7 @@
 
 [文档中心](../index.md) · [快速上手](../start/getting-started.md) · [OpenClaw](openclaw-configuration.md) · [Codex](codex-configuration.md) · [CLI 参数](../start/cli-reference.md)
 
-本页只说明 Claude Code 专属的镜像、Anthropic Messages API、thinking、native session 和排错。Task 字段见 [Task 格式参考](../tasks/task-format.md)，所有 Harness 共用的产物语义见 [轨迹产出文件指南](../traces/trajectory-outputs.md)。
+本页介绍 Claude Code 专属的镜像、Anthropic Messages API、thinking、native session 和排错。Task 字段见 [Task 格式参考](../tasks/task-format.md)，各 Harness 的产物说明见 [轨迹产出文件指南](../traces/trajectory-outputs.md)。
 
 > 快速定位：支持范围（第 1 节）· 镜像（第 2 节）· API（第 3 节）· thinking（第 4–5 节）· native/ACTF/SFT/wire（第 8–9 节）· 排错（第 10 节）
 
@@ -146,7 +146,7 @@ curl -sS -X POST 'http://host:port/v1/messages' \
 | `max` | `max` | 依赖模型支持 |
 | `ultra` | `ultracode` | Roller 逻辑名到固定 CLI 的名称映射 |
 
-`off/none`、`minimal` 和 `adaptive` 没有忠实的一对一 Claude Code CLI 映射，因此会在容器启动
+`off/none`、`minimal` 和 `adaptive` 没有对应的 Claude Code CLI 档位，因此会在容器启动
 前拒绝，不会静默降级。Task 的 `runtime.thinking` 优先于命令行默认值。
 
 还可以设置显式 thinking token 上限：
@@ -256,7 +256,7 @@ CLI stream 中每次成功 result 的 `total_cost_usd` 会累计到 sample usage
 
 ### `trace_SFT.json` 与 `sft.jsonl`
 
-统一 Collector 从 ACTF 生成仅含 `messages` 和 `tools` 的标准训练记录。Assistant 仍使用：
+Collector 从 ACTF 生成仅含 `messages` 和 `tools` 的训练记录。Assistant 消息格式如下：
 
 ```json
 {
@@ -274,8 +274,8 @@ Claude 原生 `tool_use` 转为 OpenAI-compatible function call，`tool_result` 
 ## 9. Wire trace
 
 使用自定义 `--api-base` 时，Claude Code 默认的 `--wire-trace actf` 会启动 rollout-local
-反向代理，但只临时捕获首个 system prompt、完整 tools schema和非消息请求参数。生成 ACTF/SFT
-后中间 `wire_trace.jsonl` 被删除，sample 保持紧凑。
+反向代理，临时捕获首个 system prompt、完整 tools schema 和非消息请求参数。生成 ACTF/SFT
+后删除中间 `wire_trace.jsonl`，减少 sample 的存储占用。
 
 需要核对模型每次真实收到的 JSON context 时使用：
 
@@ -290,7 +290,7 @@ messages、tools、thinking/output config 和 sampling 参数。它记录的是�
 记录实际转发目标，`dropped_request_headers` 只记录被移除的 header 名，不记录值。
 
 `--wire-trace off` 不启动代理。此时 native session 仍能生成 raw/ACTF/SFT，但顶层
-`system_prompt` 为空，tools schema只能根据实际调用推导。Wire 代理需要容器使用默认
+`system_prompt` 为空，tools schema 只能根据实际调用推导。Wire 代理需要容器使用默认
 `--network host`。
 
 ## 10. 已验证行为与排错
