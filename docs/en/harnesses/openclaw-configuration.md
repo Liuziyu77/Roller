@@ -1,7 +1,5 @@
 # OpenClaw Harness guide
 
-[Documentation home](../index.md) · [Getting started](../start/getting-started.md) · [Codex](codex-configuration.md) · [Claude Code](claude-code-configuration.md) · [CLI reference](../start/cli-reference.md)
-
 This guide covers OpenClaw-specific images, model providers, API adapters, thinking, search, gateway, and troubleshooting. For Task fields, see [Task format reference](../tasks/task-format.md). For the outputs shared by all Harnesses, see [Trajectory output file guide](../traces/trajectory-outputs.md).
 
 > Jump to: images and Docker (section 1) · provider JSON (sections 2 to 4) · reasoning/wire (section 5) · parallel ports (section 7) · parameter cheat sheet and troubleshooting (sections 8 to 10)

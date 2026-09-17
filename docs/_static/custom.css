@@ -1,6 +1,6 @@
 /* Let the article use the space beside the sidebar on wide screens. */
 .wy-nav-content {
-    max-width: none;
+    max-width: 1200px;
 }
 
 /* Avoid white flashes and scroll-anchoring jumps during nav switches. */
@@ -14,6 +14,125 @@ body,
     overflow-anchor: none;
 }
 
+/* Keep page headings closed until their own toggle is used. */
+.wy-menu-vertical li.toctree-l1:not(.roller-expanded) > ul,
+.wy-menu-vertical li.toctree-l2:not(.roller-expanded) > ul,
+.wy-menu-vertical .toctree-l1.current .toctree-l2:not(.roller-expanded) > ul {
+    display: none;
+}
+
+.wy-menu-vertical li.toctree-l1.roller-expanded > ul,
+.wy-menu-vertical li.toctree-l2.roller-expanded > ul,
+.wy-menu-vertical .toctree-l1.current .toctree-l2.roller-expanded > ul {
+    display: block;
+}
+
+/* Expanded headings always use the same readable light panel. */
+.wy-menu-vertical li.current,
+.wy-menu-vertical li.roller-expanded {
+    background: #e8e8e8;
+}
+
+.wy-menu-vertical li.current > a,
+.wy-menu-vertical li.roller-expanded > a,
+.wy-menu-vertical a.current {
+    color: #1f1f1f;
+    font-weight: 700;
+    background: #fcfcfc;
+}
+
+.wy-menu-vertical li.roller-expanded ul a {
+    color: #1f1f1f;
+    opacity: 1;
+    background: transparent;
+}
+
+.wy-menu-vertical li.roller-expanded ul a:hover {
+    color: #1f1f1f;
+    background: #d4d4d4;
+}
+
+.wy-menu-vertical li.current > a:hover,
+.wy-menu-vertical li.roller-expanded > a:hover,
+.wy-menu-vertical a:hover {
+    color: #fff;
+    background-color: #216b9a;
+}
+
+.wy-menu-vertical .toctree-expand:hover,
+.wy-menu-vertical .toctree-expand:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: -2px;
+}
+
+.wy-menu-vertical li a > button.toctree-expand,
+.wy-menu-vertical li a:hover > button.toctree-expand {
+    color: inherit;
+}
+
+.wy-menu-vertical li.current > a > button.toctree-expand::before {
+    content: "\f196";
+}
+
+.wy-menu-vertical li.roller-expanded > a > button.toctree-expand::before {
+    content: "\f147";
+}
+
+.wy-side-nav-search,
+.wy-nav-top {
+    background-color: #216b9a;
+}
+
+.wy-nav-top a:hover,
+.wy-nav-top a:focus-visible {
+    color: #fff;
+    background-color: #174e70;
+}
+
+.wy-nav-top [data-toggle="wy-nav-top"] {
+    cursor: pointer;
+    border-radius: 4px;
+}
+
+.wy-nav-top [data-toggle="wy-nav-top"]:hover,
+.wy-nav-top [data-toggle="wy-nav-top"]:focus-visible {
+    background-color: #174e70;
+    outline: 2px solid #fff;
+    outline-offset: -2px;
+}
+
+#rtd-search-form input[name="q"]:focus-visible {
+    outline: 2px solid #174e70;
+    outline-offset: 2px;
+}
+
+.rst-content a:not(.btn),
+.wy-breadcrumbs a {
+    color: #216b9a;
+}
+
+.rst-content a:not(.btn):hover,
+.wy-breadcrumbs a:hover {
+    color: #174e70;
+    text-decoration: underline;
+}
+
+.rst-content code.literal,
+.rst-content tt.literal {
+    color: #b8312a;
+}
+
+.rst-content a:focus-visible,
+.wy-menu-vertical a:focus-visible,
+.lang-switcher a:focus-visible {
+    outline: 2px solid #216b9a;
+    outline-offset: 2px;
+}
+
+footer [role="contentinfo"] p {
+    color: #595959;
+}
+
 .lang-switcher {
     position: fixed;
     top: 12px;
@@ -21,7 +140,7 @@ body,
     z-index: 1000;
     display: flex;
     gap: 0;
-    border: 1px solid #d0d0d0;
+    border: 1px solid #b0b0b0;
     border-radius: 4px;
     overflow: hidden;
     background: #fff;
@@ -32,16 +151,33 @@ body,
 .lang-switcher a {
     display: inline-block;
     padding: 6px 12px;
-    color: #404040;
+    color: #1f1f1f;
     text-decoration: none;
     background: #fff;
 }
 
 .lang-switcher a:hover {
-    background: #f3f3f3;
+    background: #ebebeb;
 }
 
 .lang-switcher a.is-active {
-    background: #2980b9;
+    background: #216b9a;
     color: #fff;
+}
+
+.lang-switcher a.is-active:hover {
+    background: #2472a4;
+    color: #fff;
+}
+
+@media (max-width: 768px) {
+    .lang-switcher {
+        top: 8px;
+        right: 8px;
+        font-size: 12px;
+    }
+
+    .lang-switcher a {
+        padding: 5px 10px;
+    }
 }

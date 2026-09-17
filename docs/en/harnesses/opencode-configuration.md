@@ -58,6 +58,6 @@ ROLLER_OPENCODE_DOCKER_TEST=1 PYTHONPATH=src \
   python -m unittest discover -s tests -p test_opencode_docker.py -v
 ```
 
-Docker tests use a deterministic local streaming API and a fake key while executing real OpenCode tools. No external model charges are incurred. The suite adds 204 input tasks and 36 simulator tasks, four per group. Select 200 nonvision inputs with `--case '*/opencode' --exclude-case 'vision/*'`. Select the nine relevant pairings with `--case 'simulators/pair/opencode--*' --case 'simulators/pair/*--opencode'`; overlaps are deduplicated. See the [coverage guide](../../../examples/coverage/README.en.md).
+Docker tests use a deterministic local streaming API and a fake key while executing real OpenCode tools. No external model charges are incurred. The suite adds 204 input tasks and 36 simulator tasks, four per group. Select 200 nonvision inputs with `--case '*/opencode' --exclude-case 'vision/*'`. Select the nine relevant pairings with `--case 'simulators/pair/opencode--*' --case 'simulators/pair/*--opencode'`; overlaps are deduplicated. See the {download}`coverage guide <../../../examples/coverage/README.en.md>`.
 
 Image-capable models can receive image attachments produced by OpenCode's `read` tool. Direct multimodal task messages, native account/OAuth login, custom provider SDKs, MCP, subagents, and persistent memory are not supported. Long tasks need enough configured context because automatic compaction is disabled.

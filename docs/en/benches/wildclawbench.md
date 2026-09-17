@@ -1,7 +1,5 @@
 # WildClawBench
 
-[Documentation home](../index.md) · [Bench integration and scoring](bench-format.md) · [CLI reference](../start/cli-reference.md)
-
 60 real-scenario OpenClaw tasks in 6 categories. Upstream:
 <https://github.com/InternLM/WildClawBench>.
 

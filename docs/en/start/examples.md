@@ -1,7 +1,5 @@
 # Examples
 
-[Documentation home](../index.md) · [Getting started](getting-started.md) · [Task format](../tasks/task-format.md) · [Trajectory outputs](../traces/trajectory-outputs.md)
-
 The repository [`examples/`](https://github.com/Liuziyu77/Roller/tree/main/examples) directory contains config templates, tasks, and run commands. See the topic guides for installation steps, task fields, and trace formats.
 
 ## Directory contents

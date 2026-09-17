@@ -1,7 +1,5 @@
 # Trajectory output file guide
 
-[Documentation home](../index.md) · [Getting started](../start/getting-started.md) · [SFT format](sft-format.md) · [Viewer](viewer.md)
-
 `roller collect` saves traces, training data, run information, and task outputs.
 This guide describes their contents, when they are created and retained, and how
 to use them for training, analysis, and debugging.

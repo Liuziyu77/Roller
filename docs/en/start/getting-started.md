@@ -1,7 +1,5 @@
 # Getting started: from install to the first trajectory
 
-[Documentation home](../index.md) · [Examples](examples.md) · [CLI reference](cli-reference.md) · [Trajectory outputs](../traces/trajectory-outputs.md)
-
 Follow these steps to prepare the environment and API, run a dry-run and collection, then inspect the results in the Viewer. Each run saves native raw, ACTF, SFT, and run info.
 
 ## 1. Prepare the runtime environment

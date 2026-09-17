@@ -1,122 +1,172 @@
 (function () {
-  var SCROLL_KEY = "roller-docs-sidebar-scroll";
-  var ANCHOR_KEY = "roller-docs-sidebar-anchor";
-  var originalScrollIntoView = Element.prototype.scrollIntoView;
+  const navPositionKey = "roller-docs-nav-position";
 
-  // RTD theme calls scrollIntoView() while expanding the current nav item.
-  // That yanks .wy-side-scroll upward. Keep normal in-page scrolling.
-  Element.prototype.scrollIntoView = function () {
-    if (this.closest && this.closest(".wy-menu, .wy-side-scroll, .wy-nav-side")) {
+  function uiCopy() {
+    const locales = window.DOCS_UI_LOCALES || {};
+    const isZh = (document.documentElement.lang || "").toLowerCase().startsWith("zh");
+    return locales[isZh ? "zh" : "en"] || locales.en || {};
+  }
+
+  function syncNavButton(button) {
+    const item = button.closest("li");
+    const expanded = item.classList.contains("roller-expanded");
+    const copy = uiCopy();
+    const label = expanded
+      ? copy.collapseNav || "Collapse section"
+      : copy.expandNav || "Expand section";
+    button.setAttribute("aria-expanded", String(expanded));
+    item.setAttribute("aria-expanded", String(expanded));
+    button.setAttribute("aria-label", label);
+    button.title = label;
+  }
+
+  function syncMobileMenu() {
+    const toggle = document.querySelector('.wy-nav-top > [data-toggle="wy-nav-top"]');
+    if (!toggle) return;
+    const open = document.querySelector(".wy-nav-side.shift") !== null;
+    const copy = uiCopy();
+    const label = open
+      ? copy.closeMobileNav || "Close navigation"
+      : copy.openMobileNav || "Open navigation";
+    toggle.setAttribute("role", "button");
+    toggle.setAttribute("tabindex", "0");
+    toggle.setAttribute("aria-expanded", String(open));
+    toggle.setAttribute("aria-label", label);
+    toggle.title = label;
+  }
+
+  function toggleSection(button) {
+    const item = button.closest("li");
+    const sidebar = document.querySelector(".wy-side-scroll");
+    const buttonTop = button.getBoundingClientRect().top;
+    const willExpand = !item.classList.contains("roller-expanded");
+
+    if (willExpand) {
+      Array.from(item.parentElement.children).forEach(function (sibling) {
+        if (sibling !== item && sibling.classList.contains("roller-expanded")) {
+          sibling.classList.remove("roller-expanded");
+          const siblingButton = sibling.querySelector(":scope > a > button.toctree-expand");
+          if (siblingButton) syncNavButton(siblingButton);
+        }
+      });
+    }
+
+    item.classList.toggle("roller-expanded", willExpand);
+    syncNavButton(button);
+    if (sidebar) {
+      sidebar.scrollTop += button.getBoundingClientRect().top - buttonTop;
+    }
+  }
+
+  function syncNavButtons() {
+    document.querySelectorAll(".wy-menu-vertical button.toctree-expand").forEach(syncNavButton);
+  }
+
+  function fitCurrentGroup(sidebar, group) {
+    const sidebarRect = sidebar.getBoundingClientRect();
+    const groupRect = group.getBoundingClientRect();
+    if (groupRect.height > sidebar.clientHeight) return;
+    if (groupRect.top < sidebarRect.top) {
+      sidebar.scrollTop += Math.floor(groupRect.top - sidebarRect.top);
+    } else if (groupRect.bottom > sidebarRect.bottom) {
+      sidebar.scrollTop += Math.ceil(groupRect.bottom - sidebarRect.bottom);
+    }
+  }
+
+  function restoreInitialScroll() {
+    const sidebar = document.querySelector(".wy-side-scroll");
+    const current = document.querySelector(".wy-menu-vertical li.toctree-l1.current");
+    if (!sidebar || !current) return;
+    const group = current.parentElement;
+    const saved = JSON.parse(sessionStorage.getItem(navPositionKey) || "null");
+    sessionStorage.removeItem(navPositionKey);
+    if (saved && saved.pathname === location.pathname) {
+      sidebar.scrollTop += group.getBoundingClientRect().top - saved.groupTop;
+    }
+    fitCurrentGroup(sidebar, group);
+    syncNavButtons();
+  }
+
+  let scrollTopBeforeHash = null;
+  window.addEventListener("hashchange", function () {
+    const sidebar = document.querySelector(".wy-side-scroll");
+    scrollTopBeforeHash = sidebar ? sidebar.scrollTop : null;
+  });
+
+  function restoreHashScroll() {
+    const sidebar = document.querySelector(".wy-side-scroll");
+    if (sidebar && scrollTopBeforeHash !== null) {
+      sidebar.scrollTop = scrollTopBeforeHash;
+      scrollTopBeforeHash = null;
+    }
+    syncNavButtons();
+  }
+
+  document.addEventListener("click", function (event) {
+    const button = event.target.closest(".wy-menu-vertical button.toctree-expand");
+    if (button) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      toggleSection(button);
       return;
     }
-    return originalScrollIntoView.apply(this, arguments);
-  };
 
-  function sideScroll() {
-    return document.querySelector(".wy-side-scroll");
-  }
-
-  function saveNavClick(link) {
-    var el = sideScroll();
-    if (!el || !link) {
-      return;
-    }
-    try {
-      sessionStorage.setItem(SCROLL_KEY, String(el.scrollTop));
-      sessionStorage.setItem(
-        ANCHOR_KEY,
-        String(Math.round(link.getBoundingClientRect().top))
-      );
-    } catch (err) {
-      /* ignore quota / private mode */
-    }
-  }
-
-  function readNumber(key) {
-    try {
-      var raw = sessionStorage.getItem(key);
-      if (raw === null) {
-        return null;
+    const link = event.target.closest(".wy-menu-vertical a[href]");
+    if (link && event.button === 0 && !event.ctrlKey && !event.metaKey &&
+        !event.shiftKey && !event.altKey) {
+      const destination = new URL(link.href);
+      if (destination.pathname !== location.pathname) {
+        const sidebar = document.querySelector(".wy-side-scroll");
+        const group = link.closest("li.toctree-l1")?.parentElement;
+        if (sidebar && group) {
+          sessionStorage.setItem(navPositionKey, JSON.stringify({
+            pathname: destination.pathname,
+            groupTop: group.getBoundingClientRect().top,
+          }));
+        }
       }
-      var value = parseInt(raw, 10);
-      return isNaN(value) ? null : value;
-    } catch (err) {
-      return null;
-    }
-  }
-
-  function currentNavLink() {
-    return (
-      document.querySelector(".wy-menu li.current > a") ||
-      document.querySelector(".wy-menu a.current")
-    );
-  }
-
-  function restoreSidebar() {
-    var el = sideScroll();
-    if (!el) {
-      return;
     }
 
-    var anchorY = readNumber(ANCHOR_KEY);
-    var savedScroll = readNumber(SCROLL_KEY);
-    var current = currentNavLink();
+  }, true);
 
-    // Prefer keeping the clicked item at the same viewport Y after the
-    // theme collapses the previous page and expands the new one.
-    if (current && anchorY !== null) {
-      var delta = Math.round(current.getBoundingClientRect().top - anchorY);
-      if (delta !== 0) {
-        el.scrollTop += delta;
-      }
-      return;
+  document.addEventListener("keydown", function (event) {
+    if (event.target.matches('.wy-nav-top > [data-toggle="wy-nav-top"]') &&
+        (event.key === "Enter" || event.key === " ")) {
+      event.preventDefault();
+      event.target.click();
     }
+  });
 
-    if (savedScroll !== null) {
-      el.scrollTop = savedScroll;
+  function initialize() {
+    const nav = document.querySelector(".wy-menu-vertical");
+    if (!nav) return;
+
+    syncNavButtons();
+    let initialScrollRestored = false;
+    new MutationObserver(function () {
+      syncNavButtons();
+      if (!initialScrollRestored && nav.querySelector("button.toctree-expand")) {
+        initialScrollRestored = true;
+        restoreInitialScroll();
+        window.addEventListener("hashchange", restoreHashScroll);
+      }
+    }).observe(nav, {
+      childList: true,
+      subtree: true,
+    });
+    const sideNav = document.querySelector(".wy-nav-side");
+    if (sideNav) {
+      new MutationObserver(syncMobileMenu).observe(sideNav, {
+        attributes: true,
+        attributeFilter: ["class"],
+      });
     }
+    syncMobileMenu();
   }
-
-  function restoreSoon() {
-    restoreSidebar();
-    window.requestAnimationFrame(restoreSidebar);
-    window.setTimeout(restoreSidebar, 0);
-    window.setTimeout(restoreSidebar, 50);
-    window.setTimeout(restoreSidebar, 150);
-  }
-
-  document.addEventListener(
-    "click",
-    function (event) {
-      var expand = event.target.closest("span.toctree-expand");
-      if (expand) {
-        // Expanding/collapsing in place should not jump the sidebar.
-        var el = sideScroll();
-        var before = el ? el.scrollTop : 0;
-        window.requestAnimationFrame(function () {
-          if (el) {
-            el.scrollTop = before;
-          }
-        });
-        return;
-      }
-
-      var link = event.target.closest("a");
-      if (!link || !link.closest(".wy-menu")) {
-        return;
-      }
-      // Only remember position for real page navigations.
-      if (link.getAttribute("href") && link.getAttribute("href").charAt(0) !== "#") {
-        saveNavClick(link);
-      }
-    },
-    true
-  );
 
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", restoreSoon);
+    document.addEventListener("DOMContentLoaded", initialize);
   } else {
-    restoreSoon();
+    initialize();
   }
-  window.addEventListener("load", restoreSoon);
 })();

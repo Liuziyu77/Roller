@@ -70,6 +70,6 @@ ROLLER_OPENCODE_DOCKER_TEST=1 PYTHONPATH=src \
 
 Docker 集成测试使用本地确定性流式 API 和虚构 Key，实际运行 OpenCode 工具，验证只读输入、Context/setup/env、多轮历史、reasoning、wire、Resume 和超时清理，不产生外部模型费用。
 
-矩阵新增 204 条 OpenCode 输入任务和 36 条 Simulator 配对任务，每组 4 条。非视觉输入共 200 条；涉及 OpenCode 的 9 种配对可用 `--case 'simulators/pair/opencode--*' --case 'simulators/pair/*--opencode'` 选择，重叠组自动去重。完整矩阵为 1368 条任务、20 条隔离负例，见 [Coverage 使用说明](../../../examples/coverage/README.md)。
+矩阵新增 204 条 OpenCode 输入任务和 36 条 Simulator 配对任务，每组 4 条。非视觉输入共 200 条；涉及 OpenCode 的 9 种配对可用 `--case 'simulators/pair/opencode--*' --case 'simulators/pair/*--opencode'` 选择，重叠组自动去重。完整矩阵为 1368 条任务、20 条隔离负例，见 {download}`Coverage 使用说明 <../../../examples/coverage/README.md>`。
 
 支持让具备视觉能力的模型接收 OpenCode `read` 工具生成的图片附件；任务文件中的直接多模态消息仍未开放。首版不支持原生账号/OAuth 登录、自定义 provider SDK、MCP、子 Agent 及长期记忆。关闭自动压缩意味着长任务需要自行配置足够的上下文窗口，超窗会失败。

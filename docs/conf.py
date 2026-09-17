@@ -49,7 +49,7 @@ exclude_patterns = [
 templates_path: list[str] = []
 html_static_path = ["_static"]
 html_css_files = ["custom.css"]
-html_js_files = ["language-switcher.js", "sidebar-scroll.js"]
+html_js_files = ["ui-locales.js", "language-switcher.js", "sidebar-scroll.js"]
 
 html_theme = "sphinx_rtd_theme"
 html_theme_options = {

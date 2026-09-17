@@ -1,7 +1,5 @@
 # Codex Harness 指南
 
-[文档中心](../index.md) · [快速上手](../start/getting-started.md) · [OpenClaw](openclaw-configuration.md) · [Claude Code](claude-code-configuration.md) · [CLI 参数](../start/cli-reference.md)
-
 本页介绍 Codex 专属的镜像、Responses API、reasoning、native session 和排错。Task 字段见 [Task 格式参考](../tasks/task-format.md)，各 Harness 的产物说明见 [轨迹产出文件指南](../traces/trajectory-outputs.md)。
 
 > 快速定位：支持范围（第 1 节）· 镜像（第 2 节）· API（第 3 节）· reasoning（第 4 节）· native/ACTF/SFT/wire（第 7–8 节）· 排错（第 9 节）
