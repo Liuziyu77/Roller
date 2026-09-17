@@ -1,6 +1,6 @@
 # Pi Agent Harness
 
-Roller runs the official [Pi Coding Agent SDK](https://pi.dev/docs/latest/sdk), pinning `@earendil-works/pi-coding-agent`, `pi-agent-core`, and `pi-ai` to **0.85.1**. Its native `AgentSession` owns the model loop and tools. Both Task Agent and User Simulator accept `"harness": "pi"`.
+Roller runs the official [Pi Coding Agent SDK](https://pi.dev/docs/latest/sdk), pinning `@earendil-works/pi-coding-agent`, `pi-agent-core`, and `pi-ai` to 0.85.1. Its native `AgentSession` calls the model and executes tools. Both Task Agent and User Simulator accept `"harness": "pi"`.
 
 ## Build and run
 
@@ -36,7 +36,7 @@ The image also installs the official `fd 10.2.0` binary with SHA-256 verificatio
 
 Thinking is sent as `reasoning_effort`: `off` becomes `none`, and other levels retain their names. The endpoint must support the selected value. Vendor-specific thinking protocols are not translated automatically.
 
-Pi-specific flags configure both participant roles. Mixed runs can specify separate API settings and images for other Harnesses. Run locks record versions, image digests, tools, connection settings, and execution bounds. Resume validates each participant's artifacts.
+Pi-specific flags configure both participant roles. Mixed runs can specify separate API settings and images for other Harnesses. Run locks record versions, image digests, tools, connection settings, and execution limits. Resume validates each participant's artifacts.
 
 ## Sessions, Context, and tools
 
@@ -52,7 +52,7 @@ Automatic compaction, session/provider retries, telemetry, remote model catalog 
 
 Empty replies, truncation, API errors, step limits, and unmatched tool calls do not produce successful trajectories. Conversion rejects changes to the system prompt/tool schemas and non-text content that would be lost. Timeouts stop the container and recover existing output files. Pi does not require an OpenClaw cache trace.
 
-The initial scope is text and file tasks. It excludes visual acceptance, interactive login, other Pi provider protocols, custom extensions/plugins, and automatic compaction; it does not expose every feature of the underlying Pi product.
+The adapter supports Pi text and file tasks. Visual acceptance, interactive login, other Pi provider protocols, custom extensions/plugins, and automatic compaction are not yet supported.
 
 ## Reusable verification
 
@@ -64,8 +64,8 @@ ROLLER_PI_DOCKER_TEST=1 PYTHONPATH=src \
   python -m unittest discover -s tests -p test_pi_docker.py -v
 ```
 
-Docker tests use a deterministic local streaming endpoint and a fake key with the real Pi SDK and tools, consuming no model quota. Public input coverage has 204 tasks, including 200 nonvisual tasks. The 13 Agent × Simulator pairings involving Pi add 52 tasks; select them with `--case 'simulators/pair/pi--*' --case 'simulators/pair/*--pi'`. The vision group records the initial capability boundary.
+Docker tests use a deterministic local streaming endpoint and a fake key with the real Pi SDK and tools, consuming no model quota. Public input coverage has 204 tasks, including 200 nonvisual tasks. The 13 Agent × Simulator pairings involving Pi add 52 tasks; select them with `--case 'simulators/pair/pi--*' --case 'simulators/pair/*--pi'`. The vision group documents visual inputs not yet supported by this adapter.
 
 With a DeepSeek image available, also set `ROLLER_PI_MIXED_DOCKER_TEST=1` to verify Pi ↔ DeepSeek pairings and Resume in both directions.
 
-See [Coverage](https://github.com/Liuziyu77/Roller/blob/main/examples/coverage/README.en.md). Offline configuration validation, real-container tests, and external model acceptance are distinct verification layers.
+See [Coverage](https://github.com/Liuziyu77/Roller/blob/main/examples/coverage/README.en.md). Offline checks validate configuration; container tests exercise the SDK and tools; external model tests check service compatibility.

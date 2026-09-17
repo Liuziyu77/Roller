@@ -2,13 +2,13 @@
 
 [Documentation home](../index.md) · [Task format reference](../tasks/task-format.md) · [CLI reference](../start/cli-reference.md) · [Trajectory output file guide](../traces/trajectory-outputs.md)
 
-Roller's collection path itself has no notion of "scoring": it destroys the
-container after the task finishes. The bench layer adds two things on top:
+Roller destroys the container after a task finishes. The bench layer adds
+task export and scoring before that teardown:
 
-1. **Translate** a checked-out benchmark into a `roller.task/v1` task list
+1. Convert a checked-out benchmark into a `roller.task/v1` task list
    (`roller bench export`);
 2. After the Agent's last turn and before the container is destroyed, run that
-   bench's own grader **in the same container**, and write the score to
+   bench's own grader in the same container, and write the score to
    `score.json`.
 
 The bench layer does not change the collection flow. Registered adapters are
@@ -18,32 +18,31 @@ listed by `roller bench list`.
 
 Bench scoring almost always needs files the Agent just wrote (generated scripts,
 rendered figures, downloaded data), and `session.finish()` runs
-`rm -f <container>`. So the grader cannot run after `collect` returns. Timing
-must sit in the middle:
+`rm -f <container>`. So the grader cannot run after `collect` returns. The grader
+must run at this point:
 
 ```
 session.start() → per-turn send() → [grader runs here] → session.finish() (destroy the container)
 ```
 
-That is the entire job of `GradedHarness`: wrap an `InteractiveHarness`, replay
-its run loop, and insert the grader between the last turn and teardown. The
-wrapped harness is unchanged.
+`GradedHarness` wraps an `InteractiveHarness` and reuses its run loop, inserting
+the grader between the last turn and teardown without changing the wrapped harness.
 
 Only `InteractiveHarness` can provide a live container, so running a bench on a
-non-interactive harness raises `TypeError` at startup, instead of finishing 60
-tasks and discovering they all scored 0.
+non-interactive harness raises `TypeError` at startup. This catches the missing
+scoring support before running a batch of tasks.
 
 ## 2. Three seams: why existing code barely changes
 
-The design rests on three facts confirmed by reading the code:
+The bench layer uses three existing interfaces:
 
-| Seam | Fact | Result |
+| Interface | Behavior | Integration |
 | --- | --- | --- |
-| `load_tasks()` | Does not reject unknown top-level keys | A task row can carry a `bench` block → `tasks.py` **unchanged** |
-| `_finalize_sample` | Copies everything in `HarnessResult.metadata` except three reserved keys into `info.json["runtime"]` | The score floats into the result file by itself → result schema **unchanged** |
-| `finish()` | Destroys the container and is memoized | Scoring must happen first → wrap with `GradedHarness` instead of changing the harness |
+| `load_tasks()` | Does not reject unknown top-level keys | Add a `bench` block to a task row without changing `tasks.py` |
+| `_finalize_sample` | Copies everything in `HarnessResult.metadata` except three reserved keys into `info.json["runtime"]` | Scores are saved with metadata, without changing the result schema |
+| `finish()` | Destroys the container and is memoized | Use `GradedHarness` to score before teardown without changing the harness |
 
-Existing code needed only two **additive** changes: add `score.json` to the
+Two other changes support the integration: add `score.json` to the
 keep-list in `_prune_sample` (otherwise it is deleted), and add the `bench`
 subcommand plus `--task-timeouts` to the CLI.
 
@@ -92,7 +91,7 @@ standard task fields:
 | `entrypoint` | `grade` | Entry function name. Must be a legal identifier |
 | `kwargs` | `{}` | Extra arguments passed to the entry function |
 | `env` | `[]` | Environment variable names to pass from the host into the grading container |
-| `timeout_seconds` | `120` | Grading timeout, 1–3600 |
+| `timeout_seconds` | `120` | Grading timeout, 1 to 3600 |
 | `needs_transcript` | `true` | Whether the session record must be fed to the grader |
 | `workspace_path` | harness default | Grader working directory (absolute path inside the container) |
 | `transcript_path` | derived automatically | Write this only when the harness cannot report the session file location itself |
@@ -107,16 +106,14 @@ def grade(transcript, workspace_path):   # transcript 仅在 needs_transcript �
     return {"overall_score": 0.75, "detail": {...}}   # 必须返回 dict
 ```
 
-A non-dict return is an **explicit error**, not a recorded 0. Roller wraps this
-function in a runner of its own, `docker cp`s it into the container, and marks
-the score payload on stdout with a `__ROLLER_SCORE__` prefix — graders commonly
-print progress and judge traffic, so stdout as a whole cannot be assumed to be
-the score.
+A non-dict return raises an error. Roller wraps the function in a runner, copies
+it into the container with `docker cp`, and marks the score on stdout with a
+`__ROLLER_SCORE__` prefix. The prefix separates the result from progress output
+and judge request logs.
 
 ### 3.2 A grading failure is not a 0 score
 
-Keep these two cases apart, or "the grader broke" will be read as "the model is
-weak":
+Grading failures are recorded separately from valid zero scores:
 
 - The grader returns `overall_score: 0.0` normally → a true 0.
 - The grader crashed / timed out / produced unparseable output / a `stage`
@@ -128,21 +125,19 @@ weak":
 
 Many benches keep ground truth and seed files in the same directory. If you
 mount that whole directory into the container, the Agent can read the answers.
-Whether the model would look is irrelevant: handing the answer to the subject
-under test is itself wrong.
+This exposes ground truth to the model and invalidates the evaluation setup.
 
-`stage` is a generic host → container delivery: it runs **after the Agent's last
-turn and before the grader**. Anything written in `stage` is invisible to the
-model for the entire run.
+`stage` copies files from the host to the container after the Agent's last turn
+and before grading. Files supplied through `stage` are therefore unavailable
+to the model while it works on the task.
 
 Constraints: `source` must be an absolute host path, and `target` must be a
 relative path inside the workspace. A target that starts with `/` or contains
 `..` is rejected immediately; otherwise a bench definition could write files
 anywhere in the container.
 
-If `source` does not exist on the host, raise an **explicit grading error**
-instead of a silent 0: without the answer, the grader would score a correct run
-as 0, which looks identical to a model failure.
+A missing host `source` produces a grading error. This distinguishes missing
+scoring files from a zero score caused by an incorrect answer.
 
 ## 5. Aggregation
 
@@ -150,7 +145,7 @@ as 0, which looks identical to a model failure.
 `info.json["runtime"]["bench"]`, and aggregates with each bench's
 `aggregate()` (default: `mean_aggregate`).
 
-The default metric **divides by the full sample count** (crashes count as 0),
+The default mean divides by the full sample count, counting grading failures as 0,
 which matches how common benches report officially. It also reports separately:
 
 - `scored_count` / `unscored_count`
@@ -158,11 +153,11 @@ which matches how common benches report officially. It also reports separately:
 - Per-category mean and sample count
 - A list of unscored samples and why
 
-Both numbers are reported because the first alone mixes grader failures into the
-model score, and the second alone quietly removes crashed samples from the
-denominator.
+The full-sample mean includes the effect of grading failures; the scored-only
+mean excludes those samples. Reporting both helps identify whether grader
+failures contributed to a low score.
 
-> Note: `bench report` reads `score.json` and **does not** read `info.json`
+> `bench report` computes scores from `score.json`, without using `info.json`
 > `status`. `status: "error"` is often only an SFT export failure (for example
 > an image in an observation, where a text-only export would drop data). The
 > score on that sample is still valid. Do not use `status` to measure "run
@@ -170,8 +165,8 @@ denominator.
 
 ## 6. Adding a new bench
 
-One subclass plus one registration line. `load()` only translates; it does not
-execute anything:
+Implement and register an adapter subclass. Its `load()` method converts task
+definitions without executing tasks:
 
 ```python
 # src/roller/benches/mybench.py
@@ -204,48 +199,41 @@ Then add one line to the registry in `src/roller/benches/__init__.py`. Optionall
 override `categories()` and `aggregate()` (only when you need to match the
 upstream reporting method).
 
-A few lessons:
+Account for the following when implementing an adapter:
 
-- **Report `categories()` from the actual checkout contents. Do not hard-code
-  the upstream category list.** Some checkouts omit categories. A hard-coded
-  list makes `--category` select an empty set, which looks like "this bench has
-  no tasks."
-- **A wrong `--task-id` must error.** A silent empty run looks the same as
-  "finished."
-- **Parsers should take strings, not `Path`.** "Parse one task file" should be
-  unit-testable without the filesystem.
-- **Also translate material the upstream runner adds to the prompt.** Prefixes
-  and suffixes that are not in the task file and are concatenated by the runner
-  (WildClawBench has a 277-character prefix) change the question if you omit
-  them.
-- **When the upstream has an external dependency that must be wired for a run
-  to count as correct, report it at export time.** WildClawBench `web_search`
-  hits a local shim, not real Brave. Unwired behavior is that every search
-  returns `fetch failed`, the Agent keeps working, and the run still produces
-  scores — a silent capability gap is the most expensive kind, because it looks
-  identical to "the model does not like to search."
+- Read `categories()` from the actual checkout. Some checkouts omit upstream
+  categories, so a hard-coded list can make `--category` select an empty set.
+- Report an error for an unknown `--task-id`, so an empty run is not mistaken
+  for a completed evaluation.
+- Let parsers accept strings instead of `Path`, so parsing can be tested
+  without filesystem access.
+- Preserve prompt prefixes and suffixes added by the upstream runner, including
+  content absent from task files. For example, omitting WildClawBench's
+  277-character prefix changes the task input.
+- Report required external dependencies at export time. WildClawBench
+  `web_search` uses a local shim rather than calling Brave directly. If the shim
+  is not configured, searches return `fetch failed`, but the Agent continues
+  and the run produces scores. Check for these errors before interpreting
+  search behavior or evaluation results.
 
 ### 6.1 Every bench needs a README
 
-`docs/zh/benches/<name>.md` (English page under `docs/en/benches/`), committed with the adapter. That page does not repeat
-generic bench-layer mechanics. It only documents this bench's own configuration
-surface:
+Commit `docs/zh/benches/<name>.md` and an English page under `docs/en/benches/`
+with the adapter. Describe the bench's configuration and link here for shared
+behavior. Include:
 
-1. **Shortest path** — a copy-pasteable command sequence from cloning upstream
-   to `bench report`;
-2. A table of **upstream knobs → Roller equivalents**, listing CLI flags and
-   environment variables one by one;
-3. **Explicitly mark knobs that were not ported**, and explain why a
-   look-alike flag cannot stand in (example: WCB's timeout multiplier rewrites
+1. Commands from cloning upstream through `bench report`;
+2. A table mapping upstream options to Roller settings, including CLI flags and
+   environment variables;
+3. Unsupported upstream options and why other flags cannot replace them (example: WCB's timeout multiplier rewrites
    the task file and therefore also changes the budget told to the Agent in the
    prompt; `--timeout` only changes wall-clock time and is not equivalent);
-4. **Required environment variables**, and whether `--pass-env` is needed;
-5. **Known pitfalls**, especially the ones that do not error but make results
-   invalid, plus a check command you can run after the job finishes.
+4. Required environment variables and whether they need `--pass-env`;
+5. Known issues, especially those that affect validity without raising errors,
+   with commands to check for them after a run.
 
-Items 2 and 3 are why the page exists: the real risk of integrating a bench is
-not a code typo, but an upstream knob that was never ported, while the person
-running it does not know it is gone.
+Mark unsupported settings in the mapping table so users can check whether
+Roller and upstream runs use the same evaluation conditions.
 
 ## 7. CLI
 
@@ -269,12 +257,11 @@ roller bench report runs/<run-name>
 roller bench report runs/<run-name> --output report.json
 ```
 
-`--category` and `--task-id` can both be repeated. `--task-timeouts` is the key
-switch for a bench run: each bench task carries its own timeout (WildClawBench
-has five measured values: 300/360/600/900/1200), while `build_requests`
-normally consumes only one global `--timeout`. Without this flag, short tasks
-get too much time and long tasks are cut by the wall clock. Being cut looks a
-lot like the model cannot do the task.
+`--category` and `--task-id` can both be repeated. Enable `--task-timeouts` for
+bench runs to use each task's timeout (WildClawBench has five measured values:
+300/360/600/900/1200). Otherwise, `build_requests` uses only the global
+`--timeout`, which may give short tasks too much time or terminate long tasks
+early, affecting score comparability.
 
 Environment variables the grader needs must be passed with `--pass-env` (which
 variables are declared by the bench's task definition). When a variable is
@@ -283,13 +270,12 @@ missing, Roller warns and still continues, so confirm the logs have no
 
 ## 8. Supported benches
 
-Each bench's configuration surface is in its own README (see §6.1). This
-section is only an index.
+See each bench's README for its configuration (see §6.1):
 
 | Bench | `--harness` | README | One-liner |
 | --- | --- | --- | --- |
 | `wildclawbench` | `openclaw` | [WildClawBench](wildclawbench.md) | 60 real-scenario tasks in 6 categories; the grader runs in the container; `gt/` for 26 tasks goes through `stage` |
 
-Read the matching README's "upstream knobs → Roller equivalents" table and the
-"not ported" list before integrating. A missing knob does not error. It only
-makes the scores incomparable.
+Before running, check the README's parameter mappings and unsupported options.
+Missing configuration may change evaluation conditions without raising an
+error, making scores unsuitable for direct comparison.

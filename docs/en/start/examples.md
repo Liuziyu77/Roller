@@ -2,7 +2,7 @@
 
 [Documentation home](../index.md) · [Getting started](getting-started.md) · [Task format](../tasks/task-format.md) · [Trajectory outputs](../traces/trajectory-outputs.md)
 
-The repository [`examples/`](https://github.com/Liuziyu77/Roller/tree/main/examples) directory contains config templates, tasks, and run commands. Install steps, field definitions, and trajectory semantics live in the matching topic docs.
+The repository [`examples/`](https://github.com/Liuziyu77/Roller/tree/main/examples) directory contains config templates, tasks, and run commands. See the topic guides for installation steps, task fields, and trace formats.
 
 ## Directory contents
 
@@ -57,7 +57,7 @@ set +a
 | Codex | `config/codex/config.toml.example` | Optional native `config.toml`; shows verbosity and a custom MCP example |
 | Claude Code | `config/claude-code/settings.json.example` | Optional native `settings.json`; does not include a key, relaxed permissions, or hooks |
 
-Before running, change the template base URL, environment variables, and value ranges to what your real service supports:
+Before running, set the template base URL, environment variables, and parameter values to match your model service:
 
 - Responses API: `"api": "openai-responses"`
 - Chat Completions: `"api": "openai-completions"`
@@ -78,7 +78,7 @@ Full rules are in the [OpenClaw Harness guide](../harnesses/openclaw-configurati
 | `03_user_memory_context` | `USER.md` + `MEMORY.md` | Context injection and capture |
 | `04_multi_turn` | Two `messages` | Predefined multi-turn in the same Agent session |
 
-These four tasks can run on all seven Harnesses and are the best set for an environment check.
+These four tasks run on all seven Harnesses and can be used to check your environment.
 
 ## OpenClaw: basic collection
 
@@ -196,7 +196,7 @@ roller collect \
   --run-name examples-vision
 ```
 
-Declaring a capability in the model config does not make a text backend support images; the service and model themselves must support visual input under that protocol.
+The model config declares image capability; both the service and the model must also support visual input through that protocol.
 
 ## Check and view
 
@@ -213,4 +213,4 @@ Focus on:
 - whether each successful sample has `trace.jsonl`, `trace_ACTF.json`, `trace_SFT.json`, and `info.json`
 - whether run-root `sft.jsonl` aggregates successful samples in request order
 
-Next: write your own [Task](../tasks/task-format.md), or read [Trajectory outputs](../traces/trajectory-outputs.md) to pick the files you need for training, debugging, and audit.
+See [Task](../tasks/task-format.md) to write your own tasks, and [Trajectory outputs](../traces/trajectory-outputs.md) to choose files for training, debugging, and audits.

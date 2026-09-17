@@ -2,7 +2,7 @@
 
 [文档中心](../index.md) · [快速上手](getting-started.md) · [Task 格式](../tasks/task-format.md) · [产物说明](../traces/trajectory-outputs.md)
 
-仓库的 [`examples/`](https://github.com/Liuziyu77/Roller/tree/main/examples) 目录包含配置模板、task 和运行命令。安装、字段定义与轨迹语义由对应专题文档维护。
+仓库的 [`examples/`](https://github.com/Liuziyu77/Roller/tree/main/examples) 目录包含配置模板、task 和运行命令。安装步骤、task 字段和轨迹格式见对应指南。
 
 ## 目录内容
 
@@ -57,7 +57,7 @@ set +a
 | Codex | `config/codex/config.toml.example` | 可选的原生 `config.toml`；展示 verbosity 和自定义 MCP 写法 |
 | Claude Code | `config/claude-code/settings.json.example` | 可选的原生 `settings.json`，不包含 Key、权限放宽或 hook |
 
-运行前必须把模板中的 base URL、环境变量和值域改成真实服务支持的配置：
+运行前，按模型服务的要求填写模板中的 base URL、环境变量和参数值：
 
 - Responses API：`"api": "openai-responses"`
 - Chat Completions：`"api": "openai-completions"`
@@ -78,7 +78,7 @@ set +a
 | `03_user_memory_context` | `USER.md` + `MEMORY.md` | Context 注入和 capture |
 | `04_multi_turn` | 两条 `messages` | 同一 Agent session 的预定义多轮 |
 
-这四条 task 可由七种 Harness 运行，是最适合做环境验收的一组数据。
+这四条 task 可由七种 Harness 运行，可用于检查运行环境。
 
 ## OpenClaw：基础采集
 
@@ -196,7 +196,7 @@ roller collect \
   --run-name examples-vision
 ```
 
-模型配置声明能力不会让文本后端自动支持图像；服务与模型本身也必须支持对应协议下的视觉输入。
+模型配置用于声明图像能力；服务与模型也必须支持对应协议下的视觉输入。
 
 ## 验收与查看
 
@@ -213,4 +213,4 @@ roller view runs/examples-openclaw
 - 每个成功 sample 是否有 `trace.jsonl`、`trace_ACTF.json`、`trace_SFT.json` 和 `info.json`
 - run 根目录 `sft.jsonl` 是否按 request 顺序汇总成功样本
 
-下一步：编写自己的 [Task](../tasks/task-format.md)，或阅读 [轨迹产出文件指南](../traces/trajectory-outputs.md) 选择训练、调试与审计所需的文件。
+编写任务参见 [Task](../tasks/task-format.md)；选择训练、调试与审计所需的文件参见 [轨迹产出文件指南](../traces/trajectory-outputs.md)。

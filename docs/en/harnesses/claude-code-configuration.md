@@ -2,9 +2,9 @@
 
 [Documentation home](../index.md) · [Getting started](../start/getting-started.md) · [OpenClaw](openclaw-configuration.md) · [Codex](codex-configuration.md) · [CLI reference](../start/cli-reference.md)
 
-This page covers only Claude Code-specific images, the Anthropic Messages API, thinking, native session, and troubleshooting. For Task fields see [Task format reference](../tasks/task-format.md). For output semantics shared by all Harnesses see [Trajectory output file guide](../traces/trajectory-outputs.md).
+This guide covers Claude Code-specific images, the Anthropic Messages API, thinking, native session, and troubleshooting. For Task fields, see [Task format reference](../tasks/task-format.md). For the outputs shared by all Harnesses, see [Trajectory output file guide](../traces/trajectory-outputs.md).
 
-> Jump to: supported scope (section 1) · image (section 2) · API (section 3) · thinking (section 4) · native/ACTF/SFT/wire (sections 8–9) · troubleshooting (section 10)
+> Jump to: supported scope (section 1) · image (section 2) · API (section 3) · thinking (section 4) · native/ACTF/SFT/wire (sections 8 to 9) · troubleshooting (section 10)
 
 ## 1. Current supported scope
 
@@ -131,7 +131,7 @@ curl -sS -X POST 'http://host:port/v1/messages' \
   }'
 ```
 
-A model appearing in `/v1/models` does not guarantee the current account has an available channel. Treat an actual `/v1/messages` request as the source of truth.
+A model appearing in `/v1/models` does not guarantee the current account has an available channel. Verify access with an actual `/v1/messages` request.
 
 ## 4. Thinking and effort
 
@@ -147,8 +147,8 @@ The Claude Code Harness maps `--thinking LEVEL` to `claude --effort LEVEL`:
 | `max` | `max` | Depends on model support |
 | `ultra` | `ultracode` | Mapping from the Roller logical name to the pinned CLI name |
 
-`off/none`, `minimal`, and `adaptive` have no faithful one-to-one Claude Code CLI mapping, so they are rejected before
-container startup and will not silently degrade. The task's `runtime.thinking` wins over the command-line default.
+`off/none`, `minimal`, and `adaptive` have no matching Claude Code CLI level, so they are rejected before
+container startup rather than mapped to another level. The task's `runtime.thinking` wins over the command-line default.
 
 You can also set an explicit thinking token cap:
 
@@ -228,7 +228,7 @@ The default sample layout matches the other Harnesses:
 
 Roller selects this rollout's newest main session from `$CLAUDE_CONFIG_DIR/projects/**/<session-id>.jsonl`
 and also reads `<session-id>/subagents/*.jsonl`. Events are merged by timestamp, deduplicated by native `uuid`, and saved as
-`trace.jsonl`. The event objects themselves are not training-cleaned. `info.json.trajectory.raw_schema` is marked
+`trace.jsonl`. The event objects are kept without the cleanup applied to training data. `info.json.trajectory.raw_schema` is marked
 `claude-code-session-jsonl`.
 
 This is a merged export of the Claude Code native session. It is not:
@@ -257,7 +257,7 @@ Each successful result's `total_cost_usd` from the CLI stream is accumulated int
 
 ### `trace_SFT.json` and `sft.jsonl`
 
-The shared Collector builds a standard training record from ACTF that contains only `messages` and `tools`. The assistant still uses:
+The Collector converts ACTF into a training record containing only `messages` and `tools`. Assistant messages use this format:
 
 ```json
 {
@@ -275,8 +275,8 @@ message. If wire captured a complete Anthropic tool schema, `input_schema` is no
 ## 9. Wire trace
 
 When a custom `--api-base` is set, Claude Code's default `--wire-trace actf` starts a rollout-local
-reverse proxy, but only temporarily captures the first system prompt, the full tools schema, and non-message request parameters. After ACTF/SFT
-are generated, the intermediate `wire_trace.jsonl` is deleted so the sample stays compact.
+reverse proxy, temporarily capturing the first system prompt, the full tools schema, and non-message request parameters. After ACTF/SFT
+are generated, the intermediate `wire_trace.jsonl` is deleted to reduce storage use.
 
 To check the JSON context the model actually received on each call, use:
 

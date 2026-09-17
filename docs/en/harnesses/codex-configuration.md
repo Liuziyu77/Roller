@@ -2,9 +2,9 @@
 
 [Documentation home](../index.md) · [Getting started](../start/getting-started.md) · [OpenClaw](openclaw-configuration.md) · [Claude Code](claude-code-configuration.md) · [CLI reference](../start/cli-reference.md)
 
-This page covers only Codex-specific images, the Responses API, reasoning, native session, and troubleshooting. For Task fields see [Task format reference](../tasks/task-format.md). For output semantics shared by all Harnesses see [Trajectory output file guide](../traces/trajectory-outputs.md).
+This guide covers Codex-specific images, the Responses API, reasoning, native session, and troubleshooting. For Task fields, see [Task format reference](../tasks/task-format.md). For the outputs shared by all Harnesses, see [Trajectory output file guide](../traces/trajectory-outputs.md).
 
-> Jump to: supported scope (section 1) · image (section 2) · API (section 3) · reasoning (section 4) · native/ACTF/SFT/wire (sections 7–8) · troubleshooting (section 9)
+> Jump to: supported scope (section 1) · image (section 2) · API (section 3) · reasoning (section 4) · native/ACTF/SFT/wire (sections 7 to 8) · troubleshooting (section 9)
 
 ## 1. Current supported scope
 
@@ -119,7 +119,7 @@ provenance after query and credentials are stripped.
 When `--api-base` is provided, Roller creates an isolated Codex custom provider that pins
 `wire_api="responses"` and defaults to `supports_websockets=false`. This works with OpenAI-compatible services that
 only implement Responses HTTP streaming and have no WebSocket handshake. Add `--codex-websockets` only when you have
-confirmed the service supports Responses WebSocket. `--wire-trace full` use a rollout-local HTTP proxy, so you must pass `--api-base` explicitly, keep
+confirmed the service supports Responses WebSocket. `--wire-trace full` uses an HTTP proxy for each rollout, so you must pass `--api-base` explicitly, keep
 `--no-codex-websockets`, and keep the default `--network host`. When `--api-base` is unset, Codex uses its own
 built-in OpenAI provider and transport policy.
 
@@ -158,7 +158,7 @@ The task's `runtime.thinking` wins over the CLI. Roller forwards
 `minimal/low/medium/high/xhigh` to Codex; the model and API service then validate them. `xhigh` depends on
 whether the model supports it. Codex CLI 0.149.0 does not accept `max`/`ultra`; Roller errors early. The OpenClaw-only
 `adaptive` is also rejected early. `off`/`none` are rejected as well, because the Codex Harness has no
-"turn off reasoning" switch that is faithfully equivalent for every reasoning model. To use the model/CLI default,
+single switch that turns off reasoning for every reasoning model. To use the model/CLI default,
 omit `--thinking`.
 
 `--reasoning-summary` accepts:
@@ -233,12 +233,12 @@ trace.
 The converter uses `token_count` as the boundary of one model request, combines separate reasoning, assistant message,
 and multiple function/custom tool calls into one ACTF step, then pairs later tool
 output by `call_id`. The top-level system prompt comes from `session_meta.base_instructions`, native developer/system
-messages, and the `<environment_context>` Codex injects before the first turn. The real task user message is matched by
-content so environment events do not crowd it out or attach it to the wrong turn.
+messages, and the `<environment_context>` Codex injects before the first turn. User messages from the task are matched by
+content to avoid treating environment events as user messages or assigning them to the wrong turn.
 
 A Codex native session does not provide a complete original JSON Schema for each tool. To emit strict SFT, Roller
-generates a permissive function schema from the actual call names and argument fields. That is enough to keep tool-call names,
-arguments, and results, but it is not a complete authoritative definition of Codex's built-in tool interfaces.
+generates a permissive function schema from the actual call names and argument fields. These schemas preserve tool-call names,
+arguments, and results, but do not contain the full definitions of Codex's built-in tool interfaces.
 
 ### `trace_SFT.json` and `sft.jsonl`
 
@@ -258,7 +258,7 @@ Tool definitions can appear in an `additional_tools` item of `input`. The file i
 the upstream response body, and it cannot say how the model service later truncates, routes, or tokenizes internally.
 
 Default `--wire-trace actf` does not keep an extra wire file. The Codex ACTF tool schema comes from a permissive projection of
-native actual calls, not the full request schema. To check "what the model actually saw on a given call",
+native actual calls, not the full request schema. To inspect the full request for a model call,
 you must pass `--wire-trace full` explicitly and pair it with sufficiently strict log access controls.
 
 ## 9. Common errors
@@ -276,7 +276,7 @@ Responses-capable service. The OpenClaw Harness can still be used for model serv
 
 The CLI exited before producing a valid model event, or the native event schema of the Codex version in use has changed. First inspect
 the error kept on the sample and the `--keep-container-on-error` container, then check `codex_version`. When upgrading the CLI,
-update the converter tests in lockstep.
+update the converter tests as well.
 
 ### User Simulator
 

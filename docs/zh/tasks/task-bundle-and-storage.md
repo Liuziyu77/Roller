@@ -2,11 +2,11 @@
 
 [文档中心](../index.md) · [Task 格式](task-format.md) · [轨迹产物](../traces/trajectory-outputs.md) · [SFT 格式](../traces/sft-format.md)
 
-本页说明一条 task 从宿主机文件变成 Agent 工作区，再变成最终 run/sample 的完整生命周期，并集中解释快照、Context capture、结果回收、retry 与 Resume。Task 字段本身见 [Task 格式参考](task-format.md)。
+本页介绍 task 文件如何从宿主机进入 Agent 工作区、如何保存到 run/sample，以及快照、Context capture、结果回收、retry 与 Resume 的规则。Task 字段见 [Task 格式参考](task-format.md)。
 
 ## 1. 文件生命周期
 
-Roller 把文件分成四个阶段：
+文件在运行过程中经过四个阶段：
 
 1. **宿主机文件包**：`file_root` 下由用户维护的输入与 Context。
 2. **Task Bundle**：运行前构建的不可变快照，供同一 task 的所有模型使用。
@@ -56,7 +56,7 @@ Task Bundle 位于运行期临时目录，采集结束后删除。使用 `--resu
 
 ## 3. Context 注入与 capture
 
-Context 和普通输入的区别在于：普通输入只按路径提供；Context 还带有 `role` 与 `target`，由 Harness 放到能够被 Agent 识别的位置。
+普通输入按路径提供。Context 还声明 `role` 与 `target`，由 Harness 放到 Agent 能识别的位置。
 
 不同 Harness 会把 Context 放到各自能够自动发现的位置：
 
@@ -83,7 +83,7 @@ OpenClaw 的具体路径为：
 | `hash` | 是 | 否 | 是 |
 | `none` | 否 | 否 | 否 |
 
-三种策略都会把 Context 提供给当前 rollout。区别只影响运行期 Bundle 的内容留存和之后的 Resume 判断；最终紧凑 sample 不保存 Context 原文。
+三种策略都会把 Context 提供给当前 rollout。区别只影响运行期 Bundle 的内容留存和之后的 Resume 判断；最终 sample 不保存 Context 原文。
 
 默认情况下，`user` 和 `memory` 使用 `hash`，其他 role 使用 `full`。包含隐私内容但仍需可靠检测变化时，可以使用 `hash`；完全不希望记录内容 hash 时使用 `none`，同时接受该 task 无法安全 Resume。
 
@@ -112,7 +112,7 @@ OpenClaw 的具体路径为：
 
 `/roller/task/outputs` 是 task `output_dir` 的稳定别名。即使 task 使用 `deliverables/final`，该别名仍指向当前可回收目录。
 
-Legacy workspace 模式会把整个旧 workspace 快照复制到工作区；新数据应显式声明输入和 Context，以减少无关文件并提高 digest 的可解释性。
+Legacy workspace 模式会把整个旧 workspace 快照复制到工作区；新数据应显式声明输入和 Context，避免把无关文件纳入快照和 digest 计算。
 
 ## 5. 输出回收
 
@@ -178,8 +178,8 @@ Run `info.json` 保存：
 - 全部 sample 的 usage 汇总
 - sample 相对路径索引
 
-Run `lock.json` 是脱敏后的可复现运行锁。它直接保存需要比较的结构化配置，并复用
-Task Bundle 已有的内容 digest，不为小型配置再计算一层无意义的 hash。锁定内容包括：
+Run `lock.json` 保存脱敏后的运行配置，供 Resume 比较。配置以结构化数据保存，
+不另算 hash；内容摘要复用 Task Bundle 已有的 digest。锁定内容包括：
 
 - request 顺序、task/model、timeout 和 Task Bundle/input/context digest；
 - 所选 Harness 的镜像引用与本机解析出的 image ID；
@@ -187,7 +187,7 @@ Task Bundle 已有的内容 digest，不为小型配置再计算一层无意义�
 
 API Key、token 等 credential 被替换为 `<redacted>`；URL 中的 userinfo 和 fragment 被
 移除，敏感 query value 被替换，但 `api-version` 等非敏感 query 会保留用于一致性比较。
-锁用来防止数据混批，不是密钥备份，也不验证 credential 是否仍可用。
+锁用来防止不同配置的数据混入同一 run。它不保存密钥，也不验证 credential 是否仍可用。
 
 Sample `info.json` 保存：
 
@@ -220,12 +220,12 @@ User Simulator sample 会增加：
 
 ### `trace.jsonl`
 
-这是 OpenClaw transcript 语义事件的原始事实来源。默认镜像下，Roller 通过官方公开
+该文件记录 OpenClaw transcript 中的原始事件。默认镜像下，Roller 通过官方公开
 transcript SDK 按 session identity 导出，再逐事件序列化为 JSONL；legacy OpenClaw 才回退
 到直接复制 session JSONL。Roller 不为训练删除 tool call、不改写消息文本，也不把多个
 事件合并成自定义文本格式，但该文件不是底层存储的字节副本或上游 HTTP 响应副本。
-“session 中持久化”也不等于“逐字进入每次模型请求”：OpenClaw 可以在调用前组装、压缩
-或裁剪 context。需要核对模型实际收到的 messages/input 时使用 `--wire-trace full`；详见
+OpenClaw 可以在调用前组装、压缩或裁剪 context，因此 session 中保存的消息未必会
+逐字进入每次模型请求。需要核对模型实际收到的 messages/input 时使用 `--wire-trace full`；详见
 [轨迹产出文件指南](../traces/trajectory-outputs.md#32-session-历史不等于模型请求-context)。
 
 ### `trace_ACTF.json`

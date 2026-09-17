@@ -2,9 +2,9 @@
 
 [Documentation home](../index.md) · [Getting started](../start/getting-started.md) · [SFT format](sft-format.md) · [Viewer](viewer.md)
 
-This page explains which files `roller collect` produces, when each file is created
-and retained, how their information differs, and which layer to use for training,
-analysis, and debugging.
+`roller collect` saves traces, training data, run information, and task outputs.
+This guide describes their contents, when they are created and retained, and how
+to use them for training, analysis, and debugging.
 
 ## 1. Start with the conclusion
 
@@ -20,12 +20,11 @@ analysis, and debugging.
 | Inspect Task Agent delivered files | `results/` | Recovers only the output directories the task declared plus extra collect paths |
 | Inspect the dialogue both sides can see | `conversation.json` | Does not include hidden reasoning, tool calls, or tool results |
 
-Use SFT for training, ACTF for analysis, and only drop down to session raw and
-full wire when debugging an adapter, context assembly, or upstream behavior. In
-this page, **session raw** means `trace.jsonl` only; `wire_trace.jsonl` is a
-request-side diagnostic record. Do not treat the two as the same kind of raw.
-Do not treat a wire trace as a training set either: multi-turn requests repeat
-history, so the size is close to O(N²).
+Use SFT for training and ACTF for analysis. For adapter, context assembly, or
+upstream issues, inspect session raw and full wire. Here, session raw means
+`trace.jsonl`; `wire_trace.jsonl` records requests for diagnosis.
+Wire traces repeat history across turns and grow close to O(N²), so they are
+unsuitable for direct use as training data.
 
 ## 2. Directory layout
 
@@ -54,7 +53,7 @@ for all seven Harnesses:
 
 OpenClaw's default `actf` wire mode temporarily captures the tools schema, writes
 it into ACTF/SFT, then deletes the intermediate `wire_trace.jsonl` and
-`cache_trace.jsonl`, so the final sample stays compact. Codex's default `actf`
+`cache_trace.jsonl`, reducing the final sample size. Codex's default `actf`
 builds a permissive tool schema from the native session and does not start a
 request proxy. Claude Code temporarily captures the Anthropic system and full
 `input_schema` when `--api-base` is set explicitly; with no API base or with
@@ -120,10 +119,9 @@ trace_ACTF.json ─────────────────────�
 全部成功/Resume sample 的 trace_SFT.json ───────> run/sft.jsonl
 ```
 
-`trace.jsonl` is the source of truth for semantic events in the current Harness
-session. ACTF is the analysis projection of that session; SFT is the training
-projection after fields that are irrelevant to training are removed. SFT does
-not feed back into ACTF or raw generation.
+`trace.jsonl` records events from the current Harness session. ACTF converts
+those events into an analysis format; SFT removes fields that training does not
+need. SFT is not used to generate ACTF or raw.
 
 ### 3.1 The three files answer three different questions
 
@@ -153,11 +151,10 @@ environment context, a tool namespace, resume history, and compaction results
 between the native session and the Responses input; that final shape can only be
 confirmed from full wire. Claude Code's native session is also not an Anthropic
 Messages request: the CLI adds system blocks, a tools schema, project/context
-instructions, cache markers, and conversation-management results. When you need
-empirical evidence of the model request, use Claude Code `--wire-trace full` as
-well.
+instructions, cache markers, and conversation-management results. To inspect
+the model request, use Claude Code `--wire-trace full`.
 
-Differences therefore exist in both directions:
+Session records and requests can differ in these ways:
 
 - Present in the session, absent from the model request: old tool results were
   pruned, history was compacted into a summary, or messages were filtered by
@@ -169,10 +166,10 @@ Differences therefore exist in both directions:
   turn internal messages/blocks into the final Chat Completions `messages` or
   Responses `input` protocol shape.
 
-So `trace.jsonl` is the right place to replay the Agent's logical trajectory;
-`wire_trace full` is the evidence for "what JSON context that HTTP model call
-saw." ACTF/SFT are both projections of session raw. They cannot reconstruct
-per-request context after compaction, pruning, or ephemeral injection.
+Use `trace.jsonl` to review the Agent's logical trajectory and `wire_trace full`
+to inspect the JSON context sent in each HTTP model request. ACTF/SFT are
+converted from session raw and cannot reconstruct each request
+after compaction, pruning, or temporary context injection.
 
 ## 4. How the core trace files differ
 
@@ -262,7 +259,7 @@ Generation conditions:
 - Claude Code merges streamed native events that share the same `message.id`,
   writes plaintext `thinking/reasoning/analysis` into `reasoning_content`, and
   associates `tool_use_id` with a later `tool_result`. Ciphertext
-  `redacted_thinking` stays in raw and is never guessed into plaintext.
+  `redacted_thinking` stays in raw and is not converted to plaintext.
   When wire is present, system/tools come from the Anthropic request; otherwise
   system is `""` and a permissive schema is derived from actual `tool_use`.
 
@@ -281,7 +278,7 @@ ACTF. A conversion failure sets the sample status to `error`.
 
 ### 4.3 `trace_SFT.json`: one minimal training sample
 
-SFT is generated from ACTF. The top level is strictly only:
+SFT is generated from ACTF. Its top level contains only:
 
 ```json
 {"messages": [], "tools": []}
@@ -310,8 +307,8 @@ Generation conditions:
 
 Both GPT Responses flat tools and Chat Completions nested tools are unified to
 a nested function schema. When Roller encounters a non-text tool result such as
-an image, it does not silently drop the content. SFT conversion fails and the
-sample is marked `error`. Multimodal SFT needs a separately defined content-block
+an image, SFT conversion fails and the sample is marked `error` to prevent
+content loss during export. Multimodal SFT needs a separately defined content-block
 schema.
 
 See [SFT data format](sft-format.md) for the full field definition.
@@ -377,10 +374,10 @@ scans already finalized samples.
 
 ### 5.3 Sample `info.json`
 
-Every sample that finishes finalize writes this file, including failed samples.
+This file is written when a sample is finalized, including failed samples.
 It stores task/model, Harness, final status, error, attempt history, usage,
 elapsed time, relative paths to raw/ACTF/SFT, output recovery information,
-runtime, and input provenance. Metadata that training data deliberately drops is
+runtime, and input provenance. Metadata excluded from training data is
 kept here.
 
 OpenClaw sessions sometimes record an already delivered reply again with
@@ -559,7 +556,7 @@ After OpenClaw `off` or a degraded `actf`, SFT validation fails for missing tool
 schema if the trajectory actually called tools. When there are no tool calls,
 SFT `tools` is `[]`. Codex and Claude Code derive a schema from native actual
 calls, so they do not depend on wire for this structural check, but the derived
-schema is not a complete authoritative interface definition.
+schema does not contain the full tool interface definition.
 
 ### 6.2 Thinking
 
@@ -568,8 +565,8 @@ schema is not a complete authoritative interface definition.
 | `--keep-thinking` (default) | Accept whatever the backend returns | Keep normal Harness history | Save visible reasoning | Save from ACTF | Keep original events |
 | `--no-keep-thinking` | The current turn can still produce reasoning | OpenClaw strips later wire history; Codex/Claude Code do not rewrite resume/continue | Reasoning emptied | Reasoning emptied | Original events still kept |
 
-`--thinking LEVEL` controls the logical grade sent to the Harness/model request.
-It cannot invent visible text from nothing. See
+`--thinking LEVEL` sets the reasoning level in the Harness/model request.
+Whether reasoning text can be saved depends on the service response. See
 [Thinking configuration](../harnesses/openclaw-configuration.md#thinking-system-prompt-and-wire-trace)
 for GPT native effort, open-model profiles, and OpenClaw image limits, and
 [Thinking and effort](../harnesses/claude-code-configuration.md#thinking-and-effort)
@@ -618,11 +615,10 @@ conditional artifacts. They are not required for success.
 
 ### 7.2 Failed samples
 
-`error` or `timeout` does not mean the directory is empty. The finish phase
-tries to recover raw, the system prompt, tools, and safe outputs, then attempts
-ACTF/SFT conversion. A failed sample can therefore contain a complete or partial
-trajectory. That is useful for diagnosis, but it does not enter run-level
-`sft.jsonl`.
+For an `error` or `timeout` sample, finalization still attempts to recover raw,
+the system prompt, tools, and safe outputs, then convert ACTF/SFT. Any retained
+complete or partial trajectory can be used for diagnosis, but is excluded from
+run-level `sft.jsonl`.
 
 These cases turn an otherwise successful Harness result into `error`:
 

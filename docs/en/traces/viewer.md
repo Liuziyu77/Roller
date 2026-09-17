@@ -2,9 +2,9 @@
 
 [Documentation home](../index.md) · [Getting started](../start/getting-started.md#8-open-the-viewer) · [Trajectory outputs](trajectory-outputs.md) · [SFT format](sft-format.md)
 
-Roller ships a zero-extra-dependency, read-only Web Viewer for browsing the
-tasks, model rollouts, reasoning, tool calls, tool results, and final replies
-in a run, grouped by task. The Viewer reads existing Roller artifacts directly.
+Roller includes a read-only Web Viewer that needs no extra dependencies. It groups
+a run by task and displays model rollouts, reasoning, tool calls, tool results,
+and final replies. The Viewer reads existing Roller artifacts directly.
 It does not generate a new trajectory copy, and it does not modify
 `trace_SFT.json` or `sft.jsonl`.
 
@@ -35,7 +35,7 @@ Docker, OpenClaw, or a model service. Stop it with `Ctrl-C`.
 
 ## 2. Access from a remote machine
 
-The recommended setup is to keep the Viewer on loopback and open an SSH tunnel
+For remote access, keep the Viewer on the loopback address and open an SSH tunnel
 from your local machine:
 
 ```bash
@@ -62,7 +62,7 @@ The page has three columns:
 2. The middle column shows the ACTF timeline of the selected rollout. The step
    title first shows tokens, elapsed time, stop reason, and reasoning/tool
    counts. The full step is loaded only after you click it.
-3. The right Inspector shows sample information, the first system prompt frozen
+3. The right Inspector shows sample information, the first system prompt saved
    at the ACTF top level, the full tools schema, and the original `info.json`.
    A User Simulator task also shows `conversation.json`.
 
@@ -85,7 +85,7 @@ link to that task in the same Viewer process.
 | Dialogue both sides can see | `conversation.json` | User Simulator rollout selected |
 
 The Viewer does not use `trace_SFT.json` as its display source, because SFT
-deliberately drops step ID, timing, metric, stop reason, and observation
+does not contain step ID, timing, metric, stop reason, and observation
 metadata. `trace.jsonl`, `cache_trace.jsonl`, and `wire_trace.jsonl` are also
 not sent to the browser by default.
 
@@ -107,7 +107,7 @@ After Resume, the sample's on-disk `info.json` still keeps the original
 `status=ok`. The Viewer overlays `status=skipped` from this run's index so the
 Completed card can mark the reuse count accurately. The Thinking card shows the retention policy (kept/stripped) and configured native thinking level.
 
-When run `info.json` has not finished a normal close-out, the Viewer also scans
+Until the run has finalized `info.json`, the Viewer also scans
 `samples/<model>/<task>/info.json`, so samples finalized after a checkpoint
 still appear. In-progress temporary directories without a sample `info.json` do
 not enter the list. Click **Refresh** in the top-right to reread state and
@@ -130,7 +130,7 @@ modify files on disk.
 - Samples with `status=error/timeout` still appear in the list. If ACTF already
   exists, you can browse the partial trajectory from before the failure.
 - Without ACTF, the page still shows sample status, error, and metadata, and
-  the center clearly shows `NO ACTF`.
+  the center shows `NO ACTF`.
 - When no cache trace was captured, the system prompt is shown as empty.
 - When no wire tools were captured, the tools panel is shown as empty. This
   does not affect display of tool call/result in existing steps.
