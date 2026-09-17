@@ -210,11 +210,11 @@ Input paths stay the same in the Agent workspace and cannot be renamed with `tar
 /roller/task/inputs/inputs/data.csv
 ```
 
-The first path is suitable to cite directly in a prompt; the second is a stable entry point to the full input snapshot. Files and directories are provided to the Task Agent as read-only.
+Use the first path in prompts. The second provides a fixed location for the full input snapshot. Files and directories are provided to the Task Agent as read-only.
 
 ## 6. Context and system files
 
-`files.context` is for content that needs semantic injection by the Harness:
+`files.context` declares Context files for the Harness to load:
 
 ```json
 {
@@ -267,9 +267,9 @@ The OpenClaw adapter injects Context into `/root/<target>` and `/tmp_workspace/<
 
 `output_dir` defaults to `outputs` and may be a deeper relative path such as `deliverables/final`. Roller creates a writable directory at `/tmp_workspace/<output_dir>/` and links `/roller/task/outputs` to the same location.
 
-After the task finishes, every safe file and empty directory in that folder is copied into the sample's `results/`. You do not and cannot predeclare fixed output filenames; the old field `files.outputs` is no longer supported.
+After the task finishes, every safe file and empty directory in that folder is copied into the sample's `results/`. There is no need to list output filenames in advance; the old `files.outputs` field for declaring them is no longer supported.
 
-`files.output_dir` and CLI `--output` solve different problems: the former is the collectable directory inside the Agent workspace; the latter is the host root that stores the entire run. For example, `files.output_dir=outputs` with `--output /data/roller-runs --run-name demo` saves the Agent's `outputs/report.md` as `/data/roller-runs/demo/samples/.../results/report.md`.
+`files.output_dir` names the directory to collect from the Agent workspace. CLI `--output` names the host root where the entire run is saved. For example, `files.output_dir=outputs` with `--output /data/roller-runs --run-name demo` saves the Agent's `outputs/report.md` as `/data/roller-runs/demo/samples/.../results/report.md`.
 
 ## 8. Runtime
 
@@ -299,7 +299,7 @@ up to `max` and rejects `ultra`; Codex maps valid levels to `model_reasoning_eff
 the OpenClaw-only `adaptive` and `off`, which has no shared equivalent; the default Codex 0.149.0 image supports
 `minimal/low/medium/high/xhigh` and does not support `max/ultra`. Claude Code 2.1.222 accepts
 `low/medium/high/xhigh/max/ultracode`; Roller maps `ultra` to `ultracode` and rejects
-`off/minimal/adaptive`. The levels that actually work are still validated jointly by the Harness version, model, and provider.
+`off/minimal/adaptive`. Available levels depend on the Harness version, model, and provider; each validates the value.
 The Task Agent can use OpenClaw, Codex, Claude Code, Hermes, OpenCode, DeepSeek, or Pi; the User Simulator can also choose any of these seven Harnesses in its own `harness` field. Task Agent harnesses may be mixed per task; an explicit `--harness` overrides all of them. The Simulator can choose independently.
 
 ## 9. Path and format validation

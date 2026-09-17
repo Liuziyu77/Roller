@@ -2,7 +2,7 @@
 
 [文档中心](../index.md) · [快速上手](../start/getting-started.md) · [OpenClaw](openclaw-configuration.md) · [Claude Code](claude-code-configuration.md) · [CLI 参数](../start/cli-reference.md)
 
-本页只说明 Codex 专属的镜像、Responses API、reasoning、native session 和排错。Task 字段见 [Task 格式参考](../tasks/task-format.md)，所有 Harness 共用的产物语义见 [轨迹产出文件指南](../traces/trajectory-outputs.md)。
+本页介绍 Codex 专属的镜像、Responses API、reasoning、native session 和排错。Task 字段见 [Task 格式参考](../tasks/task-format.md)，各 Harness 的产物说明见 [轨迹产出文件指南](../traces/trajectory-outputs.md)。
 
 > 快速定位：支持范围（第 1 节）· 镜像（第 2 节）· API（第 3 节）· reasoning（第 4 节）· native/ACTF/SFT/wire（第 7–8 节）· 排错（第 9 节）
 
@@ -158,7 +158,7 @@ Task 的 `runtime.thinking` 优先于 CLI。Roller 会把
 `minimal/low/medium/high/xhigh` 交给 Codex，再由模型和 API 服务验证；其中 `xhigh` 取决于
 模型是否支持。Codex CLI 0.149.0 不接受 `max`/`ultra`，Roller 会提前报错；OpenClaw 专用的
 `adaptive` 也会提前拒绝。`off`/`none` 同样会拒绝，因为 Codex Harness 没有
-一个对所有 reasoning 模型都忠实等价的“关闭 reasoning”开关。若要使用模型/CLI 默认值，
+一个能对所有 reasoning 模型关闭推理的通用开关。若要使用模型/CLI 默认值，
 直接省略 `--thinking`。
 
 `--reasoning-summary` 可选值：
@@ -233,12 +233,12 @@ trace。
 转换器使用 `token_count` 作为一次模型请求的边界，把分离的 reasoning、assistant message、
 多个 function/custom tool call 组合成一个 ACTF step，再按 `call_id` 配对稍后到达的 tool
 output。顶层 system prompt 来自 `session_meta.base_instructions`、native developer/system
-message，以及 Codex 在首轮前注入的 `<environment_context>`；真正的 task 用户消息按内容
-匹配，不会被环境事件挤占或串到错误轮次。
+message，以及 Codex 在首轮前注入的 `<environment_context>`。Task 中的用户消息按内容
+匹配，避免把环境事件当作用户消息或分配到错误轮次。
 
 Codex native session 不提供每个工具的完整原始 JSON Schema。为了产出严格 SFT，Roller 会
-基于实际调用名和参数字段生成 permissive function schema；它足以保持 tool call 的名称、
-参数和结果，但不能当作 Codex 内置工具接口的完整权威定义。
+基于实际调用名和参数字段生成 permissive function schema；这些 schema 保留 tool call 的名称、
+参数和结果，但不包含 Codex 内置工具接口的完整定义。
 
 ### `trace_SFT.json` 与 `sft.jsonl`
 
@@ -258,7 +258,7 @@ Codex 请求中的工具定义可位于 `input` 的 `additional_tools` item。�
 上游 response body，也不能说明模型服务内部如何再次截断、路由或 tokenize。
 
 默认 `--wire-trace actf` 不保留额外 wire 文件；Codex ACTF 的工具 schema 来自 native 实际
-调用的 permissive 投影，而不是完整 request schema。需要核对“模型某次实际看到了什么”时
+调用的 permissive 投影，而不是完整 request schema。需要检查某次模型调用的完整请求时
 必须显式使用 `--wire-trace full`，并配合足够严格的日志访问权限。
 
 ## 9. 常见错误

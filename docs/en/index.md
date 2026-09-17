@@ -1,6 +1,6 @@
 # Roller documentation
 
-Roller is a multi-model, multi-harness framework for collecting agent trajectories. It expands a task list and a model list into independent rollouts, runs each agent in a one-shot Docker container, and saves:
+Roller collects agent trajectories across models and harnesses. Each task/model pair runs in its own disposable Docker container and produces:
 
 - `trace.jsonl`: harness-native raw trace
 - `trace_ACTF.json`: unified analysis and visualization format (`ACTF_v1.0`)
@@ -21,7 +21,7 @@ Agent harness in Docker
         └─ info.json         status, usage, and provenance
 ```
 
-Current scope: Python 3.10+, task schema `roller.task/v1`, trace format `ACTF_v1.0`. The project is in Alpha and licensed under Apache 2.0. Source: [GitHub](https://github.com/Liuziyu77/Roller).
+Roller requires Python 3.10+ and uses task schema `roller.task/v1` and trace format `ACTF_v1.0`. The project is in Alpha and licensed under Apache 2.0. Source: [GitHub](https://github.com/Liuziyu77/Roller).
 
 ## What it is for
 
@@ -29,8 +29,8 @@ Current scope: Python 3.10+, task schema `roller.task/v1`, trace format `ACTF_v1
 - Compare multiple models or harnesses on the same tasks
 - Emit SFT JSONL whose top level is strictly `messages` and `tools`
 - Keep reasoning, tool calls, tool results, and task file artifacts
-- Build a recoverable data pipeline with run locks, retries, and resume
-- Step through each task's thinking and actions in the built-in Viewer
+- Check run configuration with run locks and continue collection with retries and resume
+- Inspect each task's reasoning and tool operations in the built-in Viewer
 
 ## Choose a harness
 
@@ -44,7 +44,7 @@ Current scope: Python 3.10+, task schema `roller.task/v1`, trace format `ACTF_v1
 | DeepSeek Harness | DeepSeek Chat Completions | Native SDK / persistent Bash → ACTF/SFT | sdk-minimal; Agent / Simulator |
 | Pi Agent | OpenAI Chat Completions | Native AgentSession and seven tools → ACTF/SFT | Pinned SDK; Agent / Simulator |
 
-All seven share the same Task, Sample, ACTF, SFT, Viewer, retry, and Resume boundaries. Images, APIs, and reasoning flags differ; see the matching harness guide.
+All seven use the same Task, Sample, ACTF, and SFT formats, along with a shared Viewer, retry, and Resume workflow. Images, APIs, and reasoning flags differ; see the matching harness guide.
 
 ## Suggested reading order
 
@@ -56,7 +56,7 @@ All seven share the same Task, Sample, ACTF, SFT, Viewer, retry, and Resume boun
 | 4. Check outputs | [Trajectory outputs](traces/trajectory-outputs.md) | You can tell raw, ACTF, SFT, wire, and results apart |
 | 5. Run at scale | [Task bundles and storage](tasks/task-bundle-and-storage.md) | You understand snapshots, run locks, retry, and Resume |
 
-Runnable commands live in [Examples](start/examples.md).
+For runnable commands, see [Examples](start/examples.md).
 
 ```{toctree}
 :maxdepth: 1

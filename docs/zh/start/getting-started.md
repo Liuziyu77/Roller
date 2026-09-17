@@ -2,7 +2,7 @@
 
 [文档中心](../index.md) · [示例目录](examples.md) · [CLI 参数](cli-reference.md) · [产物说明](../traces/trajectory-outputs.md)
 
-本页覆盖环境准备、API 配置、dry-run、正式采集、结果验收和 Viewer。最终 run 包含 native raw、ACTF、SFT 与运行信息。
+按本页步骤准备环境和 API，执行 dry-run 与采集，再检查结果或打开 Viewer。每次 run 保存 native raw、ACTF、SFT 与运行信息。
 
 ## 1. 准备运行环境
 
@@ -26,7 +26,7 @@ docker version
 
 ## 2. 选择 Harness 与镜像
 
-OpenClaw 同时兼容 Responses 与 Chat Completions，适合作为首次环境验证。动态 User Simulator 可与 OpenClaw、Codex、Claude Code、Hermes、OpenCode、DeepSeek 或 Pi 任意组合。
+下面以 OpenClaw 为例，它同时兼容 Responses 与 Chat Completions。动态 User Simulator 可与 OpenClaw、Codex、Claude Code、Hermes、OpenCode、DeepSeek 或 Pi 任意组合。
 
 | Harness | API 要求 | 默认镜像 | 准备方式 |
 | --- | --- | --- | --- |
@@ -44,7 +44,7 @@ CoT 配置按模型返回形式选择：
 - Claude 系列：保存可见 thinking/summary，不从签名或密文恢复内容；
 - Qwen、GLM 等开源模型：保持默认 `--keep-thinking`。服务返回的明文 reasoning 会进入 ACTF/SFT `reasoning_content`，无需额外的 CoT 获取步骤。
 
-如果服务只返回 reasoning token 数而没有明文 reasoning，第三种方式不会产生 CoT 文本。
+如果服务只返回 reasoning token 数而没有明文 reasoning，就没有可保存的 CoT 文本。
 
 ### OpenClaw
 
@@ -102,7 +102,7 @@ source examples/env/api.env
 set +a
 ```
 
-`examples/env/*.env` 已被 Git 忽略，但仍不要在 shell 历史、task、模型 JSON 或文档中直接写真实 Key。
+`examples/env/*.env` 已被 Git 忽略。真实 Key 不应写入 shell 历史、task、模型 JSON 或文档。
 
 ### OpenClaw 配置
 
@@ -252,7 +252,7 @@ info.json
 5. 需要文件交付的 task，其 sample `results/` 是否包含预期文件；
 6. run `sft.jsonl` 行数是否等于可纳入训练的成功 sample 数。
 
-各文件的生成条件和失败语义见 [轨迹产出文件指南](../traces/trajectory-outputs.md)。
+各文件何时生成、失败时会保留哪些内容，见 [轨迹产出文件指南](../traces/trajectory-outputs.md)。
 
 ## 8. 打开 Viewer
 
@@ -260,7 +260,7 @@ info.json
 roller view runs/quickstart
 ```
 
-默认监听 `127.0.0.1:8765`。远程运行时保持 loopback，并从本机建立 SSH 端口转发：
+默认监听 `127.0.0.1:8765`。远程运行时保持本地回环地址，并从本机建立 SSH 端口转发：
 
 ```bash
 ssh -L 8765:127.0.0.1:8765 your-host
@@ -325,4 +325,4 @@ roller collect \
 | 同名 run 已存在 | 原实验使用 `--resume`，新实验更换 `--run-name` |
 | Viewer 没有新 task | 确认传入的是 run 根目录，刷新页面并检查 run `info.json` |
 
-更具体的错误分别列在七种 Harness 指南末尾。
+各 Harness 指南还列有对应的常见错误。

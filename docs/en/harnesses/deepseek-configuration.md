@@ -1,6 +1,6 @@
 # DeepSeek Harness
 
-Roller drives the official [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) native `dsh` runtime through its Python SDK. Both SDK and runtime are pinned to **0.1.5rc1**, using the official `sdk-minimal` profile. Task Agents and User Simulators accept `"harness": "deepseek"`.
+Roller runs the official [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) native `dsh` runtime through its Python SDK. Both SDK and runtime are pinned to 0.1.5rc1, using the official `sdk-minimal` profile. Task Agents and User Simulators accept `"harness": "deepseek"`.
 
 ## Build and run
 
@@ -32,17 +32,17 @@ The endpoint must support streaming Chat Completions, tools, and DeepSeek thinki
 | `--wire-trace` | All modes retain native requests and schemas; `full` adds HTTP capture and requires an explicit base URL and host networking |
 | `--no-keep-thinking` | Removes reasoning from ACTF/SFT only, preserving native history |
 
-Options apply to both roles. The run lock records image digest, version, profile, tools, endpoint, key variable name, step limit, and token limits. Credentials are read at execution time.
+DeepSeek-specific options apply to both the Task Agent and the Simulator. The run lock records image digest, version, profile, tools, endpoint, key variable name, step limit, and token limits. Credentials are read at execution time.
 
 ## Sessions and traces
 
 Each participant owns a container and an isolated `DSH_HOME`. One SDK/runtime process and native Bash PTY persist across turns, retaining conversation history, files, shell variables, and working directory. Roller supports read-only inputs, copied Context files listed in the system prompt, setup commands, selected environment variables, custom outputs, and container grading.
 
-The official `sdk-minimal` profile advertises only persistent `bash`; file tasks use that tool. It omits automatic compaction, implicit workspace instructions, skills, MCP, Web tools, and subagents. Context/skill cases check file accessibility. Roller's fixed patch adds request journaling, disables automatic model retries and official API session/plugin upload extensions, and sets the selected model's context/output limits.
+The official `sdk-minimal` profile exposes only persistent `bash`; file tasks use that tool. It omits automatic compaction, implicit workspace instructions, skills, MCP, Web tools, and subagents. Context/skill cases check file accessibility. Roller's fixed patch adds request journaling, disables automatic model retries and official API session/plugin upload extensions, and sets the selected model's context/output limits.
 
 `trace.jsonl` uses `roller.deepseek-events/v1`, retaining serialized requests and native SDK notifications. ACTF/SFT preserve actual system prompts, schemas, reasoning, calls, and results. Errors, truncated or empty replies, incomplete tool calls, and content that cannot be represented losslessly as text are rejected. Timeouts stop the container and recover available artifacts. Resume validates each participant's artifacts; DeepSeek does not produce OpenClaw cache traces.
 
-Direct multimodal messages, visual acceptance, interactive login, arbitrary profiles/plugins, and cross-task memory are outside this integration. Provider compatibility must be checked for each model. Long tasks need sufficient context because compaction is disabled.
+Direct multimodal messages, visual acceptance, interactive login, arbitrary profiles/plugins, and cross-task memory are not supported by this adapter. Provider compatibility must be checked for each model. Long tasks need sufficient context because compaction is disabled.
 
 ## Validation
 

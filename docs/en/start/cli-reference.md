@@ -36,7 +36,7 @@ When a value can be set on both the task and the global CLI:
 | Workspace | task `workspace` wins; otherwise use the global `--workspace` |
 | User Simulator model | `user_simulator.model` wins; otherwise follow the current task Agent model |
 
-Repeated `--model` values are de-duplicated and Cartesian-expanded with each task. `--start-index` and `--limit` first slice the normalized task list, then models are expanded.
+Roller removes duplicate `--model` values and runs each task with each remaining model. `--start-index` and `--limit` select tasks from the normalized list before pairing them with models.
 
 ## 3. Shared collection flags
 
@@ -93,7 +93,7 @@ Parsed values for `--thinking`:
 off | minimal | low | medium | high | xhigh | adaptive | max | ultra
 ```
 
-Input `none` is first normalized to `off`. That does not mean every Harness or model accepts every level:
+Input `none` is normalized to `off`. The available levels depend on the Harness and model:
 
 | Harness | Current Roller mapping |
 | --- | --- |
@@ -101,7 +101,7 @@ Input `none` is first normalized to `off`. That does not mean every Harness or m
 | Codex 0.149.0 | `minimal/low/medium/high/xhigh`; omit to use the default |
 | Claude Code 2.1.222 | `low/medium/high/xhigh/max/ultra`, where `ultra` maps to `ultracode` |
 
-Authoritative mappings are in the reasoning sections of each Harness guide.
+See each Harness guide for reasoning level mappings.
 
 ### Wire trace
 
@@ -167,9 +167,9 @@ Default image precedence: `--docker-image` → `ROLLER_CLAUDE_CODE_IMAGE` → `r
 roller collect [原命令] --resume
 ```
 
-Resume is not “ignore every existing file”. Roller first compares semantic config and input digests in `lock.json`, then verifies required artifacts of successful samples; only samples whose lock matches and whose artifacts are complete are skipped. A config change, input change, or damaged artifact is rejected as a mix, or the sample is rerun.
+Resume first compares the settings that affect execution and the input digests in `lock.json`, then checks the required artifacts of successful samples. It skips a successful sample only when the settings and inputs match and the artifacts are complete. Changed settings or inputs are rejected; samples with damaged artifacts are rerun.
 
-Use `--resume` when you should continue the same run; use a new `--run-name` when you change the model, image, thinking, wire, or any other semantic setting.
+Use `--resume` to continue the same run; use a new `--run-name` when you change the model, image, thinking, wire, or any other semantic setting.
 
 ## 10. Viewer flags
 
@@ -203,7 +203,7 @@ roller bench report RUN_DIR [--output REPORT.json]
 | `RUN_DIR` | Required | Completed run directory; a **positional argument** (not `--run`) |
 
 `bench export` only translates; it does not run any task, go online, or start a container.
-When collecting, remember `--task-timeouts`, and use `--pass-env` to pass through variables the grader needs.
+When collecting, pass `--task-timeouts` and use `--pass-env` for variables the grader needs.
 
 Field semantics, scoring timeline, `stage` leak-prevention rules, and aggregation rules are in [Bench integration and scoring](../benches/bench-format.md).
 
