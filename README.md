@@ -10,7 +10,7 @@
   </p>
 </div>
 
-Roller 把 task 清单与模型列表展开为独立 rollout，在一次性 Docker 容器中运行 Agent，最终同时保存 Harness 原始轨迹、统一分析轨迹、标准 SFT 数据和任务文件产物。
+Roller 为每个 task 与模型的组合创建独立 rollout，在一次性 Docker 容器中运行 Agent。每次运行保存 Harness 原始轨迹、ACTF 分析轨迹、SFT 训练数据和任务生成的文件。
 
 ```text
 tasks.jsonl × models
@@ -31,8 +31,8 @@ Docker 中的 Agent Harness
 - 同一批 task 对比多个模型或 Harness；
 - 生成顶层严格为 `messages` 和 `tools` 的 SFT JSONL；
 - 保存 reasoning、工具调用、工具结果与任务文件产物；
-- 用 run lock、重试和 Resume 构建可恢复的数据生产流程；
-- 在内置 Viewer 中逐步检查每个 task 的思考与行动轨迹。
+- 用 run lock 检查运行配置，通过重试和 Resume 继续采集；
+- 在内置 Viewer 中逐步查看每个 task 的 reasoning 和工具操作。
 
 ## 选择 Harness
 
@@ -46,7 +46,7 @@ Docker 中的 Agent Harness
 | DeepSeek Harness | DeepSeek Chat Completions | 原生 SDK / 持久化 Bash → ACTF/SFT | 固定 sdk-minimal profile；支持 Agent / Simulator |
 | Pi Agent | OpenAI Chat Completions | 原生 AgentSession / 七种工具 → ACTF/SFT | 固定 SDK 版本；支持 Agent / Simulator |
 
-七者共享相同的 Task、Sample、ACTF、SFT、Viewer、重试和 Resume 边界。镜像、API 和 reasoning 参数不同，详见对应的 [Harness 指南](docs/README.md#按-harness-选择)。
+七种 Harness 使用相同的 Task、Sample、ACTF 和 SFT 格式，也共用 Viewer、重试和 Resume 流程。镜像、API 和 reasoning 参数不同，详见对应的 [Harness 指南](docs/README.md#按-harness-选择)。
 
 ## Reasoning 采集
 
@@ -146,7 +146,7 @@ roller view runs/quickstart
 {"schema_version":"roller.task/v1","id":"hello","prompt":"计算 2+3，只回复数字。"}
 ```
 
-Task 清单支持 `.jsonl`、JSON 数组或 `{"tasks": [...]}`。一条 task 可以进一步声明：
+Task 清单支持 `.jsonl`、JSON 数组或 `{"tasks": [...]}`。每条 task 还可以设置：
 
 - `messages`：预定义多轮 user message；
 - `file_root` 与 `files.inputs`：需要复制进工作区的本地输入；

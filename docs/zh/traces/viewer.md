@@ -2,7 +2,7 @@
 
 [文档中心](../index.md) · [快速上手](../start/getting-started.md#8-打开-viewer) · [产物说明](trajectory-outputs.md) · [SFT 格式](sft-format.md)
 
-Roller 内置一个零额外依赖的只读 Web Viewer，用于按 task 浏览一个 run 中的任务、
+Roller 内置只读 Web Viewer，无需安装额外依赖。它按 task 展示一个 run 中的任务、
 模型 rollout、reasoning、工具调用、工具结果和最终回复。Viewer 直接读取现有 Roller
 产物，不生成新的轨迹副本，也不会修改 `trace_SFT.json` 或 `sft.jsonl`。
 
@@ -32,7 +32,7 @@ Viewer 进程只负责读取文件并提供页面，不会启动 Docker、OpenCl
 
 ## 2. 远程机器访问
 
-推荐让 Viewer 继续监听 loopback，然后从本机建立 SSH 隧道：
+远程访问时，让 Viewer 监听本地回环地址，再从本机建立 SSH 隧道：
 
 ```bash
 ssh -L 8765:127.0.0.1:8765 user@remote-host
@@ -55,7 +55,7 @@ Viewer 当前不提供认证。对外监听会暴露 system prompt、用户输�
    task/model/error 文本搜索，并按状态或模型筛选。
 2. 中间显示所选 rollout 的 ACTF 时间线。step 标题先展示 token、耗时、stop reason、
    reasoning/tool 数量；点击后才加载完整 step。
-3. 右侧 Inspector 显示 sample 信息、ACTF 顶层固化的首个 system prompt、完整 tools schema、原始
+3. 右侧 Inspector 显示 sample 信息、ACTF 顶层保存的首个 system prompt、完整 tools schema、原始
    `info.json`；User Simulator task 还会显示 `conversation.json`。
 
 Reasoning 使用独立区域并默认折叠。工具调用按 `tool_call_id` 和对应结果配对，
@@ -74,7 +74,7 @@ HTML 或脚本。
 | Step reasoning/content/tool/result | `trace_ACTF.json` | 展开 step |
 | 双方可见动态对话 | `conversation.json` | 选中 User Simulator rollout |
 
-Viewer 不以 `trace_SFT.json` 为展示数据源，因为 SFT 刻意删除了 step ID、时间、metric、
+Viewer 不以 `trace_SFT.json` 为展示数据源，因为 SFT 不包含 step ID、时间、metric、
 stop reason 和 observation metadata。`trace.jsonl`、`cache_trace.jsonl` 和
 `wire_trace.jsonl` 也不会默认传给浏览器。
 
@@ -107,7 +107,7 @@ checkpoint 后新 finalize 的 sample 仍能显示。没有 sample `info.json` �
 
 - `status=error/timeout` 的 sample 仍会出现在列表中；只要已有 ACTF，就可以浏览失败前
   的部分轨迹。
-- 没有 ACTF 时仍展示 sample 状态、错误和 metadata，中央明确显示 `NO ACTF`。
+- 没有 ACTF 时仍展示 sample 状态、错误和 metadata，中央显示 `NO ACTF`。
 - 未捕获 cache trace 时 system prompt 显示为空。
 - 未捕获 wire tools 时 tools 面板显示为空；这不影响现有 step 中 tool call/result 的
   展示。

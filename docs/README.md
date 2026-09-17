@@ -2,7 +2,7 @@
 
 [项目首页](../README.md) · [快速上手](zh/start/getting-started.md) · [示例](zh/start/examples.md) · [CLI 参数参考](zh/start/cli-reference.md)
 
-文档按主题放在子目录中，各专题页独立维护，不要求按目录顺序通读。
+文档按主题组织，可按下面的目录查阅。
 
 | 目录 | 内容 |
 | --- | --- |
@@ -65,8 +65,8 @@ python -m http.server -d _build/html 8000
 
 | 目标 | 文档 |
 | --- | --- |
-| 把一个 benchmark 跑成带分数的 run | [Bench 接入与评分](zh/benches/bench-format.md#7-cli) |
-| 跑 WildClawBench（上游旋钮对应、search shim、已知坑） | [WildClawBench](zh/benches/wildclawbench.md) |
+| 运行 benchmark 并评分 | [Bench 接入与评分](zh/benches/bench-format.md#7-cli) |
+| 运行 WildClawBench（上游参数对应、search shim、已知问题） | [WildClawBench](zh/benches/wildclawbench.md) |
 | 接入一个新 bench | [Bench 接入与评分](zh/benches/bench-format.md#6-加一个新-bench) |
 | 看懂 `score.json` 与聚合口径 | [Bench 接入与评分](zh/benches/bench-format.md#5-聚合口径) |
 | 确保答案不泄漏给 Agent | [Bench 接入与评分](zh/benches/bench-format.md#4-stage答案不能放在-agent-的工作目录里) |
@@ -122,19 +122,19 @@ python -m http.server -d _build/html 8000
 
 ## 文档职责
 
-- 仓库根 `README.md`：项目定位和最短入门路径；
+- 仓库根 `README.md`：项目介绍与入门步骤；
 - `zh/start/getting-started.md` / `en/start/getting-started.md`：首次运行的完整流程；
-- `zh/harnesses/` / `en/harnesses/`：只解释对应镜像、API、reasoning、native raw 与限制；
-- `zh/tasks/task-format.md` / `en/tasks/task-format.md`：输入 schema 的权威人工参考；
-- `zh/traces/trajectory-outputs.md` / `en/traces/trajectory-outputs.md`：产物条件和信息边界的权威参考；
-- `zh/traces/sft-format.md` / `en/traces/sft-format.md`：训练投影 schema 的权威参考；
+- `zh/harnesses/` / `en/harnesses/`：各 Harness 的镜像、API、reasoning、native raw 与限制；
+- `zh/tasks/task-format.md` / `en/tasks/task-format.md`：输入字段与校验规则；
+- `zh/traces/trajectory-outputs.md` / `en/traces/trajectory-outputs.md`：产物生成条件与记录内容；
+- `zh/traces/sft-format.md` / `en/traces/sft-format.md`：SFT 字段定义；
 - `zh/start/cli-reference.md` / `en/start/cli-reference.md`：参数适用范围和默认值。
 
-机器可读 Task 约束见 [`schemas/task.schema.json`](../schemas/task.schema.json)。CLI 的最终事实来源始终是：
+机器可读 Task 约束见 [`schemas/task.schema.json`](../schemas/task.schema.json)。已安装版本的 CLI 参数可通过以下命令查看：
 
 ```bash
 roller collect --help
 roller view --help
 ```
 
-当前范围：Python 3.10+、Task schema `roller.task/v1`、轨迹格式 `ACTF_v1.0`，项目处于 Alpha 阶段。
+Roller 需要 Python 3.10+，使用 Task schema `roller.task/v1` 和轨迹格式 `ACTF_v1.0`。项目处于 Alpha 阶段。

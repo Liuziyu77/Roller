@@ -1,6 +1,6 @@
 # Pi Agent Harness
 
-Roller 使用官方 [Pi Coding Agent SDK](https://pi.dev/docs/latest/sdk)，固定 `@earendil-works/pi-coding-agent`、`pi-agent-core` 和 `pi-ai` 为 **0.85.1**。通过原生 `AgentSession` 执行模型循环和工具，Task Agent 与 User Simulator 均可设置 `"harness": "pi"`。
+Roller 使用官方 [Pi Coding Agent SDK](https://pi.dev/docs/latest/sdk)，固定 `@earendil-works/pi-coding-agent`、`pi-agent-core` 和 `pi-ai` 为 0.85.1。原生 `AgentSession` 负责调用模型和执行工具，Task Agent 与 User Simulator 均可设置 `"harness": "pi"`。
 
 ## 构建与运行
 
@@ -52,7 +52,7 @@ Thinking 通过 `reasoning_effort` 发送，`off` 映射为 `none`，其他级�
 
 空响应、截断、API 错误、超出步数，以及未配对工具调用不会成为成功轨迹。转换器拒绝会改变 system prompt/schema 或丢失非文本内容的轨迹。超时停止容器并回收已生成文件；Pi 不要求 OpenClaw cache trace。
 
-首版以文本与文件任务为范围，不包含视觉验收、交互登录、其他 Pi provider 协议、自定义扩展/插件或自动压缩。与底层 Pi 产品的完整能力范围不同。
+Roller 首版支持 Pi 的文本与文件任务。视觉验收、交互登录、其他 Pi provider 协议、自定义扩展/插件和自动压缩暂不支持。
 
 ## 可复用验证
 
@@ -64,8 +64,8 @@ ROLLER_PI_DOCKER_TEST=1 PYTHONPATH=src \
   python -m unittest discover -s tests -p test_pi_docker.py -v
 ```
 
-Docker 测试使用本地确定性流式 API 和虚构 Key，执行真实 Pi SDK 与工具，不消耗模型额度。公开输入样例 204 条，其中非视觉 200 条；涉及 Pi 的 13 种 Agent × Simulator 配对共 52 条，可用 `--case 'simulators/pair/pi--*' --case 'simulators/pair/*--pi'` 选择。视觉组用于记录首版的能力边界。
+Docker 测试使用本地确定性流式 API 和虚构 Key，执行真实 Pi SDK 与工具，不消耗模型额度。公开输入样例 204 条，其中非视觉 200 条；涉及 Pi 的 13 种 Agent × Simulator 配对共 52 条，可用 `--case 'simulators/pair/pi--*' --case 'simulators/pair/*--pi'` 选择。视觉组记录首版尚未支持的视觉输入。
 
 若同时准备了 DeepSeek 镜像，可额外设置 `ROLLER_PI_MIXED_DOCKER_TEST=1`，验证 Pi ↔ DeepSeek 双向配对与 Resume。
 
-完整矩阵见 [Coverage](https://github.com/Liuziyu77/Roller/blob/main/examples/coverage/README.md)。离线配置校验、真实容器测试与外部模型服务验收是不同验证层级。
+完整矩阵见 [Coverage](https://github.com/Liuziyu77/Roller/blob/main/examples/coverage/README.md)。离线校验检查配置；容器测试检查 SDK 和工具执行；外部模型验收检查服务兼容性。

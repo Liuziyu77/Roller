@@ -1,6 +1,6 @@
 # OpenCode Harness
 
-Roller runs pinned [OpenCode](https://opencode.ai/docs/cli/) **1.18.30** in a disposable Docker container. Both Task Agents and User Simulators accept `"harness": "opencode"`. The adapter uses native noninteractive runs, session continuation, and exports.
+Roller uses a disposable Docker container with [OpenCode](https://opencode.ai/docs/cli/) pinned to 1.18.30. Both Task Agents and User Simulators accept `"harness": "opencode"`. The adapter uses native noninteractive runs, session continuation, and exports.
 
 ## Build and run
 
@@ -33,11 +33,11 @@ The image also prepares native plugin dependencies at build time. Each isolated 
 | `--wire-trace` | Native requests and schemas are captured in every mode; `full` adds HTTP records and requires an explicit API base and host networking |
 | `--no-keep-thinking` | Removes reasoning from ACTF/SFT only; native logs and continuation history are retained |
 
-Dedicated options apply to both participants. The run lock includes the binary version, image digest, endpoint, key variable name, tools, token limits, step limit, and export settings. Credentials are read during execution and are not included in public configuration.
+OpenCode-specific options apply to both the Task Agent and the Simulator. The run lock includes the binary version, image digest, endpoint, key variable name, tools, token limits, step limit, and export settings. Credentials are read during execution and are not included in public configuration.
 
 ## Sessions and artifacts
 
-Each participant gets an independent container and HOME/XDG directories. Inputs are mounted read-only. Context files are copied to declared paths and listed in the prompt. Setup, selected environment variables, output collection, and in-container grading use the shared Roller task contract.
+Each participant gets an independent container and HOME/XDG directories. Inputs are mounted read-only. Context files are copied to declared paths and listed in the prompt. Setup, selected environment variables, output collection, and in-container grading use the same Roller task settings as other Harnesses.
 
 The adapter permits bash, read, write, edit, apply_patch, glob, and grep; native model selection determines which tools are exposed. Each user turn resumes the same native session and workspace with a new CLI process. Background process handles do not survive. Auto-sharing, updates, model catalog refresh, LSP, formatters, compaction, pruning, and implicit project configuration are disabled. Context/skill coverage checks file accessibility; skill tools, MCP, subagents, and network tools are outside the initial scope.
 
@@ -57,4 +57,4 @@ ROLLER_OPENCODE_DOCKER_TEST=1 PYTHONPATH=src \
 
 Docker tests use a deterministic local streaming API and a fake key while executing real OpenCode tools. No external model charges are incurred. The suite adds 204 input tasks and 36 simulator tasks, four per group. Select 200 nonvision inputs with `--case '*/opencode' --exclude-case 'vision/*'`. Select the nine relevant pairings with `--case 'simulators/pair/opencode--*' --case 'simulators/pair/*--opencode'`; overlaps are deduplicated. See the [coverage guide](../../../examples/coverage/README.en.md).
 
-Direct multimodal messages, visual acceptance, native account/OAuth login, custom provider SDKs, MCP, subagents, and persistent memory are not supported. Vision groups document a capability boundary and are optional. Long tasks need enough configured context because automatic compaction is disabled.
+Direct multimodal messages, visual acceptance, native account/OAuth login, custom provider SDKs, MCP, subagents, and persistent memory are not supported. Vision groups document unsupported visual inputs and are optional. Long tasks need enough configured context because automatic compaction is disabled.
