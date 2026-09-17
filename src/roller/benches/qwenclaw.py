@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import logging
@@ -29,6 +30,10 @@ FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n(.*)$", re.DOTALL)
 SECTION_RE = re.compile(r"^##\s+(.+)$")
 PYTHON_FENCE_RE = re.compile(r"```python\s*\n(.*?)\n\s*```", re.DOTALL)
 TASK_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*")
+IMPORT_LINE_RE = re.compile(
+    r"^(?P<indent>[ \t]*)import\s+(?P<names>[A-Za-z0-9_., \t]+)$",
+    re.MULTILINE,
+)
 
 DATASET_DIR_NAME = "qwenclawbench-v1.1-100"
 WORKSPACE_CONTAINER_PATH = "/home/node/workspace"
@@ -631,8 +636,30 @@ def roller_grade(transcript, workspace_path):
 """
 
 
+def _remove_unused_yaml_import(code: str) -> str:
+    tree = ast.parse(code)
+    if any(
+        isinstance(node, ast.Name)
+        and node.id == "yaml"
+        and isinstance(node.ctx, ast.Load)
+        for node in ast.walk(tree)
+    ):
+        return code
+
+    def remove_yaml(match: re.Match[str]) -> str:
+        names = [name.strip() for name in match.group("names").split(",")]
+        if "yaml" not in names:
+            return match.group(0)
+        names.remove("yaml")
+        if not names:
+            return ""
+        return f"{match.group('indent')}import {', '.join(names)}"
+
+    return IMPORT_LINE_RE.sub(remove_yaml, code)
+
+
 def build_grader_source(task: QwenClawTask) -> str:
-    automated = task.automated_code
+    automated = _remove_unused_yaml_import(task.automated_code)
     runtime = (
         _GRADER_RUNTIME.replace("__ROLLER_GRADING_TYPE__", repr(task.grading_type))
         .replace("__ROLLER_PROMPT__", repr(task.prompt))
