@@ -188,3 +188,7 @@ completed `runs_per_task` for every upstream task.
   destinations to prevent asset escape.
 - The adapter fixes `overall_score` to penalized scoring. It does not expose
   upstream `--simple-scoring`; `score_simple` is retained for diagnostics.
+
+## 7. Evaluation reports
+
+- [Full evaluation of DeepSeek V4 Flash and GLM-5.2 (2026-09-17)](qwenclawbench-evaluation-2026-09-17.md)

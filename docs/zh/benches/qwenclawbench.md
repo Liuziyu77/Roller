@@ -173,3 +173,7 @@ roller bench report /tmp/qcb-runs/local-qwen --output /tmp/qcb-report.json
 - 导出 workspace 会拒绝绝对路径、`..`、符号链接和目标路径冲突，避免资产逃逸。
 - 当前 Adapter 固定使用惩罚式 `overall_score`，不提供上游 `--simple-scoring` 开关；
   `score_simple` 仅作为诊断值保留。
+
+## 7. 评测报告
+
+- [DeepSeek V4 Flash 与 GLM-5.2 全量评测（2026-09-17，英文）](../../en/benches/qwenclawbench-evaluation-2026-09-17.md)
