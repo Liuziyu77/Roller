@@ -114,6 +114,21 @@ def _message_event(raw: Any) -> dict[str, Any] | None:
     return message if isinstance(message, dict) else None
 
 
+def _is_empty_terminal_placeholder(step: dict[str, Any]) -> bool:
+    assistant = step.get("assistant_content")
+    metric = step.get("metric")
+    return (
+        not step.get("user_content")
+        and isinstance(assistant, dict)
+        and not assistant.get("content")
+        and not assistant.get("reasoning_content")
+        and not assistant.get("tool_calls")
+        and not step.get("observation")
+        and isinstance(metric, dict)
+        and metric.get("stop_reason") in {"aborted", "error"}
+    )
+
+
 def _read_events(path: Path) -> list[dict[str, Any]]:
     events: list[dict[str, Any]] = []
     with path.open("r", encoding="utf-8", errors="replace") as stream:
@@ -267,8 +282,18 @@ def openclaw_events_to_actf(
         None,
     )
     finish_current(last_time)
+    dropped_terminal_placeholder = False
+    while steps and _is_empty_terminal_placeholder(steps[-1]):
+        steps.pop()
+        dropped_terminal_placeholder = True
     started_at = steps[0]["started_at"] if steps else first_time or ""
-    finished_at = steps[-1]["finished_at"] if steps else last_time or started_at
+    finished_at = (
+        last_time
+        if dropped_terminal_placeholder and last_time
+        else steps[-1]["finished_at"]
+        if steps
+        else last_time or started_at
+    )
     return {
         "schema_version": "ACTF_v1.0",
         "system_prompt": system_prompt,

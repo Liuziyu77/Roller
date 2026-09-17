@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterator
 
+from roller.benches.base import binding_from_task_row
 from roller.external_thinking import external_thinking_mode_from_metadata
 from roller.harnesses.base import Harness
 from roller.integrity import validate_resumable_sample
@@ -152,6 +153,7 @@ class Collector:
             "trace_ACTF.json",
             "trace_SFT.json",
             "signature_recovery.jsonl",
+            "opencode_export.raw.json",
             "info.json",
             "results",
             "conversation.json",
@@ -214,8 +216,13 @@ class Collector:
                     request.task.id,
                     request.model,
                 )
-                final.status = "error"
-                final.error = f"trajectory conversion failed: {exc}"
+                conversion_error = f"trajectory conversion failed: {exc}"
+                metadata["trajectory_conversion_error"] = str(exc)
+                if final.status == "ok":
+                    final.status = "error"
+                    final.error = conversion_error
+                elif not final.error:
+                    final.error = conversion_error
         if attempts and attempts[-1].get("status") != final.status:
             attempts[-1]["status"] = final.status
             attempts[-1]["error"] = final.error
@@ -265,9 +272,43 @@ class Collector:
             },
             "provenance": provenance,
         }
+        bench = metadata.get("bench")
+        score_path = sample_dir / "score.json"
+        if isinstance(bench, dict) and not score_path.is_file():
+            try:
+                atomic_write_json(score_path, bench)
+            except OSError as exc:
+                logger.warning(
+                    "[%s | %s] could not write score.json: %s",
+                    request.task.id,
+                    request.model,
+                    exc,
+                )
         self._prune_sample(sample_dir, keep_aux_traces=self.config.keep_aux_traces)
         atomic_write_json(sample_dir / "info.json", result)
         return result
+
+    @staticmethod
+    def _bench_failure_metadata(
+        request: RunRequest, message: str, elapsed_seconds: float
+    ) -> dict[str, Any]:
+        raw = request.task.raw
+        binding = binding_from_task_row(dict(raw)) if raw else None
+        if binding is None or binding.grade is None:
+            return {}
+        return {
+            "bench": {
+                "bench": binding.name,
+                "category": binding.category,
+                "metadata": dict(binding.metadata),
+                "task_id": request.task.id,
+                "model": request.model,
+                "score_key": binding.grade.score_key,
+                "elapsed_seconds": round(elapsed_seconds, 3),
+                "error": message,
+                "scores": {"overall_score": 0.0, "error": message},
+            }
+        }
 
     def _run_one(self, request: RunRequest, worker_slot: int) -> dict[str, Any]:
         sample_dir = self._sample_dir(request)
@@ -292,14 +333,18 @@ class Collector:
         final = HarnessResult.error_result("harness did not run")
         harness_name = "unknown"
         for attempt in range(1, self.config.retries + 2):
-            harness = self._make_harness(worker_slot, request)
-            harness_name = getattr(harness, "name", "unknown")
             attempt_start = time.perf_counter()
             try:
+                harness = self._make_harness(worker_slot, request)
+                harness_name = getattr(harness, "name", "unknown")
                 final = harness.run(request, sample_dir, attempt)
             except Exception as exc:
                 logger.exception("[%s | %s] harness exception", request.task.id, request.model)
-                final = HarnessResult.error_result(str(exc), time.perf_counter() - attempt_start)
+                elapsed = time.perf_counter() - attempt_start
+                final = HarnessResult.error_result(str(exc), elapsed)
+                final.metadata = self._bench_failure_metadata(
+                    request, str(exc), elapsed
+                )
             attempt_rows.append(
                 {
                     "attempt": attempt,

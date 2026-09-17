@@ -173,6 +173,27 @@ class CodexHarnessTests(unittest.TestCase):
         )
         proxy.start.assert_called_once_with()
 
+    def test_failed_turn_still_records_user_message_for_trace_conversion(self) -> None:
+        harness = CodexHarness(CodexConfig(wire_trace_mode="off"), 0)
+        with tempfile.TemporaryDirectory() as temporary:
+            session = harness.create_session(
+                self._request(),
+                Path(temporary),
+                1,
+            )
+            session.started = True
+            session.container_started = True
+            with patch.object(
+                harness,
+                "_run_turn",
+                side_effect=RuntimeError("turn failed"),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "turn failed"):
+                    session.send("hello", 30)
+
+        self.assertEqual(session.messages, ["hello"])
+        self.assertEqual(session._pending_message, "")
+
     def test_wire_proxy_shutdown_redacts_sensitive_body_fields(self) -> None:
         harness = CodexHarness(CodexConfig(), 0)
         with tempfile.TemporaryDirectory() as temporary:

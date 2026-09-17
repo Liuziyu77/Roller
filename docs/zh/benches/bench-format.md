@@ -173,8 +173,8 @@ class MyBenchAdapter(BenchAdapter):
         return rows
 ```
 
-然后在 `src/roller/benches/__init__.py` 的注册表里加一行。可选覆盖 `categories()`
-和 `aggregate()`（要匹配上游报法时才需要）。
+然后在 `src/roller/benches/__init__.py` 的注册表里加一行。可选覆盖 `categories()`、
+`aggregate()`，以及需要按任务替换执行镜像或工作目录时使用的 `wrap_harness()`。
 
 几条经验：
 
@@ -227,7 +227,8 @@ roller bench report runs/<run-name>
 roller bench report runs/<run-name> --output report.json
 ```
 
-`--category` 和 `--task-id` 都可重复。`--task-timeouts` 是 bench 跑的关键：
+`--category` 和 `--task-id` 都可重复。`--runs-per-task N` 为每个选中的上游任务
+生成 N 行独立 rollout，并保留原始 task id 和运行序号。`--task-timeouts` 是 bench 跑的关键：
 bench 的每个任务自带超时（WildClawBench 实测有 300/360/600/900/1200 五档），
 而 `build_requests` 平时只吃一个全局 `--timeout`；不加这个开关，
 短任务会被给过多时间、长任务会被墙钟砍掉，砍掉的样子跟模型不会做很像。

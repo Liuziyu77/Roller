@@ -201,8 +201,8 @@ class MyBenchAdapter(BenchAdapter):
 ```
 
 Then add one line to the registry in `src/roller/benches/__init__.py`. Optionally
-override `categories()` and `aggregate()` (only when you need to match the
-upstream reporting method).
+override `categories()`, `aggregate()`, and `wrap_harness()` when a task must
+replace the execution image or workspace.
 
 A few lessons:
 
@@ -269,7 +269,9 @@ roller bench report runs/<run-name>
 roller bench report runs/<run-name> --output report.json
 ```
 
-`--category` and `--task-id` can both be repeated. `--task-timeouts` is the key
+`--category` and `--task-id` can both be repeated. `--runs-per-task N` emits
+N independent rollout rows for each selected upstream task while preserving
+the original task id and run index. `--task-timeouts` is the key
 switch for a bench run: each bench task carries its own timeout (WildClawBench
 has five measured values: 300/360/600/900/1200), while `build_requests`
 normally consumes only one global `--timeout`. Without this flag, short tasks

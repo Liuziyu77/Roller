@@ -41,7 +41,19 @@ Each participant gets an independent container and HOME/XDG directories. Inputs 
 
 The adapter permits bash, read, write, edit, apply_patch, glob, and grep; native model selection determines which tools are exposed. Each user turn resumes the same native session and workspace with a new CLI process. Background process handles do not survive. Auto-sharing, updates, model catalog refresh, LSP, formatters, compaction, pruning, and implicit project configuration are disabled. Context/skill coverage checks file accessibility; skill tools, MCP, subagents, and network tools are outside the initial scope.
 
-A local plugin records the serialized provider request without rewriting it. `trace.jsonl` contains requests, native message/part updates, and session exports. ACTF merges native IDs and captures actual tool schemas, visible reasoning, tool calls, and results. Incomplete or empty replies, API errors, truncated replies, invalid journals, changing/missing schemas, and nontext attachments fail explicitly. Timeout recovery preserves available artifacts and removes the container.
+A local plugin records the serialized provider request without rewriting it.
+`trace.jsonl` contains requests, native message/part updates, and session
+exports. ACTF merges native IDs and captures actual tool schemas, visible
+reasoning, tool calls, and results. `opencode_export.raw.json` also preserves
+the raw stdout from `opencode export` for diagnosing truncated or malformed CLI
+exports.
+
+If `opencode export` returns malformed JSON, Roller recovers from the journal
+only when the CLI itself succeeded and the journal strictly reconstructs a
+non-empty reply for the same session ending in `stop` or `end-turn`. Incomplete
+journals, API errors, truncated replies, changing or missing tool schemas, and
+nontext attachments still fail explicitly. Timeout recovery preserves
+available artifacts and removes the container.
 
 OpenCode emits no OpenClaw cache trace. Resume validates each participant separately; full mode still requires HTTP traces, and `capture: none` remains non-reusable.
 

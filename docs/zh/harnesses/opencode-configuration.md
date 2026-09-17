@@ -44,9 +44,17 @@ Dockerfile 默认基础镜像为 `python:3.12-slim-bookworm`。可以通过 `--b
 
 ## 轨迹、错误和 Resume
 
-本地插件在 provider 的 fetch 边界记录实际序列化请求，不改写请求或响应。`trace.jsonl` 保存这些请求、原生 message/part 事件及会话导出；ACTF 根据原生 ID 合并更新，保留多轮对话、reasoning、工具调用和结果。工具 schema 来自真实请求，不根据参数猜测。
+本地插件在 provider 的 fetch 边界记录实际序列化请求，不改写请求或响应。`trace.jsonl`
+保存这些请求、原生 message/part 事件及会话导出；ACTF 根据原生 ID 合并更新，保留多轮
+对话、reasoning、工具调用和结果。工具 schema 来自真实请求，不根据参数猜测。
+`opencode_export.raw.json` 额外保存 `opencode export` 的原始 stdout，便于定位 CLI
+导出截断或损坏。
 
-不完整会话、空回复、API 错误、截断回复、缺失或变化的工具 schema、损坏的 JSONL、非文本附件会触发失败，raw 保留用于排查。超时会停止容器执行并尝试回收已有轨迹和文件。输出继续经过统一的文件安全检查。
+如果 `opencode export` 返回损坏的 JSON，但 CLI 本身成功且原生 journal 能严格重建出
+同一 session 中已完成、以 `stop/end-turn` 结束的非空回复，Roller 会从 journal 恢复
+本轮结果。journal 不完整、API 错误、截断回复、缺失或变化的工具 schema、损坏的
+JSONL、非文本附件仍会触发失败，不会被降级逻辑掩盖。超时会停止容器执行并尝试回收
+已有轨迹和文件。
 
 OpenCode 不生成 OpenClaw cache trace，混合 Resume 按参与者的实际 Harness 判断；`full` 仍要求 wire trace，`capture: none` 仍不可复用。
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 
 from roller.actf import openclaw_events_to_actf
-from roller.sft import actf_to_sft
+from roller.sft import SFTConversionError, actf_to_sft
 
 
 def _events() -> list[dict]:
@@ -124,6 +124,69 @@ class ActfConversionTests(unittest.TestCase):
 
         kept = openclaw_events_to_actf(_events(), keep_thinking=True)
         self.assertEqual(kept["steps"][0]["assistant_content"]["reasoning_content"], "inspect")
+
+    def test_drops_only_trailing_aborted_empty_assistant_placeholder(self) -> None:
+        events = [
+            *_events(),
+            {
+                "type": "message",
+                "timestamp": 2200,
+                "message": {
+                    "role": "assistant",
+                    "content": [],
+                    "stopReason": "aborted",
+                },
+            },
+        ]
+
+        trajectory = openclaw_events_to_actf(
+            events,
+            tools=[
+                {
+                    "type": "function",
+                    "function": {"name": "read", "parameters": {}},
+                }
+            ],
+        )
+
+        self.assertEqual(len(trajectory["steps"]), 2)
+        self.assertEqual(trajectory["finished_at"], "1970-01-01 00:00:02.200000")
+        self.assertEqual(
+            [message["role"] for message in actf_to_sft(trajectory)["messages"]],
+            ["system", "user", "assistant", "tool", "user", "assistant"],
+        )
+
+    def test_keeps_nonterminal_empty_assistant_for_validation(self) -> None:
+        events = [
+            *_events()[:4],
+            {
+                "type": "message",
+                "timestamp": 1300,
+                "message": {
+                    "role": "assistant",
+                    "content": [],
+                    "stopReason": "aborted",
+                },
+            },
+            *_events()[4:],
+        ]
+
+        trajectory = openclaw_events_to_actf(
+            events,
+            tools=[
+                {
+                    "type": "function",
+                    "function": {"name": "read", "parameters": {}},
+                }
+            ],
+        )
+
+        self.assertEqual(len(trajectory["steps"]), 3)
+        with self.assertRaisesRegex(
+            SFTConversionError,
+            "empty assistant message",
+        ):
+            actf_to_sft(trajectory)
 
     def test_cli_delivery_copy_excluded_from_steps_and_sft(self) -> None:
         reply_usage = {"input": 15, "output": 1}

@@ -119,6 +119,12 @@ def _build_parser() -> argparse.ArgumentParser:
         default=[],
         help="restrict to a task id (repeatable)",
     )
+    bench_export.add_argument(
+        "--runs-per-task",
+        type=int,
+        default=1,
+        help="duplicate each selected task for repeated benchmark runs (default: 1)",
+    )
 
     bench_report = bench_sub.add_parser(
         "report", help="aggregate bench scores from a finished run"
@@ -1097,7 +1103,11 @@ def _collect(args: argparse.Namespace) -> int:
                 if binding is not None and binding.grade is not None:
                     # Grading has to read the container the agent just wrote to,
                     # so it runs inside the session rather than after teardown.
-                    return GradedHarness(agent, binding)
+                    try:
+                        adapter = get_bench(binding.name)
+                    except KeyError:
+                        return GradedHarness(agent, binding)
+                    return adapter.wrap_harness(agent, binding)
                 spec = request.task.user_simulator
                 if spec is None:
                     return agent
@@ -1154,6 +1164,32 @@ def _bench(args: argparse.Namespace) -> int:
         )
         if not rows:
             raise TaskFormatError(f"{adapter.name}: selection matched no tasks")
+        if args.runs_per_task < 1:
+            raise TaskFormatError("--runs-per-task must be positive")
+        if args.runs_per_task > 1:
+            repeated: list[dict[str, Any]] = []
+            for row in rows:
+                upstream_task_id = row.get("id")
+                if not isinstance(upstream_task_id, str) or not upstream_task_id:
+                    raise TaskFormatError(
+                        f"{adapter.name}: exported task has no valid id"
+                    )
+                for run_index in range(1, args.runs_per_task + 1):
+                    clone = json.loads(json.dumps(row))
+                    clone["id"] = (
+                        f"{upstream_task_id}__run_{run_index:02d}"
+                    )
+                    bench = clone.setdefault("bench", {})
+                    metadata = bench.setdefault("metadata", {})
+                    metadata.update(
+                        {
+                            "upstream_task_id": upstream_task_id,
+                            "run_index": run_index,
+                            "runs_per_task": args.runs_per_task,
+                        }
+                    )
+                    repeated.append(clone)
+            rows = repeated
         output = Path(args.output).expanduser().resolve()
         output.parent.mkdir(parents=True, exist_ok=True)
         with output.open("w", encoding="utf-8") as handle:
@@ -1199,6 +1235,7 @@ def _bench_report(args: argparse.Namespace) -> int:
                 "bench_scores": payload.get("scores"),
                 "bench_score_key": payload.get("score_key"),
                 "bench_category": payload.get("category"),
+                "bench_metadata": payload.get("metadata"),
             }
         )
     if not rows:

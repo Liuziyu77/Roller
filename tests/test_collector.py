@@ -6,6 +6,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from roller.actf import convert_openclaw_trace
 from roller.collector import CollectionConfig, Collector
@@ -176,6 +177,39 @@ class CollectorTests(unittest.TestCase):
             self.assertEqual(len(dataset), 4)
             self.assertEqual(dataset[0], sft)
 
+    def test_sft_failure_does_not_overwrite_existing_harness_error(self) -> None:
+        class FailedHarness(FakeHarness):
+            def run(
+                self,
+                request: RunRequest,
+                output_dir: Path,
+                attempt: int,
+            ) -> HarnessResult:
+                result = super().run(request, output_dir, attempt)
+                result.status = "error"
+                result.error = "agent turn failed"
+                return result
+
+        with tempfile.TemporaryDirectory() as temporary:
+            state = self._state()
+            collector = Collector(
+                CollectionConfig(run_dir=Path(temporary) / "run"),
+                lambda slot: FailedHarness(state, slot),
+            )
+            with patch(
+                "roller.collector.write_sft",
+                side_effect=ValueError("empty terminal assistant"),
+            ):
+                result = collector.collect(make_requests()[:1])[0]
+
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["error"], "agent turn failed")
+        self.assertEqual(result["attempts"][-1]["error"], "agent turn failed")
+        self.assertEqual(
+            result["runtime"]["trajectory_conversion_error"],
+            "empty terminal assistant",
+        )
+
     def test_retries_then_resumes_completed_samples(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             run_dir = Path(temporary) / "run"
@@ -196,6 +230,77 @@ class CollectorTests(unittest.TestCase):
             ).collect(requests)
             self.assertEqual(resumed[0]["status"], "skipped")
             self.assertEqual(state["calls"][("task-0", "provider/model")], 2)
+
+    def test_retries_harness_factory_failures(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            state = self._state()
+            factory_calls = 0
+
+            def factory(slot: int, request: RunRequest) -> FakeHarness:
+                nonlocal factory_calls
+                del request
+                factory_calls += 1
+                if factory_calls == 1:
+                    raise RuntimeError("image preparation failed")
+                return FakeHarness(state, slot)
+
+            result = Collector(
+                CollectionConfig(run_dir=Path(temporary) / "run", retries=1),
+                factory,
+            ).collect(make_requests()[:1])[0]
+
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(factory_calls, 2)
+        self.assertEqual(len(result["attempts"]), 2)
+        self.assertEqual(result["attempts"][0]["error"], "image preparation failed")
+
+    def test_factory_failure_keeps_bench_metadata_and_zero_score(self) -> None:
+        task = Task(
+            id="bench-task",
+            prompts=("hello",),
+            source_index=0,
+            raw={
+                "bench": {
+                    "name": "fake-bench",
+                    "category": "demo",
+                    "metadata": {"upstream_task_id": "source-task"},
+                    "grade": {"code": "def grade(workspace_path): return {}"},
+                }
+            },
+        )
+        request = RunRequest(
+            index=0,
+            task=task,
+            model="provider/model",
+            timeout_seconds=30,
+        )
+        factory_calls = 0
+
+        def factory(slot: int, current: RunRequest) -> FakeHarness:
+            nonlocal factory_calls
+            del slot, current
+            factory_calls += 1
+            raise RuntimeError("image preparation failed")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            run_dir = Path(temporary) / "run"
+            result = Collector(
+                CollectionConfig(run_dir=run_dir, retries=1),
+                factory,
+            ).collect([request])[0]
+            score = json.loads(
+                next((run_dir / "samples").glob("*/*/score.json")).read_text()
+            )
+
+        self.assertEqual(factory_calls, 2)
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(len(result["attempts"]), 2)
+        self.assertEqual(result["runtime"]["bench"]["bench"], "fake-bench")
+        self.assertEqual(
+            result["runtime"]["bench"]["metadata"]["upstream_task_id"],
+            "source-task",
+        )
+        self.assertEqual(score["scores"]["overall_score"], 0.0)
 
     def test_resume_reruns_sample_when_canonical_sft_is_corrupt(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

@@ -345,6 +345,10 @@ OpenClaw session 文件与模型请求 context 不是同一层：session 保存�
 处理以及 provider 协议适配。因此 `trace.jsonl` 中存在的消息不保证逐字进入每次请求；
 ACTF/SFT 又是从该 session 文件投影，也不能证明模型当时看到了哪些完整历史。
 
+若上游连接中断后仅留下末尾 `aborted/error` 的空 assistant 占位事件，ACTF 会丢弃该
+无语义终止 step，使此前完整步骤仍可导出 SFT。原始事件继续保留在 `trace.jsonl`，
+sample 也继续保留原始 Agent 错误；非末尾空消息不会被静默忽略。
+
 需要审计真实请求 context 时使用 `full`。代理位于 OpenClaw provider adapter 和真实模型
 API 之间；对合法 JSON，它在可选的历史 thinking 剥离之后记录与转发同一 request body。
 `wire_trace.jsonl` 因而保存 Roller 客户端实际交给上游 API 的 messages/input、tools 和
