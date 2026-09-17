@@ -14,6 +14,7 @@ from roller.benches.grading import GradedHarness, GradeOutcome
 from roller.benches.swebench_pro import (
     _DERIVED_IMAGES,
     _GRADER_SOURCE,
+    _image_id,
     SWEBenchProAdapter,
     SWEBenchProGradedHarness,
 )
@@ -119,7 +120,42 @@ class _FakeDockerRuntime:
         raise AssertionError(arguments)
 
 
+class _RetryingFakeDockerRuntime:
+    def __init__(self) -> None:
+        self.image_id = None
+        self.pull_attempts = 0
+
+    def run(self, args, timeout=None):
+        del timeout
+        arguments = list(args)
+        if arguments[:2] == ["image", "inspect"]:
+            return subprocess.CompletedProcess(
+                arguments,
+                0 if self.image_id else 1,
+                f"{self.image_id}\n" if self.image_id else "",
+                "",
+            )
+        if arguments[:1] == ["pull"]:
+            self.pull_attempts += 1
+            if self.pull_attempts == 3:
+                self.image_id = "sha256:source"
+                return subprocess.CompletedProcess(arguments, 0, "pulled\n", "")
+            return subprocess.CompletedProcess(arguments, 1, "", "unexpected EOF")
+        raise AssertionError(arguments)
+
+
 class SWEBenchProImageTests(unittest.TestCase):
+    @patch("roller.benches.swebench_pro.time.sleep")
+    def test_image_pull_retries_transient_failures(self, sleep) -> None:
+        runtime = _RetryingFakeDockerRuntime()
+
+        self.assertEqual(
+            _image_id(runtime, "registry.example/source:latest"),
+            "sha256:source",
+        )
+        self.assertEqual(runtime.pull_attempts, 3)
+        self.assertEqual([call.args[0] for call in sleep.call_args_list], [15, 30])
+
     def test_wrap_openclaw_builds_instance_image(self) -> None:
         suffix = uuid.uuid4().hex
         source = f"registry.example/source:{suffix}"

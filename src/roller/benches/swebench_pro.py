@@ -39,6 +39,8 @@ GRADE_TIMEOUT_SECONDS = 3600
 TEST_TIMEOUT_SECONDS = 3300
 SOURCE_IMAGE_PREFIX = "jefzda/sweap-images:"
 BASELINE_REF = "refs/roller/baseline"
+IMAGE_PULL_ATTEMPTS = 5
+IMAGE_PULL_RETRY_SECONDS = 15
 
 _IMAGE_REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/@:+-]*$")
 _INSTANCE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
@@ -489,14 +491,39 @@ def _image_id(runtime: Any, image: str) -> str:
         ["image", "inspect", image, "--format", "{{.Id}}"], timeout=60
     )
     if inspected.returncode != 0:
-        logger.info("pulling SWE-Bench Pro runtime image %s", image)
-        pulled = runtime.run(["pull", image], timeout=3600)
-        if pulled.returncode != 0:
-            detail = (pulled.stderr or pulled.stdout or "").strip()[-2000:]
+        detail = ""
+        for attempt in range(1, IMAGE_PULL_ATTEMPTS + 1):
+            logger.info(
+                "pulling SWE-Bench Pro runtime image %s (attempt %s/%s)",
+                image,
+                attempt,
+                IMAGE_PULL_ATTEMPTS,
+            )
+            try:
+                pulled = runtime.run(["pull", image], timeout=3600)
+            except subprocess.TimeoutExpired as exc:
+                detail = str(exc)
+            else:
+                detail = (pulled.stderr or pulled.stdout or "").strip()[-2000:]
+            inspected = runtime.run(
+                ["image", "inspect", image, "--format", "{{.Id}}"], timeout=60
+            )
+            if inspected.returncode == 0 and inspected.stdout.strip():
+                break
+            if attempt < IMAGE_PULL_ATTEMPTS:
+                delay = min(
+                    IMAGE_PULL_RETRY_SECONDS * (2 ** (attempt - 1)),
+                    120,
+                )
+                logger.warning(
+                    "Docker image pull failed for %s; retrying in %ss: %s",
+                    image,
+                    delay,
+                    detail,
+                )
+                time.sleep(delay)
+        else:
             raise RuntimeError(f"could not pull Docker image {image}: {detail}")
-        inspected = runtime.run(
-            ["image", "inspect", image, "--format", "{{.Id}}"], timeout=60
-        )
     if inspected.returncode != 0 or not inspected.stdout.strip():
         detail = (inspected.stderr or inspected.stdout or "").strip()[-1000:]
         raise RuntimeError(f"could not inspect Docker image {image}: {detail}")
