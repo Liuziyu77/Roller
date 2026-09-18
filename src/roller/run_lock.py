@@ -113,9 +113,12 @@ def build_run_lock(
         locked_requests.append(
             {
                 "request_index": request.index,
+                "sample_index": request.sample_index,
+                "sample_count": request.sample_count,
                 "source_index": request.task.source_index,
                 "task_id": request.task.id,
                 "model": request.model,
+                "model_label": request.display_model,
                 "task_harness": getattr(request.task, "harness", "openclaw"),
                 "timeout_seconds": request.timeout_seconds,
                 "user_simulator": (

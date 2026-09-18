@@ -21701,12 +21701,12 @@
           "inputs": [
             {
               "source": "tiny/1.txt",
-              "target": "renamed.txt"
+              "target": "../renamed.txt"
             }
           ]
         }
       },
-      "error_contains": "no longer supported",
+      "error_contains": "parent traversal",
       "case": "negative/paths"
     },
     {

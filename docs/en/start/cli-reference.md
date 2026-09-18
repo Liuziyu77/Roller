@@ -46,10 +46,13 @@ These flags apply to all seven Harnesses:
 | --- | --- | --- |
 | `--tasks PATH` | Required | JSON or JSONL task list |
 | `--model MODEL` | task `model` | Repeatable; run every listed model for each task |
+| `--model-label LABEL` | Served model ID | Safe local label for sample directories and container names; requires one resolved model and does not alter the ID sent upstream |
 | `--harness NAME` | task `harness` or `openclaw` | `openclaw`, `codex`, `claude-code`, `hermes`, `opencode`, `deepseek`, or `pi`; when set explicitly, overrides the Task Agent field for the whole run |
 | `--docker-image IMAGE` | Default image for that Harness | Global image override; mixed participants can set `--openclaw-image`, `--codex-image`, `--claude-code-image`, `--hermes-image`, `--opencode-image`, `--deepseek-image`, and `--pi-image` separately |
 | `--api-base URL` / `--api-key-env NAME` | Harness-specific defaults | Legacy-compatible; mixed runs can set `--codex-api-base`, `--claude-api-base`, `--hermes-api-base`, `--opencode-api-base`, `--deepseek-api-base`, `--pi-api-base`, and the matching `*-api-key-env` separately |
 | `--parallel N` | `1` | Maximum parallel rollouts; must be at least 1 |
+| `--grader-parallel N` | `--parallel` | Maximum concurrent graders; lower it independently for a loaded judge service |
+| `--samples N` | `3` for SkillsBench; `1` otherwise | Independent repetitions per task/model pair, each in its own sample directory |
 | `--retries N` | `0` | Extra attempts after the first failure |
 | `--timeout SECONDS` | `600` | Total timeout per rollout; must be greater than 0 |
 | `--task-timeouts` | Off | Use each task's own `timeout_seconds`, falling back to `--timeout` when missing. Bench runs usually must enable this; see [Bench integration and scoring](../benches/bench-format.md#7-cli) |
@@ -85,7 +88,7 @@ These flags are shared by all seven Harnesses, but allowed values and semantics 
 | `--thinking LEVEL` | Unset | Harness reasoning/thinking level |
 | `--keep-thinking` / `--no-keep-thinking` | On | Whether ACTF/SFT export reasoning; for OpenClaw also controls stripping it from request history |
 | `--wire-trace MODE` | `actf` | `off`, `actf`, or `full` |
-| `--keep-container-on-error` | Off | Keep the one-shot container on failure for debugging |
+| `--keep-container-on-error` | Off | Keep the stopped one-shot container on failure without holding its gateway port |
 
 Parsed values for `--thinking`:
 
@@ -189,9 +192,16 @@ Listening on `0.0.0.0` exposes trajectory contents to the network. For remote ac
 
 ```bash
 roller bench list
-roller bench export NAME ROOT --output TASKS.jsonl [--category CAT]... [--task-id ID]...
+roller collect --bench NAME --bench-root ROOT [--bench-category CAT]... [--bench-task-id ID]... [--bench-variant NAME] [--bench-timeout-multiplier N] ...
+roller bench export NAME ROOT --output TASKS.jsonl [--category CAT]... [--task-id ID]... [--variant NAME] [--timeout-multiplier N]
 roller bench report RUN_DIR [--output REPORT.json]
 ```
+
+Prefer `collect --bench`: one command converts tasks, runs containers, grades, and
+aggregates, saving `tasks.jsonl` and `bench-report.json` in the run directory. It
+automatically honors each benchmark task's timeout. `--bench-category` and
+`--bench-task-id` are repeatable; `--bench-variant` and
+`--bench-timeout-multiplier` correspond to the export flags below.
 
 | Flag | Default | Description |
 | --- | --- | --- |
@@ -200,10 +210,13 @@ roller bench report RUN_DIR [--output REPORT.json]
 | `--output` / `-o` | Required for export | Task JSONL written by export; optional report JSON for report |
 | `--category CAT` | Unlimited | Export only this category; repeatable |
 | `--task-id ID` | Unlimited | Export only this task; repeatable; a wrong id errors instead of being skipped silently |
+| `--variant NAME` | Adapter default | Select a bench condition, such as SkillsBench `with-skill` / `no-skill` |
 | `RUN_DIR` | Required | Completed run directory; a **positional argument** (not `--run`) |
 
 `bench export` only translates; it does not run any task, go online, or start a container.
-When collecting, pass `--task-timeouts` and use `--pass-env` for variables the grader needs.
+`--timeout-multiplier` must be finite and positive and scales each task's own timeout at export time.
+For the manual export + collect workflow, remember `--task-timeouts` on collect. Both
+workflows use `--pass-env` to pass through variables the grader needs.
 
 Field semantics, scoring timeline, `stage` leak-prevention rules, and aggregation rules are in [Bench integration and scoring](../benches/bench-format.md).
 
@@ -226,9 +239,9 @@ Hermes accepts `off/minimal/low/medium/high/xhigh` thinking hints, subject to na
 | `--opencode-image` | `roller-opencode:1.18.30` |
 | `--opencode-api-base` | `--api-base` / `OPENAI_BASE_URL` |
 | `--opencode-api-key-env` | `--api-key-env` / `OPENAI_API_KEY` |
-| `--opencode-max-steps` | 12 |
+| `--opencode-max-steps` | `100` for SkillsBench; `12` otherwise |
 | `--opencode-context-length` | 128000 |
-| `--opencode-output-tokens` | 8192 |
+| `--opencode-output-tokens` | 32768 for SkillsBench, 8192 otherwise |
 
 See [native sessions, request capture, and limitations](../harnesses/opencode-configuration.md).
 

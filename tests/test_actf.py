@@ -125,6 +125,66 @@ class ActfConversionTests(unittest.TestCase):
         kept = openclaw_events_to_actf(_events(), keep_thinking=True)
         self.assertEqual(kept["steps"][0]["assistant_content"]["reasoning_content"], "inspect")
 
+    def test_tool_call_ids_are_namespaced_across_sessions(self) -> None:
+        first = _events()[:4]
+        second = [
+            {"type": "session", "id": "roller-2", "timestamp": 2000},
+            {
+                "type": "message",
+                "message": {"role": "user", "content": "second", "timestamp": 2100},
+            },
+            {
+                "type": "message",
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "toolCall",
+                            "id": "call-1",
+                            "name": "read",
+                            "arguments": {"path": "inputs/b.md"},
+                        }
+                    ],
+                    "stopReason": "toolUse",
+                    "timestamp": 2200,
+                },
+            },
+            {
+                "type": "message",
+                "message": {
+                    "role": "toolResult",
+                    "toolCallId": "call-1",
+                    "toolName": "read",
+                    "content": [{"type": "text", "text": "world"}],
+                    "timestamp": 2300,
+                },
+            },
+        ]
+
+        trajectory = openclaw_events_to_actf(
+            [*first, *second],
+            user_messages=("first", "second"),
+            tools=[{"type": "function", "function": {"name": "read"}}],
+        )
+
+        call_ids = [
+            step["assistant_content"]["tool_calls"][0]["id"]
+            for step in trajectory["steps"]
+        ]
+        observation_ids = [
+            step["observation"][0]["toolCallId"] for step in trajectory["steps"]
+        ]
+        self.assertEqual(call_ids, ["session-1:call-1", "session-2:call-1"])
+        self.assertEqual(observation_ids, call_ids)
+        self.assertEqual(
+            [
+                message["tool_call_id"]
+                for message in actf_to_sft(trajectory)["messages"]
+                if message["role"] == "tool"
+            ],
+            call_ids,
+        )
+
     def test_cli_delivery_copy_excluded_from_steps_and_sft(self) -> None:
         reply_usage = {"input": 15, "output": 1}
         events = [
@@ -195,6 +255,47 @@ class ActfConversionTests(unittest.TestCase):
         self.assertEqual(trajectory["steps"][1]["assistant_content"]["content"], "done")
         self.assertEqual(
             trajectory["steps"][1]["finished_at"], "1970-01-01 00:00:02.100000"
+        )
+
+    def test_empty_failed_attempt_and_automatic_retry_are_not_training_steps(self) -> None:
+        events = [
+            {"type": "session", "timestamp": "1970-01-01T00:00:00Z"},
+            {
+                "type": "message",
+                "message": {"role": "user", "content": "say ready", "timestamp": 1000},
+            },
+            {
+                "type": "message",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": ""}],
+                    "stopReason": "aborted",
+                    "errorMessage": "LLM idle timeout (120s)",
+                    "timestamp": 2000,
+                },
+            },
+            {
+                "type": "message",
+                "message": {"role": "user", "content": "say ready", "timestamp": 2100},
+            },
+            {
+                "type": "message",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "ready"}],
+                    "stopReason": "stop",
+                    "timestamp": 3000,
+                },
+            },
+        ]
+
+        trajectory = openclaw_events_to_actf(events, user_messages=("say ready",))
+        self.assertEqual(len(trajectory["steps"]), 1)
+        self.assertEqual(trajectory["steps"][0]["user_content"], "say ready")
+        self.assertEqual(trajectory["steps"][0]["assistant_content"]["content"], "ready")
+        self.assertEqual(
+            [message["role"] for message in actf_to_sft(trajectory)["messages"]],
+            ["system", "user", "assistant"],
         )
 
 

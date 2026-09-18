@@ -96,6 +96,36 @@ class TaskBundleTests(unittest.TestCase):
             self.assertEqual(bundles["a"].inputs_root, bundles["b"].inputs_root)
             self.assertEqual(len(list((root / "run" / "blobs" / "sha256").iterdir())), 1)
 
+    def test_materializes_renamed_and_inline_inputs(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "source.txt").write_text("source", encoding="utf-8")
+            task = load_tasks(
+                self._write_task(
+                    root,
+                    {
+                        "id": "inline",
+                        "prompt": "read",
+                        "files": {
+                            "inputs": [
+                                {"source": "source.txt", "target": "renamed.txt"},
+                                {"path": "nested/config.yaml", "content": "a: 1\n"},
+                            ],
+                            "input_mode": "copy",
+                        },
+                    },
+                )
+            )[0]
+            bundle = TaskBundleStore(root / "run").prepare(task)
+
+            self.assertEqual((bundle.inputs_root / "renamed.txt").read_text(), "source")
+            self.assertEqual(
+                (bundle.inputs_root / "nested" / "config.yaml").read_text(),
+                "a: 1\n",
+            )
+            manifest = json.loads(bundle.manifest_path.read_text())
+            self.assertEqual(manifest["files"]["input_mode"], "copy")
+
     def test_rejects_path_traversal_and_symlinks(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

@@ -123,7 +123,8 @@ Task Agent 的设置也可以集中写在一个对象中：
 }
 ```
 
-元素也可以直接写成字符串。对象形式目前只接受 `role: "user"`。
+元素也可以直接写成字符串。对象形式目前只接受 `role: "user"`。从第二条 message
+开始可加 `"new_session": true`：Roller 会保留同一容器和工作区，但清空会话历史后再发送该条消息。
 
 Roller 不从 Markdown 标题、分隔线或其他文本标记中推断轮次。一条 message 中即使含有 `## Round 1` 或 `---`，仍然只是一轮。
 
@@ -185,7 +186,12 @@ dataset/
       "inputs/brief.md",
       {
         "source": "inputs/documents",
+        "target": "reference/documents",
         "required": true
+      },
+      {
+        "path": "config/settings.yaml",
+        "content": "enabled: true\n"
       },
       {
         "source": "inputs/data.csv",
@@ -200,17 +206,21 @@ dataset/
 | 字段 | 默认值 | 说明 |
 | --- | --- | --- |
 | `source` | 无 | `file_root` 下的相对文件或目录路径 |
+| `target` / `path` | 与 `source` 相同 | Agent 工作区中的相对目标路径；内联内容必须提供 |
+| `content` | 无 | 直接内嵌的 UTF-8 文本；与 `source` 二选一 |
 | `required` | `true` | 缺失时是否在启动前报错 |
 | `sha256` | 无 | 可选的文件或目录内容校验值 |
 
-输入路径在 Agent 工作区中保持不变，不能通过 `target` 重命名。例如 `inputs/data.csv` 会出现在：
+默认情况下输入以只读方式提供；例如 `inputs/data.csv` 会出现在：
 
 ```text
 /tmp_workspace/inputs/data.csv
 /roller/task/inputs/inputs/data.csv
 ```
 
-第一条路径适合在 prompt 中直接引用；第二条是完整输入快照的稳定入口。文件和目录以只读方式提供给任务 Agent。
+第一条路径适合在 prompt 中直接引用；第二条是完整输入快照的稳定入口。
+需要让 Agent 原地修改 seed 文件时，在 `files` 中设置 `"input_mode": "copy"`；Roller 会先把
+完整输入树复制为工作区私有可写副本。默认值 `mount` 仍使用只读挂载。
 
 ## 6. Context 与系统文件
 
@@ -280,7 +290,9 @@ OpenClaw adapter 会把 Context 注入 `/root/<target>` 与 `/tmp_workspace/<tar
     "setup": [
       "python3 -m pip install -r inputs/requirements.txt"
     ],
-    "thinking": "high"
+    "thinking": "high",
+    "image": "my-task-image:latest",
+    "workspace_path": "/work"
   }
 }
 ```
@@ -290,6 +302,9 @@ OpenClaw adapter 会把 Context 注入 `/root/<target>` 与 `/tmp_workspace/<tar
 | `env` | Task 强制依赖的宿主机环境变量名；缺失或为空时 task 失败 |
 | `setup` | Agent 启动前在 `/tmp_workspace` 执行的 shell 命令 |
 | `thinking` | 覆盖本 task 的 Harness reasoning/thinking 设置；OpenClaw 见 [Thinking 配置](../harnesses/openclaw-configuration.md#5-thinkingsystem-prompt-与-wire-trace)，Codex 见 [Reasoning 配置](../harnesses/codex-configuration.md#4-reasoning-配置)，Claude Code 见 [Thinking 与 effort](../harnesses/claude-code-configuration.md#4-thinking-与-effort) |
+| `image` | 覆盖该 task 使用的容器镜像；主要供 bench adapter 生成 |
+| `workspace_path` | 覆盖该 task 在容器内的绝对工作目录 |
+| `image_build` | 可复现的 task 镜像构建定义；Roller 在 collect 前构建缺失镜像 |
 
 `env` 和 `setup` 都接受单个字符串或字符串数组。Task 作者应把 setup 当作可执行代码管理，只运行可信数据集中的命令。
 

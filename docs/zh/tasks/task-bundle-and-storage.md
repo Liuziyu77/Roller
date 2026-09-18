@@ -251,13 +251,14 @@ ACTF 文件直接保存 `ACTF_v1.0` trajectory object：
 - 当前 user message 写入 `user_content`。
 - OpenClaw usage 映射到 step `metric`。
 
-如果 Harness 成功结束但没有可用 raw trace，sample 会标记为 `error`。ACTF 转换失败同样不会被当作成功 sample。
+如果 Harness 成功结束但没有可用 raw trace，sample 会标记为 `error`。若可信的 OpenClaw/OpenCode 转换器无法把有效 raw 无损表示为 ACTF，或 ACTF 含有无法无损表示为纯文本 SFT 的内容，评测状态仍保持 `ok`；`runtime.trajectory_conversion` 会记录缺失层和错误，不会伪造产物。
 
 ### `trace_SFT.json` 与 `sft.jsonl`
 
 `trace_SFT.json` 由 ACTF 投影得到，顶层严格只有 `messages` 和 `tools`，不包含
 task/model、usage、时间戳或其他运行 metadata。Run 根目录的 `sft.jsonl` 按 request
-顺序汇总所有成功 task Agent，每行一个相同结构的 record。完整字段和校验规则见
+顺序汇总所有存在无损 SFT 的成功 task Agent，每行一个相同结构的 record。带有明确
+`runtime.trajectory_conversion` 降级标记的成功样本不会写入该文件。完整字段和校验规则见
 [SFT 数据格式](../traces/sft-format.md)。
 
 所有轨迹层、辅助文件、参数组合及失败/Resume 下的产出条件见
@@ -302,8 +303,8 @@ credential 与 pass-through environment 的值不会保存到锁，也不会触�
 
 1. 旧状态为 `ok`。
 2. sample 的 request/task/model identity 与当前请求一致。
-3. `trace.jsonl` 含有效 message，ACTF schema 正确且 step ID 从 1 连续。
-4. `trace_SFT.json` 与当前 ACTF 的 canonical SFT 投影完全一致。
+3. `trace.jsonl` 含有效 message；通常还要求 ACTF schema 正确且 step ID 从 1 连续。
+4. 通常 `trace_SFT.json` 与当前 ACTF 的 canonical SFT 投影完全一致。存在结构化 `trajectory_conversion` 降级时可以缺少 ACTF/SFT 或仅缺少 SFT；Resume 会校验所有已保留层以及该显式标记。
 5. 当前 Task Bundle digest 与旧 sample 一致，且 Context 没有使用 `capture=none`。
 6. 已记录的输出文件仍位于 `results/` 内，文件存在且大小一致。保存的 SHA-256 仍可用于
    深度审计；Resume 为避免重新读取大文件，只做路径、存在性和大小检查。

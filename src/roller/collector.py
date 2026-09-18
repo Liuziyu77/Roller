@@ -13,9 +13,12 @@ from pathlib import Path
 from typing import Any, Callable, Iterator
 
 from roller.harnesses.base import Harness
-from roller.integrity import validate_resumable_sample
+from roller.integrity import (
+    trajectory_conversion_unavailable,
+    validate_resumable_sample,
+)
 from roller.models import HarnessResult, RunRequest
-from roller.sft import write_sft
+from roller.sft import SFTConversionError, write_sft
 from roller.storage import atomic_write_json, safe_component, write_jsonl
 
 logger = logging.getLogger(__name__)
@@ -31,8 +34,10 @@ def _now() -> str:
 
 
 def _sample_directory(run_dir: Path, request: RunRequest) -> Path:
-    model_dir = safe_component(request.model)
+    model_dir = safe_component(request.display_model)
     task_dir = f"{request.task.source_index:08d}_{safe_component(request.task.id)}"
+    if request.sample_count > 1:
+        task_dir += f"__sample_{request.sample_index + 1:03d}"
     return run_dir / "samples" / model_dir / task_dir
 
 
@@ -215,7 +220,14 @@ class Collector:
         if trace_source is None and final.status == "ok":
             final.status = "error"
             final.error = "harness finished but no raw trace was found"
-        elif trajectory_source is None and final.status == "ok":
+        elif (
+            trajectory_source is None
+            and final.status == "ok"
+            and not (
+                harness_name in {"opencode", "openclaw"}
+                and trajectory_conversion_unavailable(metadata) == "actf"
+            )
+        ):
             final.status = "error"
             final.error = "harness finished but no canonical ACTF trajectory was found"
 
@@ -231,6 +243,19 @@ class Collector:
                 if not isinstance(trajectory, dict):
                     raise ValueError("canonical ACTF trajectory must be a JSON object")
                 write_sft(sft_path, trajectory)
+            except SFTConversionError as exc:
+                logger.warning(
+                    "[%s | %s] SFT export unavailable: %s",
+                    request.task.id,
+                    request.model,
+                    exc,
+                )
+                metadata["trajectory_conversion"] = {
+                    "status": "unavailable",
+                    "target": "sft",
+                    "error": str(exc),
+                }
+                sft_path.unlink(missing_ok=True)
             except Exception as exc:
                 logger.exception(
                     "[%s | %s] trajectory conversion failed",
@@ -259,9 +284,12 @@ class Collector:
         result = {
             "schema_version": "roller.sample/v1",
             "request_index": request.index,
+            "sample_index": request.sample_index,
+            "sample_count": request.sample_count,
             "task_id": request.task.id,
             "source_index": request.task.source_index,
             "model": request.model,
+            "model_label": request.display_model,
             "harness": harness_name,
             "status": final.status,
             "error": final.error,
@@ -299,9 +327,12 @@ class Collector:
             resumed.update(
                 {
                     "request_index": request.index,
+                    "sample_index": request.sample_index,
+                    "sample_count": request.sample_count,
                     "task_id": request.task.id,
                     "source_index": request.task.source_index,
                     "model": request.model,
+                    "model_label": request.display_model,
                 }
             )
             logger.info("[%s | %s] already complete; skipping", request.task.id, request.model)
@@ -368,10 +399,17 @@ class Collector:
         return totals
 
     def _sample_dir_from_result(self, result: dict[str, Any]) -> Path:
-        model = safe_component(str(result.get("model", "unknown")))
+        model = safe_component(
+            str(result.get("model_label", result.get("model", "unknown")))
+        )
         source_index = int(result.get("source_index", result.get("request_index", 0)))
         task = safe_component(str(result.get("task_id", "unknown")))
-        return self.run_dir / "samples" / model / f"{source_index:08d}_{task}"
+        task_dir = f"{source_index:08d}_{task}"
+        sample_count = int(result.get("sample_count", 1))
+        if sample_count > 1:
+            sample_index = int(result.get("sample_index", 0))
+            task_dir += f"__sample_{sample_index + 1:03d}"
+        return self.run_dir / "samples" / model / task_dir
 
     def _write_run_info(
         self,
@@ -404,8 +442,11 @@ class Collector:
                 "samples": [
                     {
                         "request_index": result.get("request_index"),
+                        "sample_index": result.get("sample_index", 0),
+                        "sample_count": result.get("sample_count", 1),
                         "task_id": result.get("task_id"),
                         "model": result.get("model"),
+                        "model_label": result.get("model_label", result.get("model")),
                         "status": result.get("status"),
                         "error": result.get("error"),
                         "path": self._sample_dir_from_result(result)
@@ -430,6 +471,11 @@ class Collector:
                 if result.get("status") not in {"ok", "skipped"}:
                     continue
                 path = self._sample_dir_from_result(result) / "trace_SFT.json"
+                runtime = result.get("runtime")
+                if trajectory_conversion_unavailable(
+                    runtime if isinstance(runtime, dict) else None
+                ) in {"actf", "sft"}:
+                    continue
                 try:
                     row = json.loads(path.read_text(encoding="utf-8"))
                 except (OSError, json.JSONDecodeError) as exc:
@@ -470,9 +516,12 @@ class Collector:
             result = {
                 "schema_version": "roller.sample/v1",
                 "request_index": request.index,
+                "sample_index": request.sample_index,
+                "sample_count": request.sample_count,
                 "source_index": request.task.source_index,
                 "task_id": request.task.id,
                 "model": request.model,
+                "model_label": request.display_model,
                 "harness": "unknown",
                 "status": "error",
                 "error": str(exc),

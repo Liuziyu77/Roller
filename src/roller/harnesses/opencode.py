@@ -17,7 +17,7 @@ import uuid
 
 from roller.artifacts import collect_output_directory
 from roller.harnesses.base import InteractiveHarness, InteractiveSession, TurnResult
-from roller.harnesses.docker import DockerRuntime
+from roller.harnesses.docker import DockerRuntime, remove_container
 from roller.opencode_actf import convert_opencode_trace, extract_opencode_usage
 from roller.models import HarnessResult, RunRequest
 from roller.storage import atomic_write_json
@@ -34,8 +34,49 @@ RUNNER_PATH = Path(__file__).resolve().parents[1] / "assets" / "opencode" / "run
 STATE = "/roller/opencode-state"
 RUNNER = "/roller/opencode_runner.py"
 PLUGIN = "/roller/opencode_journal.mjs"
-OPENCODE_TOOLS = ("bash", "read", "write", "edit", "apply_patch", "glob", "grep")
+OPENCODE_TOOLS = (
+    "bash",
+    "read",
+    "write",
+    "edit",
+    "apply_patch",
+    "glob",
+    "grep",
+    "skill",
+)
 ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+LOCAL_PROXY_BYPASS = ("localhost", "127.0.0.1", "::1")
+
+
+def _ensure_local_proxy_bypass(environment: dict[str, str]) -> None:
+    """Keep benchmark-local HTTP services out of inherited public proxies."""
+
+    configured: list[str] = []
+    for name in ("NO_PROXY", "no_proxy"):
+        configured.extend(
+            item.strip()
+            for item in environment.get(name, "").split(",")
+            if item.strip()
+        )
+    value = ",".join(dict.fromkeys((*LOCAL_PROXY_BYPASS, *configured)))
+    environment["NO_PROXY"] = value
+    environment["no_proxy"] = value
+
+
+def _system_prompt(request: RunRequest, workspace: str) -> str:
+    bench = request.task.raw.get("bench")
+    bench_name = bench.get("name") if isinstance(bench, dict) else None
+    if bench_name == "skillsbench":
+        delivery = "Follow the task's exact requested output paths."
+    else:
+        delivery = f"Save deliverables under {request.task.output_dir}."
+    context = ", ".join(item.target for item in request.task.context_files)
+    return (
+        f"You are running a Roller task. Work in {workspace}. "
+        f"Task inputs are in the workspace. {delivery} "
+        f"Task context files (read when relevant): {context or '(none)'}. "
+        "Complete the requested task and return a concise final answer."
+    )
 
 
 def opencode_effort(value: str | None) -> str | None:
@@ -58,6 +99,7 @@ class OpenCodeConfig:
     max_steps: int = 12
     context_length: int = 128000
     output_tokens: int = 8192
+    vision: bool = True
     wire_trace_mode: str = "actf"
     keep_thinking: bool = True
     keep_container_on_error: bool = False
@@ -114,7 +156,9 @@ class OpenCodeHarness(InteractiveHarness):
         status, error = "ok", None
         try:
             session.start()
-            for message in request.task.prompts:
+            for index, message in enumerate(request.task.prompts):
+                if index < len(request.task.new_session) and request.task.new_session[index]:
+                    session.reset()
                 session.send(message, session.remaining())
         except (TimeoutError, subprocess.TimeoutExpired):
             status, error = "timeout", f"task exceeded {request.timeout_seconds}s"
@@ -169,6 +213,7 @@ class OpenCodeSession(InteractiveSession):
         opencode_effort(resolve_thinking(task.thinking, config.reasoning_effort))
         self.output_dir.mkdir(parents=True, exist_ok=True)
         environment = {name: os.environ[name] for name in config.pass_env if os.environ.get(name)}
+        _ensure_local_proxy_bypass(environment)
         for name in task.env_names:
             if not ENV_NAME.fullmatch(name) or not os.environ.get(name):
                 raise ValueError(f"task requires missing or invalid environment variable: {name}")
@@ -182,10 +227,13 @@ class OpenCodeSession(InteractiveSession):
             self.proxy.start()
             api_base = self.proxy.proxy_base_url
         environment.update(
-            OPENAI_BASE_URL=api_base, HOME="/roller/opencode-home",
+            # Preserve the task image's HOME. Benchmark environments commonly
+            # install browser/tool caches under /root and verifier scripts use
+            # $HOME to find them. OpenCode state remains isolated through the
+            # explicit XDG and OPENCODE_CONFIG paths below.
+            OPENAI_BASE_URL=api_base,
             XDG_CONFIG_HOME="/roller/opencode-home/config",
             XDG_DATA_HOME="/roller/opencode-home/data",
-            XDG_CACHE_HOME="/roller/opencode-home/cache",
             XDG_STATE_HOME="/roller/opencode-home/state",
             OPENCODE_CONFIG=STATE + "/opencode.json",
             OPENCODE_DISABLE_PROJECT_CONFIG="1", OPENCODE_DISABLE_MODELS_FETCH="1",
@@ -205,7 +253,7 @@ class OpenCodeSession(InteractiveSession):
             args += ["-e", f"{name}={value}"]
         if bundle:
             args += ["-v", f"{bundle.inputs_root}:/roller/task/inputs:ro", "-v", f"{bundle.context_root}:/roller/task/context:ro"]
-            if not bundle.legacy_workspace:
+            if not bundle.legacy_workspace and task.input_mode == "mount":
                 for spec in task.inputs:
                     source = bundle.inputs_root / spec.path
                     if source.exists():
@@ -225,7 +273,7 @@ class OpenCodeSession(InteractiveSession):
         script += " && test -d /opt/roller-opencode-deps/node_modules"
         script += " && cp /opt/roller-opencode-deps/package*.json /roller/opencode-home/config/opencode/"
         script += " && ln -s /opt/roller-opencode-deps/node_modules /roller/opencode-home/config/opencode/node_modules"
-        if bundle and bundle.legacy_workspace:
+        if bundle and (bundle.legacy_workspace or task.input_mode == "copy"):
             script += f" && cp -a /roller/task/inputs/. {workspace}/ && chmod -R u+w {workspace}"
         elif task.workspace and not bundle:
             script += f" && cp -a /roller-input/. {workspace}/ && chmod -R u+w {workspace}"
@@ -250,16 +298,15 @@ class OpenCodeSession(InteractiveSession):
         self.turns += 1
         # Context is present as regular workspace files for every role; OpenCode's
         # implicit host/profile discovery is disabled in the bridge.
-        context = ", ".join(item.target for item in self.request.task.context_files)
         payload = {
             "session_id": self.container, "model": self.request.model, "message": message,
             "thinking": opencode_effort(resolve_thinking(self.request.task.thinking, config.reasoning_effort)),
             "max_steps": config.max_steps, "timeout_seconds": timeout,
             "context_length": config.context_length, "output_tokens": config.output_tokens,
-            "system_prompt": f"You are running a Roller task. Work in {config.workspace_container_path}. "
-                f"Task inputs are in the workspace. Save deliverables under {self.request.task.output_dir}. "
-                f"Task context files (read when relevant): {context or '(none)'}. "
-                "Complete the requested task and return a concise final answer.",
+            "vision": config.vision,
+            "system_prompt": _system_prompt(
+                self.request, config.workspace_container_path
+            ),
         }
         config_path = self.output_dir / ".opencode-turn.json"
         atomic_write_json(config_path, payload)
@@ -288,6 +335,16 @@ class OpenCodeSession(InteractiveSession):
             if log_path.exists():
                 log_path.write_text(self.redact(log_path.read_text(encoding="utf-8", errors="replace")), encoding="utf-8")
 
+    def reset(self) -> None:
+        """Forget conversation state without touching the task workspace."""
+
+        if not self.container_started or self._result is not None:
+            raise RuntimeError("OpenCode session is not active")
+        self.checked(
+            ["exec", self.container, "rm", "-f", STATE + "/session.json"],
+            "OpenCode session reset",
+        )
+
     def finish(self, status: str, error: str | None = None) -> HarnessResult:
         if self._result is not None:
             return self._result
@@ -296,6 +353,8 @@ class OpenCodeSession(InteractiveSession):
         output_metadata = None
         usage = dict(ZERO_USAGE)
         problems = []
+        warnings = []
+        trajectory_conversion = None
         try:
             if self.container_started:
                 try:
@@ -313,7 +372,20 @@ class OpenCodeSession(InteractiveSession):
                             raise ValueError("OpenCode journal produced no assistant steps")
                 except Exception as exc:
                     trajectory = None
-                    problems.append("OpenCode trace conversion failed: " + self.redact(str(exc)))
+                    # The native journal is still retained and benchmark
+                    # grading has already observed the task workspace. Failure
+                    # to derive a text-only training trajectory must not turn a
+                    # valid evaluation sample into an agent error.
+                    conversion_error = self.redact(str(exc))
+                    warnings.append(
+                        "OpenCode trace conversion failed: " + conversion_error
+                    )
+                    if trace is not None and trace.is_file() and trace.stat().st_size:
+                        trajectory_conversion = {
+                            "status": "unavailable",
+                            "target": "actf",
+                            "error": conversion_error,
+                        }
                 if self.collect_outputs:
                     staging = self.output_dir / ".runtime-outputs"
                     staging.mkdir(parents=True, exist_ok=True)
@@ -345,7 +417,7 @@ class OpenCodeSession(InteractiveSession):
             retained = self.container_started and config.keep_container_on_error and status != "ok"
             if self.container_started and not retained:
                 try:
-                    removed = runtime.run(["rm", "-f", self.container], timeout=30)
+                    removed = remove_container(runtime, self.container)
                     if removed.returncode:
                         logger.warning("OpenCode container removal failed: %s", self.container)
                 except Exception:
@@ -370,7 +442,9 @@ class OpenCodeSession(InteractiveSession):
             trajectory_path=trajectory.relative_to(self.output_dir).as_posix() if trajectory else None,
             metadata={"raw_trace_schema": "roller.opencode-events/v1", "opencode_version": self.opencode_version,
                 "provenance": provenance, "output_collection": output_metadata, "turn_count": self.turns,
+                "warnings": warnings,
+                "trajectory_conversion": trajectory_conversion,
                 "retained_container": self.container if retained else None,
-                "settings": {"reasoning_effort": resolve_thinking(self.request.task.thinking, config.reasoning_effort), "max_steps": config.max_steps, "context_length": config.context_length, "output_tokens": config.output_tokens, "tools": list(OPENCODE_TOOLS), "keep_thinking": config.keep_thinking}},
+                "settings": {"reasoning_effort": resolve_thinking(self.request.task.thinking, config.reasoning_effort), "max_steps": config.max_steps, "context_length": config.context_length, "output_tokens": config.output_tokens, "vision": config.vision, "tools": list(OPENCODE_TOOLS), "keep_thinking": config.keep_thinking}},
         )
         return self._result

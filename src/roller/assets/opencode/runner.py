@@ -9,7 +9,7 @@ import subprocess
 import time
 
 VERSION = "1.18.30"
-TOOLS = ("bash", "read", "write", "edit", "apply_patch", "glob", "grep")
+TOOLS = ("bash", "read", "write", "edit", "apply_patch", "glob", "grep", "skill")
 
 
 def atomic_json(path, value):
@@ -39,6 +39,22 @@ def native_reply(export):
     return content
 
 
+def export_session(state, session_id, timeout):
+    """Export a session without routing its potentially large JSON through a pipe."""
+    export_path = state / "session-export.json"
+    with export_path.open("w", encoding="utf-8") as output:
+        completed = subprocess.run(
+            ["opencode", "export", session_id],
+            stdout=output,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=timeout,
+        )
+    if completed.returncode:
+        raise RuntimeError("OpenCode session export failed: " + completed.stderr[-1000:])
+    return json.loads(export_path.read_text(encoding="utf-8"))
+
+
 def run_turn(config, state):
     deadline = time.monotonic() + config["timeout_seconds"]
 
@@ -62,7 +78,11 @@ def run_turn(config, state):
                 "id": model, "name": model, "tool_call": True, "reasoning": True,
                 "interleaved": {"field": "reasoning_content"},
                 "limit": {"context": config["context_length"], "output": config["output_tokens"]},
-                "modalities": {"input": ["text"], "output": ["text"]}, "options": options,
+                "modalities": {
+                    "input": ["text", "image"] if config.get("vision", True) else ["text"],
+                    "output": ["text"],
+                },
+                "options": options,
             }},
         }},
         "plugin": ["file:///roller/opencode_journal.mjs"],
@@ -88,7 +108,9 @@ def run_turn(config, state):
             process.wait(timeout=10)
             raise TimeoutError("OpenCode CLI timed out") from None
     events = []
-    for line in stream_path.read_text(encoding="utf-8").splitlines():
+    # JSONL is LF-delimited; str.splitlines() would corrupt records containing
+    # legal U+2028/U+2029 characters in model or tool output.
+    for line in stream_path.read_text(encoding="utf-8").split("\n"):
         if not line.strip():
             continue
         try:
@@ -102,13 +124,12 @@ def run_turn(config, state):
         raise ValueError("OpenCode CLI did not return exactly the expected session")
     session_id = ids.pop()
     atomic_json(session_file, {"id": session_id})
-    exported = subprocess.run(["opencode", "export", session_id], capture_output=True, text=True, timeout=remaining())
-    if exported.returncode:
-        raise RuntimeError("OpenCode session export failed: " + exported.stderr[-1000:])
-    export = json.loads(exported.stdout)
+    # OpenCode/Bun can truncate large exports when stdout is a pipe (the
+    # failures cluster at pipe-buffer-sized boundaries).  Stream directly to
+    # a regular file so tool-heavy sessions are exported in full.
+    export = export_session(state, session_id, remaining())
     if export.get("info", {}).get("id") != session_id:
         raise ValueError("OpenCode exported a different session")
-    atomic_json(state / "session-export.json", export)
     with (state / "trace.jsonl").open("a", encoding="utf-8") as journal:
         journal.write(json.dumps({"type": "session_export", "data": export}, ensure_ascii=False) + "\n")
     errors = [e.get("error") for e in events if e.get("type") == "error"]
