@@ -195,61 +195,21 @@ off | minimal | low | medium | high | xhigh | adaptive | max | ultra
 roller collect ... --thinking high
 ```
 
-档位先由 Roller 原样交给 OpenClaw，再由 OpenClaw 当前 model profile 校验并映射成 provider 参数。各模型支持的档位有所不同：
+这不是所有模型都支持的档位表。Roller 原样传递逻辑档位，由 OpenClaw 按 provider、model 和
+agent runtime 校验、映射。模型支持范围、GPT/GLM/Kimi/Qwen/DeepSeek/Claude 配置及已知限制，见
+[OpenClaw thinking 档位](openclaw-thinking.md)。
 
-| Roller 输入 | OpenClaw 规范值 | GPT-5.6 Sol 的 Responses API | 说明 |
-| --- | --- | --- | --- |
-| `none` / `off` | `off` | `none` | `none` 只是 Roller 的输入别名；原生 GPT API 不接受 `off` |
-| `minimal` | `minimal` | 不支持 | 只用于声明支持它的其他模型 |
-| `low` | `low` | `low` | 原样映射 |
-| `medium` | `medium` | `medium` | 原样映射；GPT-5.6 Sol 未传 effort 时的 API 默认值也是 `medium` |
-| `high` | `high` | `high` | 原样映射 |
-| `xhigh` | `xhigh` | `xhigh` | 需要 OpenClaw profile 声明支持 |
-| `adaptive` | `adaptive` | 不是原生值 | 由支持自适应 thinking 的 OpenClaw profile 决定实际档位 |
-| `max` | `max` | `max` | 需要新版 OpenClaw 和对应 model profile |
-| `ultra` | `ultra` | 不是原生值 | 默认 OpenClaw `2026.7.1` CLI 不接受；只有所选新版本明确列出时才能使用 |
-
-对 `gpt-5.6-sol` 的实际 Responses 请求已逐项验证：`none/low/medium/high/xhigh/max` 成功；`minimal/adaptive/ultra` 作为原生 effort 会返回 400。`off` 必须由 OpenClaw 转成 `none`，不能直接发给 GPT API。官方支持矩阵以 [OpenAI GPT-5.6 model guidance](https://developers.openai.com/api/docs/guides/model-guidance?model=gpt-5.6) 为准。
-
-Roller 不硬编码开源模型的档位映射。OpenClaw `2026.7.1` 的自定义
-model 使用顶层 `thinkingLevelMap` 将逻辑档位映射为服务接受的值；Chat Completions 服务通过
-`compat.supportsReasoningEffort: true` 声明接受 `reasoning_effort`：
-
-```json
-{
-  "id": "my-reasoning-model",
-  "name": "My reasoning model",
-  "reasoning": true,
-  "thinkingLevelMap": {
-    "off": "none",
-    "low": "low",
-    "medium": "medium",
-    "high": "high",
-    "xhigh": "xhigh",
-    "max": "max"
-  },
-  "compat": {"supportsReasoningEffort": true}
-}
-```
-
-`thinkingLevelMap` 属于 model 顶层，不要放进 `compat`。此稳定版的用户配置 schema 不接受
-自定义 `compat.supportedReasoningEfforts` 或 `compat.reasoningEffortMap`；写入这些字段会导致
-配置校验失败。使用 `enable_thinking` 的 Qwen-compatible 服务可以把
-`compat.thinkingFormat` 设为 `qwen`；实际字段和档位仍以服务实现为准。
-
-> [!IMPORTANT]
-> 默认官方镜像内的 OpenClaw `2026.7.1` 支持
-> `off/minimal/low/medium/high/xhigh/adaptive/max`，Roller 会拒绝该版本的 `ultra`。
-> legacy `wildclawbench-ubuntu:v1.3` 内含 `2026.3.11`，只可靠支持到 `high`；Roller 会拒绝
-> 其 `xhigh/adaptive/max/ultra`。只更新 Roller 仓库不会替换 Docker 镜像，运行时版本以
-> sample `info.json` 的 `runtime.openclaw_version` 为准。
+新版 OpenClaw 自己判断档位是否可用；Roller 不维护另一份模型白名单。
+旧镜像 `wildclawbench-ubuntu:v1.3` 内含 `2026.3.11`，存在静默降档问题，因此仍由 Roller 拒绝
+其 `xhigh/adaptive/max/ultra`。只更新 Roller 不会替换镜像；实际版本见 sample
+`info.json` 的 `runtime.openclaw_version`。
 
 ### Reasoning 内容与轨迹
 
-使用原生 thinking 时，Roller 会在本次 rollout 注入的模型配置副本中设置
-`reasoning: true`。Chat Completions adapter 会发送 `reasoning_effort`；Responses adapter
-会发送 reasoning 配置。旧配置中的 `tags: ["reasoning"]` 会自动转换为当前 OpenClaw
-接受的布尔字段。
+显式启用 thinking 时，Roller 会在本次 rollout 的模型配置副本中为缺失的 `reasoning` 字段补上
+`true`，但保留用户显式声明的 `reasoning: false`。旧配置的 `tags: ["reasoning"]` 也只补充缺失字段。
+实际请求使用 `reasoning_effort`、`reasoning`、`thinking` 还是 `enable_thinking`，由 OpenClaw 的
+adapter 和模型兼容配置决定，不能只根据 `--thinking` 判断。
 
 轨迹中能保存哪些 reasoning，取决于后端返回的内容。Chat Completions 通常通过流式 `reasoning_content`（也兼容 `reasoning` 和 `reasoning_text`），Responses API 通过 reasoning items。仅在 usage 中报告 `reasoning_tokens`、但不返回 summary/content 时，没有可写入轨迹的文本。
 

@@ -107,6 +107,26 @@ class ExampleFilesTests(unittest.TestCase):
         self.assertNotIn("API_KEY", combined)
         self.assertNotIn('"hooks"', combined)
 
+    def test_openclaw_reasoning_example_uses_native_gpt_profile(self) -> None:
+        config = load_model_config(
+            self.examples_root / "config/openclaw/models-reasoning.json",
+            {
+                "MY_PROXY_BASE_URL": "https://proxy.example/v1",
+                "MY_PROXY_API_KEY": "secret",
+                "MY_CHAT_BASE_URL": "https://chat.example/v1",
+                "MY_CHAT_API_KEY": "secret",
+            },
+        )
+        gpt = config["providers"]["openai"]
+        self.assertEqual(gpt["api"], "openai-responses")
+        self.assertEqual(gpt["models"][0]["id"], "gpt-5.6-sol")
+        self.assertEqual(gpt["models"][0]["agentRuntime"], {"id": "openclaw"})
+        chat = config["providers"]["my-chat-proxy"]["models"][0]
+        self.assertEqual(
+            chat["compat"]["supportedReasoningEfforts"], ["low", "medium", "high"]
+        )
+        self.assertNotIn("thinkingLevelMap", chat)
+
     def test_user_simulator_example_is_an_independent_dynamic_task(self) -> None:
         tasks = load_tasks(
             self.examples_root / "tasks" / "user-simulator.jsonl"
