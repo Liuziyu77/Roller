@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import tempfile
 import threading
@@ -37,31 +38,84 @@ class FakeHarness(Harness):
                 (output_dir / "cache_trace.jsonl").write_text("", encoding="utf-8")
                 (output_dir / "wire_trace.jsonl").write_text("", encoding="utf-8")
             trace = output_dir / "trace.jsonl"
-            trace.write_text(
-                "\n".join(
-                    json.dumps(event)
-                    for event in (
+            events = [
+                {
+                    "type": "message",
+                    "message": {
+                        "role": "user",
+                        "content": request.task.prompts[0],
+                        "timestamp": 900,
+                    },
+                },
+                {
+                    "type": "message",
+                    "message": {
+                        "role": "assistant",
+                        "content": [{"type": "text", "text": "done"}],
+                        "usage": {"input": 1, "output": 2},
+                        "stopReason": "stop",
+                        "timestamp": 1000,
+                    },
+                },
+            ]
+            tools = None
+            if self.state.get("image_result"):
+                events[1]["message"] = {
+                    "role": "assistant",
+                    "content": [
                         {
-                            "type": "message",
-                            "message": {
-                                "role": "user",
-                                "content": request.task.prompts[0],
-                                "timestamp": 900,
-                            },
+                            "type": "toolCall",
+                            "id": "call-1",
+                            "name": "read",
+                            "arguments": {"path": "inputs/frame.png"},
+                        }
+                    ],
+                    "usage": {"input": 1, "output": 2},
+                    "stopReason": "toolUse",
+                    "timestamp": 1000,
+                }
+                events.append(
+                    {
+                        "type": "message",
+                        "message": {
+                            "role": "toolResult",
+                            "toolCallId": "call-1",
+                            "toolName": "read",
+                            "content": [
+                                {
+                                    "type": "image",
+                                    "data": self.state.get("image_data", "AA=="),
+                                    "mimeType": "image/png",
+                                }
+                            ],
+                            "timestamp": 1100,
                         },
-                        {
-                            "type": "message",
-                            "message": {
-                                "role": "assistant",
-                                "content": [{"type": "text", "text": "done"}],
-                                "usage": {"input": 1, "output": 2},
-                                "stopReason": "stop",
-                                "timestamp": 1000,
-                            },
-                        },
-                    )
+                    }
                 )
-                + "\n",
+                events.append(
+                    {
+                        "type": "message",
+                        "message": {
+                            "role": "assistant",
+                            "content": [{"type": "text", "text": "done"}],
+                            "usage": {"input": 1, "output": 2},
+                            "stopReason": "stop",
+                            "timestamp": 1200,
+                        },
+                    }
+                )
+                tools = [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "read",
+                            "description": "Read a file",
+                            "parameters": {"type": "object", "properties": {}},
+                        },
+                    }
+                ]
+            trace.write_text(
+                "\n".join(json.dumps(event) for event in events) + "\n",
                 encoding="utf-8",
             )
             trajectory = output_dir / "trajectory.json"
@@ -69,6 +123,7 @@ class FakeHarness(Harness):
                 trace,
                 trajectory,
                 user_messages=request.task.prompts,
+                tools=tools,
             )
             usage = {
                 "input_tokens": 1,
@@ -191,6 +246,149 @@ class CollectorTests(unittest.TestCase):
             ]
             self.assertEqual(len(dataset), 4)
             self.assertEqual(dataset[0], sft)
+
+    def test_collects_multimodal_sft_dataset_and_resumes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            run_dir = Path(temporary) / "run"
+            state = self._state()
+            state["image_result"] = True
+            requests = make_requests()[:1]
+            Collector(
+                CollectionConfig(run_dir=run_dir),
+                lambda slot: FakeHarness(state, slot),
+            ).collect(requests)
+
+            sample = next((run_dir / "samples").glob("*/*"))
+            sft = json.loads((sample / "trace_SFT.json").read_text())
+            self.assertEqual(set(sft), {"messages", "tools", "images"})
+            self.assertEqual(sft["messages"][3]["content"], "<image>")
+            self.assertEqual(sft["images"], ["data:image/png;base64,AA=="])
+            dataset = [
+                json.loads(line)
+                for line in (run_dir / "sft.jsonl").read_text().splitlines()
+            ]
+            self.assertEqual(dataset, [sft])
+
+            resumed = Collector(
+                CollectionConfig(run_dir=run_dir, resume=True),
+                lambda slot: FakeHarness(state, slot),
+            ).collect(requests)
+            self.assertEqual(resumed[0]["status"], "skipped")
+
+            sft["images"] = []
+            (sample / "trace_SFT.json").write_text(
+                json.dumps(sft) + "\n", encoding="utf-8"
+            )
+            repaired = Collector(
+                CollectionConfig(run_dir=run_dir, resume=True),
+                lambda slot: FakeHarness(state, slot),
+            ).collect(requests)
+            self.assertEqual(repaired[0]["status"], "ok")
+            self.assertEqual(
+                json.loads((sample / "trace_SFT.json").read_text())["images"],
+                ["data:image/png;base64,AA=="],
+            )
+
+    def test_normalized_image_base64_aggregates_and_resumes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            run_dir = Path(temporary) / "run"
+            state = self._state()
+            state.update(image_result=True, image_data="AB==")
+            requests = make_requests()[:1]
+            results = Collector(
+                CollectionConfig(run_dir=run_dir),
+                lambda slot: FakeHarness(state, slot),
+            ).collect(requests)
+            self.assertEqual(results[0]["status"], "ok")
+            run_info = json.loads((run_dir / "info.json").read_text())
+            self.assertEqual(run_info["state"], "finished")
+            sample = next((run_dir / "samples").glob("*/*"))
+            sft = json.loads((sample / "trace_SFT.json").read_text())
+            self.assertEqual(sft["images"], ["data:image/png;base64,AA=="])
+            self.assertEqual(json.loads((run_dir / "sft.jsonl").read_text()), sft)
+            self.assertIn("AB==", (sample / "trace.jsonl").read_text())
+            self.assertIn("AB==", (sample / "trace_ACTF.json").read_text())
+            before = {
+                p.name: (p.read_bytes(), p.stat().st_mtime_ns)
+                for p in sample.iterdir() if p.is_file()
+            }
+            resumed = Collector(
+                CollectionConfig(run_dir=run_dir, resume=True),
+                lambda slot: FakeHarness(state, slot),
+            ).collect(requests)
+            self.assertEqual(resumed[0]["status"], "skipped")
+            self.assertEqual(state["calls"][("task-0", "provider/model")], 1)
+            after = {
+                p.name: (p.read_bytes(), p.stat().st_mtime_ns)
+                for p in sample.iterdir() if p.is_file()
+            }
+            self.assertEqual(before, after)
+
+    def test_image_decode_errors_do_not_interrupt_batch_aggregation(self) -> None:
+        # Include both version-dependent excess padding and an always-invalid
+        # payload, so the rejection path runs even on permissive Python builds.
+        for payload in ("AAAA====", "not*base64"):
+            with self.subTest(payload=payload), tempfile.TemporaryDirectory() as temporary:
+                try:
+                    base64.b64decode(payload, validate=True)
+                except ValueError:
+                    accepted = False
+                else:
+                    accepted = True
+                states = [self._state(), self._state()]
+                for state, image_data in zip(states, (payload, "AA==")):
+                    state.update(image_result=True, image_data=image_data)
+
+                def factory(slot: int, request: RunRequest) -> FakeHarness:
+                    return FakeHarness(states[request.index], slot)
+
+                run_dir = Path(temporary) / "run"
+                requests = make_requests()[:2]
+                results = Collector(
+                    CollectionConfig(run_dir=run_dir), factory,
+                ).collect(requests)
+                self.assertEqual(
+                    [result["status"] for result in results],
+                    ["ok", "ok"],
+                )
+                if not accepted:
+                    conversion = results[0]["runtime"]["trajectory_conversion"]
+                    self.assertEqual(conversion["status"], "unavailable")
+                    self.assertEqual(conversion["target"], "sft")
+                    self.assertIn("base64", conversion["error"])
+                    self.assertIsNone(results[0]["trajectory"]["sft"])
+                else:
+                    self.assertNotIn("trajectory_conversion", results[0]["runtime"])
+                self.assertEqual(
+                    json.loads((run_dir / "info.json").read_text())["state"], "finished",
+                )
+                dataset = (run_dir / "sft.jsonl").read_bytes()
+                rows = [json.loads(line) for line in dataset.splitlines()]
+                self.assertEqual(
+                    [row["images"] for row in rows],
+                    ([["data:image/png;base64,AAAA"]] if accepted else [])
+                    + [["data:image/png;base64,AA=="]],
+                )
+                sample = next((run_dir / "samples").glob("*/00000000_task-0"))
+                self.assertEqual((sample / "trace_SFT.json").exists(), accepted)
+                self.assertIn(payload, (sample / "trace.jsonl").read_text())
+                self.assertIn(payload, (sample / "trace_ACTF.json").read_text())
+
+                resumed = Collector(
+                    CollectionConfig(run_dir=run_dir, resume=True), factory,
+                ).collect(requests)
+                self.assertEqual(
+                    [result["status"] for result in resumed],
+                    ["skipped", "skipped"],
+                )
+                self.assertEqual(
+                    states[0]["calls"][("task-0", "provider/model")], 1,
+                )
+                self.assertEqual(states[1]["calls"][("task-1", "provider/model")], 1)
+                self.assertEqual((run_dir / "sft.jsonl").read_bytes(), dataset)
+                self.assertEqual(
+                    json.loads((run_dir / "info.json").read_text())["state"], "finished",
+                )
 
     def test_repeated_samples_use_distinct_directories(self) -> None:
         task = Task(id="repeat", prompts=("hello",), source_index=0)

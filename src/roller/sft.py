@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 from copy import deepcopy
 from pathlib import Path
@@ -14,6 +16,14 @@ class SFTConversionError(ValueError):
 
 class SFTUnsupportedContentError(SFTConversionError):
     """Raised when valid ACTF content cannot be represented without data loss."""
+
+
+# Multimodal SFT contract: every image in a tool result becomes one
+# ``<image>`` placeholder in the message text and one entry in the top-level
+# ``images`` list. Scanning ``messages`` front to back, the Nth placeholder
+# maps to ``images[N-1]``, so the placeholder count must equal the list length.
+IMAGE_PLACEHOLDER = "<image>"
+_IMAGE_MEDIA_TYPES = frozenset({"image/png", "image/jpeg", "image/webp", "image/gif"})
 
 
 def _string(value: Any, field: str) -> str:
@@ -96,26 +106,141 @@ def _normalize_tool_call(call: Any, field: str) -> dict[str, Any]:
     }
 
 
-def _tool_result_content(value: Any, field: str) -> str:
+def _image_media_type(value: Any, field: str) -> str:
+    if not isinstance(value, str):
+        raise SFTConversionError(f"{field} must be a string")
+    media_type = value.strip().lower()
+    if media_type not in _IMAGE_MEDIA_TYPES:
+        supported = ", ".join(sorted(_IMAGE_MEDIA_TYPES))
+        raise SFTConversionError(
+            f"{field} must be one of {supported}; got {value!r}"
+        )
+    return media_type
+
+
+def _image_data_uri(block: Any, field: str) -> str:
+    """Normalize one ACTF image block to a canonical ``data:`` URI.
+
+    Accepts the base64 ``source`` form (Claude Code), the flat
+    ``data`` + ``mimeType`` form (OpenClaw/Pi native), and an inline
+    ``data:...;base64,...`` URI. The converter never reads files or networks;
+    blocks that only reference a path keep failing conversion.
+    """
+    if not isinstance(block, dict):
+        raise SFTConversionError(f"{field} must be an object")
+    source = block.get("source")
+    if isinstance(source, dict):
+        if source.get("type") != "base64":
+            raise SFTConversionError(f"{field}.source.type must be 'base64'")
+        media_type = _image_media_type(
+            source.get("media_type"), f"{field}.source.media_type"
+        )
+        payload = source.get("data")
+    elif isinstance(block.get("data"), str):
+        payload = block["data"]
+        if payload.startswith("data:"):
+            header, separator, encoded = payload.partition(",")
+            if not separator or not header.endswith(";base64"):
+                raise SFTConversionError(
+                    f"{field}.data must be a base64 data URI"
+                )
+            media_type = _image_media_type(header[5:-7], f"{field}.data media type")
+            payload = encoded
+        else:
+            media_type = _image_media_type(
+                block.get("mimeType", block.get("mime_type")), f"{field}.mimeType"
+            )
+    else:
+        raise SFTConversionError(
+            f"{field} must carry base64 image bytes in source.data or data"
+        )
+    if not isinstance(payload, str) or not payload:
+        raise SFTConversionError(f"{field} image data must be non-empty base64")
+    try:
+        decoded = base64.b64decode(payload, validate=True)
+    except (ValueError, binascii.Error) as exc:
+        raise SFTConversionError(f"{field} image data is not valid base64") from exc
+    # Decoding accepts some redundant padding; never persist it verbatim.
+    canonical = base64.b64encode(decoded).decode("ascii")
+    return f"data:{media_type};base64,{canonical}"
+
+
+def _tool_result_content(value: Any, field: str, images: list[str]) -> str:
     if isinstance(value, str):
         return value
     if not isinstance(value, list):
-        raise SFTConversionError(f"{field} must be a string or text-block list")
+        raise SFTConversionError(f"{field} must be a string or content-block list")
 
     parts: list[str] = []
     for index, block in enumerate(value):
+        block_field = f"{field}[{index}]"
         if isinstance(block, str):
             parts.append(block)
             continue
-        if not isinstance(block, dict) or block.get("type") != "text":
+        if not isinstance(block, dict):
             raise SFTUnsupportedContentError(
-                f"{field}[{index}] is non-text; text-only SFT export would lose data"
+                f"{block_field} is non-text; SFT export would lose data"
             )
-        text = block.get("text")
-        if not isinstance(text, str):
-            raise SFTConversionError(f"{field}[{index}].text must be a string")
-        parts.append(text)
+        if block.get("type") == "text":
+            text = block.get("text")
+            if not isinstance(text, str):
+                raise SFTConversionError(f"{block_field}.text must be a string")
+            parts.append(text)
+        elif block.get("type") == "image":
+            # Append without deduplication: images encode the occurrence
+            # sequence, the Nth placeholder must keep mapping to images[N-1].
+            images.append(_image_data_uri(block, block_field))
+            parts.append(IMAGE_PLACEHOLDER)
+        else:
+            raise SFTUnsupportedContentError(
+                f"{block_field} is non-text; SFT export would lose data"
+            )
     return "\n".join(parts)
+
+
+def _placeholder_count(message: Mapping[str, Any]) -> int:
+    # Tool-call arguments also enter training text. Count all message strings,
+    # not just content/reasoning_content, without escaping the reserved token.
+    return json.dumps(message, ensure_ascii=False).count(IMAGE_PLACEHOLDER)
+
+
+def validate_sft_record(record: Any) -> None:
+    """Check the top-level shape and the multimodal alignment contract.
+
+    Text-only records keep exactly ``messages`` + ``tools``. Records with
+    images add a non-empty ``images`` list of base64 data URIs whose length
+    equals the number of ``<image>`` placeholders in ``messages``.
+    """
+    if not isinstance(record, Mapping):
+        raise ValueError("SFT record must be a JSON object")
+    keys = set(record)
+    if keys == {"messages", "tools"}:
+        return
+    if keys != {"messages", "tools", "images"}:
+        raise ValueError("SFT record may only contain messages, tools, and images")
+    images = record["images"]
+    if not isinstance(images, list) or not images:
+        raise ValueError("SFT images must be a non-empty list")
+    for index, uri in enumerate(images):
+        field = f"images[{index}]"
+        if not isinstance(uri, str) or not uri.startswith("data:"):
+            raise ValueError(f"{field} must be a base64 image data URI")
+        try:
+            canonical = _image_data_uri({"data": uri}, field)
+        except SFTConversionError as exc:
+            raise ValueError(f"{field} must be a base64 image data URI: {exc}") from exc
+        if canonical != uri:
+            raise ValueError(f"{field} must be a canonical base64 image data URI")
+    messages = record["messages"]
+    if not isinstance(messages, list):
+        raise ValueError("SFT messages must be a list")
+    placeholders = sum(
+        _placeholder_count(message) for message in messages if isinstance(message, Mapping)
+    )
+    if placeholders != len(images):
+        raise ValueError(
+            "SFT <image> placeholder count does not match the images length"
+        )
 
 
 def actf_to_sft(trajectory: Mapping[str, Any]) -> dict[str, Any]:
@@ -135,6 +260,7 @@ def actf_to_sft(trajectory: Mapping[str, Any]) -> dict[str, Any]:
     seen_call_ids: set[str] = set()
     user_count = 0
     assistant_count = 0
+    images: list[str] = []
 
     for step_index, step in enumerate(steps):
         prefix = f"steps[{step_index}]"
@@ -212,7 +338,7 @@ def actf_to_sft(trajectory: Mapping[str, Any]) -> dict[str, Any]:
                     "role": "tool",
                     "tool_call_id": call_id,
                     "content": _tool_result_content(
-                        observation.get("content", []), f"{field}.content"
+                        observation.get("content", []), f"{field}.content", images
                     ),
                 }
             )
@@ -236,6 +362,17 @@ def actf_to_sft(trajectory: Mapping[str, Any]) -> dict[str, Any]:
         raise SFTConversionError("trajectory contains no user message")
     if assistant_count == 0:
         raise SFTConversionError("trajectory contains no assistant message")
+    if images:
+        # Every appended image contributed one placeholder, so any surplus
+        # occurrence is a literal <image> in source text and would silently
+        # misalign the positional images mapping.
+        placeholders = sum(_placeholder_count(message) for message in messages)
+        if placeholders != len(images):
+            raise SFTConversionError(
+                "text already contains a literal <image> placeholder; "
+                "multimodal alignment would be ambiguous"
+            )
+        return {"messages": messages, "tools": tools, "images": images}
     return {"messages": messages, "tools": tools}
 
 

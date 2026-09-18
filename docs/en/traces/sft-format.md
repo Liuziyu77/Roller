@@ -9,7 +9,7 @@ corresponding `trace_SFT.json`.
 
 ## 1. Top-level structure
 
-An SFT record contains only `messages` and `tools` at the top level:
+A text-only SFT record has exactly `messages` and `tools` at the top level:
 
 ```json
 {
@@ -60,6 +60,55 @@ An SFT record does not include schema version, task/model, usage, timestamps,
 step ID, stop reason, run path, or other metadata. That information remains in
 the adjacent `info.json` and `trace_ACTF.json`.
 
+### Multimodal records
+
+When a tool result carries an image that the ACTF layer captured losslessly as
+base64 bytes, the record additionally has a top-level `images` list. The image
+does not stay inline: its position in the message text becomes the reserved
+placeholder `<image>`, and the normalized data URI is appended to `images`:
+
+```json
+{
+  "messages": [
+    {"role": "system", "content": "You are a helpful assistant."},
+    {"role": "user", "content": "Describe chart.png"},
+    {
+      "role": "assistant",
+      "reasoning_content": "",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call-1",
+          "type": "function",
+          "function": {
+            "name": "read",
+            "arguments": "{\"path\":\"chart.png\"}"
+          }
+        }
+      ]
+    },
+    {"role": "tool", "tool_call_id": "call-1", "content": "Image size: 2x1\n<image>"},
+    {"role": "assistant", "reasoning_content": "", "content": "The chart…", "tool_calls": []}
+  ],
+  "tools": [],
+  "images": ["data:image/png;base64,iVBORw0KGgo…"]
+}
+```
+
+The contract is:
+
+- Scanning `messages` front to back, the Nth `<image>` placeholder corresponds
+  to `images[N-1]`, so the placeholder count always equals `len(images)`.
+- `images` entries are complete `data:image/png|jpeg|webp|gif;base64,…` URIs;
+  raw base64 is never stored. Identical images are not deduplicated: the list
+  encodes the occurrence sequence, not a blob store.
+- Text-only records never gain an `images` key, so existing pure-text data and
+  consumers stay backward compatible.
+- Collision checks cover message content, reasoning, and tool-call arguments.
+  Because `<image>` is reserved, a record with images fails conversion when
+  source text already contains a literal `<image>` that cannot be told apart
+  from a placeholder.
+
 ## 2. Message rules
 
 - The first message is always `system`. When no system prompt was captured,
@@ -84,6 +133,7 @@ the adjacent `info.json` and `trace_ACTF.json`.
 | `steps[*].user_content` | user message (when non-empty) |
 | `steps[*].assistant_content` | assistant message |
 | `steps[*].observation` | tool message |
+| `steps[*].observation[*].content[*]` image block | `<image>` placeholder in the tool message plus one top-level `images` entry |
 | Top-level `tools` | Top-level `tools` |
 
 `metric`, `started_at`, `finished_at`, and observation `toolName`, `isError`,
@@ -99,10 +149,35 @@ The exporter requires:
 - Every call has exactly one matching tool result in the same step;
 - The call's tool name exists in the top-level tools schema;
 - Arguments can be encoded as a JSON object;
-- Tool results contain only strings or text blocks.
+- Tool results contain only strings, text blocks, or image blocks with
+  embedded base64 bytes.
 
-A non-text tool result, such as an image, causes a trajectory conversion error
-so that content is not lost during export. Multimodal SFT needs a separately defined content-block schema.
+Image blocks are accepted in the base64 `source` form (Claude Code), the flat
+`data` + `mimeType` form (OpenClaw/Pi native), and the inline data-URI form.
+The media type must be `image/png`, `image/jpeg`, `image/webp`, or
+`image/gif`, and the payload must decode as strict base64. It is then re-encoded
+canonically, removing decodable redundant padding without changing the image
+bytes. Export, aggregation, and Resume share the same parser; saved `images`
+must use the canonical representation. Strict decoding follows the current Python
+standard library: some releases reject excess padding, so its acceptance is not
+guaranteed across versions. Rejected samples retain raw/ACTF, are marked as
+conversion failures, and are excluded from SFT aggregation without preventing
+valid samples from being aggregated. Roller does not relax decoding to accept
+invalid padding. Anything else —
+audio or other unknown block types, unsupported media types, malformed
+base64, or an image block that only references a file path without bytes —
+still fails conversion. The Collector records `target: "sft"`,
+`status: "unavailable"`, and the reason in `runtime.trajectory_conversion`,
+retains raw/ACTF, and omits SFT and its aggregate entry. This does not turn a
+completed collection into a failure; Resume reuses the collected sample without
+calling the model again. Roller never silently drops content. The converter itself never reads files
+or networks: a harness whose image tool only leaves a path must materialize
+the bytes into the ACTF layer while the file is still accessible.
+
+These are accepted SFT block shapes, not a claim that every Harness supports
+image export. OpenClaw and Claude Code retain image tool results. Pi/OpenCode
+reject images at the ACTF boundary. Codex still serializes image result blocks
+as text and does not produce `images`; that output is not lossless multimodal SFT.
 
 ## 5. File locations
 

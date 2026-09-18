@@ -274,11 +274,13 @@ OpenClaw can also combine it with the full cache trace.
 
 As long as raw exists, Roller attempts conversion, including samples whose
 Harness already failed or timed out. A failed sample may therefore still have
-ACTF. A conversion failure sets the sample status to `error`.
+ACTF. Explicitly recorded conversion unavailability is stored in
+`runtime.trajectory_conversion`, separately from the Harness collection status.
 
 ### 4.3 `trace_SFT.json`: one minimal training sample
 
-SFT is generated from ACTF. Its top level contains only:
+SFT is generated from ACTF. Text-only records contain these top-level fields;
+image records also contain `images`:
 
 ```json
 {"messages": [], "tools": []}
@@ -303,13 +305,20 @@ Generation conditions:
 - Every tool call has exactly one tool result in the same step;
 - The called tool exists in the top-level tools schema;
 - Arguments can be encoded as a JSON object;
-- The tool result is a string or pure text blocks.
+- The tool result is a string, text blocks, or image blocks with embedded
+  base64 bytes.
 
 Both GPT Responses flat tools and Chat Completions nested tools are unified to
-a nested function schema. When Roller encounters a non-text tool result such as
-an image, SFT conversion fails and the sample is marked `error` to prevent
-content loss during export. Multimodal SFT needs a separately defined content-block
-schema.
+a nested function schema. An image tool result is exported as an `<image>`
+placeholder plus a top-level `images` data-URI list; see
+[SFT data format](sft-format.md) for the alignment contract. Anything that
+cannot be exported losslessly — audio or other unknown block types,
+unsupported media types, malformed base64, or an image block that only
+references a path — still fails conversion. The Collector records
+`target: "sft"`, `status: "unavailable"`, and the reason in
+`runtime.trajectory_conversion`, retaining the collection status and raw/ACTF.
+Aggregation skips that sample; Resume does not call the model again for an
+export failure. Roller never silently drops content.
 
 See [SFT data format](sft-format.md) for the full field definition.
 

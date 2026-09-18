@@ -248,7 +248,9 @@ Check in this order:
 1. Whether run `info.json.status` is `completed`, and whether success/failure counts match expectations;
 2. Whether sample `info.json.status` is `ok`, and whether `usage` and version fields exist;
 3. Whether reasoning, tool calls, and results are paired correctly in `trace_ACTF.json`;
-4. Whether the top level of `trace_SFT.json` contains only `messages` and `tools`;
+4. Whether the top level of `trace_SFT.json` contains only `messages` and
+   `tools` (image-bearing samples additionally carry `images`, with one
+   `<image>` placeholder per entry);
 5. For tasks that must deliver files, whether the sample `results/` contains the expected files;
 6. Whether the number of lines in run `sft.jsonl` equals the number of successful samples that can be used for training.
 

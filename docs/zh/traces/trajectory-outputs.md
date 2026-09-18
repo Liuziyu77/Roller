@@ -229,11 +229,12 @@ system/tools 在调用间的变化；需要检查这些变化时使用 full wire
 还可结合 full cache trace。
 
 只要 raw 存在，Roller 就会尝试转换，包括 Harness 已经失败或超时的 sample。因此错误
-sample 可能仍有 ACTF。转换失败会把 sample 状态设为 `error`。
+sample 可能仍有 ACTF。已显式记录的转换不可用状态见
+`runtime.trajectory_conversion`；它与 Harness 的采集状态分开保存。
 
 ### 4.3 `trace_SFT.json`：单条最小训练样本
 
-SFT 从 ACTF 生成，顶层严格只有：
+SFT 从 ACTF 生成，纯文本样本顶层只有以下字段，图片样本额外包含 `images`：
 
 ```json
 {"messages": [], "tools": []}
@@ -255,11 +256,15 @@ SFT 表达的是从 session 事件重建的逻辑对话，不是每次 provider 
 - 每个 tool call 在同一 step 恰好对应一个 tool result；
 - 被调用工具存在于顶层 tools schema；
 - arguments 可编码为 JSON object；
-- tool result 是字符串或纯 text blocks。
+- tool result 是字符串、text blocks 或内嵌 base64 字节的 image blocks。
 
 GPT Responses 的扁平 tools 与 Chat Completions 的嵌套 tools 都会统一为嵌套 function
-schema。遇到 image 等非文本工具结果时，SFT 转换会失败并将 sample 标记为 `error`，
-避免导出时丢失内容。多模态 SFT 需要另行定义 content-block schema。
+schema。image 工具结果会导出为 `<image>` 占位符加顶层 `images` data-URI 列表，对齐
+约定见 [SFT 数据格式](sft-format.md)。其余无法无损导出的内容——audio 等未知 block
+类型、不支持的 media type、损坏的 base64、只引用路径而没有字节的 image block——仍会
+令 SFT 转换失败。Collector 在 `runtime.trajectory_conversion` 中记录
+`target: "sft"`、`status: "unavailable"` 和原因，保留采集状态及 raw/ACTF；
+汇总跳过该样本，Resume 不为导出失败重新调用模型。Roller 不会静默丢失内容。
 
 完整字段定义见 [SFT 数据格式](sft-format.md)。
 

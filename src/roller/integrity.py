@@ -8,7 +8,7 @@ from typing import Any, Mapping
 
 from roller.models import RunRequest
 from roller.harness_registry import requires_cache_trace
-from roller.sft import actf_to_sft
+from roller.sft import actf_to_sft, validate_sft_record
 
 
 def trajectory_conversion_unavailable(
@@ -183,8 +183,10 @@ def _validate_trajectory_files(
 
     if not sft_unavailable:
         actual_sft = _json_object(sft_path)
-        if set(actual_sft) != {"messages", "tools"}:
-            raise ValueError("trace_SFT.json must contain only messages and tools")
+        try:
+            validate_sft_record(actual_sft)
+        except ValueError as exc:
+            raise ValueError(f"trace_SFT.json is not a valid SFT record: {exc}") from exc
         expected_sft = actf_to_sft(actf)
         if actual_sft != expected_sft:
             raise ValueError("trace_SFT.json does not match the canonical ACTF projection")
