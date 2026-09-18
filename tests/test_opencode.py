@@ -266,7 +266,10 @@ class FakeRuntime:
 
 class OpenCodeHarnessTests(unittest.TestCase):
     def test_local_services_bypass_inherited_proxy(self):
-        environment = {"NO_PROXY": "models.example.test,localhost", "no_proxy": "example.test"}
+        environment = {
+            "NO_PROXY": "models.example.test,localhost",
+            "no_proxy": "example.test",
+        }
 
         _ensure_local_proxy_bypass(environment)
 
