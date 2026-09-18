@@ -46,6 +46,7 @@ python -m http.server -d _build/html 8000
 | 目标 | 文档 |
 | --- | --- |
 | 从空环境完成第一次采集 | [快速上手](zh/start/getting-started.md) |
+| 配置 Docker 构建的 apt、npm、Python 镜像源与代理 | [Docker 构建与镜像源](zh/start/docker-builds.md) |
 | 查某个 CLI 参数、默认值或适用 Harness | [CLI 参数参考](zh/start/cli-reference.md) |
 | 连接 Responses、Chat Completions 或开源模型服务 | [OpenClaw Harness 指南](zh/harnesses/openclaw-configuration.md) |
 | 使用 Codex CLI 采集轨迹 | [Codex Harness 指南](zh/harnesses/codex-configuration.md) |

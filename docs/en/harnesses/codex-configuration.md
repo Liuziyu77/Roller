@@ -56,6 +56,8 @@ docker build \
   .
 ```
 
+For `DEBIAN_MIRROR` and `DEBIAN_SECURITY_MIRROR`, see [Docker builds and package mirrors](../start/docker-builds.md). Set `NPM_REGISTRY` to override npm downloads, or leave it unset to keep the existing npm configuration.
+
 If the default Debian mirrors are slow on the current network, override the mirror URLs at build time without
 editing the Dockerfile:
 

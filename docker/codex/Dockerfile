@@ -1,18 +1,26 @@
 FROM node:22-bookworm-slim
 
 ARG CODEX_VERSION=0.149.0
+ARG NPM_REGISTRY
 ARG DEBIAN_MIRROR
 ARG DEBIAN_SECURITY_MIRROR
 
-RUN if [ -n "$DEBIAN_MIRROR" ]; then \
-        sed -i "s|http://deb.debian.org/debian|$DEBIAN_MIRROR|g" \
-            /etc/apt/sources.list.d/debian.sources; \
-    fi \
-    && if [ -n "$DEBIAN_SECURITY_MIRROR" ]; then \
-        sed -i "s|http://deb.debian.org/debian-security|$DEBIAN_SECURITY_MIRROR|g" \
-            /etc/apt/sources.list.d/debian.sources; \
-    fi \
-    && apt-get update \
+# Match complete repository URLs so the main mirror cannot rewrite security URLs.
+# Keep this block in each build context; the contexts are built independently.
+RUN set -eu; \
+    for source in /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do \
+        [ -f "$source" ] || continue; \
+        if [ -n "${DEBIAN_MIRROR:-}" ]; then \
+            mirror=$(printf '%s' "${DEBIAN_MIRROR%/}" | sed 's/[\\&@]/\\&/g'); \
+            sed -i -E "s@https?://deb[.]debian[.]org/debian/?([[:space:]]|$)@$mirror\\1@g" "$source"; \
+        fi; \
+        if [ -n "${DEBIAN_SECURITY_MIRROR:-}" ]; then \
+            mirror=$(printf '%s' "${DEBIAN_SECURITY_MIRROR%/}" | sed 's/[\\&@]/\\&/g'); \
+            sed -i -E "s@https?://(deb|security)[.]debian[.]org/debian-security/?([[:space:]]|$)@$mirror\\2@g" "$source"; \
+        fi; \
+    done
+
+RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         bash \
         ca-certificates \
@@ -28,6 +36,7 @@ RUN if [ -n "$DEBIAN_MIRROR" ]; then \
         ripgrep \
         unzip \
     && rm -rf /var/lib/apt/lists/* \
+    && if [ -n "${NPM_REGISTRY:-}" ]; then export npm_config_registry="$NPM_REGISTRY"; fi \
     && npm install --global "@openai/codex@${CODEX_VERSION}" \
     && codex --version
 

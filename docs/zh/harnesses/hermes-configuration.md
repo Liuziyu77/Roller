@@ -22,6 +22,8 @@ python -m roller collect \
 
 默认基础镜像为 Python 3.11。可通过 `--build-arg BASE_IMAGE=...` 使用已有 Linux 镜像，需含 Python 3.11–3.13、`apt-get` 和 `pip`。依赖按 Hermes 的 `uv.lock` 冻结安装。每次执行前检查源码版本及桥接依赖的 hook；升级 Hermes 需要同步评审和验证 runner。
 
+Debian 镜像参数 `DEBIAN_MIRROR`、`DEBIAN_SECURITY_MIRROR` 的用法见 [Docker 构建与镜像源](../start/docker-builds.md)。
+
 ## 配置
 
 | 参数 | 默认值与行为 |
@@ -65,7 +67,7 @@ python examples/coverage/suite.py check --case data/txt/hermes
 
 首版支持 Chat Completions 与文本/文件工具执行。视觉工具、直接多模态消息、厂商专属认证、Hermes gateway、远程 terminal backend、持久 Memory 和 skill learning 暂不支持。Hermes 可选视觉组记录尚未支持的视觉输入，不纳入要求全部通过的验收范围；二进制文件传输与媒体理解分开验证。
 
-网络受限时可设置构建参数 `PIP_INDEX_URL` 和 `PYPI_DOWNLOAD_BASE`。后者仅替换 `uv.lock` 下载地址的域名前缀，保留版本与 SHA-256 校验，镜像站需兼容 `/packages/` 布局。
+`PIP_INDEX_URL` 用于 pip 安装 uv，优先使用证书有效的 HTTPS 索引。非回环地址的可信内部 HTTP 索引需显式设置 `PIP_TRUSTED_HOST`。`PYPI_DOWNLOAD_BASE` 只替换 `uv.lock` 中的下载前缀，镜像需兼容 `/packages/` 布局，版本与 SHA-256 校验不变。uv 的连接信任由独立参数 `UV_INSECURE_HOST` 控制；pip 设置不会自动传给 uv。Hermes 源码仍需从 GitHub 拉取。
 
 ## 可复用的适配器测试
 
