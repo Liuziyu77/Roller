@@ -3,6 +3,7 @@ FROM ${BASE_IMAGE}
 
 ARG OPENCODE_VERSION=1.18.30
 ARG NPM_REGISTRY=https://registry.npmjs.org
+ARG UV_VERSION=0.9.7
 ARG DEBIAN_MIRROR
 ARG DEBIAN_SECURITY_MIRROR
 
@@ -27,6 +28,7 @@ RUN if ! (command -v bash && command -v git && command -v rg \
             bash ca-certificates git ripgrep file unzip procps \
         && rm -rf /var/lib/apt/lists/*; \
     fi
+RUN python3 -m pip install --no-cache-dir "uv==${UV_VERSION}"
 COPY install.py /tmp/install-opencode.py
 RUN python3 /tmp/install-opencode.py "${OPENCODE_VERSION}" "${NPM_REGISTRY}" \
     && rm /tmp/install-opencode.py \

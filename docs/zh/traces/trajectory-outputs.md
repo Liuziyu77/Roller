@@ -501,7 +501,7 @@ OpenClaw 仍要求 `--model-config` 中存在可代理 `baseUrl`；Codex 和 Cla
 
 ### 7.1 成功保证
 
-状态为 `ok` 的普通 sample 保证存在：
+状态为 `ok` 的普通 sample 通常存在：
 
 - `trace.jsonl`；
 - `trace_ACTF.json`；
@@ -509,7 +509,9 @@ OpenClaw 仍要求 `--model-config` 中存在可代理 `baseUrl`；Codex 和 Cla
 - `info.json`。
 
 User Simulator sample 还保证根 `conversation.json` 和 Simulator 自己的 raw/ACTF/SFT。
-`results/`、cache trace 和 wire trace 始终是条件产物，不属于成功必备文件。
+`results/`、cache trace 和 wire trace 始终是条件产物，不属于成功必备文件。若原生附件或
+多模态事件无法无损投影，评测结果仍可保持成功；`runtime.trajectory_conversion` 会记录
+ACTF 或 SFT 哪一层不可用，run 级 `sft.jsonl` 会跳过该样本。
 
 ### 7.2 失败 sample
 
@@ -520,7 +522,7 @@ run 级 `sft.jsonl`。
 以下情况会把原本成功的 Harness 结果改为 `error`：
 
 - 找不到 raw session trace；
-- ACTF 或 SFT 转换失败；
+- 缺少必需轨迹且没有显式 conversion downgrade；
 - task 输出目录复制失败；
 - 输出中发现符号链接或特殊文件；
 - User Simulator 任一参与方失败或其轨迹转换失败。

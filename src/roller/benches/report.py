@@ -58,7 +58,17 @@ def mean_aggregate(samples: Iterable[dict[str, Any]]) -> dict[str, Any]:
     for row in rows:
         scores = row.get("bench_scores")
         score_key = row.get("bench_score_key") or "overall_score"
-        value = sample_score(scores, score_key) if isinstance(scores, dict) else None
+        grader_error = row.get("bench_error")
+        if not grader_error and isinstance(scores, dict):
+            grader_error = scores.get("error")
+        # A synthetic zero returned alongside a grader/infrastructure error is
+        # not a model score. Keep it unscored so broken grading cannot depress
+        # benchmark results while still surfacing the failure in the report.
+        value = (
+            sample_score(scores, score_key)
+            if isinstance(scores, dict) and not grader_error
+            else None
+        )
         category = row.get("bench_category")
         if value is not None:
             total += value
@@ -72,7 +82,7 @@ def mean_aggregate(samples: Iterable[dict[str, Any]]) -> dict[str, Any]:
                 "category": category,
                 "status": row.get("status"),
                 "score": value,
-                "error": (scores or {}).get("error") if isinstance(scores, dict) else None,
+                "error": grader_error,
             }
         )
     task_count = len(rows)
@@ -111,17 +121,34 @@ def format_report(bench_name: str, report: dict[str, Any]) -> str:
             f"  scored {report['scored_count']}/{report['task_count']}"
             f"  (unscored {report['unscored_count']})"
         )
-        lines.append(f"  average  {bar} {average:.4f}")
+        pass_rate = report.get("pass_rate")
+        if isinstance(pass_rate, (int, float)):
+            pass_bar_count = max(0, min(10, int(round(pass_rate * 10))))
+            pass_bar = "█" * pass_bar_count + "░" * (10 - pass_bar_count)
+            lines.append(f"  pass rate   {pass_bar} {pass_rate:.4f}")
+            lines.append(f"  mean reward {bar} {average:.4f}")
+        else:
+            lines.append(f"  average  {bar} {average:.4f}")
         scored_average = report.get("scored_average")
-        if scored_average is not None and report["unscored_count"]:
+        if (
+            scored_average is not None
+            and report["unscored_count"]
+            and not isinstance(pass_rate, (int, float))
+        ):
             lines.append(f"  average over scored samples only: {scored_average:.4f}")
     categories = report.get("categories") or {}
     if categories:
         lines.append("")
         for name, row in categories.items():
-            lines.append(
-                f"    {row['average']:.4f}  {name}  ({row['task_count']} tasks)"
-            )
+            if isinstance(row.get("pass_rate"), (int, float)):
+                lines.append(
+                    f"    pass {row['pass_rate']:.4f}  reward {row['average']:.4f}"
+                    f"  {name}  ({row['task_count']} trials)"
+                )
+            else:
+                lines.append(
+                    f"    {row['average']:.4f}  {name}  ({row['task_count']} tasks)"
+                )
     failures = [
         row
         for row in report.get("tasks", [])

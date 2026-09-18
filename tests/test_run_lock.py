@@ -109,6 +109,7 @@ class RunLockTests(unittest.TestCase):
             )
 
         self.assertEqual(lock["requests"][0]["task_bundle"]["manifest_digest"], "bundle-a")
+        self.assertEqual(lock["requests"][0]["model_label"], "proxy/model")
         provider = lock["model_config"]["providers"]["proxy"]
         self.assertEqual(
             provider["baseUrl"],
@@ -118,6 +119,24 @@ class RunLockTests(unittest.TestCase):
         self.assertNotIn("secret-key", json.dumps(lock))
         self.assertNotIn("password", json.dumps(lock))
         self.assertNotIn("token=secret", json.dumps(lock))
+
+    def test_model_label_is_locked_separately_from_served_model(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            request = _request(Path(temporary))
+            request = RunRequest(
+                request.index,
+                request.task,
+                request.model,
+                request.timeout_seconds,
+                request.bundle,
+                model_label="Example model",
+            )
+            lock = build_run_lock(
+                [request], roller_version="1.2.3", execution={}, model_config=None
+            )
+
+        self.assertEqual(lock["requests"][0]["model"], "proxy/model")
+        self.assertEqual(lock["requests"][0]["model_label"], "Example model")
 
     def test_reuses_only_an_equal_existing_lock(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import math
 from abc import ABC, abstractmethod
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
-from typing import Any, Iterable, Sequence
+from typing import Any
 
 BENCH_SCHEMA = "roller.bench/v1"
 DEFAULT_GRADE_TIMEOUT = 120
-MAX_GRADE_TIMEOUT = 3600
+MAX_GRADE_TIMEOUT = 86_400
 
 
 class BenchFormatError(ValueError):
@@ -27,6 +29,7 @@ class GradeSpec:
     entrypoint: str = "grade"
     kwargs: dict[str, Any] = field(default_factory=dict)
     env_names: tuple[str, ...] = ()
+    optional_env_names: tuple[str, ...] = ()
     timeout_seconds: int = DEFAULT_GRADE_TIMEOUT
     needs_transcript: bool = True
     workspace_path: str | None = None
@@ -47,6 +50,8 @@ class GradeSpec:
             payload["kwargs"] = dict(self.kwargs)
         if self.env_names:
             payload["env"] = list(self.env_names)
+        if self.optional_env_names:
+            payload["optional_env"] = list(self.optional_env_names)
         if self.timeout_seconds != DEFAULT_GRADE_TIMEOUT:
             payload["timeout_seconds"] = self.timeout_seconds
         if not self.needs_transcript:
@@ -77,6 +82,9 @@ class GradeSpec:
         if not isinstance(kwargs, dict):
             raise BenchFormatError(f"{label}.kwargs: must be an object")
         env_names = _env_names(payload.get("env"), f"{label}.env")
+        optional_env_names = _env_names(
+            payload.get("optional_env"), f"{label}.optional_env"
+        )
         timeout_seconds = payload.get("timeout_seconds", DEFAULT_GRADE_TIMEOUT)
         if (
             isinstance(timeout_seconds, bool)
@@ -111,6 +119,7 @@ class GradeSpec:
             entrypoint=entrypoint,
             kwargs=kwargs,
             env_names=env_names,
+            optional_env_names=optional_env_names,
             timeout_seconds=timeout_seconds,
             needs_transcript=needs_transcript,
             workspace_path=workspace_path,
@@ -234,6 +243,8 @@ class BenchAdapter(ABC):
 
     name: str
     description: str = ""
+    variants: tuple[str, ...] = ()
+    default_variant: str | None = None
 
     @abstractmethod
     def load(
@@ -242,6 +253,8 @@ class BenchAdapter(ABC):
         *,
         categories: Sequence[str] | None = None,
         task_ids: Sequence[str] | None = None,
+        variant: str | None = None,
+        timeout_multiplier: float = 1.0,
     ) -> list[dict[str, Any]]:
         """Return ``roller.task/v1`` rows, each with a ``bench`` block."""
 
@@ -261,3 +274,14 @@ class BenchAdapter(ABC):
         from roller.benches.report import mean_aggregate
 
         return mean_aggregate(samples)
+
+
+def validate_timeout_multiplier(value: float) -> float:
+    """Validate the common export-time timeout scale used by bench adapters."""
+
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise BenchFormatError("timeout multiplier must be a number")
+    multiplier = float(value)
+    if not math.isfinite(multiplier) or multiplier <= 0:
+        raise BenchFormatError("timeout multiplier must be finite and positive")
+    return multiplier
