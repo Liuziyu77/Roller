@@ -18,7 +18,7 @@ python -m roller collect \
   --output runs/hermes --run-name smoke
 ```
 
-模型 ID 原样交给服务，无需加 OpenClaw 的 provider 前缀。服务需要支持带工具调用的 **OpenAI Chat Completions**。运行不需要单独部署 Hermes gateway。该版本要求模型上下文至少 **64,000 tokens**；服务报告错误时，可用 `--hermes-context-length` 指定模型真实支持的窗口大小。
+模型 ID 原样交给服务，无需加 OpenClaw 的 provider 前缀。服务需要支持带工具调用的 **OpenAI Chat Completions**。运行不需要单独部署 Hermes gateway。该版本要求模型上下文至少为 64,000 tokens；服务报告的窗口大小不准确时，可用 `--hermes-context-length` 指定模型真实支持的窗口大小。
 
 默认基础镜像为 Python 3.11。可通过 `--build-arg BASE_IMAGE=...` 使用已有 Linux 镜像，需含 Python 3.11–3.13、`apt-get` 和 `pip`。依赖按 Hermes 的 `uv.lock` 冻结安装。每次执行前检查源码版本及桥接依赖的 hook；升级 Hermes 需要同步评审和验证 runner。
 
@@ -41,13 +41,13 @@ Hermes 的专属 API/镜像参数同时适用于 Agent 和 Simulator。Run lock 
 
 每个参与者使用独立的一次性容器。Hermes 的 `local` terminal backend 在这个容器内执行，只启用 `terminal`、`file` 工具集。输入只读挂载、Context 文件、setup、任务环境变量、输出回收和容器内评分使用 Roller 的统一工作区。
 
-所有 Context 角色的文件会复制到声明路径，并在任务 system prompt 中列出，任务可显式读取。桥接关闭隐式 profile/context 搜索、持久 Memory、SOUL identity、checkpoint、后台 review 和 rollout 期间的自动依赖安装。因此可以验证 Context/skill 文件可访问性；不会启用 Hermes 自动发现或学习 skill 的服务。
+所有 Context 角色的文件会复制到声明路径，并在任务 system prompt 中列出，任务可显式读取。桥接关闭隐式 profile/context 搜索、持久 Memory、SOUL identity、checkpoint、后台 review 和 rollout 期间的自动依赖安装。Context/skill 测试检查这些文件能否读取，不会启用 Hermes 自动发现或学习 skill 的服务。
 
 每轮启动 Python agent，在同一个容器里恢复原生消息历史。对话与文件会保留，Python 进程内状态（例如后台进程句柄）不会恢复，终端操作应在本轮完成。Agent、Simulator、并行任务和重试之间相互隔离。
 
 `rollout/trace.jsonl` 是追加式桥接日志，记录实际请求、完整工具 schema、模型响应和 usage，以及原生 persistence hook 在压缩前观察到的工具结果。Raw 保留完整请求快照；ACTF/SFT 展示实际执行的逻辑对话，后续压缩摘要不会覆盖先前工具步骤。此格式不是 Hermes 自带 ShareGPT 导出，也不是 OpenClaw raw。
 
-仍输出 ACTF、SFT、结果文件、provenance 和 usage。未完成轮次、空回复、损坏的工具参数/schema 或 JSONL 不会算作成功。超时会停止执行并回收已有轨迹。Hermes 不生成 OpenClaw cache trace，Resume 不要求该文件；`full` 模式仍要求 wire trace，`capture: none` 仍禁止复用。
+Hermes 也会输出 ACTF、SFT、结果文件、provenance 和 usage。未完成轮次、空回复、损坏的工具参数/schema 或 JSONL 不会算作成功。超时会停止执行并回收已有轨迹。Hermes 不生成 OpenClaw cache trace，Resume 不要求该文件；`full` 模式仍要求 wire trace，`capture: none` 仍禁止复用。
 
 ## 验证与范围
 
@@ -63,7 +63,7 @@ python examples/coverage/suite.py check --case data/txt/hermes
 
 矩阵新增 204 条 Hermes 输入任务和 28 条 Simulator 配对任务，覆盖文本、文件、Context、setup/env、二进制检查、产物、评分和短对话。完整矩阵为 1368 条正向任务、20 条隔离负例。
 
-首版支持 Chat Completions 与文本/文件工具执行。视觉工具、直接多模态消息、external thinking、厂商专属认证、Hermes gateway、远程 terminal backend、持久 Memory 和 skill learning 暂不支持。Hermes 可选视觉组用于记录能力边界，不纳入要求全部通过的验收范围；二进制文件传输与媒体理解分开验证。
+首版支持 Chat Completions 与文本/文件工具执行。视觉工具、直接多模态消息、厂商专属认证、Hermes gateway、远程 terminal backend、持久 Memory 和 skill learning 暂不支持。Hermes 可选视觉组记录尚未支持的视觉输入，不纳入要求全部通过的验收范围；二进制文件传输与媒体理解分开验证。
 
 网络受限时可设置构建参数 `PIP_INDEX_URL` 和 `PYPI_DOWNLOAD_BASE`。后者仅替换 `uv.lock` 下载地址的域名前缀，保留版本与 SHA-256 校验，镜像站需兼容 `/packages/` 布局。
 

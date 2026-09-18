@@ -17,11 +17,6 @@ from urllib.parse import urlsplit, urlunsplit
 
 from roller.artifacts import ArtifactCollectionResult, collect_output_directory
 from roller.codex_actf import convert_codex_trace
-from roller.external_thinking import (
-    CODEX_DEEP_THINK_SERVER_NAME,
-    normalize_external_thinking_mode,
-    validate_external_thinking_trajectory,
-)
 from roller.harnesses.base import Harness, InteractiveHarness, InteractiveSession, TurnResult
 from roller.harnesses.docker import DockerRuntime
 from roller.models import HarnessResult, RunRequest
@@ -38,10 +33,6 @@ CODEX_HOME_CONTAINER_PATH = "/roller/codex-home"
 INPUTS_CONTAINER_PATH = "/roller/task/inputs"
 CONTEXT_CONTAINER_PATH = "/roller/task/context"
 OUTPUTS_CONTAINER_PATH = "/roller/task/outputs"
-EXTERNAL_THINKING_MCP_CONTAINER_PATH = "/roller/deep_think_mcp.cjs"
-EXTERNAL_THINKING_MCP_HOST_PATH = (
-    Path(__file__).resolve().parents[1] / "assets" / "external_thinking" / "codex_mcp.cjs"
-)
 ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 COMMON_ENV_NAMES = (
@@ -96,7 +87,6 @@ class CodexConfig:
     reasoning_summary: str | None = None
     web_search: str = "disabled"
     supports_websockets: bool = False
-    external_thinking: str = "off"
     wire_trace_mode: str = "actf"
     keep_thinking: bool = True
     keep_container_on_error: bool = False
@@ -109,11 +99,6 @@ class CodexConfig:
             normalize_thinking(
                 self.reasoning_effort, field="Codex reasoning effort"
             ),
-        )
-        object.__setattr__(
-            self,
-            "external_thinking",
-            normalize_external_thinking_mode(self.external_thinking),
         )
         if not self.docker_image.strip():
             raise ValueError("Codex docker image must be non-empty")
@@ -141,19 +126,10 @@ class CodexConfig:
             raise ValueError("Codex wire trace mode must be off|actf|full")
         if self.wire_trace_mode == "full" and not self.api_base:
             raise ValueError("Codex --wire-trace full requires --api-base")
-        if self.external_thinking != "off" and not self.api_base:
-            raise ValueError("Codex external thinking requires --api-base")
-        if (
-            self.external_thinking != "off" or self.wire_trace_mode == "full"
-        ) and self.network != "host":
+        if self.wire_trace_mode == "full" and self.network != "host":
             raise ValueError(
-                "Codex external thinking and --wire-trace full require "
+                "Codex --wire-trace full requires "
                 "--network host so the container can reach the rollout-local proxy"
-            )
-        if self.external_thinking != "off" and self.supports_websockets:
-            raise ValueError(
-                "Codex external thinking requires --no-codex-websockets because "
-                "the rollout-local protocol proxy uses Responses HTTP streaming"
             )
         if self.config_path is not None and not self.config_path.is_file():
             raise FileNotFoundError(f"Codex config not found: {self.config_path}")
@@ -187,25 +163,15 @@ class CodexHarness(InteractiveHarness):
 
     def _start_wire_proxy(self, output_dir: Path) -> None:
         self._wire_proxy = None
-        needs_proxy = (
-            self.config.external_thinking != "off"
-            or self.config.wire_trace_mode == "full"
-        )
-        if not needs_proxy:
+        if self.config.wire_trace_mode != "full":
             return
         if not self.config.api_base:
             raise RuntimeError("Codex wire proxy requires --api-base")
-        log_path = (
-            output_dir / "wire_trace.jsonl"
-            if self.config.wire_trace_mode == "full"
-            else output_dir / "rollout" / "wire_external.jsonl"
-        )
+        log_path = output_dir / "wire_trace.jsonl"
         self._wire_proxy = WireTraceProxy(
             self.config.api_base,
             log_path,
-            mode="full" if self.config.wire_trace_mode == "full" else "tools",
-            external_thinking_mode=self.config.external_thinking,
-            external_thinking_transport="codex_mcp",
+            mode="full",
         )
         self._wire_proxy.start()
 
@@ -386,25 +352,8 @@ class CodexHarness(InteractiveHarness):
             "Codex config copy",
         )
 
-    def _prepare_external_thinking(self, container: str) -> None:
-        if self.config.external_thinking == "off":
-            return
-        if not EXTERNAL_THINKING_MCP_HOST_PATH.is_file():
-            raise RuntimeError(
-                "Roller Codex external thinking MCP asset is missing from the installation"
-            )
-        self._checked(
-            [
-                "cp",
-                str(EXTERNAL_THINKING_MCP_HOST_PATH),
-                f"{container}:{EXTERNAL_THINKING_MCP_CONTAINER_PATH}",
-            ],
-            "Codex external thinking MCP copy",
-        )
 
     def _effective_effort(self, request: RunRequest) -> str | None:
-        if self.config.external_thinking != "off":
-            return None
         effort = resolve_thinking(request.task.thinking, self.config.reasoning_effort)
         if effort == "off":
             raise ValueError(
@@ -451,7 +400,7 @@ class CodexHarness(InteractiveHarness):
         effort = self._effective_effort(request)
         if effort:
             command.extend(["-c", f"model_reasoning_effort={json.dumps(effort)}"])
-        if self.config.reasoning_summary and self.config.external_thinking == "off":
+        if self.config.reasoning_summary:
             command.extend(
                 [
                     "-c",
@@ -484,25 +433,6 @@ class CodexHarness(InteractiveHarness):
                     f"{str(self.config.supports_websockets).lower()}",
                     "-c",
                     "disable_response_storage=true",
-                ]
-            )
-        if self.config.external_thinking != "off":
-            command.extend(
-                [
-                    "-c",
-                    f"mcp_servers.{CODEX_DEEP_THINK_SERVER_NAME}.command=\"node\"",
-                    "-c",
-                    f"mcp_servers.{CODEX_DEEP_THINK_SERVER_NAME}.args="
-                    f"[{json.dumps(EXTERNAL_THINKING_MCP_CONTAINER_PATH)}]",
-                    "-c",
-                    f"mcp_servers.{CODEX_DEEP_THINK_SERVER_NAME}.required=true",
-                    "-c",
-                    f"mcp_servers.{CODEX_DEEP_THINK_SERVER_NAME}.enabled_tools="
-                    '["deep_think"]',
-                    "-c",
-                    f"mcp_servers.{CODEX_DEEP_THINK_SERVER_NAME}.startup_timeout_sec=10",
-                    "-c",
-                    f"mcp_servers.{CODEX_DEEP_THINK_SERVER_NAME}.tool_timeout_sec=10",
                 ]
             )
         command.extend(["--", prompt])
@@ -618,16 +548,6 @@ class CodexHarness(InteractiveHarness):
         image_digest = self._image_digest()
         log_path = output_dir / "rollout" / f"codex.attempt-{attempt}.jsonl"
         log_path.parent.mkdir(parents=True, exist_ok=True)
-        external_thinking_metadata: dict[str, Any] = {
-            "mode": self.config.external_thinking,
-            "native_reasoning": (
-                "off" if self.config.external_thinking != "off" else None
-            ),
-            "validated": self.config.external_thinking == "off",
-            "deep_think_calls": 0,
-            "thought_action_pairs": 0,
-            "validation_error": None,
-        }
 
         try:
             self._start_wire_proxy(output_dir)
@@ -636,7 +556,6 @@ class CodexHarness(InteractiveHarness):
             self._prepare_workspace(container, request)
             self._prepare_context_and_setup(container, request)
             self._prepare_config(container)
-            self._prepare_external_thinking(container)
             codex_version = self._checked(
                 ["exec", container, "codex", "--version"],
                 "Codex version check",
@@ -700,28 +619,6 @@ class CodexHarness(InteractiveHarness):
                 if status == "ok":
                     status = "error"
                     error = f"Codex trajectory conversion failed: {exc}"
-            if (
-                trajectory_path is not None
-                and self.config.external_thinking != "off"
-            ):
-                try:
-                    external_stats = validate_external_thinking_trajectory(
-                        trajectory,
-                        self.config.external_thinking,
-                        require_isolated_deep_think=True,
-                    )
-                    external_thinking_metadata.update(
-                        {
-                            "validated": True,
-                            "deep_think_calls": external_stats.deep_think_calls,
-                            "thought_action_pairs": external_stats.thought_action_pairs,
-                        }
-                    )
-                except Exception as exc:
-                    external_thinking_metadata["validation_error"] = str(exc)
-                    if status == "ok":
-                        status = "error"
-                        error = f"Codex external thinking validation failed: {exc}"
 
         if status == "ok" and trace_path is None:
             status = "error"
@@ -788,7 +685,6 @@ class CodexHarness(InteractiveHarness):
             ),
             "environment_names": sorted(environment),
             "attempt": attempt,
-            "external_thinking": self.config.external_thinking,
             "started_at": started_at,
             "finished_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         }
@@ -815,14 +711,9 @@ class CodexHarness(InteractiveHarness):
                 "turns": len(request.task.prompts),
                 "reasoning_effort": resolve_thinking(
                     request.task.thinking, self.config.reasoning_effort
-                ) if self.config.external_thinking == "off" else "off",
-                "external_thinking": external_thinking_metadata,
-                "wire_trace": self.config.wire_trace_mode,
-                "reasoning_summary": (
-                    self.config.reasoning_summary
-                    if self.config.external_thinking == "off"
-                    else None
                 ),
+                "wire_trace": self.config.wire_trace_mode,
+                "reasoning_summary": self.config.reasoning_summary,
                 "keep_thinking": self.config.keep_thinking,
                 "web_search": self.config.web_search,
                 "supports_websockets": self.config.supports_websockets,
@@ -871,16 +762,6 @@ class CodexSession(InteractiveSession):
         self.started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
         self.started_monotonic = time.monotonic()
         self.log_path = output_dir / "rollout" / f"codex.attempt-{attempt}.jsonl"
-        self.external_thinking_metadata: dict[str, Any] = {
-            "mode": harness.config.external_thinking,
-            "native_reasoning": (
-                "off" if harness.config.external_thinking != "off" else None
-            ),
-            "validated": harness.config.external_thinking == "off",
-            "deep_think_calls": 0,
-            "thought_action_pairs": 0,
-            "validation_error": None,
-        }
         self._finished: HarnessResult | None = None
 
     def start(self) -> None:
@@ -892,7 +773,6 @@ class CodexSession(InteractiveSession):
             "rollout/trace.jsonl",
             f"rollout/trace.attempt-{self.attempt}.jsonl",
             "wire_trace.jsonl",
-            "rollout/wire_external.jsonl",
         ):
             (self.output_dir / relative).unlink(missing_ok=True)
         try:
@@ -902,7 +782,6 @@ class CodexSession(InteractiveSession):
             self.harness._prepare_workspace(self.container, self.request)
             self.harness._prepare_context_and_setup(self.container, self.request)
             self.harness._prepare_config(self.container)
-            self.harness._prepare_external_thinking(self.container)
             self.codex_version = self.harness._checked(
                 ["exec", self.container, "codex", "--version"],
                 "Codex version check",
@@ -1000,17 +879,6 @@ class CodexSession(InteractiveSession):
                 )
                 if not trajectory.get("steps"):
                     raise ValueError("Codex native trace produced no assistant steps")
-                if config.external_thinking != "off":
-                    stats = validate_external_thinking_trajectory(
-                        trajectory, config.external_thinking, require_isolated_deep_think=True
-                    )
-                    self.external_thinking_metadata.update(
-                        {
-                            "validated": True,
-                            "deep_think_calls": stats.deep_think_calls,
-                            "thought_action_pairs": stats.thought_action_pairs,
-                        }
-                    )
             except Exception as exc:
                 trajectory_path = None
                 if final_status == "ok":
@@ -1064,14 +932,12 @@ class CodexSession(InteractiveSession):
             "api_base_urls": [redact_api_base(config.api_base)] if config.api_base else [],
             "environment_names": sorted(self.environment),
             "attempt": self.attempt,
-            "external_thinking": config.external_thinking,
             "started_at": self.started_at,
             "finished_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         }
         try:
-            reasoning_effort = (
-                resolve_thinking(self.request.task.thinking, config.reasoning_effort)
-                if config.external_thinking == "off" else "off"
+            reasoning_effort = resolve_thinking(
+                self.request.task.thinking, config.reasoning_effort
             )
         except Exception:
             reasoning_effort = None
@@ -1089,9 +955,8 @@ class CodexSession(InteractiveSession):
                 "agent_return_codes": self.return_codes,
                 "turns": len(self.messages),
                 "reasoning_effort": reasoning_effort,
-                "external_thinking": self.external_thinking_metadata,
                 "wire_trace": config.wire_trace_mode,
-                "reasoning_summary": config.reasoning_summary if config.external_thinking == "off" else None,
+                "reasoning_summary": config.reasoning_summary,
                 "keep_thinking": config.keep_thinking,
                 "web_search": config.web_search,
                 "supports_websockets": config.supports_websockets,

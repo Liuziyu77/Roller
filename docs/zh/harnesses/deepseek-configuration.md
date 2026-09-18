@@ -1,6 +1,6 @@
 # DeepSeek Harness
 
-Roller 通过官方 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Python SDK 驱动原生 `dsh` 运行时，固定 SDK 和 runtime 为 **0.1.5rc1**，采用官方 `sdk-minimal` profile。Task Agent 与 User Simulator 均可设置 `"harness": "deepseek"`。
+Roller 通过官方 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Python SDK 运行原生 `dsh`，SDK 和 runtime 均固定为 0.1.5rc1，采用官方 `sdk-minimal` profile。Task Agent 与 User Simulator 均可设置 `"harness": "deepseek"`。
 
 ## 构建与运行
 
@@ -33,7 +33,7 @@ python -m roller collect \
 | `--wire-trace` | 每种模式均保留实际请求和 schema；`full` 额外保存 HTTP 请求，要求显式 API base 和 host 网络 |
 | `--no-keep-thinking` | 仅移除 ACTF/SFT reasoning，保留原始事件和续聊历史 |
 
-专属参数同时适用于 Agent 和 Simulator。Run lock 记录镜像摘要、固定版本、profile、工具、API 地址、Key 变量名、步数和 token 上限。密钥通过执行环境读取。
+专属参数同时适用于 Agent 和 Simulator。Run lock 记录镜像摘要、固定版本、profile、工具、API 地址、Key 变量名、步数和 token 上限。运行时从环境变量读取密钥。
 
 ## 原生会话与产物
 
@@ -43,7 +43,7 @@ python -m roller collect \
 
 `trace.jsonl` 使用 `roller.deepseek-events/v1`，保存实际序列化请求及 SDK 原生通知。ACTF/SFT 使用实际 system prompt、工具 schema、reasoning、调用参数和工具结果。失败、截断、空回复、未完成工具调用及无法无损表示的非文本内容会被拒绝。超时停止整个容器并回收已有文件，Resume 按参与者分别验证，DeepSeek 不要求 OpenClaw cache trace。
 
-首版不支持 external thinking、直接多模态消息、视觉验收、交互登录、任意 profile/插件配置和跨任务的长期记忆。不同模型的 DeepSeek 协议兼容性仍需验证；关闭自动压缩的长任务应配置足够窗口。
+首版不支持直接多模态消息、视觉验收、交互登录、任意 profile/插件配置和跨任务的长期记忆。不同模型的 DeepSeek 协议兼容性仍需验证；由于未启用自动压缩，长任务需要配置足够的上下文窗口。
 
 ## 可复用验证
 

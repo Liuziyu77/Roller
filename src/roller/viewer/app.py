@@ -295,9 +295,6 @@ class RollerRun:
                     "thinking": harness_configuration.get(
                         "thinking", harness_configuration.get("reasoning_effort")
                     ),
-                    "external_thinking": harness_configuration.get(
-                        "external_thinking", "off"
-                    ),
                     "keep_thinking": harness_configuration.get("keep_thinking"),
                     "reasoning_summary": harness_configuration.get(
                         "reasoning_summary"

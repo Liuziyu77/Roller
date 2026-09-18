@@ -2,7 +2,7 @@
 
 [项目首页](../README.md) · [快速上手](../docs/zh/start/getting-started.md) · [Task 格式](../docs/zh/tasks/task-format.md) · [产物说明](../docs/zh/traces/trajectory-outputs.md)
 
-本目录包含配置模板、task 和运行命令。安装、字段定义与轨迹语义由对应专题文档维护。
+本目录包含配置模板、task 和运行命令。安装步骤、task 字段和轨迹格式见对应指南。
 
 | 使用目的 | 入口 |
 | --- | --- |
@@ -51,7 +51,9 @@ examples/
 
 [完整使用说明](coverage/README.md) · [English quickstart](coverage/README.en.md) · [场景清单](coverage/COVERAGE.md)
 
-Coverage 用于检查清单解析、文件和 Context 输入、Runtime 配置、产物回收、评分，以及多种 Harness 的执行与 Resume 行为。包含 **1624 条正常任务，分为 406 组，每组 4 条**，另有 **20 条预期拒绝的输入**。其中 1428 条覆盖 51 种场景在 OpenClaw、Codex、Claude Code、Hermes、OpenCode、DeepSeek、Pi 上的执行，196 条覆盖全部 49 种 Task Agent × User Simulator 配对。
+Coverage 用于检查清单解析、文件和 Context 输入、Runtime 配置、产物回收、评分，以及多种 Harness 的执行与 Resume 行为。共 1624 条正常任务，分为 406 组，每组 4 条，另有 20 条预期拒绝的输入。
+
+正常任务中，1428 条覆盖 51 种场景在 OpenClaw、Codex、Claude Code、Hermes、OpenCode、DeepSeek、Pi 上的执行；196 条覆盖全部 49 种 Task Agent × User Simulator 配对。
 
 任务以加法、读取小文件、写入短答案为主，对话最多两轮。输入文件已随仓库提供，下载后无需另行准备 `Roller_Data`。
 
@@ -99,7 +101,7 @@ python examples/coverage/suite.py check --case formats/jsonl/codex
 | 检查合并运行的结果 | 用 [report.py](coverage/report.py) 检查采集状态、答案、产物和轨迹；`--fail-on-check` 可用于 CI |
 | 检查已有样本能否 Resume | 用 [audit_resume.py](coverage/audit_resume.py) 做只读审计；实际恢复仍使用原采集命令加 `--resume` |
 
-总 JSON 中的模型名是占位值，合并时会统一原始清单格式和 ID；本地模型配置与任务副本的生成命令见 [混合 Harness 运行说明](coverage/README.md#4-使用一个总-json-运行混合-harness)。其中 28 条可选视觉任务需要模型、服务与图像工具支持；Hermes、OpenCode、DeepSeek 和 Pi 各 4 条视觉任务用于记录暂不支持的能力边界；二进制文件读取测试仅验证文件访问能力。
+总 JSON 中的模型名是占位值，合并时会统一原始清单格式和 ID；本地模型配置与任务副本的生成命令见 [混合 Harness 运行说明](coverage/README.md#4-使用一个总-json-运行混合-harness)。其中 28 条可选视觉任务需要模型、服务与图像工具支持；Hermes、OpenCode、DeepSeek 和 Pi 各 4 条视觉任务用于记录暂未支持的视觉输入；二进制文件读取测试仅验证文件访问能力。
 
 ## 基础样例的采集准备
 
@@ -127,7 +129,7 @@ set +a
 | Codex | `config/codex/config.toml.example` | 可选的原生 `config.toml`；展示 verbosity 和自定义 MCP 写法 |
 | Claude Code | `config/claude-code/settings.json.example` | 可选的原生 `settings.json`，不包含 Key、权限放宽或 hook |
 
-运行前必须把模板中的 base URL、环境变量和值域改成真实服务支持的配置：
+运行前，按模型服务的要求填写模板中的 base URL、环境变量和参数值：
 
 - Responses API：`"api": "openai-responses"`；
 - Chat Completions：`"api": "openai-completions"`；
@@ -149,7 +151,7 @@ set +a
 | `03_user_memory_context` | `USER.md` + `MEMORY.md` | Context 注入和 capture |
 | `04_multi_turn` | 两条 `messages` | 同一 Agent session 的预定义多轮 |
 
-这四条 task 可由七种 Harness 运行，是最适合做环境验收的一组数据。
+这四条 task 可由七种 Harness 运行，可用于检查运行环境。
 
 ## OpenClaw：基础采集
 
@@ -214,7 +216,7 @@ python examples/coverage/suite.py run --case data/txt/opencode \
 python examples/coverage/suite.py check --case data/txt/opencode
 ```
 
-支持 Agent、Simulator、原生 session 续聊、ACTF/SFT 和 Resume。暂不支持视觉验收和 external thinking。
+支持 Agent、Simulator、原生 session 续聊、ACTF/SFT 和 Resume。暂不支持视觉验收。
 
 ## DeepSeek Harness：原生 SDK 与持久化 Bash
 
@@ -255,7 +257,7 @@ python examples/coverage/suite.py run --case data/txt/hermes \
 python examples/coverage/suite.py check --case data/txt/hermes
 ```
 
-Hermes 也可作为 User Simulator。当前固定启用容器内 `terminal`、`file` 工具，支持原生历史恢复、ACTF/SFT 和 Resume；暂不支持 external thinking 与视觉工具。
+Hermes 也可作为 User Simulator。当前固定启用容器内 `terminal`、`file` 工具，支持原生历史恢复、ACTF/SFT 和 Resume；暂不支持视觉工具。
 
 ## Claude Code：运行相同 Task
 
@@ -277,44 +279,10 @@ roller collect \
 ```
 
 `--claude-settings` 可以省略；示例只关闭 commit co-author 标记，不改变 permission mode、thinking
-或工具行为。第四条 task 会通过 `claude --continue` 延续 session。镜像、endpoint、thinking 和
-signature recovery 见 [Claude Code Harness 指南](../docs/zh/harnesses/claude-code-configuration.md)。
+或工具行为。第四条 task 会通过 `claude --continue` 延续 session。镜像、endpoint 和 thinking
+配置见 [Claude Code Harness 指南](../docs/zh/harnesses/claude-code-configuration.md)。
 
 ## 进阶案例
-
-### External thinking
-
-External thinking 推荐用于 `gpt-5.6-sol` 等 GPT reasoning 模型，以显式工具参数代替原生
-压缩 summary。以下命令只运行第一条 task，用 Codex 验收严格 THINK/ACT 交替：
-
-```bash
-roller collect \
-  --harness codex \
-  --tasks examples/tasks/tasks.jsonl \
-  --limit 1 \
-  --model gpt-5.6-sol \
-  --api-base "$ROLLER_CODEX_BASE_URL" \
-  --api-key-env ROLLER_CODEX_API_KEY \
-  --external-thinking external_always \
-  --wire-trace full \
-  --timeout 900 \
-  --output runs \
-  --run-name examples-codex-external
-```
-
-成功后，ACTF 保留 canonical `deep_think` call/result，SFT 则删除内部工具协议并把 thoughts 写入下一条 assistant 的 `reasoning_content`。完整验收方法见 [External Thinking](../docs/zh/traces/external-thinking.md#7-如何查看和验收)。
-
-### Claude signature recovery
-
-Claude 系列（如 Claude Opus 4.8，示例 ID `claude-opus-4-8`）的 native session 存在
-signed thinking、但 reasoning 为空时，可在 Claude Code 命令中增加：
-
-```text
---claude-signature-recovery fill
---claude-signature-recovery-attempts 2
-```
-
-`fill` 是推荐的保守模式；它只填空值。该功能会增加独立 provider 请求，结果为 best effort，正式训练前应检查 `signature_recovery.jsonl`。详见 [Signature recovery](../docs/zh/harnesses/claude-code-configuration.md#5-signature-recovery实验性)。
 
 ### 动态 User Simulator
 
@@ -359,7 +327,7 @@ roller collect \
   --run-name examples-vision
 ```
 
-模型配置声明能力不会让文本后端自动支持图像；服务与模型本身也必须支持对应协议下的视觉输入。
+模型配置用于声明图像能力；服务与模型也必须支持对应协议下的视觉输入。
 
 ## 验收与查看
 
@@ -376,4 +344,4 @@ roller view runs/examples-openclaw
 - 每个成功 sample 是否有 `trace.jsonl`、`trace_ACTF.json`、`trace_SFT.json` 和 `info.json`；
 - run 根目录 `sft.jsonl` 是否按 request 顺序汇总成功样本。
 
-下一步：编写自己的 [Task](../docs/zh/tasks/task-format.md)，或阅读 [轨迹产出文件指南](../docs/zh/traces/trajectory-outputs.md) 选择训练、调试与审计所需的文件。
+编写任务参见 [Task](../docs/zh/tasks/task-format.md)；选择训练、调试与审计所需的文件参见 [轨迹产出文件指南](../docs/zh/traces/trajectory-outputs.md)。

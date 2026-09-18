@@ -2,7 +2,7 @@
 
 [English](README.en.md) · [场景清单](COVERAGE.md) · [合并总 JSON](all_tasks.json) · [逐组预期](manifest.json) · [文件来源](sources.json) · [Examples](../README.md)
 
-可随仓库复用的小任务测试集：**1624 条正常任务，406 组，每组 4 条；另有 20 条预期拒绝的输入**。覆盖 OpenClaw、Codex、Claude Code、Hermes、OpenCode、DeepSeek、Pi 七种 Harness，以及全部 49 种 Task Agent × User Simulator 配对。
+本目录提供可复用的小任务测试集，共 1624 条正常任务，分为 406 组，每组 4 条，另有 20 条预期拒绝的输入。测试覆盖 OpenClaw、Codex、Claude Code、Hermes、OpenCode、DeepSeek、Pi 七种 Harness，以及全部 49 种 Task Agent × User Simulator 配对。
 
 输入小文件已包含在仓库内，运行和重新生成均不需要原始 `Roller_Data`。公开任务使用模型占位值和相对路径。所有命令从 **Roller 项目根目录** 执行，需要 **Python 3.10+**。
 
@@ -21,7 +21,7 @@ python examples/coverage/suite.py run --case '*' --dry-run
 
 ## 2. 配置模型服务
 
-真实采集前，按 [Getting Started](../../docs/zh/start/getting-started.md) 安装 Roller 并准备所选 Harness 的镜像。不同 Harness 使用不同协议；同一服务是否支持它们，取决于服务自身。
+真实采集前，按 [Getting Started](../../docs/zh/start/getting-started.md) 安装 Roller 并准备所选 Harness 的镜像。不同 Harness 使用不同协议，配置前需确认模型服务支持相应接口。
 
 | Harness | 服务协议 | 模型变量 | 连接配置 |
 | --- | --- | --- | --- |
@@ -80,7 +80,13 @@ python examples/coverage/suite.py run --case simulators/pair/codex--claude-code 
      --claude-api-key-env ROLLER_ANTHROPIC_API_KEY
 ```
 
-`--case` 支持带引号的 glob，可重复指定；`--exclude-case` 可排除匹配组，例如 `--case '*/hermes' --exclude-case 'vision/*'` 选择 200 条 Hermes 非视觉任务。例如 `--case 'data/*/codex'` 选中 40 条任务，`--case 'simulators/pair/*'` 选中全部 196 条 Simulator 任务。默认输出在 `runs/coverage/<场景名__Harness>/`；可用 `--output` 隔离不同服务的结果。
+`--case` 支持带引号的 glob，可重复指定；`--exclude-case` 用于排除匹配组。例如：
+
+- `--case '*/hermes' --exclude-case 'vision/*'`：200 条 Hermes 非视觉任务；
+- `--case 'data/*/codex'`：40 条 Codex 数据输入任务；
+- `--case 'simulators/pair/*'`：全部 196 条 Simulator 任务。
+
+默认输出在 `runs/coverage/<场景名__Harness>/`。可用 `--output` 分开保存不同服务的结果。
 
 `suite.py run` 从 `ROLLER_TEST_*_MODEL` 读取模型，也接受 `--openclaw-model`、`--codex-model`、`--claude-code-model`、`--hermes-model`、`--opencode-model`、`--deepseek-model`、`--pi-model` 覆盖。脚本在临时任务副本中绑定 Agent 和 Simulator 模型，保留模型继承测试，并处理自定义解析参数和环境变量。`--` 后的参数传给 `roller collect`；改变任务数量、路由或模型展开的参数会被拒绝。
 
@@ -136,7 +142,7 @@ python -m roller collect \
 
 `merge.py` 的模型参数必须显式提供，不读取环境，以保证无参数重新生成始终得到同一份公开模板。如果三种协议服务支持同一模型 ID，也可用 `--model MODEL_ID --openclaw-provider PROVIDER` 简写；各 Harness 的独立参数优先。本地模型或任务子集必须写到 `--output` 指定的新文件。
 
-合并会统一 JSON/JSONL 格式、自定义 prompt/id key 和特殊 ID。**原始解析格式的完整覆盖应使用 `suite.py`**。绝对 `file_root` 场景在仓库里保存相对路径，由 `suite.py` 运行时转换；合并本地副本时用 `--absolute-roots` 保留这一验证点。复制整个 Roller 仓库即可迁移样例，单独复制 `all_tasks.json` 仍需保留它引用的 fixtures。
+合并会统一 JSON/JSONL 格式、自定义 prompt/id key 和特殊 ID。要测试原始清单的解析格式，请使用 `suite.py`。绝对 `file_root` 场景在仓库里保存相对路径，由 `suite.py` 运行时转换；合并本地副本时用 `--absolute-roots` 保留这一验证点。复制整个 Roller 仓库即可迁移样例，单独复制 `all_tasks.json` 仍需保留它引用的 fixtures。
 
 ## 5. 生成报告和审计 Resume
 
@@ -154,7 +160,7 @@ python examples/coverage/audit_resume.py runs/coverage/merged/collection \
 
 报告区分采集成功 `collected_ok` 和严格验收通过 `passed`；额外解释、错误答案或缺失产物会导致严格验收失败。`--fail-on-check` 适合 CI，也检查运行是否完整及 SFT 汇总。检查脚本读取运行的 trace 配置，按 Agent、Simulator 各自的实际 Harness 判断 cache trace。
 
-Resume 审计调用 Collector 的样本复用判定，不启动容器、不改写结果；它不替代 CLI 的 run lock 校验。真正恢复时，使用相同任务副本和采集参数，在采集命令末尾加 `--resume`。模型、输入或运行配置变化时使用新的输出目录。
+Resume 审计调用 Collector 的样本复用判定，不启动容器、不改写结果；它不替代 CLI 的 run lock 校验。恢复采集时，使用相同任务副本和采集参数，在采集命令末尾加 `--resume`。模型、输入或运行配置变化时使用新的输出目录。
 
 ## 覆盖范围与限制
 
@@ -176,7 +182,7 @@ Resume 审计调用 Collector 的样本复用判定，不启动容器、不改�
 
 - Simulator 每组依次验证：一轮纯文本、CSV 两轮并保存答案、Memory 与自定义输出、`max_turns` 截断。同 Harness 第一条省略 Simulator model，验证继承。结束决策也会消耗模型调用。
 - 文件输入表示将文件放入工作区；`messages[].content` 目前只支持字符串。二进制读取不代表视觉、PDF 文本理解或语音识别。视觉组需要图像工具、模型和服务协议同时支持；OpenClaw 模型配置还需声明 `"input": ["text", "image"]`。可复制为被忽略的 `config/openclaw.local.json` 后修改。
-- Hermes 首版固定启用 `terminal`、`file`，不启用视觉工具；它的视觉组用于记录当前能力边界，不能作为要求全部通过的验收组。构建与限制见 [Hermes 指南](../../docs/zh/harnesses/hermes-configuration.md)。
+- Hermes 首版固定启用 `terminal`、`file`，不启用视觉工具；它的视觉组记录当前尚未支持的视觉输入，不能作为要求全部通过的验收组。构建与限制见 [Hermes 指南](../../docs/zh/harnesses/hermes-configuration.md)。
 - DeepSeek 使用官方 `sdk-minimal`，提供持久化 Bash，视觉验收不在首版范围；见 [DeepSeek 指南](../../docs/zh/harnesses/deepseek-configuration.md)。
 - OpenCode 首版支持文本与文件工具，视觉组记录暂不支持的验收范围；见 [OpenCode 指南](../../docs/zh/harnesses/opencode-configuration.md)。
 - 携带 base64 字节的 image 工具结果会导出为 `<image>` 占位符加顶层 `images`（见 [SFT 数据格式](../../docs/zh/traces/sft-format.md)）；OpenCode 等在 ACTF 层就拒绝附件的 harness 仍会失败，需结合 raw、ACTF 和错误信息定位。文本模型的视觉失败不能直接作为文件传输失败的证据。
@@ -215,4 +221,4 @@ python examples/coverage/validate_merged.py
 
 个人 `.env`、本地模型配置、运行产物与报告不属于公开样例。命令默认把产物写入 Git 忽略的 `runs/`；历史测试记录也保留在该目录，不随测试套件发布。
 
-Pi 使用原生 AgentSession 和七种文本/文件工具，多轮保留历史与文件；视觉组用于记录能力边界。见 [Pi 指南](../../docs/zh/harnesses/pi-configuration.md)。
+Pi 使用原生 AgentSession 和七种文本/文件工具，多轮保留历史与文件；视觉组记录尚未支持的视觉输入。见 [Pi 指南](../../docs/zh/harnesses/pi-configuration.md)。

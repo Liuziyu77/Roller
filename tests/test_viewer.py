@@ -34,7 +34,6 @@ class ViewerTests(unittest.TestCase):
                     "trajectory_count": 2,
                     "openclaw": {
                         "thinking": "high",
-                        "external_thinking": "off",
                         "keep_thinking": True,
                     },
                 },
@@ -161,7 +160,6 @@ class ViewerTests(unittest.TestCase):
         self.assertEqual(summary["rollout_count"], 2)
         self.assertEqual(summary["status_counts"], {"ok": 1, "error": 1})
         self.assertEqual(summary["configuration"]["thinking"], "high")
-        self.assertEqual(summary["configuration"]["external_thinking"], "off")
         self.assertEqual(summary["state"], "running")
         self.assertEqual(
             summary["progress"], {"total": 3, "processed": 2, "pending": 1}

@@ -1,9 +1,8 @@
 # SFT 数据格式
 
-[文档中心](../index.md) · [轨迹产物](trajectory-outputs.md) · [Task 格式](../tasks/task-format.md) · [External Thinking](external-thinking.md)
+[文档中心](../index.md) · [轨迹产物](trajectory-outputs.md) · [Task 格式](../tasks/task-format.md)
 
-Roller 在保留 raw trace 和 ACTF 的同时，为每条成功轨迹生成一份只用于训练的
-`trace_SFT.json`。Run 根目录的 `sft.jsonl` 按 request index 汇总所有成功 sample，
+Roller 为每条成功轨迹生成训练文件 `trace_SFT.json`，同时保留 raw trace 和 ACTF。Run 根目录的 `sft.jsonl` 按 request index 汇总所有成功 sample，
 每行与对应的 `trace_SFT.json` 内容相同。
 
 ## 1. 顶层结构
@@ -99,7 +98,7 @@ SFT record 不包含 schema version、task/model、usage、时间戳、step ID�
 - `images` 元素是完整的 `data:image/png|jpeg|webp|gif;base64,…` URI，不保存裸
   base64。相同图片不去重：列表编码的是出现顺序，不是 blob 存储。
 - 纯文本 record 永远不会出现 `images` 键，现有纯文本数据和消费方完全向后兼容。
-- `<image>` 是保留占位符；含图片的 record 若源文本中已出现无法与占位符区分的字面
+- `<image>` 是保留占位符；检查覆盖消息正文、reasoning 和工具调用参数。含图片的 record 若源文本中已出现无法与占位符区分的字面
   `<image>`，转换直接失败。
 
 ## 2. Message 规则
@@ -129,40 +128,6 @@ SFT record 不包含 schema version、task/model、usage、时间戳、step ID�
 reasoning 不进入训练数据；只有 ACTF 中可见的 reasoning summary 会进入
 `reasoning_content`。
 
-启用 `--external-thinking` 时，raw/ACTF 保持真实 `deep_think` 调用协议，专用 SFT 则把它
-标准化成随后实际 action 对应 assistant 的 `reasoning_content`：
-
-```json
-{
-  "role": "assistant",
-  "reasoning_content": "完整、显式的中间推理",
-  "content": "",
-  "tool_calls": [{
-    "id": "call_business",
-    "type": "function",
-    "function": {
-      "name": "read",
-      "arguments": "{\"path\":\"input.txt\"}"
-    }
-  }]
-}
-```
-
-转换器删除 `deep_think` tool call、其 `------` result、顶层 schema 和 system prompt
-工具清单中的对应条目；独立 THINK message
-的 thoughts 合并进下一条 ACT assistant，同一 response 内与业务工具并列的 think 则合并进
-当前 assistant。业务 tool call/result 原样保留。若原有 `reasoning_content` 也非空，各段按
-顺序以空行连接；孤立且没有后续 action 的 think 会令 SFT 转换失败，不会静默丢失。
-
-Codex native raw 使用外层 programmatic `exec` 调用本地 MCP；ACTF 转换器先依据真实
-MCP completion event（`item_completed/McpToolCall` 或 `mcp_tool_call_end`）把它还原为
-canonical `deep_think`，之后与 OpenClaw 共用同一套 SFT 折叠逻辑。因此专用 SFT 不包含
-`exec` 包装、MCP server 名或 `------` 占位结果。
-
-这里的 `reasoning_content` 是 Roller 面向训练的标准化字段，不声称 provider 原生返回了
-该字段。`--no-keep-thinking` 不删除显式 external CoT；要排除它必须使用
-`--external-thinking off`。详细模式说明见 [External Thinking](external-thinking.md)。
-
 ## 4. 数据完整性
 
 导出器要求：
@@ -176,11 +141,17 @@ canonical `deep_think`，之后与 OpenClaw 共用同一套 SFT 折叠逻辑。�
 image block 接受三种形态：base64 `source` 结构（Claude Code）、扁平 `data` +
 `mimeType` 结构（OpenClaw/Pi 原生）和内联 data URI。media type 必须是
 `image/png`、`image/jpeg`、`image/webp` 或 `image/gif`，payload 必须能通过严格
-base64 解码。其余情况——audio 等未知 block 类型、不支持的 media type、损坏的
+base64 解码，随后重新编码为规范形式（消除可解码的冗余 padding，图片字节不变）。
+导出、汇总与 Resume 使用同一套解析规则；保存的 `images` 必须采用规范形式。
+其余情况——audio 等未知 block 类型、不支持的 media type、损坏的
 base64、只引用文件路径而没有字节的 image block——仍然令转换失败并把 sample 标记为
 trajectory conversion error；Roller 不会静默删除内容。转换器本身不读文件也不访问
 网络：若某 harness 的读图工具只留下路径，必须在文件仍可访问时由对应 ACTF 层把
 字节物化成 image block。
+
+上述是 SFT 层接受的内容块形态，不代表所有 Harness 已支持读图导出。目前 OpenClaw、
+Claude Code 可保留 image 工具结果；Pi/OpenCode 在 ACTF 层拒绝图片，Codex 的工具结果
+转换仍会把图像块序列化为文本，不会生成 `images`。后者不能作为无损多模态 SFT 使用。
 
 ## 5. 文件位置
 

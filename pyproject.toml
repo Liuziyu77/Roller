@@ -28,7 +28,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "roller.viewer" = ["static/*"]
-"roller" = ["assets/external_thinking/*", "assets/hermes/*", "assets/opencode/*", "assets/deepseek/*", "assets/pi/*"]
+"roller" = ["assets/hermes/*", "assets/opencode/*", "assets/deepseek/*", "assets/pi/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

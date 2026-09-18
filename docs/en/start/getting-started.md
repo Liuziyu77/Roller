@@ -2,7 +2,7 @@
 
 [Documentation home](../index.md) · [Examples](examples.md) · [CLI reference](cli-reference.md) · [Trajectory outputs](../traces/trajectory-outputs.md)
 
-This page covers environment setup, API configuration, dry-run, a live collection, result checks, and the Viewer. The finished run includes native raw, ACTF, SFT, and run info.
+Follow these steps to prepare the environment and API, run a dry-run and collection, then inspect the results in the Viewer. Each run saves native raw, ACTF, SFT, and run info.
 
 ## 1. Prepare the runtime environment
 
@@ -26,7 +26,7 @@ docker version
 
 ## 2. Choose a Harness and image
 
-OpenClaw works with both Responses and Chat Completions, so it is a good first environment check. The dynamic User Simulator can be paired with OpenClaw, Codex, Claude Code, Hermes, OpenCode, DeepSeek, or Pi.
+The examples below use OpenClaw, which supports both Responses and Chat Completions. The dynamic User Simulator can be paired with OpenClaw, Codex, Claude Code, Hermes, OpenCode, DeepSeek, or Pi.
 
 | Harness | API requirements | Default image | How to prepare |
 | --- | --- | --- | --- |
@@ -40,11 +40,11 @@ OpenClaw works with both Responses and Chat Completions, so it is a good first e
 
 Choose CoT settings based on how the model returns reasoning:
 
-- GPT reasoning models (for example `gpt-5.6-sol`): use OpenClaw/Codex `external` or `external_always` to capture explicit CoT;
-- Claude models (for example Claude Opus 4.8, sample ID `claude-opus-4-8`): use Claude Code signature recovery;
-- Open-source models such as Qwen and GLM: keep the default `--keep-thinking`. Plaintext reasoning returned by the service is written into ACTF/SFT `reasoning_content`; external thinking is not required.
+- GPT reasoning models: retain returned summary/content without expanding a compressed summary;
+- Claude models: retain visible thinking/summary without recovering signatures or ciphertext;
+- Open-source models such as Qwen and GLM: keep the default `--keep-thinking`. Plaintext reasoning returned by the service is written into ACTF/SFT `reasoning_content`; no additional CoT extraction step is needed.
 
-If the service only reports reasoning token counts and no plaintext reasoning, the third option will not produce CoT text.
+If the service only reports reasoning token counts and no plaintext reasoning, there is no CoT text to save.
 
 ### OpenClaw
 
@@ -71,7 +71,7 @@ If you already have a Node 22 offline archive, load it first:
 docker load -i /path/to/node-22-bookworm-slim-linux-amd64.tar.gz
 ```
 
-Full build flags and how to export the image across machines are in the [Codex Harness guide](../harnesses/codex-configuration.md#build-a-pinned-image).
+For build flags and instructions on exporting the image to another machine, see the [Codex Harness guide](../harnesses/codex-configuration.md#build-a-pinned-image).
 
 ### Claude Code
 
@@ -102,7 +102,7 @@ source examples/env/api.env
 set +a
 ```
 
-`examples/env/*.env` is Git-ignored, but still never put a real key in shell history, a task, a model JSON file, or documentation.
+`examples/env/*.env` is Git-ignored. Keep real keys out of shell history, tasks, model JSON files, and documentation.
 
 ### OpenClaw configuration
 
@@ -222,7 +222,7 @@ If a directory with the same name already exists, Roller refuses to overwrite it
 
 ## 7. Check the results
 
-After success, inspect the run root first:
+After collection succeeds, inspect the run root:
 
 ```text
 runs/quickstart/
@@ -254,7 +254,7 @@ Check in this order:
 5. For tasks that must deliver files, whether the sample `results/` contains the expected files;
 6. Whether the number of lines in run `sft.jsonl` equals the number of successful samples that can be used for training.
 
-Generation conditions and failure semantics for each file are in [Trajectory outputs](../traces/trajectory-outputs.md).
+For when each file is written and what is retained on failure, see [Trajectory outputs](../traces/trajectory-outputs.md).
 
 ## 8. Open the Viewer
 
@@ -262,7 +262,7 @@ Generation conditions and failure semantics for each file are in [Trajectory out
 roller view runs/quickstart
 ```
 
-It listens on `127.0.0.1:8765` by default. When running remotely, keep loopback and set up SSH port forwarding from your machine:
+It listens on `127.0.0.1:8765` by default. For remote runs, keep the loopback address and forward the port over SSH from your machine:
 
 ```bash
 ssh -L 8765:127.0.0.1:8765 your-host
@@ -312,7 +312,6 @@ Do not pass OpenClaw `--model-config` to a run that has no OpenClaw participant.
 - Copy more commands: [Examples](examples.md)
 - Write your own data: [Task format](../tasks/task-format.md)
 - Configure reasoning: [OpenClaw](../harnesses/openclaw-configuration.md#thinking-system-prompt-and-wire-trace) · [Codex](../harnesses/codex-configuration.md#reasoning-configuration) · [Claude Code](../harnesses/claude-code-configuration.md#thinking-and-effort)
-- Collect explicit CoT: [External Thinking](../traces/external-thinking.md)
 - Understand the training format: [SFT data format](../traces/sft-format.md)
 - See every CLI option: [CLI reference](cli-reference.md)
 
@@ -328,4 +327,4 @@ Do not pass OpenClaw `--model-config` to a run that has no OpenClaw participant.
 | A run with the same name already exists | Use `--resume` for the original experiment; change `--run-name` for a new one |
 | Viewer does not show new tasks | Confirm you passed the run root directory, refresh the page, and check run `info.json` |
 
-More specific errors are listed at the end of each of the six Harness guides.
+Each Harness guide also lists common errors for that Harness.

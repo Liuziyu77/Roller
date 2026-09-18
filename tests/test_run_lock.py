@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 import tempfile
 import unittest
 from pathlib import Path
 
 from roller.models import RunRequest, Task, TaskBundle
+from roller.harness_registry import HARNESS_NAMES
 from roller.run_lock import (
     LEGACY_MIGRATION_FILENAME,
     build_run_lock,
@@ -39,6 +41,54 @@ def _request(root: Path, digest: str = "bundle-a") -> RunRequest:
 
 
 class RunLockTests(unittest.TestCase):
+    def test_disabled_retired_options_are_compared_without_rewriting_old_lock(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "lock.json"
+            expected = {"execution": {name: {"thinking": "high"} for name in HARNESS_NAMES}}
+            recorded = deepcopy(expected)
+            for settings in recorded["execution"].values():
+                settings["external_thinking"] = "off"
+            recorded["execution"]["claude-code"].update(
+                signature_recovery="off",
+                signature_recovery_attempts=3,
+                signature_recovery_max_tokens=12000,
+            )
+            path.write_text(json.dumps(recorded))
+            before = path.read_bytes(), path.stat().st_mtime_ns
+            expected_before = deepcopy(expected)
+
+            decision = ensure_run_lock(path, expected, resume=True, existing_run=True)
+
+            self.assertTrue(decision.reuse_existing_samples)
+            self.assertFalse(decision.created)
+            self.assertEqual((path.read_bytes(), path.stat().st_mtime_ns), before)
+            self.assertEqual(expected, expected_before)
+
+    def test_retired_compatibility_does_not_hide_active_unknown_or_other_changes(self) -> None:
+        cases = [
+            ("codex", {"external_thinking": mode})
+            for mode in ("external", "external_always", "unknown", None, False)
+        ] + [
+            ("claude-code", {"signature_recovery": mode})
+            for mode in ("fill", "prefer", "unknown", None, False)
+        ] + [
+            ("claude-code", {"signature_recovery_attempts": 1}),
+            ("claude-code", {"signature_recovery_max_tokens": 8192}),
+            ("codex", {"external_thinking": "off", "thinking": "low"}),
+            ("unknown-harness", {"external_thinking": "off"}),
+        ]
+        for name, changes in cases:
+            with self.subTest(name=name, changes=changes), tempfile.TemporaryDirectory() as temporary:
+                path = Path(temporary) / "lock.json"
+                expected = {"execution": {name: {"thinking": "high"}}}
+                recorded = deepcopy(expected)
+                recorded["execution"][name].update(changes)
+                path.write_text(json.dumps(recorded))
+                before = path.read_bytes()
+                with self.assertRaisesRegex(FileExistsError, "lock mismatch"):
+                    ensure_run_lock(path, expected, resume=True, existing_run=True)
+                self.assertEqual(path.read_bytes(), before)
+
     def test_builds_secret_safe_structural_lock(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             lock = build_run_lock(

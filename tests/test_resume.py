@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import json
+import contextlib
+import io
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from roller.actf import convert_openclaw_trace
+from roller.cli import _build_parser, _collect
 from roller.collector import CollectionConfig, Collector
 from roller.conversation import ConversationManager
 from roller.harnesses.base import InteractiveHarness, InteractiveSession, TurnResult
@@ -73,6 +77,141 @@ class RecordingHarness(InteractiveHarness):
         for prompt in request.task.prompts:
             session.send(prompt, request.timeout_seconds)
         return session.finish("ok")
+
+
+class CliResumeCompatibilityTests(unittest.TestCase):
+    """Keep CLI lock and metadata writes real; replace only Docker/harness I/O."""
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.calls = []
+        patches = contextlib.ExitStack()
+        self.addCleanup(patches.close)
+        patches.enter_context(patch("roller.cli._docker_preflight", return_value="test-image-id"))
+        constructors = {
+            "openclaw": "OpenClawHarness", "codex": "CodexHarness",
+            "claude-code": "ClaudeCodeHarness", "hermes": "HermesHarness",
+            "opencode": "OpenCodeHarness", "deepseek": "DeepSeekHarness", "pi": "PiHarness",
+        }
+        for name, constructor in constructors.items():
+            patches.enter_context(patch(
+                f"roller.cli.{constructor}",
+                side_effect=lambda config, slot, name=name: RecordingHarness(name, self.calls),
+            ))
+
+    def invoke(self, args, *, resume=False):
+        with contextlib.redirect_stdout(io.StringIO()):
+            return _collect(_build_parser().parse_args(args + (["--resume"] if resume else [])))
+
+    def seed(self, name, harness, simulator=None):
+        tasks = self.root / f"{name}.jsonl"
+        row = {"id": "task", "harness": harness, "model": "provider/model"}
+        if simulator:
+            row["user_simulator"] = {"harness": simulator, "instruction": "ask once", "max_turns": 1}
+        else:
+            row["prompt"] = "say done"
+        tasks.write_text(json.dumps(row) + "\n")
+        args = [
+            "collect", "--tasks", str(tasks), "--api-base", "http://example.test/v1",
+            "--api-key-env", "TEST_KEY", "--output", str(self.root / "runs"), "--run-name", name,
+        ]
+        self.assertEqual(self.invoke(args), 0)
+        return args, self.root / "runs" / name
+
+    @staticmethod
+    def snapshot(root):
+        return {
+            str(path.relative_to(root)): (path.read_bytes(), path.stat().st_mtime_ns)
+            for path in root.rglob("*") if path.is_file()
+        }
+
+    def assert_disabled_legacy_run_resumes(self, args, run):
+        path = run / "lock.json"
+        recorded = json.loads(path.read_text())
+        for name in HARNESSES:
+            settings = recorded["execution"].get(name)
+            if settings is None:
+                continue
+            settings["external_thinking"] = "off"
+            if name == "claude-code":
+                settings.update(signature_recovery="off", signature_recovery_attempts=1,
+                                signature_recovery_max_tokens=8192)
+        path.write_text(json.dumps(recorded))
+        for info_path in (run / "samples").rglob("info.json"):
+            info = json.loads(info_path.read_text())
+            info.setdefault("runtime", {})["external_thinking"] = {"mode": "off"}
+            if info["harness"] == "claude-code":
+                info["runtime"]["signature_recovery"] = {"mode": "off"}
+            info_path.write_text(json.dumps(info))
+        before_lock = path.read_bytes(), path.stat().st_mtime_ns
+        before_samples = self.snapshot(run / "samples")
+        before_calls = list(self.calls)
+
+        self.assertEqual(self.invoke(args, resume=True), 0)
+
+        self.assertEqual(json.loads((run / "info.json").read_text())["summary"]["skipped"], 1)
+        self.assertEqual(self.calls, before_calls)
+        self.assertEqual(self.snapshot(run / "samples"), before_samples)
+        self.assertEqual((path.read_bytes(), path.stat().st_mtime_ns), before_lock)
+
+    def test_cli_resumes_disabled_legacy_lock_for_every_harness(self):
+        for harness in HARNESSES:
+            with self.subTest(harness=harness):
+                self.assert_disabled_legacy_run_resumes(*self.seed(harness, harness))
+
+    def test_cli_resumes_disabled_legacy_lock_for_mixed_agent_and_simulator(self):
+        for agent, simulator in (("codex", "claude-code"), ("claude-code", "codex")):
+            with self.subTest(agent=agent, simulator=simulator):
+                self.assert_disabled_legacy_run_resumes(*self.seed(agent, agent, simulator))
+
+    def test_cli_still_recaptures_and_adopts_an_unlocked_native_run(self):
+        args, run = self.seed("unlocked-native", "codex")
+        (run / "lock.json").unlink()
+        before_calls = len(self.calls)
+
+        self.assertEqual(self.invoke(args, resume=True), 0)
+
+        summary = json.loads((run / "info.json").read_text())["summary"]
+        self.assertEqual((summary["ok"], summary["skipped"]), (1, 0))
+        self.assertEqual(len(self.calls), before_calls + 1)
+        self.assertTrue((run / "lock.json").is_file())
+        self.assertFalse((run / ".legacy-resume-untrusted.json").exists())
+
+    def test_cli_rejects_retired_samples_before_any_run_files_change(self):
+        modes = (
+            ("codex", "external_thinking", "external"),
+            ("codex", "external_thinking", "external_always"),
+            ("claude-code", "signature_recovery", "fill"),
+            ("claude-code", "signature_recovery", "prefer"),
+        )
+        for harness, key, mode in modes:
+            for participant in ("agent", "simulator"):
+                for locked in (False, True):
+                    name = f"{mode}-{participant}-{locked}"
+                    with self.subTest(case=name):
+                        args, run = self.seed(
+                            name, harness if participant == "agent" else "openclaw",
+                            harness if participant == "simulator" else None,
+                        )
+                        sample = next(run.glob("samples/*/*"))
+                        if participant == "simulator":
+                            sample = sample / "user_simulator"
+                        info_path = sample / "info.json"
+                        info = json.loads(info_path.read_text())
+                        info.setdefault("runtime", {})[key] = {"mode": mode}
+                        info_path.write_text(json.dumps(info))
+                        if not locked:
+                            (run / "lock.json").unlink()
+                        before = self.snapshot(run)
+                        before_calls = list(self.calls)
+
+                        with self.assertRaisesRegex(ValueError, "is retired; use a new run directory"):
+                            self.invoke(args, resume=True)
+
+                        self.assertEqual(self.snapshot(run), before)
+                        self.assertEqual(self.calls, before_calls)
 
 
 class MixedResumeTests(unittest.TestCase):

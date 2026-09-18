@@ -2,9 +2,9 @@
 
 [Documentation home](../index.md) · [Getting started](../start/getting-started.md) · [OpenClaw](openclaw-configuration.md) · [Claude Code](claude-code-configuration.md) · [CLI reference](../start/cli-reference.md)
 
-This page covers only Codex-specific images, the Responses API, reasoning, native session, and troubleshooting. For Task fields see [Task format reference](../tasks/task-format.md). For output semantics shared by all Harnesses see [Trajectory output file guide](../traces/trajectory-outputs.md).
+This guide covers Codex-specific images, the Responses API, reasoning, native session, and troubleshooting. For Task fields, see [Task format reference](../tasks/task-format.md). For the outputs shared by all Harnesses, see [Trajectory output file guide](../traces/trajectory-outputs.md).
 
-> Jump to: supported scope (section 1) · image (section 2) · API (section 3) · reasoning/external thinking (section 4) · native/ACTF/SFT/wire (sections 7–8) · troubleshooting (section 9)
+> Jump to: supported scope (section 1) · image (section 2) · API (section 3) · reasoning (section 4) · native/ACTF/SFT/wire (sections 7 to 8) · troubleshooting (section 9)
 
 ## 1. Current supported scope
 
@@ -15,7 +15,7 @@ The Codex Harness supports:
 - Task Bundle, read-only inputs, Context, `runtime.setup`, and full `output_dir` collection;
 - parallelism, retry, run lock, and Resume integrity checks;
 - Codex native session JSONL, `ACTF_v1.0`, one SFT record, and run-level `sft.jsonl`;
-- `external` / `external_always` explicit CoT, and request-side `--wire-trace full`;
+- request-side `--wire-trace full`;
 - dynamic User Simulator and Task Agent; the Simulator can be selected independently via `user_simulator.harness`
   and can use a different model;
 - Viewer display of visible reasoning, tool calls, tool results, and the final reply.
@@ -119,8 +119,7 @@ provenance after query and credentials are stripped.
 When `--api-base` is provided, Roller creates an isolated Codex custom provider that pins
 `wire_api="responses"` and defaults to `supports_websockets=false`. This works with OpenAI-compatible services that
 only implement Responses HTTP streaming and have no WebSocket handshake. Add `--codex-websockets` only when you have
-confirmed the service supports Responses WebSocket. `--external-thinking` and
-`--wire-trace full` use a rollout-local HTTP proxy, so you must pass `--api-base` explicitly, keep
+confirmed the service supports Responses WebSocket. `--wire-trace full` uses an HTTP proxy for each rollout, so you must pass `--api-base` explicitly, keep
 `--no-codex-websockets`, and keep the default `--network host`. When `--api-base` is unset, Codex uses its own
 built-in OpenAI provider and transport policy.
 
@@ -159,7 +158,7 @@ The task's `runtime.thinking` wins over the CLI. Roller forwards
 `minimal/low/medium/high/xhigh` to Codex; the model and API service then validate them. `xhigh` depends on
 whether the model supports it. Codex CLI 0.149.0 does not accept `max`/`ultra`; Roller errors early. The OpenClaw-only
 `adaptive` is also rejected early. `off`/`none` are rejected as well, because the Codex Harness has no
-"turn off reasoning" switch that is faithfully equivalent for every reasoning model. To use the model/CLI default,
+single switch that turns off reasoning for every reasoning model. To use the model/CLI default,
 omit `--thinking`.
 
 `--reasoning-summary` accepts:
@@ -177,49 +176,11 @@ directly. Choosing `none` means a missing summary is expected, but if the servic
 saves it according to `--keep-thinking`.
 
 If an open-source Responses model returns plaintext reasoning content, the default `--keep-thinking` projects it
-directly into ACTF/SFT `reasoning_content`. External thinking is mainly for GPT reasoning models such as
-`gpt-5.6-sol` that only expose a compressed summary.
+directly into ACTF/SFT `reasoning_content`.
 
 `--no-keep-thinking` clears `reasoning_content` during native raw→ACTF. The Codex native
 `trace.jsonl` stays as-is, and this option currently does not rewrite the context Codex itself uses for later `resume`.
 It is therefore an export control, not a raw-redaction or two-way context-stripping switch.
-
-### External thinking
-
-To bypass native reasoning that only exposes a compressed summary, have the model write explicit intermediate reasoning
-into Roller's local `deep_think` MCP tool:
-
-```bash
-export ROLLER_CODEX_KEY='...'
-
-roller collect \
-  --harness codex \
-  --tasks tasks.jsonl \
-  --model gpt-5.6-sol \
-  --api-base http://your-api.example/v1 \
-  --api-key-env ROLLER_CODEX_KEY \
-  --external-thinking external_always \
-  --wire-trace full \
-  --timeout 1200
-```
-
-- `external`: the first request forces one successful deep-think MCP call; later calls are on demand;
-- `external_always`: each business action or final answer must be preceded by a separate THINK response;
-- both modes ignore CLI/task reasoning effort; the final request pins
-  `reasoning.effort="none"`, and `--reasoning-summary` is not sent either;
-- Roller automatically copies an unprivileged stdio MCP server into the one-shot container and registers it with a CLI override; you do not need
-  to modify the Codex image or the user's `config.toml`;
-- ACTF keeps the canonical `deep_think` call/result; SFT deletes the tool protocol and merges thoughts into the next
-  assistant `reasoning_content`.
-
-For the phase protocol, raw event shape, and validation rules, see
-[External Thinking guide](../traces/external-thinking.md).
-
-Start with a short task and `--wire-trace full` for acceptance. A successful `external_always` sample
-`info.json` should have `validated=true`, and wire phases should strictly alternate `think/act`. The Viewer shows
-the canonical `deep_think` tool steps in ACTF; the folded training reasoning lives in
-`trace_SFT.json`. Copyable inspection commands are in
-[How to inspect and verify](../traces/external-thinking.md#how-to-inspect-and-accept).
 
 ## 5. Web search
 
@@ -272,18 +233,12 @@ trace.
 The converter uses `token_count` as the boundary of one model request, combines separate reasoning, assistant message,
 and multiple function/custom tool calls into one ACTF step, then pairs later tool
 output by `call_id`. The top-level system prompt comes from `session_meta.base_instructions`, native developer/system
-messages, and the `<environment_context>` Codex injects before the first turn. The real task user message is matched by
-content so environment events do not crowd it out or attach it to the wrong turn.
+messages, and the `<environment_context>` Codex injects before the first turn. User messages from the task are matched by
+content to avoid treating environment events as user messages or assigning them to the wrong turn.
 
 A Codex native session does not provide a complete original JSON Schema for each tool. To emit strict SFT, Roller
-generates a permissive function schema from the actual call names and argument fields. That is enough to keep tool-call names,
-arguments, and results, but it is not a complete authoritative definition of Codex's built-in tool interfaces.
-
-In native raw, external thinking keeps Codex's real two-layer transport: the outer layer is the model-generated
-`custom_tool_call(name="exec")`; a successful inner call is recorded by
-the `McpToolCall` item of `event_msg.item_completed`, and may also be written by another native writer path
-as `event_msg.mcp_tool_call_end`. The ACTF converter accepts both and normalizes them to a direct `deep_think` call using the native event's server, tool,
-and arguments. It does not depend on or guess thoughts inside JavaScript strings.
+generates a permissive function schema from the actual call names and argument fields. These schemas preserve tool-call names,
+arguments, and results, but do not contain the full definitions of Codex's built-in tool interfaces.
 
 ### `trace_SFT.json` and `sft.jsonl`
 
@@ -299,12 +254,11 @@ prove what the Codex session recorded, not the full JSON context each model call
 
 The Codex Harness supports `--wire-trace full`: Roller temporarily points the custom provider's API base at a
 rollout-local proxy and saves a redacted full JSON request body before forwarding to the real `--api-base`.
-Tool definitions in Codex requests live in the `additional_tools` item of `input`. The external THINK phase keeps only
-programmatic `functions.exec`; the ACT phase restores the original tools. The file is request-side evidence. It does not save
+Tool definitions can appear in an `additional_tools` item of `input`. The file is request-side evidence. It does not save
 the upstream response body, and it cannot say how the model service later truncates, routes, or tokenizes internally.
 
 Default `--wire-trace actf` does not keep an extra wire file. The Codex ACTF tool schema comes from a permissive projection of
-native actual calls, not the full request schema. To check "what the model actually saw on a given call",
+native actual calls, not the full request schema. To inspect the full request for a model call,
 you must pass `--wire-trace full` explicitly and pair it with sufficiently strict log access controls.
 
 ## 9. Common errors
@@ -322,16 +276,10 @@ Responses-capable service. The OpenClaw Harness can still be used for model serv
 
 The CLI exited before producing a valid model event, or the native event schema of the Codex version in use has changed. First inspect
 the error kept on the sample and the `--keep-container-on-error` container, then check `codex_version`. When upgrading the CLI,
-update the converter tests in lockstep.
+update the converter tests as well.
 
 ### User Simulator
 
 Codex can be the Task Agent or the User Simulator. Set
 `"harness": "codex"` at the task top level for the Task Agent, and set `user_simulator.harness` for the Simulator. The two
 `model` values can also be specified separately. Dynamic sessions keep context with Codex `resume --last`.
-
-### external thinking reports missing programmatic custom exec
-
-The Codex version in use does not expose the programmatic custom `exec` Roller has verified, or startup flags disabled
-the related capability. Prefer the pinned `roller-codex:0.149.0`. After upgrading Codex, re-run the phase-control and native
-event conversion tests. Do not silently degrade to uncontrolled ordinary tool calls.

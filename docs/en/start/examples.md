@@ -2,7 +2,7 @@
 
 [Documentation home](../index.md) · [Getting started](getting-started.md) · [Task format](../tasks/task-format.md) · [Trajectory outputs](../traces/trajectory-outputs.md)
 
-The repository [`examples/`](https://github.com/Liuziyu77/Roller/tree/main/examples) directory contains config templates, tasks, and run commands. Install steps, field definitions, and trajectory semantics live in the matching topic docs.
+The repository [`examples/`](https://github.com/Liuziyu77/Roller/tree/main/examples) directory contains config templates, tasks, and run commands. See the topic guides for installation steps, task fields, and trace formats.
 
 ## Directory contents
 
@@ -57,7 +57,7 @@ set +a
 | Codex | `config/codex/config.toml.example` | Optional native `config.toml`; shows verbosity and a custom MCP example |
 | Claude Code | `config/claude-code/settings.json.example` | Optional native `settings.json`; does not include a key, relaxed permissions, or hooks |
 
-Before running, change the template base URL, environment variables, and value ranges to what your real service supports:
+Before running, set the template base URL, environment variables, and parameter values to match your model service:
 
 - Responses API: `"api": "openai-responses"`
 - Chat Completions: `"api": "openai-completions"`
@@ -78,7 +78,7 @@ Full rules are in the [OpenClaw Harness guide](../harnesses/openclaw-configurati
 | `03_user_memory_context` | `USER.md` + `MEMORY.md` | Context injection and capture |
 | `04_multi_turn` | Two `messages` | Predefined multi-turn in the same Agent session |
 
-These four tasks can run on all seven Harnesses and are the best set for an environment check.
+These four tasks run on all seven Harnesses and can be used to check your environment.
 
 ## OpenClaw: basic collection
 
@@ -149,41 +149,9 @@ roller collect \
   --run-name examples-claude-code
 ```
 
-`--claude-settings` can be omitted; the example only turns off the commit co-author marker and does not change permission mode, thinking, or tool behavior. The fourth task continues the session with `claude --continue`. Image, endpoint, thinking, and signature recovery are in the [Claude Code Harness guide](../harnesses/claude-code-configuration.md).
+`--claude-settings` can be omitted; the example only turns off the commit co-author marker and does not change permission mode, thinking, or tool behavior. The fourth task continues the session with `claude --continue`. Image, endpoint, and thinking are in the [Claude Code Harness guide](../harnesses/claude-code-configuration.md).
 
 ## Advanced examples
-
-### External thinking
-
-External thinking is recommended for GPT reasoning models such as `gpt-5.6-sol`, using explicit tool arguments instead of the native compressed summary. The command below runs only the first task and uses Codex to check a strict THINK/ACT alternation:
-
-```bash
-roller collect \
-  --harness codex \
-  --tasks examples/tasks/tasks.jsonl \
-  --limit 1 \
-  --model gpt-5.6-sol \
-  --api-base "$ROLLER_CODEX_BASE_URL" \
-  --api-key-env ROLLER_CODEX_API_KEY \
-  --external-thinking external_always \
-  --wire-trace full \
-  --timeout 900 \
-  --output runs \
-  --run-name examples-codex-external
-```
-
-After success, ACTF keeps the canonical `deep_think` call/result, while SFT strips the internal tool protocol and writes thoughts into the next assistant `reasoning_content`. Full check procedure: [External Thinking](../traces/external-thinking.md#how-to-inspect-and-accept).
-
-### Claude signature recovery
-
-For Claude models (for example Claude Opus 4.8, sample ID `claude-opus-4-8`), when a native session has signed thinking but empty reasoning, add these flags to the Claude Code command:
-
-```text
---claude-signature-recovery fill
---claude-signature-recovery-attempts 2
-```
-
-`fill` is the recommended conservative mode; it only fills empty values. This feature issues extra provider requests and is best effort; inspect `signature_recovery.jsonl` before using the data for training. See [Signature recovery](../harnesses/claude-code-configuration.md#signature-recovery-experimental).
 
 ### Dynamic User Simulator
 
@@ -228,7 +196,7 @@ roller collect \
   --run-name examples-vision
 ```
 
-Declaring a capability in the model config does not make a text backend support images; the service and model themselves must support visual input under that protocol.
+The model config declares image capability; both the service and the model must also support visual input through that protocol.
 
 ## Check and view
 
@@ -245,4 +213,4 @@ Focus on:
 - whether each successful sample has `trace.jsonl`, `trace_ACTF.json`, `trace_SFT.json`, and `info.json`
 - whether run-root `sft.jsonl` aggregates successful samples in request order
 
-Next: write your own [Task](../tasks/task-format.md), or read [Trajectory outputs](../traces/trajectory-outputs.md) to pick the files you need for training, debugging, and audit.
+See [Task](../tasks/task-format.md) to write your own tasks, and [Trajectory outputs](../traces/trajectory-outputs.md) to choose files for training, debugging, and audits.

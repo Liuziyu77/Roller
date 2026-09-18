@@ -2,9 +2,9 @@
 
 [Documentation home](../index.md) · [Getting started](../start/getting-started.md) · [Codex](codex-configuration.md) · [Claude Code](claude-code-configuration.md) · [CLI reference](../start/cli-reference.md)
 
-This page covers only OpenClaw-specific images, model providers, API adapters, thinking, search, gateway, and troubleshooting. For Task fields see [Task format reference](../tasks/task-format.md). For output semantics shared by all Harnesses see [Trajectory output file guide](../traces/trajectory-outputs.md).
+This guide covers OpenClaw-specific images, model providers, API adapters, thinking, search, gateway, and troubleshooting. For Task fields, see [Task format reference](../tasks/task-format.md). For the outputs shared by all Harnesses, see [Trajectory output file guide](../traces/trajectory-outputs.md).
 
-> Jump to: images and Docker (section 1) · provider JSON (sections 2–4) · reasoning/wire (section 5) · parallel ports (section 7) · parameter cheat sheet and troubleshooting (sections 8–10)
+> Jump to: images and Docker (section 1) · provider JSON (sections 2 to 4) · reasoning/wire (section 5) · parallel ports (section 7) · parameter cheat sheet and troubleshooting (sections 8 to 10)
 
 ## 1. Runtime requirements
 
@@ -15,9 +15,9 @@ Before collection you need:
 - an OpenClaw Docker image;
 - the API endpoint and credentials required by the model service.
 
-Roller pins the official stable image `ghcr.io/openclaw/openclaw:2026.7.1-2` by default. That image already includes
-OpenClaw, Node.js, and Python 3. Roller runs it as-is: it does not patch OpenClaw source inside the image, and it does not
-require a derived image. Prepare online or offline:
+Roller defaults to the pinned official stable image `ghcr.io/openclaw/openclaw:2026.7.1-2`, which includes
+OpenClaw, Node.js, and Python 3. Roller runs it without source changes or a derived image.
+Pull it online or load an offline archive:
 
 ```bash
 docker pull --platform linux/amd64 ghcr.io/openclaw/openclaw:2026.7.1-2
@@ -181,7 +181,7 @@ By default Roller also tries to set the task model as OpenClaw's image model. Ol
 
 ### Logical levels and provider effort
 
-Roller's `--thinking` uses OpenClaw **logical levels**. It does not write the string into an arbitrary model API as-is:
+Roller's `--thinking` accepts OpenClaw logical levels, which OpenClaw then maps to model API parameters:
 
 ```text
 off | minimal | low | medium | high | xhigh | adaptive | max | ultra
@@ -195,7 +195,7 @@ Pass it explicitly when the model should generate reasoning:
 roller collect ... --thinking high
 ```
 
-Roller forwards the level to OpenClaw as-is. OpenClaw's current model profile then validates it and maps it to provider parameters. Accepting a logical level in Roller does not mean every model supports it:
+Roller forwards the level to OpenClaw as-is. OpenClaw's current model profile then validates it and maps it to provider parameters. Supported levels vary by model:
 
 | Roller input | OpenClaw canonical value | GPT-5.6 Sol Responses API | Notes |
 | --- | --- | --- | --- |
@@ -211,7 +211,7 @@ Roller forwards the level to OpenClaw as-is. OpenClaw's current model profile th
 
 For actual Responses requests to `gpt-5.6-sol`, the following were verified item by item: `none/low/medium/high/xhigh/max` succeed; `minimal/adaptive/ultra` as native effort return 400. `off` must be translated by OpenClaw to `none`; it must not be sent to the GPT API directly. The official support matrix is [OpenAI GPT-5.6 model guidance](https://developers.openai.com/api/docs/guides/model-guidance?model=gpt-5.6).
 
-Open-source models do not have a hard-coded table in Roller that would go stale. Custom models in OpenClaw `2026.7.1`
+Roller does not hard-code level mappings for open-source models. Custom models in OpenClaw `2026.7.1`
 use a top-level `thinkingLevelMap` to map logical levels to service values. Chat Completions services declare that they
 accept `reasoning_effort` with `compat.supportsReasoningEffort: true`:
 
@@ -249,14 +249,12 @@ config validation. Qwen-compatible services that use `enable_thinking` can set
 When using native thinking, Roller sets `reasoning: true` on the model-config copy injected for this
 rollout. The Chat Completions adapter sends `reasoning_effort`; the Responses adapter
 sends a reasoning config. Legacy `tags: ["reasoning"]` is automatically converted to the boolean field
-current OpenClaw accepts. Enabling external thinking in the next section does the opposite: the selected
-model copy sets `reasoning: false`, and both OpenClaw thinking and wire `reasoning.effort` are pinned to `off`/`none`.
+current OpenClaw accepts.
 
-The backend must actually return reasoning content. Chat Completions usually stream `reasoning_content` (also compatible with `reasoning` and `reasoning_text`). The Responses API uses reasoning items. If the service only reports `reasoning_tokens` in usage and returns no summary/content, there is no text to write into the trajectory.
+The reasoning saved in a trace depends on what the backend returns. Chat Completions usually stream `reasoning_content` (also compatible with `reasoning` and `reasoning_text`). The Responses API uses reasoning items. If the service only reports `reasoning_tokens` in usage and returns no summary/content, there is no text to write into the trajectory.
 
 For open-source models such as Qwen and GLM that can return plaintext reasoning, the default `--keep-thinking` keeps that
-text in ACTF/SFT `reasoning_content` without enabling external thinking. External thinking is mainly for
-GPT reasoning models such as `gpt-5.6-sol` that only expose a compressed reasoning summary.
+text in ACTF/SFT `reasoning_content`.
 
 For GPT reasoning models that expose a compressed reasoning summary through the Responses API, use:
 
@@ -268,49 +266,6 @@ For GPT reasoning models that expose a compressed reasoning summary through the 
 ```
 
 The same model on Chat Completions may produce reasoning tokens without returning visible `reasoning_content`. Roller will not reconstruct thinking from hidden tokens.
-
-### External Thinking: save explicit CoT in tool arguments
-
-GPT Responses reasoning items usually expose only a summary to the client, not the full generation process.
-Roller can turn off native reasoning and load a local `deep_think(thoughts)`
-tool into the one-shot OpenClaw container, using the text the model writes into `thoughts` as an explicit scratchpad:
-
-```bash
-roller collect \
-  --tasks tasks.jsonl \
-  --model my-gpt-proxy/gpt-5.6-sol \
-  --model-config examples/config/openclaw/models-reasoning.json \
-  --external-thinking external_always \
-  --timeout 1200
-```
-
-| Mode | Request protocol | Guarantee |
-| --- | --- | --- |
-| `off` | Native OpenClaw behavior | Default; `--thinking` decides provider reasoning |
-| `external` | The first request forces `deep_think`; later requests keep the tool and allow parallel business tools | raw validation requires the first response to contain exactly one non-empty think; later calls are autonomous per instructions |
-| `external_always` | Each logical step is split into THINK and ACT; THINK is forced and only allows `deep_think`; ACT removes it from tools | raw validation requires strict THINK/ACT alternation, non-empty thoughts, and no orphan THINK |
-
-Both external modes require the selected provider's `api` to be exactly `openai-responses` and a proxyable
-absolute `baseUrl`. Roller overrides task/CLI `--thinking` and turns off native reasoning in three places:
-
-1. the selected model in the rollout sets `reasoning: false`;
-2. OpenClaw defaults and every `openclaw agent` call use `--thinking off`;
-3. the Responses body actually forwarded by the proxy pins `reasoning.effort: "none"`.
-
-The plugin is copied from Roller's own package data into the one-shot container, loaded via `plugins.load.paths`, and
-rewritten to the container main-process uid/gid before Gateway starts. Neither the image source nor the host OpenClaw
-install is modified. In `full` mode, `wire_trace.jsonl` adds `external_thinking_phase` on each request so you can check
-`think`, `act`, or `optional`.
-
-In the actual inference protocol, `deep_think` is an ordinary function tool, so thoughts in raw and ACTF live in
-tool-call arguments, and the matching tool result is always `------`. The dedicated SFT projection deletes this internal
-call/result pair and the top-level `deep_think` schema, then merges thoughts into the following real action's assistant
-`reasoning_content`. Business tools are unchanged. That field is a training-format normalization result; it does not mean
-the provider natively returned a field of the same name. `--no-keep-thinking` only strips native thinking; it does
-not remove explicit external CoT. If you do not want to keep it, use `--external-thinking off`.
-
-For the full security boundary, SFT shape, and differences from the claw-eval reference implementation, see
-[External Thinking guide](../traces/external-thinking.md).
 
 ### Keep vs strip
 
@@ -340,9 +295,8 @@ schema through a local reverse proxy, writes it to the ACTF top level, then dele
 | `full` | Requires a proxyable `baseUrl`; also keep each full JSON request body in `wire_trace.jsonl` and a `cache_trace.jsonl` redacted by sensitive keys |
 | `off` | Do not keep wire data; ACTF `tools` is `null`; if a proxyable model config exists, the proxy can still run in memory for thinking normalization/stripping |
 
-OpenClaw session files and model-request context are not the same layer: the session stores persisted events, while
-system/runtime injection, compaction, tool-result pruning, context-engine/hook processing, and provider protocol
-adaptation may still happen before a model call. So a message present in `trace.jsonl` is not guaranteed to enter each
+OpenClaw session files store persisted events. Before a model call, OpenClaw may still inject system/runtime content,
+compact history, prune tool results, apply context engines or hooks, and adapt the provider protocol. So a message present in `trace.jsonl` is not guaranteed to enter each
 request verbatim. ACTF/SFT are projected from that session file and also cannot prove which full history the model saw at the time.
 
 Use `full` when you need to audit the real request context. The proxy sits between the OpenClaw provider adapter and the
@@ -356,7 +310,7 @@ OpenClaw, so it does not appear in request-only `wire_trace.jsonl`. It can chang
 thinking blocks in OpenClaw raw, but not the thinking text. `trace.jsonl` is therefore also not a verbatim copy of the
 upstream HTTP response.
 
-Multi-turn full wire repeats history and grows near O(N²). It is for audits, not for always-on bulk collection.
+Multi-turn full wire repeats history and grows near O(N²). Use it for audits; leaving it on during bulk collection can consume substantial storage.
 Before saving, `cache_trace.jsonl` recursively redacts JSON fields such as API key, token, authorization, password, and
 secret. `wire_trace.jsonl` does not scan free text in system/user/tool/reasoning and must be treated as
 sensitive. For capture boundaries, comparison steps, and failure/retry semantics, see
@@ -404,7 +358,6 @@ roller collect ... --gateway-port 22000 --gateway-port-step 10
 | --- | --- | --- |
 | `--docker-image` | `ROLLER_OPENCLAW_IMAGE` or the built-in value | OpenClaw image |
 | `--container-user` | `0` | User inside the one-shot task container; `image` uses the image default user |
-| `--external-thinking` | `off` | `external` or `external_always` enables explicit `deep_think` CoT |
 | `--docker-binary` | `docker` | Docker CLI name or path |
 | `--model-config` | none | Custom provider/model JSON |
 | `--network` | `host` | Container network mode |
@@ -422,7 +375,7 @@ roller collect ... --gateway-port 22000 --gateway-port-step 10
 | `--keep-container-on-error` | off | Keep the container after an error for debugging |
 | `--collect-path` | none | Legacy: also collect an absolute path from the container |
 
-All flags follow the installed version:
+Check the flags available in your installed version:
 
 ```bash
 roller collect --help

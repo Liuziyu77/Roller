@@ -2,8 +2,8 @@
 
 [文档中心](../index.md) · [快速上手](../start/getting-started.md) · [SFT 格式](sft-format.md) · [Viewer](viewer.md)
 
-本文说明 `roller collect` 会产出哪些文件、每个文件何时生成和保留、它们之间的
-信息差异，以及训练、分析、调试时应选择哪一层。
+`roller collect` 会保存轨迹、训练数据、运行信息和任务输出。本页列出各文件的内容、
+生成与保留条件，以及训练、分析和调试时的用途。
 
 ## 1. 先看结论
 
@@ -16,14 +16,12 @@
 | 查看 ACTF 捕获的首个 system prompt | `trace_ACTF.json` 顶层 | 来自各 Harness 可取得的 native/cache/wire 来源，只固化一次 |
 | 核对 OpenClaw 每次 system prompt 是否变化 | `--wire-trace full` 的 `cache_trace.jsonl` | 保留 OpenClaw 每次 LLM call 的诊断记录 |
 | 核对模型实际收到的请求历史和 tools | `--wire-trace full` 的 `wire_trace.jsonl` | 保存代理实际转发的每次 JSON 请求体 |
-| 审计 Claude signature 恢复 | `signature_recovery.jsonl` | 保存每个 signed block 的尝试、质量、usage 和恢复文本，不复制 signature |
 | 查看 Task Agent 交付文件 | `results/` | 只回收 task 声明的输出目录和额外 collect path |
 | 查看动态双方可见对话 | `conversation.json` | 不包含隐藏 reasoning、tool call 和 tool result |
 
-训练使用 SFT，分析使用 ACTF，排查适配器、context 组装或上游行为时再看 session raw
-与 full wire。本文中的 **session raw** 专指 `trace.jsonl`；`wire_trace.jsonl` 是请求侧
-诊断记录，不要把两者统称为同一种 raw。也不要把 wire trace 当成训练集：多轮请求会
-重复历史，体积接近 O(N²)。
+训练使用 SFT，分析使用 ACTF；排查适配器、context 组装或上游行为时，查看 session raw
+和 full wire。本文用 session raw 指 `trace.jsonl`，用 `wire_trace.jsonl` 指请求侧诊断记录。
+Wire trace 的多轮请求重复包含历史，体积接近 O(N²)，不宜直接作为训练集。
 
 ## 2. 目录结构
 
@@ -44,13 +42,12 @@ Code 保留 native session 中的明文 thinking block。七种 Harness 成功 r
             ├── trace.jsonl
             ├── trace_ACTF.json
             ├── trace_SFT.json
-            ├── signature_recovery.jsonl  # Claude Code 显式开启 recovery 时存在
             ├── info.json
             └── results/                 # Task 输出含文件或目录时存在
 ```
 
 OpenClaw 默认的 `actf` wire 模式会临时捕获 tools schema，写入 ACTF/SFT 后删除中间
-`wire_trace.jsonl` 和 `cache_trace.jsonl`，因此最终 sample 保持紧凑。Codex 的默认 `actf`
+`wire_trace.jsonl` 和 `cache_trace.jsonl`，以减少最终 sample 的存储占用。Codex 的默认 `actf`
 直接从 native session 生成 permissive tool schema，不启动请求代理。Claude Code 在显式
 `--api-base` 时临时捕获 Anthropic system 和完整 `input_schema`；未设 API base 或
 `--wire-trace off` 时则从实际 `tool_use` 推导 permissive schema。
@@ -64,7 +61,6 @@ OpenClaw 默认的 `actf` wire 模式会临时捕获 tools schema，写入 ACTF/
 ├── trace.jsonl
 ├── trace_ACTF.json
 ├── trace_SFT.json
-├── signature_recovery.jsonl       # Claude Code 显式开启 recovery 时存在
 ├── cache_trace.jsonl              # 仅 OpenClaw
 ├── wire_trace.jsonl
 ├── info.json
@@ -110,14 +106,12 @@ Harness session store ────────────────> trace.js
                                                 │
                                                 v
 trace.jsonl + Harness 可取得的 system/tools ──> trace_ACTF.json
-Claude signed block ──> 独立 provider replay ──> signature_recovery.jsonl
-                                              └─> ACTF reasoning（fill/prefer 成功时）
 trace_ACTF.json ────────────────────────────────> trace_SFT.json
 全部成功/Resume sample 的 trace_SFT.json ───────> run/sft.jsonl
 ```
 
-`trace.jsonl` 是当前 Harness session 语义事件的事实来源。ACTF 是该 session 的分析
-投影，SFT 是进一步删除训练无关字段后的训练投影。SFT 不反向参与 ACTF 或 raw 的生成。
+`trace.jsonl` 记录当前 Harness session 的事件。ACTF 将这些事件转换为分析格式，
+SFT 再去除训练不需要的字段。SFT 不参与 ACTF 或 raw 的生成。
 
 ### 3.1 三种文件回答的是三个不同问题
 
@@ -141,10 +135,10 @@ engine；Roller 不从 session 文件猜测这些变换，而是在最终 API �
 Codex 同样会在 native session 与 Responses input 之间加入 base/developer instructions、
 environment context、tool namespace、resume history 和压缩结果；这些最终形态也只能由 full
 wire 确认。Claude Code 的 native session 也不等于 Anthropic Messages request：CLI 会添加
-system blocks、tools schema、project/context instructions、缓存标记和对话管理结果。需要实证
-模型请求时，同样使用 Claude Code `--wire-trace full`。
+system blocks、tools schema、project/context instructions、缓存标记和对话管理结果。要检查
+模型请求，使用 Claude Code `--wire-trace full`。
 
-因此两个方向的差异都存在：
+Session 和请求之间可能存在以下差异：
 
 - session 中有、模型请求中没有：旧 tool result 被裁剪、历史被压缩成摘要、消息因窗口
   或 provider 规则被过滤；
@@ -153,9 +147,9 @@ system blocks、tools schema、project/context instructions、缓存标记和对
 - 内容仍在但表示不同：Harness/provider adapter 可以把内部 message/block 转成
   Chat Completions `messages` 或 Responses `input` 的最终协议形态。
 
-所以 `trace.jsonl` 适合复盘 Agent 逻辑轨迹，`wire_trace full` 才是判断“该次 HTTP 模型
-调用看到了什么 JSON context”的依据。ACTF/SFT 都从 session raw 投影，不能反向恢复
-被压缩、裁剪或临时注入后的逐请求 context。
+用 `trace.jsonl` 复盘 Agent 的逻辑轨迹，用 `wire_trace full` 检查每次 HTTP 模型请求
+的 JSON context。ACTF/SFT 从 session raw 转换而来，无法恢复每次请求经过压缩、裁剪
+或临时注入后的 context。
 
 ## 4. 核心轨迹文件的区别
 
@@ -201,12 +195,6 @@ Sample `info.json.trajectory.raw_schema` 会分别标记 `openclaw-session-jsonl
 - `--no-keep-thinking` 不修改 raw，因此 raw 仍可包含当前轮产生的 thinking；该参数影响
   ACTF/SFT，不是 raw 脱敏开关。OpenClaw 还可在 wire 层剥离后续请求历史；Codex 和
   Claude Code 只控制导出，不改写 `resume`/`--continue` 上下文。
-- external thinking 的完整 thoughts 是显式模型输出，不受 `--no-keep-thinking` 剥离。
-  OpenClaw raw 直接保存 `deep_think` tool call arguments；Codex raw 保存外层 `exec`
-  custom call，并在 `item_completed/McpToolCall` 或 `mcp_tool_call_end` 的 arguments 中保存
-  真实 thoughts。ACTF 将两者统一为 canonical `deep_think` call，SFT 再折叠进随后 action assistant 的
-  `reasoning_content`。`info.json.runtime.external_thinking` 保存模式、协议校验状态、think
-  次数与 THINK/ACT 配对数。
 
 ### 4.2 `trace_ACTF.json`：统一分析轨迹
 
@@ -226,15 +214,10 @@ ACTF 顶层保存 `schema_version`、`system_prompt`、完整 `tools`、`steps` 
 - OpenClaw system/tools 分别来自 cache/wire 捕获；缺失时 system 为 `""`、tools 为 `null`；
 - Codex system 来自 native base instructions、developer/system message 和首轮前的
   `<environment_context>`；task 用户消息按内容匹配到对应轮次。native session 不含完整工具
-  schema，因此根据实际调用名和参数字段生成 permissive schema。external MCP 的外层
-  programmatic `exec` 会根据 native MCP completion event 还原为 canonical `deep_think`，
-  避免训练层暴露 Harness transport 包装。
+  schema，因此根据实际调用名和参数字段生成 permissive schema。
 - Claude Code 将同一 `message.id` 的流式 native 事件合并，把明文
   `thinking/reasoning/analysis` 写入 `reasoning_content`，把 `tool_use_id` 与后续
-  `tool_result` 关联。`redacted_thinking` 密文保留在 raw，但不会被猜测成明文。
-  显式启用 signature recovery 时，`fill` 只填 native 空值，`prefer` 用通过拒绝和最小长度
-  检查的 recovered text 替换 native summary；采用 recovery 的 step 在
-  `extra.reasoning_source` 标记来源。
+  `tool_result` 关联。`redacted_thinking` 密文保留在 raw，不转换为明文。
   Wire 存在时 system/tools 来自 Anthropic request；否则 system 为 `""` 并根据实际
   `tool_use` 推导 permissive schema。
 
@@ -263,11 +246,6 @@ SFT 从 ACTF 生成，顶层严格只有：
 
 SFT 表达的是从 session 事件重建的逻辑对话，不是每次 provider 请求的快照。它适合
 训练，但不能用于逐请求重放或证明某个较早 tool result 在后续模型调用中仍然可见。
-
-external thinking 还有一层训练专用投影：`deep_think` call、固定 placeholder result、
-工具 schema 和 system prompt 工具清单项会被删除，thoughts 合并到同一逻辑动作的 assistant
-`reasoning_content`，业务工具调用与结果保持不变。raw/ACTF 仍保留实际执行结构，因此
-审计协议时不要用 SFT 代替它们。
 
 生成条件：
 
@@ -338,7 +316,7 @@ CLI 在正式采集前写入初始 run 信息；Collector 在首条结果、之�
 
 每个完成 finalize 的 sample 都会写入，包括失败 sample。它保存 task/model、Harness、
 最终状态、错误、attempt 历史、usage、耗时、raw/ACTF/SFT 相对路径、输出回收信息、
-runtime 和输入 provenance。训练数据刻意删除的 metadata 在这里保留。
+runtime 和输入 provenance。训练文件不包含的 metadata 保存在这里。
 
 OpenClaw session 有时会用 `api=cli` 再记录一次已交付的回复，但真正的 CLI backend 回复
 也使用这个标记。Roller 不会按这个字段直接删除消息：只有在同一轮、与最新 provider 回复
@@ -346,7 +324,7 @@ OpenClaw session 有时会用 `api=cli` 再记录一次已交付的回复，但�
 最终文本与已交付文本一致时省略重复消息；gap-fill 的新文本仍进入 ACTF/SFT，但不重复
 计入 step metric。匹配到的 gap-fill 会更新已交付文本，重复投递不再增加消息或用量。
 
-边界规则固定为：独立、结构化、失败或跨来源的 CLI 回复保留原文和用量，并暂停投递匹配，
+独立、结构化、失败或跨来源的 CLI 回复会保留原文和用量，并暂停投递匹配，
 直到下一条 provider 回复。它们不清空 provider 记账历史。只有 user、session、compaction
 事件清空整轮历史；不推断旧来源的迟到投递。计数同时兼容 `input_tokens/output_tokens`，
 原生 `input/output` 字段存在时优先使用，非法原生值不会被别名掩盖。
@@ -397,11 +375,9 @@ cache trace 能展示每次差异；ACTF 顶层值不能代表所有 step。
   用户数据、tool result 和历史 reasoning；`full` 不对这些自由内容做自动脱敏。
 
 对可解析的 JSON 请求，代理先执行当前 rollout 需要的语义改写，再记录并转发同一个 body。
-OpenClaw `--no-keep-thinking` 会先剥离历史 reasoning；external thinking 会关闭 native
-reasoning 并设置 THINK/ACT 的 instructions、tools 和 tool choice。Codex full wire 中
-`input[].type="additional_tools"` 是 programmatic tool namespace；external THINK 阶段只保留
-`functions.exec`，ACT 阶段恢复原始 namespace。因此 full wire 展示的是 Roller 客户端实际
-交给模型 API 的语义 JSON，而不是改写前的 Harness 草稿。
+OpenClaw `--no-keep-thinking` 会先剥离历史 reasoning。Codex full wire 中的
+`input[].type="additional_tools"` 表示 programmatic tool namespace，Roller 不改写它。
+Full wire 展示实际转发给模型 API 的语义 JSON，而不是处理前的 Harness 请求。
 
 Claude Code full wire 保存 Anthropic `/v1/messages` request 的 `system`、`messages`、
 `tools`、thinking/output config 与 sampling 参数。Roller 不改写 Claude Code 的消息历史。
@@ -421,24 +397,9 @@ Claude Code 2.1.222 追加的 transport-only `beta=true` query 和 `anthropic-be
   连续，并结合 sample usage/request count 与运行日志确认完整性；
 - 多轮请求会重复历史，文件体积接近 O(N²)，只适合审计和调试。
 
-### 5.6 `signature_recovery.jsonl`（Claude Code）
+### 5.6 历史 CoT 辅助产物
 
-仅 `--claude-signature-recovery fill|prefer` 生成。Roller 在原任务全部结束后读取 native
-`thinking.signature`，通过独立 Anthropic Messages 请求让 provider 解封并要求模型机械转录。
-这不是本地解密，也不修改 Claude Code session。每行保存：
-
-- native `message_id`、block index、模型和 sidechain 标记；
-- `status`、质量类别、native/signature/recovered 长度；
-- 每次尝试的状态、stop reason、token usage 和错误；
-- `recovered_reasoning`。
-
-文件不重复保存 signature 原值，也不保存 API Key。`status=ok` 仍不保证逐字还原；
-`rewrite_or_unverified/unverified` 必须在训练前抽样。`fill` 遇到已有 native reasoning 时记录
-`skipped_native` 且不产生额外模型调用。常见拒绝、短于 32 字符或只重复 visible answer 的
-响应不会投影到 ACTF/SFT。Recovery token 计入 sample usage 的
-`signature_recovery_*` 字段；额外请求的美元成本不包含在 Claude CLI 的 `cost_usd` 中。
-Recovery 是宿主机直连后处理，不写入 Claude Code `wire_trace.jsonl`；该 full wire 仍只表示
-原始 Agent rollout 的请求历史。
+新采集不再生成 `signature_recovery.jsonl`。已有文件仍可作为历史诊断材料保留，升级不会批量删除或改写已有轨迹。
 
 ### 5.7 如何审计 context 压缩或改写
 
@@ -493,8 +454,8 @@ result。需要训练或分析任一参与方时，应使用各自的 raw/ACTF/S
 
 OpenClaw 的 `off` 或 `actf` 降级后，如果轨迹实际调用了工具，SFT 校验会因缺少工具 schema
 失败；没有工具调用时，SFT 的 `tools` 为 `[]`。Codex 和 Claude Code 会从 native
-实际调用推导 schema，所以不依赖 wire 来满足这项结构校验，但推导的 schema 不是完整
-权威接口定义。
+实际调用推导 schema，所以不依赖 wire 来满足这项结构校验，但推导的 schema 不包含完整的
+工具接口定义。
 
 ### 6.2 Thinking
 
@@ -503,7 +464,7 @@ OpenClaw 的 `off` 或 `actf` 降级后，如果轨迹实际调用了工具，SF
 | `--keep-thinking`（默认） | 后端返回什么就接收什么 | 保留 Harness 正常历史 | 保存可见 reasoning | 从 ACTF 保存 | 保留原始事件 |
 | `--no-keep-thinking` | 当前轮仍可产生 reasoning | OpenClaw 剥离后续 wire history；Codex/Claude Code 不改写 resume/continue | reasoning 置空 | reasoning 置空 | 仍保留原始事件 |
 
-`--thinking LEVEL` 控制 Harness/模型请求的逻辑档位，但不能凭空生成可见文本。GPT 原生
+`--thinking LEVEL` 设置 Harness/模型请求的推理档位；能否保存 reasoning 文本取决于服务的返回内容。GPT 原生
 effort、开源模型 profile 和 OpenClaw 镜像限制见
 [Thinking 配置](../harnesses/openclaw-configuration.md#5-thinkingsystem-prompt-与-wire-trace)；Claude Code
 映射见 [Thinking 与 effort](../harnesses/claude-code-configuration.md#4-thinking-与-effort)。
@@ -513,8 +474,8 @@ effort、开源模型 profile 和 OpenClaw 镜像限制见
 
 模型类别对应的推荐路径：
 
-- GPT reasoning 系列（如 `gpt-5.6-sol`）：使用 `external` / `external_always` 获取显式 CoT；
-- Claude 系列（如 Claude Opus 4.8，示例 ID `claude-opus-4-8`）：使用 signature recovery；
+- GPT reasoning 系列：保存服务返回的可见 summary/content，不扩写 summary；
+- Claude 系列：保存可见 thinking/summary，不还原签名或密文；
 - 返回明文 reasoning 的 Qwen、GLM 等开源模型：保持默认 `--keep-thinking`，CoT 直接进入
   ACTF/SFT `reasoning_content`。
 
@@ -522,24 +483,11 @@ effort、开源模型 profile 和 OpenClaw 镜像限制见
 OpenClaw 仍要求 `--model-config` 中存在可代理 `baseUrl`；Codex 和 Claude Code 不做
 该 history 剥离。
 
-`--external-thinking external|external_always` 是另一条路径：native reasoning 固定关闭，
-显式 thoughts 在 raw/ACTF 作为工具调用保存，并在 SFT 中折叠回
-`reasoning_content`。`--no-keep-thinking` 不删除这些显式 thoughts。
+### 6.3 已下线的 CoT 获取方式
 
-Claude Code 当前只支持原生 thinking，`external/external_always` 会在 Docker 启动前被拒绝。
+`external` / `external_always` 和 Claude signature recovery 已下线：不再注入思考工具、改写 THINK/ACT 阶段、调用签名恢复 API，或把工具参数折叠为 reasoning。普通同名工具仍按工具调用导出。
 
-### 6.3 Claude signature recovery
-
-| 参数 | 额外调用 | ACTF/SFT reasoning | raw |
-| --- | --- | --- | --- |
-| `off`（默认） | 无 | native thinking/summary | 原样保留 |
-| `fill` | 只请求 native reasoning 为空的 signed block | 成功时填空，失败保持空 | 原样保留 |
-| `prefer` | 请求每个 signed block | 成功时替换 native summary，失败回退 native | 原样保留 |
-
-Recovery 是 task 完成后的独立调用，不进入 `--continue` history。它要求 `--keep-thinking`，并
-受 rollout `--timeout` 剩余预算约束。模式、尝试数、max tokens 会写入 run lock，Resume
-不能混用不同 recovery 配置。完整语义见
-[Claude Code Signature recovery](../harnesses/claude-code-configuration.md#5-signature-recovery实验性)。
+旧 CLI 参数会报错，包括 `off`，需要从命令中删除。旧锁中明确为 `off` 的已下线字段及已关闭 recovery 的附属参数只在比较时忽略，原锁不会被重写；其余配置和样本完整性检查仍严格执行，原生采集可继续 Resume。启用了旧模式的运行不能混用新配置，应使用新 run 目录。CLI 会在写入锁或运行元数据之前检查目标 Agent/Simulator sample，直接调用 Collector 时也执行同一检查。旧 raw/ACTF/SFT 可继续离线查看；重新导出 ACTF 时，工具调用不再享有特殊折叠规则。
 
 ### 6.4 Cache trace（OpenClaw）
 
@@ -567,9 +515,9 @@ User Simulator sample 还保证根 `conversation.json` 和 Simulator 自己的 r
 
 ### 7.2 失败 sample
 
-`error` 或 `timeout` 不等于目录为空。结束阶段会尽量回收 raw、system prompt、tools 和
-安全输出，然后尝试 ACTF/SFT 转换。因此失败 sample 可以包含完整或部分轨迹，适合诊断，
-但不会进入 run 级 `sft.jsonl`。
+对于 `error` 或 `timeout` sample，结束阶段仍会尝试回收 raw、system prompt、tools 和
+安全输出，并进行 ACTF/SFT 转换。保留下来的完整或部分轨迹可用于诊断，但不会进入
+run 级 `sft.jsonl`。
 
 以下情况会把原本成功的 Harness 结果改为 `error`：
 
@@ -641,25 +589,6 @@ roller collect \
 模型 API 的 messages/input。调试结束后优先保留 raw/ACTF/SFT；确认不再需要请求级审计
 时删除 full cache/wire，减少重复数据和敏感信息暴露。
 
-### Claude Code 填补缺失 reasoning
-
-```bash
-roller collect \
-  --harness claude-code \
-  --tasks tasks.jsonl \
-  --model claude-opus-4-8 \
-  --api-base http://your-api.example/v1/messages \
-  --api-key-env ROLLER_ANTHROPIC_KEY \
-  --thinking high \
-  --claude-signature-recovery fill \
-  --claude-signature-recovery-attempts 2 \
-  --timeout 1200 \
-  --output recovered-runs
-```
-
-批量训练优先从 `fill` 开始；只有明确接受重写风险、并会审计
-`signature_recovery.jsonl.quality` 时才使用 `prefer`。
-
 ## 9. 发布训练集前检查
 
 建议至少检查：
@@ -675,8 +604,6 @@ roller collect \
    发布数据；
 9. 如果数据声明要复现模型可见 context，确认采集使用 `--wire-trace full`、wire `seq`
    连续且请求数符合预期；不要用 ACTF/SFT 代替逐请求证据；
-10. 如果使用 Claude signature recovery，过滤 `status!=ok`，抽样核对
-    `rewrite_or_unverified/unverified`，并单独核算额外 API 成本。
 
 Hermes raw 使用 `roller.hermes-events/v1`：记录完整请求快照、模型响应/usage 和压缩前的工具消息，不生成 `cache_trace.jsonl`。详见 [Hermes 轨迹](../harnesses/hermes-configuration.md)。
 

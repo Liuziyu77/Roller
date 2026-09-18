@@ -6,11 +6,9 @@ import unittest
 from pathlib import Path
 
 from roller.codex_actf import (
-    _external_mcp_completion,
     codex_events_to_actf,
     convert_codex_trace,
 )
-from roller.external_thinking import validate_external_thinking_trajectory
 from roller.sft import actf_to_sft
 from roller.usage import extract_codex_usage
 
@@ -145,6 +143,19 @@ def _events() -> list[dict]:
 
 
 class CodexActfTests(unittest.TestCase):
+    def test_deep_think_name_has_no_special_schema_or_reasoning_projection(self) -> None:
+        events = _events()
+        events[4]["payload"]["name"] = "deep_think"
+        events[4]["payload"]["arguments"] = '{"note":"ordinary tool argument"}'
+        trajectory = codex_events_to_actf(events)
+        record = actf_to_sft(trajectory)
+        tool = record["tools"][0]["function"]
+        self.assertEqual(tool["name"], "deep_think")
+        self.assertEqual(tool["parameters"]["properties"], {"note": {"type": "string"}})
+        assistant = next(m for m in record["messages"] if m["role"] == "assistant")
+        self.assertEqual(assistant["reasoning_content"], "Inspect the file.")
+        self.assertEqual(assistant["tool_calls"][0]["function"]["name"], "deep_think")
+
     def test_groups_native_events_by_model_request(self) -> None:
         trajectory = codex_events_to_actf(
             _events(), user_messages=["read input.txt"]
@@ -236,129 +247,6 @@ class CodexActfTests(unittest.TestCase):
             trajectory["steps"][0]["assistant_content"]["reasoning_content"],
             "Visible full reasoning.",
         )
-
-    def test_projects_codex_mcp_think_to_canonical_actf_and_sft_reasoning(self) -> None:
-        events = [
-            _events()[0],
-            {
-                "timestamp": "2026-08-22T02:00:00Z",
-                "type": "response_item",
-                "payload": {
-                    "type": "message",
-                    "role": "user",
-                    "content": [{"type": "input_text", "text": "solve"}],
-                },
-            },
-            {
-                "timestamp": "2026-08-22T02:00:01Z",
-                "type": "response_item",
-                "payload": {
-                    "type": "custom_tool_call",
-                    "call_id": "call-think",
-                    "name": "exec",
-                    "input": (
-                        "const r = await tools."
-                        "mcp__roller_external_thinking__deep_think"
-                        '({thoughts:"Inspect before acting."}); text(r);'
-                    ),
-                },
-            },
-            {
-                "timestamp": "2026-08-22T02:00:02Z",
-                "type": "event_msg",
-                "payload": {
-                    "type": "item_completed",
-                    "item": {
-                        "type": "McpToolCall",
-                        "id": "exec-inner",
-                        "server": "roller_external_thinking",
-                        "tool": "deep_think",
-                        "arguments": {"thoughts": "Inspect before acting."},
-                        "status": "completed",
-                        "result": {
-                            "content": [{"type": "text", "text": "------"}],
-                            "isError": False,
-                        },
-                    },
-                },
-            },
-            {
-                "timestamp": "2026-08-22T02:00:03Z",
-                "type": "response_item",
-                "payload": {
-                    "type": "custom_tool_call_output",
-                    "call_id": "call-think",
-                    "output": '{"content":[{"type":"text","text":"------"}]}',
-                },
-            },
-            {
-                "timestamp": "2026-08-22T02:00:04Z",
-                "type": "event_msg",
-                "payload": {"type": "token_count", "info": {}},
-            },
-            {
-                "timestamp": "2026-08-22T02:00:05Z",
-                "type": "response_item",
-                "payload": {
-                    "type": "message",
-                    "role": "assistant",
-                    "content": [{"type": "output_text", "text": "Done."}],
-                },
-            },
-            {
-                "timestamp": "2026-08-22T02:00:06Z",
-                "type": "event_msg",
-                "payload": {"type": "token_count", "info": {}},
-            },
-        ]
-
-        trajectory = codex_events_to_actf(events, user_messages=["solve"])
-
-        first_call = trajectory["steps"][0]["assistant_content"]["tool_calls"][0]
-        self.assertEqual(first_call["name"], "deep_think")
-        self.assertEqual(first_call["arguments"], {"thoughts": "Inspect before acting."})
-        self.assertEqual(
-            trajectory["steps"][0]["observation"][0]["content"][0]["text"],
-            "------",
-        )
-        stats = validate_external_thinking_trajectory(
-            trajectory,
-            "external_always",
-            require_isolated_deep_think=True,
-        )
-        self.assertEqual(stats.thought_action_pairs, 1)
-
-        sft = actf_to_sft(trajectory, external_thinking="external_always")
-        assistants = [message for message in sft["messages"] if message["role"] == "assistant"]
-        self.assertEqual(len(assistants), 1)
-        self.assertEqual(assistants[0]["reasoning_content"], "Inspect before acting.")
-        self.assertEqual(assistants[0]["content"], "Done.")
-        self.assertNotIn(
-            "deep_think", [tool["function"]["name"] for tool in sft["tools"]]
-        )
-
-    def test_accepts_lower_level_mcp_completion_event_variant(self) -> None:
-        normalized = _external_mcp_completion(
-            {
-                "type": "mcp_tool_call_end",
-                "invocation": {
-                    "server": "roller_external_thinking",
-                    "tool": "deep_think",
-                    "arguments": {"thoughts": "check"},
-                },
-                "result": {
-                    "Ok": {
-                        "content": [{"type": "text", "text": "------"}],
-                        "isError": False,
-                    }
-                },
-            }
-        )
-
-        self.assertIsNotNone(normalized)
-        invocation, _result, is_error = normalized
-        self.assertEqual(invocation["arguments"], {"thoughts": "check"})
-        self.assertFalse(is_error)
 
 
 if __name__ == "__main__":

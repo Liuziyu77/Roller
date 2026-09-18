@@ -2,9 +2,9 @@
 
 [Documentation home](../index.md) · [Getting started](../start/getting-started.md) · [OpenClaw](openclaw-configuration.md) · [Codex](codex-configuration.md) · [CLI reference](../start/cli-reference.md)
 
-This page covers only Claude Code-specific images, the Anthropic Messages API, thinking, signature recovery, native session, and troubleshooting. For Task fields see [Task format reference](../tasks/task-format.md). For output semantics shared by all Harnesses see [Trajectory output file guide](../traces/trajectory-outputs.md).
+This guide covers Claude Code-specific images, the Anthropic Messages API, thinking, native session, and troubleshooting. For Task fields, see [Task format reference](../tasks/task-format.md). For the outputs shared by all Harnesses, see [Trajectory output file guide](../traces/trajectory-outputs.md).
 
-> Jump to: supported scope (section 1) · image (section 2) · API (section 3) · thinking (section 4) · signature recovery (section 5) · native/ACTF/SFT/wire (sections 8–9) · troubleshooting (section 10)
+> Jump to: supported scope (section 1) · image (section 2) · API (section 3) · thinking (section 4) · native/ACTF/SFT/wire (sections 8 to 9) · troubleshooting (section 10)
 
 ## 1. Current supported scope
 
@@ -21,15 +21,12 @@ The Claude Code Harness supports:
 - dynamic User Simulator and Task Agent; the two can use different models, and the Simulator
   selects its Harness independently via `user_simulator.harness`;
 - Claude Code `settings.json`, `--max-turns`, `MAX_THINKING_TOKENS`, and permission mode;
-- explicitly enabled `thinking.signature` provider replay, projecting best-effort recovered text into ACTF/SFT.
 
 Not currently supported:
 
-- `external` / `external_always`; Claude Code runs must use
-  `--external-thinking off`, which is also the default;
 - APIs that only have OpenAI Chat Completions/Responses and no Anthropic `/v1/messages`;
-- locally decrypting Anthropic `redacted_thinking`/`thinking.signature`. Ciphertext always stays in raw. Optional
-  recovery sends the signature back to the provider and asks it to unseal and transcribe; it is not client-side cryptographic decryption.
+- recovering plaintext from `redacted_thinking` or `thinking.signature`. Opaque values stay in raw,
+  are not exported as reasoning, and trigger no extra recovery requests.
 
 ## 2. Build a pinned image
 
@@ -134,7 +131,7 @@ curl -sS -X POST 'http://host:port/v1/messages' \
   }'
 ```
 
-A model appearing in `/v1/models` does not guarantee the current account has an available channel. Treat an actual `/v1/messages` request as the source of truth.
+A model appearing in `/v1/models` does not guarantee the current account has an available channel. Verify access with an actual `/v1/messages` request.
 
 ## 4. Thinking and effort
 
@@ -150,8 +147,8 @@ The Claude Code Harness maps `--thinking LEVEL` to `claude --effort LEVEL`:
 | `max` | `max` | Depends on model support |
 | `ultra` | `ultracode` | Mapping from the Roller logical name to the pinned CLI name |
 
-`off/none`, `minimal`, and `adaptive` have no faithful one-to-one Claude Code CLI mapping, so they are rejected before
-container startup and will not silently degrade. The task's `runtime.thinking` wins over the command-line default.
+`off/none`, `minimal`, and `adaptive` have no matching Claude Code CLI level, so they are rejected before
+container startup rather than mapped to another level. The task's `runtime.thinking` wins over the command-line default.
 
 You can also set an explicit thinking token cap:
 
@@ -172,81 +169,9 @@ ACTF/SFT `reasoning_content`. The following cases produce no trainable plaintext
 Roller does not infer hidden reasoning from token counts, final text, or signatures. `--no-keep-thinking` clears reasoning in ACTF/SFT
 but does not modify the raw session or the Claude Code context used by later `--continue`.
 
-## 5. Signature recovery (experimental)
+## 5. Reasoning retention boundary
 
-This implementation follows [open-open-reasoning](https://github.com/5SSjw/open-open-reasoning). Some
-providers/models store `thinking.signature` in the Claude Code native session but only give a compressed
-summary, or even leave the `thinking` text empty. The signature itself is an opaque payload the provider can unseal;
-Roller cannot decrypt it locally. You can explicitly enable a second Anthropic Messages request: put the signature back
-as-is into an `assistant.thinking` block, then ask the model to mechanically transcribe the working that block represents.
-
-Signature recovery is only for signed thinking on the Claude family, for example Claude Opus 4.8 (example service
-ID: `claude-opus-4-8`). It is not for GPT or open-source models that already return plaintext reasoning by default. GPT uses
-external thinking; open-source models keep the default `--keep-thinking`.
-
-```bash
-roller collect \
-  --harness claude-code \
-  --tasks tasks.jsonl \
-  --model claude-opus-4-8 \
-  --api-base http://your-api.example/v1/messages \
-  --api-key-env ROLLER_ANTHROPIC_KEY \
-  --thinking high \
-  --claude-signature-recovery prefer \
-  --claude-signature-recovery-attempts 2 \
-  --claude-signature-recovery-max-tokens 8192 \
-  --timeout 1200 \
-  --output runs \
-  --run-name claude-recovered
-```
-
-### 5.1 Modes
-
-| Mode | Behavior | Recommended use |
-| --- | --- | --- |
-| `off` | Default; no second request; use native thinking as-is | Ordinary collection, cost-sensitive tasks |
-| `fill` | Replay only signed blocks whose native reasoning is empty; existing summaries are neither requested nor replaced | Conservative fill-in; start here |
-| `prefer` | Request recovery for every signed block; on success, replace the native summary with the recovered text | Datasets that specifically study deeper reasoning |
-
-`--claude-signature-recovery-attempts` is the maximum elicitation count per signed block. The default `1`
-means one original model call adds at most one recovery call. When an Agent task has multiple signed model steps,
-the total request count grows accordingly. `--claude-signature-recovery-max-tokens` caps the visible output of
-each recovery. Recovery shares the remaining `--timeout` budget with the original task.
-
-### 5.2 Execution boundary
-
-Recovery runs as independent Messages requests on the host after all predefined user turns, tool calls, and `--continue` have finished.
-The recovery prompt therefore never enters the Claude Code session and does not affect later tool choice, the final answer, or
-delivered files. Native `trace.jsonl` is not rewritten. The ACTF converter decides whether to use the recovered text according to `fill/prefer`.
-
-Each candidate is keyed by native `message.id`. Replay uses that message's model name, signature, the visible text from the same native
-message, and the preceding user text. The API key is still read from `--api-key-env` and is not written to any artifact.
-`signature_recovery.jsonl` does not store the signature again; it only records `message_id`, signature length, attempt
-status, usage, quality class, and recovered text. The original signature value stays only in native raw.
-Recovery requests are issued directly by host post-processing and do not go through the Claude Code rollout-local wire proxy. Even with
-`--wire-trace full`, `wire_trace.jsonl` records only the original Agent requests, not the replay body.
-
-### 5.3 Quality semantics and failure fallback
-
-This feature is provider-assisted elicitation, not a deterministic decryption API. The provider accepting a signature only means
-it can verify/unseal that payload on the server. The model may still refuse, summarize, rewrite, re-solve, or drop part of the working.
-Roller therefore:
-
-- labels successful text as `exact`, `superset`, `subset`, `rewrite_or_unverified`, or `unverified`;
-- rejects common "no prior thinking / cannot share" responses;
-- rejects results shorter than 32 characters or that only repeat the visible answer;
-- keeps native reasoning when all attempts fail, and does not mark the sample as failed;
-- `prefer` replaces only when recovery passes the checks above; `fill` only fills native empties;
-- requires `--keep-thinking`; combining it with `--no-keep-thinking` errors before Docker starts.
-
-SFT still has only `messages` and `tools` and does not add recovery metadata. An ACTF step that adopts recovered text
-marks the source as `extra.reasoning_source=signature_recovery`. SFT `reasoning_content` uses that
-text directly. Recovery tokens are added to the sample's total usage and are also stored in
-`signature_recovery_*` breakdown fields. The `cost_usd` reported by the Claude Code CLI does not include extra
-replay cost started on the host; `info.json.runtime.signature_recovery.cost_usd_included=false` records this explicitly.
-
-Before formal training, filter yourself using `signature_recovery.jsonl.quality`, length, correctness sampling, and task type.
-Do not treat `rewrite_or_unverified` as verbatim original CoT.
+Roller saves only visible thinking/summary returned by the service. It does not recover signatures, fill in CoT, or make post-task model calls. `--keep-thinking` preserves that text by default; `--no-keep-thinking` clears ACTF/SFT reasoning and leaves raw unchanged.
 
 ## 6. Claude settings and permissions
 
@@ -295,7 +220,6 @@ The default sample layout matches the other Harnesses:
 ├── trace.jsonl
 ├── trace_ACTF.json
 ├── trace_SFT.json
-├── signature_recovery.jsonl  # 仅显式开启 recovery 时存在
 ├── info.json
 └── results/                 # 有输出时
 ```
@@ -304,7 +228,7 @@ The default sample layout matches the other Harnesses:
 
 Roller selects this rollout's newest main session from `$CLAUDE_CONFIG_DIR/projects/**/<session-id>.jsonl`
 and also reads `<session-id>/subagents/*.jsonl`. Events are merged by timestamp, deduplicated by native `uuid`, and saved as
-`trace.jsonl`. The event objects themselves are not training-cleaned. `info.json.trajectory.raw_schema` is marked
+`trace.jsonl`. The event objects are kept without the cleanup applied to training data. `info.json.trajectory.raw_schema` is marked
 `claude-code-session-jsonl`.
 
 This is a merged export of the Claude Code native session. It is not:
@@ -315,13 +239,6 @@ This is a merged export of the Claude Code native session. It is not:
 
 Raw keeps plaintext thinking, encrypted thinking envelopes, tool metadata, usage, and sidechain-private
 fields. The structure is not guaranteed to be stable across Claude Code versions.
-
-### `signature_recovery.jsonl`
-
-Generated and kept only when `--claude-signature-recovery fill|prefer`. Each line corresponds to one native signed
-thinking block. Only `status=ok` becomes a projection candidate. In `fill` mode, a block that already has native reasoning is
-recorded as `skipped_native` and no API request is sent. The file stores recovered text and quality diagnostics, but does not copy
-the original signature value and is not a verbatim raw of the provider response.
 
 ### `trace_ACTF.json`
 
@@ -340,7 +257,7 @@ Each successful result's `total_cost_usd` from the CLI stream is accumulated int
 
 ### `trace_SFT.json` and `sft.jsonl`
 
-The shared Collector builds a standard training record from ACTF that contains only `messages` and `tools`. The assistant still uses:
+The Collector converts ACTF into a training record containing only `messages` and `tools`. Assistant messages use this format:
 
 ```json
 {
@@ -358,8 +275,8 @@ message. If wire captured a complete Anthropic tool schema, `input_schema` is no
 ## 9. Wire trace
 
 When a custom `--api-base` is set, Claude Code's default `--wire-trace actf` starts a rollout-local
-reverse proxy, but only temporarily captures the first system prompt, the full tools schema, and non-message request parameters. After ACTF/SFT
-are generated, the intermediate `wire_trace.jsonl` is deleted so the sample stays compact.
+reverse proxy, temporarily capturing the first system prompt, the full tools schema, and non-message request parameters. After ACTF/SFT
+are generated, the intermediate `wire_trace.jsonl` is deleted to reduce storage use.
 
 To check the JSON context the model actually received on each call, use:
 
@@ -387,12 +304,6 @@ During implementation the following protocol probes were run against an Anthropi
 - Bash and Read tool calls and results enter the native session;
 - a second CLI invocation with `--continue` reuses the same session;
 - the merged ACTF/SFT keep two user messages, thinking, three tool actions, and the final reply.
-- a Claude Code native session for `claude-opus-4-8` can store a signature; a real `prefer` test sent an
-  847-character native summary and a 1636-character signature into an independent replay, recovered 1122 characters of complete mathematical
-  working, and adopted the recovered text only in ACTF/SFT; native raw was not rewritten.
-- a final empty-summary test recovered 924 characters of working from a 1336-character signature; ACTF/SFT
-  `reasoning_content` were both 924 characters. Resume with the same config passed artifact integrity checks and skipped
-  directly, without calling the model again.
 
 Common errors:
 
@@ -406,8 +317,3 @@ Common errors:
 - the model rejects `budget_tokens` or requires adaptive thinking: remove
   `--claude-max-thinking-tokens` and use only a `--thinking` effort that model supports;
 - ACTF has thinking tokens but `reasoning_content` is empty: the service did not return plaintext; the converter did not drop it;
-- `signature_recovery` has `candidate_count=0`: that native session returned no signature; high
-  effort does not guarantee every simple question produces signed thinking;
-- recovery `status=refusal/insufficient`: the provider accepted the request, but the model did not produce enough working; increasing
-  attempts may help with random refusals, but still cannot guarantee a verbatim recovery;
-- `external thinking is not implemented`: this Harness currently only supports native Claude thinking.

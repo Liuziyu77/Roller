@@ -10,7 +10,7 @@
   </p>
 </div>
 
-Roller 把 task 清单与模型列表展开为独立 rollout，在一次性 Docker 容器中运行 Agent，最终同时保存 Harness 原始轨迹、统一分析轨迹、标准 SFT 数据和任务文件产物。
+Roller 为每个 task 与模型的组合创建独立 rollout，在一次性 Docker 容器中运行 Agent。每次运行保存 Harness 原始轨迹、ACTF 分析轨迹、SFT 训练数据和任务生成的文件。
 
 ```text
 tasks.jsonl × models
@@ -31,32 +31,36 @@ Docker 中的 Agent Harness
 - 同一批 task 对比多个模型或 Harness；
 - 生成顶层为 `messages` 和 `tools`（含图片时追加 `images`）的 SFT JSONL；
 - 保存 reasoning、工具调用、工具结果与任务文件产物；
-- 用 run lock、重试和 Resume 构建可恢复的数据生产流程；
-- 在内置 Viewer 中逐步检查每个 task 的思考与行动轨迹。
+- 用 run lock 检查运行配置，通过重试和 Resume 继续采集；
+- 在内置 Viewer 中逐步查看每个 task 的 reasoning 和工具操作。
 
 ## 选择 Harness
 
 | Harness | 模型服务协议 | 适合场景 | 关键能力与限制 |
 | --- | --- | --- | --- |
-| OpenClaw（默认） | OpenAI Responses 或 Chat Completions | 自定义/开源模型、动态 User Simulator、多模态输入 | 支持 `external` / `external_always`；模型通过 JSON 配置 |
-| Codex | Responses | Codex CLI 工具轨迹、GPT 与兼容 Responses 服务 | 支持 external thinking；可作为 Task Agent 或 User Simulator |
-| Claude Code | Anthropic `/v1/messages` | Claude Code 工具轨迹与 native thinking | 支持实验性 signature recovery；可作为 Task Agent 或 User Simulator |
+| OpenClaw（默认） | OpenAI Responses 或 Chat Completions | 自定义/开源模型、动态 User Simulator、多模态输入 | 模型通过 JSON 配置；保留原生 reasoning |
+| Codex | Responses | Codex CLI 工具轨迹、GPT 与兼容 Responses 服务 | 保留原生 reasoning；可作为 Task Agent 或 User Simulator |
+| Claude Code | Anthropic `/v1/messages` | Claude Code 工具轨迹与 native thinking | 保留原生 thinking；可作为 Task Agent 或 User Simulator |
 | Hermes | OpenAI Chat Completions | 原生请求与工具消息 → ACTF/SFT | 固定版本，容器内 terminal/file；可作为 Task Agent 或 User Simulator |
 | OpenCode | OpenAI Chat Completions | CLI session / tools → ACTF/SFT | 固定版本，文本与文件工具；支持 Agent / Simulator |
 | DeepSeek Harness | DeepSeek Chat Completions | 原生 SDK / 持久化 Bash → ACTF/SFT | 固定 sdk-minimal profile；支持 Agent / Simulator |
 | Pi Agent | OpenAI Chat Completions | 原生 AgentSession / 七种工具 → ACTF/SFT | 固定 SDK 版本；支持 Agent / Simulator |
 
-七者共享相同的 Task、Sample、ACTF、SFT、Viewer、重试和 Resume 边界。镜像、API 和 reasoning 参数不同，详见对应的 [Harness 指南](docs/README.md#按-harness-选择)。
+七种 Harness 使用相同的 Task、Sample、ACTF 和 SFT 格式，也共用 Viewer、重试和 Resume 流程。镜像、API 和 reasoning 参数不同，详见对应的 [Harness 指南](docs/README.md#按-harness-选择)。
 
-## CoT 采集方式
+## Reasoning 采集
 
-| 模型类型 | 推荐方式 | 保存结果 |
-| --- | --- | --- |
-| GPT reasoning 系列，例如 `gpt-5.6-sol` | OpenClaw 或 Codex 的 `--external-thinking external\|external_always` | 模型写入 `deep_think` 的显式 CoT 会进入 SFT `reasoning_content` |
-| Claude 系列，例如 Claude Opus 4.8（示例 ID：`claude-opus-4-8`） | Claude Code 的 `--claude-signature-recovery fill\|prefer` | Provider replay 成功后，恢复文本进入 ACTF/SFT `reasoning_content` |
-| 返回明文 reasoning 的开源模型，例如 Qwen、GLM | 保持默认 `--keep-thinking`，无需 external thinking | API 返回的 `reasoning_content`、`reasoning` 或 `reasoning_text` 会保留到 ACTF/SFT |
+默认 `--keep-thinking` 保存服务实际返回的可见 reasoning；`--thinking` 控制原生推理档位，不能保证返回完整 CoT。
 
-开源模型服务必须实际返回明文 reasoning。只报告 reasoning token 数、只返回压缩 summary 或返回加密状态时，Roller 无法从中反推出完整 CoT。
+| 模型类型 | ACTF/SFT 保存内容 |
+| --- | --- |
+| GPT reasoning 系列 | 服务返回的可见 summary/content，不扩写压缩 summary |
+| Claude 系列 | 可见 thinking/summary，不从 signature 或密文恢复内容 |
+| Qwen、GLM 等开源模型 | 服务实际返回的明文 reasoning |
+
+只返回 reasoning token 数或加密状态时，`reasoning_content` 可以为空。工具参数不会转换成 reasoning。
+
+旧版 external thinking 和 signature recovery 已下线，旧命令及产物的处理见[迁移说明](docs/zh/traces/trajectory-outputs.md#63-已下线的-cot-获取方式)。
 
 ## 最小运行流程
 
@@ -142,7 +146,7 @@ roller view runs/quickstart
 {"schema_version":"roller.task/v1","id":"hello","prompt":"计算 2+3，只回复数字。"}
 ```
 
-Task 清单支持 `.jsonl`、JSON 数组或 `{"tasks": [...]}`。一条 task 可以进一步声明：
+Task 清单支持 `.jsonl`、JSON 数组或 `{"tasks": [...]}`。每条 task 还可以设置：
 
 - `messages`：预定义多轮 user message；
 - `file_root` 与 `files.inputs`：需要复制进工作区的本地输入；
@@ -184,7 +188,6 @@ Run 根目录的 `sft.jsonl` 按 request 顺序汇总全部成功样本。需要
 | 管理输入、Context、输出和 Resume | [Task Bundle 与结果存储](docs/zh/tasks/task-bundle-and-storage.md) |
 | 跑评测 bench 或接入新 bench | [Bench 接入与评分](docs/zh/benches/bench-format.md) |
 | 制作训练数据 | [SFT 数据格式](docs/zh/traces/sft-format.md) |
-| 保存显式 CoT | [External Thinking](docs/zh/traces/external-thinking.md) |
 | 动态生成 user message | [User Simulator](docs/zh/tasks/user-simulator.md) |
 | 使用可视化页面 | [Viewer](docs/zh/traces/viewer.md) |
 | 浏览全部资料 | [Docs 首页](docs/README.md) |

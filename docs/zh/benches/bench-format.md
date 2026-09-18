@@ -2,10 +2,10 @@
 
 [文档中心](../index.md) · [Task 格式参考](../tasks/task-format.md) · [CLI 参数参考](../start/cli-reference.md) · [轨迹产出文件指南](../traces/trajectory-outputs.md)
 
-Roller 的采集路径本身不含"评分"概念：它跑完 task 就把容器销毁。Bench 层在这之上补两件事：
+Roller 在 task 结束后销毁容器。Bench 层为采集流程增加任务导出和容器内评分：
 
-1. 把一个 checkout 好的 benchmark **翻译**成 `roller.task/v1` 任务清单（`roller bench export`）；
-2. 在容器销毁前、Agent 最后一轮之后，在**同一个容器里**执行该 bench 自带的 grader，把分数落到 `score.json`。
+1. 把已 checkout 的 benchmark 转换为 `roller.task/v1` 任务清单（`roller bench export`）；
+2. 在容器销毁前、Agent 最后一轮之后，在同一个容器里执行该 bench 自带的 grader，将分数写入 `score.json`。
 
 Bench 层不改采集流程。已注册的 adapter 见 `roller bench list`。
 
@@ -13,29 +13,29 @@ Bench 层不改采集流程。已注册的 adapter 见 `roller bench list`。
 
 Bench 的评分几乎都要看 Agent 刚写出来的文件（生成的脚本、渲染的图、下载的数据），
 而 `session.finish()` 会 `rm -f <container>`。所以 grader 不能在 `collect` 返回之后跑，
-时序上必须卡在中间：
+grader 必须在以下时点执行：
 
 ```
 session.start() → 逐轮 send() → [grader 在这里] → session.finish()（销毁容器）
 ```
 
-这就是 `GradedHarness` 的全部职责：包住一个 `InteractiveHarness`，复刻它的运行循环，
-在最后一轮和 teardown 之间插入 grader。被包住的 harness 一行没改。
+`GradedHarness` 包装 `InteractiveHarness` 并复用其运行循环，在最后一轮和 teardown
+之间执行 grader，无需修改被包装的 harness。
 
-只有 `InteractiveHarness` 能提供活着的容器，所以拿非交互 harness 去跑 bench 会在启动时
-就抛 `TypeError`，而不是跑完 60 个任务才发现全是 0 分。
+只有 `InteractiveHarness` 能在评分时提供仍在运行的容器。使用非交互 harness 运行 bench
+会在启动时抛出 `TypeError`，避免完成整批任务后才发现无法评分。
 
 ## 2. 三个接缝：为什么现有代码几乎不用动
 
-整个设计建立在读代码确认的三件事上：
+Bench 层复用以下三个接口：
 
-| 接缝 | 事实 | 结果 |
+| 接口 | 行为 | 接入方式 |
 | --- | --- | --- |
-| `load_tasks()` | 不拒绝未知顶层 key | 任务行可以塞一个 `bench` 块 → `tasks.py` **0 改动** |
-| `_finalize_sample` | 把 `HarnessResult.metadata` 里除三个保留 key 外的内容全拷进 `info.json["runtime"]` | 评分结果自己浮到结果文件里 → 结果 schema **0 改动** |
-| `finish()` | 销毁容器且做了记忆化 | 评分必须前置 → 用 `GradedHarness` 包一层，而不是改 harness |
+| `load_tasks()` | 不拒绝未知顶层 key | 任务行可增加 `bench` 块，无需修改 `tasks.py` |
+| `_finalize_sample` | 把 `HarnessResult.metadata` 里除三个保留 key 外的内容全拷进 `info.json["runtime"]` | 评分结果随 metadata 写入文件，无需修改结果 schema |
+| `finish()` | 销毁容器且做了记忆化 | 用 `GradedHarness` 在销毁容器前执行评分，无需修改 harness |
 
-对既有代码只有两处**加法**改动：`_prune_sample` 的保留名单里加 `score.json`（不加会被清掉），
+接入时还需修改两处：`_prune_sample` 的保留名单里加 `score.json`（不加会被清掉），
 以及 CLI 增加 `bench` 子命令和 `--task-timeouts`。
 
 ## 3. `bench` 块（`roller.bench/v1`）
@@ -97,54 +97,54 @@ def grade(transcript, workspace_path):   # transcript 仅在 needs_transcript �
     return {"overall_score": 0.75, "detail": {...}}   # 必须返回 dict
 ```
 
-返回非 dict 会**显式报错**而不是记 0 分。Roller 把这个函数包进一个自带 runner，
-`docker cp` 进容器执行，用 `__ROLLER_SCORE__` 前缀标记 stdout 里的分数载荷 ——
-因为 grader 普遍会打印进度和 judge 往返，不能假设 stdout 整体就是分数。
+返回值不是 dict 时会报错。Roller 用自带 runner 调用该函数，通过 `docker cp` 将
+runner 复制进容器执行，并用 `__ROLLER_SCORE__` 前缀标记 stdout 中的分数。
+这样可以从 grader 打印的进度和 judge 请求日志中提取评分结果。
 
 ### 3.2 grading 失败 ≠ 0 分
 
-区分这两件事很重要，否则"grader 坏了"会被读成"模型很弱"：
+评分失败和有效的 0 分分别记录：
 
-- grader 正常返回 `overall_score: 0.0` → 真的 0 分。
-- grader 崩了 / 超时 / 输出无法解析 / `stage` 的源在 host 上不存在 → `score.json` 里
+- grader 正常返回 `overall_score: 0.0` → 有效的 0 分。
+- grader 崩溃 / 超时 / 输出无法解析 / `stage` 的源在 host 上不存在 → `score.json` 里
   除 0 分外还带 `error` 字段，聚合时计入 `unscored_count`，并在报告里单独列出。
 
 ## 4. `stage`：答案不能放在 Agent 的工作目录里
 
-很多 bench 的 ground truth 和种子文件放在同一个目录下。如果照搬整个目录挂进容器，
-Agent 就能读到答案 —— 这跟"模型会不会去看"无关，评测把答案交给被测对象本身就是错的。
+很多 bench 将 ground truth 和种子文件放在同一目录。挂载整个目录会让 Agent 能够
+读取答案，导致评测信息泄漏。
 
-`stage` 是通用的 host → 容器投递：**Agent 最后一轮结束之后、grader 之前**才执行。
-写进 `stage` 的东西模型全程看不到。
+`stage` 将 host 文件复制到容器，只在 Agent 最后一轮结束后、grader 启动前执行。
+因此 Agent 执行任务时无法读取 `stage` 中的文件。
 
-约束：`source` 必须是 host 绝对路径，`target` 必须是 workspace 内的相对路径 ——
-以 `/` 开头或含 `..` 的 target 直接拒绝，否则一份 bench 定义就能往容器任意位置写文件。
+`source` 必须是 host 绝对路径，`target` 必须是 workspace 内的相对路径。
+以 `/` 开头或含 `..` 的 target 会被拒绝，防止文件写到工作区之外。
 
-如果 `source` 在 host 上不存在，报**明确的 grading error**而不是静默 0 分：
-grader 拿不到答案会把做对的 run 判 0，读起来跟模型失败一模一样。
+如果 `source` 在 host 上不存在，会报告 grading error。这样可以区分缺少评分文件
+和 Agent 答错导致的 0 分。
 
 ## 5. 聚合口径
 
 `roller bench report <run_dir>` 扫描 run 下的样本，读 `info.json["runtime"]["bench"]`，
 按 bench 各自的 `aggregate()` 汇总（默认是 `mean_aggregate`）。
 
-默认口径**除以全部样本数**（崩掉的算 0），与常见 bench 的官方报法一致；同时单独给出：
+默认均值以全部样本数为分母，评分失败的样本计 0，与常见 bench 的官方口径一致。报告还会列出：
 
 - `scored_count` / `unscored_count`
 - `scored_average`（只对成功评分的样本取均值）
 - 每个 category 的均值和样本数
 - 未评分样本的清单及原因
 
-两个数都报，是因为只报前者会把 grader 故障混进模型分，只报后者会把崩掉的样本
-从分母里偷偷拿掉。
+全部样本均值包含评分失败的影响；成功评分均值排除了这些样本。报告同时提供两者，
+便于判断低分是否与 grader 故障有关。
 
-> 注意：`bench report` 读的是 `score.json`，**不读** `info.json` 的 `status`。
+> `bench report` 根据 `score.json` 统计分数，不使用 `info.json` 的 `status`。
 > `status: "error"` 常常只是 SFT 导出失败（例如观察里有图片、纯文本导出会丢数据），
-> 这类样本的分数是有效的。要统计"跑失败率"别用 `status`。
+> 这类样本的分数仍然有效，因此不能仅用 `status` 统计评测失败率。
 
 ## 6. 加一个新 bench
 
-一个子类加一行注册，`load()` 里只做翻译，不执行任何东西：
+实现一个 adapter 子类并注册。`load()` 只转换任务定义，不执行任务：
 
 ```python
 # src/roller/benches/mybench.py
@@ -176,34 +176,32 @@ class MyBenchAdapter(BenchAdapter):
 然后在 `src/roller/benches/__init__.py` 的注册表里加一行。可选覆盖 `categories()`
 和 `aggregate()`（要匹配上游报法时才需要）。
 
-几条经验：
+实现时需要处理以下情况：
 
-- **`categories()` 从 checkout 实际内容里报，不要硬编码上游的类别列表。** 部分 checkout
-  会少类别，硬编码会让 `--category` 筛出空集，跑出来像"这个 bench 没任务"。
-- **`--task-id` 写错要报错。** 静默的空运行看起来跟"跑完了"一样。
-- **解析器收字符串而不是 `Path`。** 让"解析一个任务文件"能脱离文件系统被单测。
-- **上游 runner 加进 prompt 的东西也要翻译。** 不在任务文件里、由 runner 拼上去的
-  前缀/后缀（WildClawBench 就有一段 277 字符前缀）漏掉的话，等于在问不一样的问题。
-- **上游有"必须配好才算跑对"的外部依赖时，要在 export 时报出来。** WildClawBench 的
-  `web_search` 打的是本地 shim 而不是真 Brave，没接线的表现是每次搜索都返回
-  `fetch failed`、而 Agent 继续干活、run 照样出分 —— 静默的能力缺失最贵，因为它
-  长得跟"模型不爱搜"一模一样。
+- `categories()` 从 checkout 的实际内容读取类别。部分 checkout 缺少上游类别，硬编码
+  类别列表可能使 `--category` 返回空集。
+- `--task-id` 不存在时应报错，避免将空运行误认为成功。
+- 解析器接收字符串，不直接接收 `Path`，方便在不访问文件系统的情况下测试解析逻辑。
+- 保留上游 runner 添加的 prompt 前缀和后缀，包括未写在任务文件中的内容。
+  例如 WildClawBench 有一段 277 字符的前缀，遗漏后会改变任务输入。
+- Export 时报告必需的外部依赖。WildClawBench 的 `web_search` 使用本地 shim，
+  不直接访问 Brave。未配置时，搜索会返回 `fetch failed`，但 Agent 仍会继续执行并
+  产生分数。检查这类错误后，才能判断搜索失败对评测结果的影响。
 
 ### 6.1 每个 bench 都要带一个 README
 
-`docs/zh/benches/<name>.md`（英文对应页在 `docs/en/benches/`），和 adapter 一起提交。这一页不重复 bench 层的通用机制，
-只写这个 bench 自己的配置面：
+`docs/zh/benches/<name>.md`（英文对应页在 `docs/en/benches/`），和 adapter 一起提交。该页介绍这个 bench 的配置，
+通用机制引用本页即可。应包含：
 
-1. **最短路径** —— 从 clone 上游到 `bench report` 的可复制命令序列；
-2. **上游旋钮 → Roller 对应**的表，逐项列 CLI 参数和环境变量；
-3. **明确标出"未搬"的旋钮**，并说明为什么不能用某个看起来等价的参数冒充
+1. 从 clone 上游到 `bench report` 的可复制命令；
+2. 上游参数与 Roller 配置的对应表，包括 CLI 参数和环境变量；
+3. 尚未支持的上游参数，以及其他参数无法替代它的原因
    （例：WCB 的超时乘数会改写任务文件，因此也改了 prompt 里告诉 Agent 的预算，
    `--timeout` 只改墙钟，不等价）；
-4. **必需环境变量**，以及要不要 `--pass-env`；
-5. **已知坑**，尤其是"不报错但结果无效"的那些，附一条跑完就能查的核对命令。
+4. 必需的环境变量，以及是否需要 `--pass-env`；
+5. 已知问题，尤其是不报错却影响结果有效性的情况，并附运行后的检查命令。
 
-第 2、3 条是这页存在的理由：接入一个 bench 的实际风险不是代码写错，而是上游某个
-旋钮没搬过来、跑的人也不知道它不在了。
+参数对应表应明确标出未支持的配置，方便使用者判断 Roller 与上游运行条件是否一致。
 
 ## 7. CLI
 
@@ -227,22 +225,22 @@ roller bench report runs/<run-name>
 roller bench report runs/<run-name> --output report.json
 ```
 
-`--category` 和 `--task-id` 都可重复。`--task-timeouts` 是 bench 跑的关键：
-bench 的每个任务自带超时（WildClawBench 实测有 300/360/600/900/1200 五档），
-而 `build_requests` 平时只吃一个全局 `--timeout`；不加这个开关，
-短任务会被给过多时间、长任务会被墙钟砍掉，砍掉的样子跟模型不会做很像。
+`--category` 和 `--task-id` 都可重复。运行 bench 时应启用 `--task-timeouts`，
+使用任务各自的超时（WildClawBench 实测有 300/360/600/900/1200 五档）。
+否则 `build_requests` 只使用全局 `--timeout`，可能给短任务过多时间，
+或提前终止长任务，影响评分的可比性。
 
 grader 需要的环境变量要用 `--pass-env` 透传（哪些变量由 bench 的任务定义声明）。
-缺变量时 Roller 会 warn 但仍然继续跑，所以真跑之前先确认日志里没有
+缺少变量时 Roller 会警告并继续运行。正式采集前，确认日志中没有
 `grading environment variable ... is unset`。
 
 ## 8. 已支持的 bench
 
-每个 bench 的配置面写在自己的 README 里（见 §6.1），这里只做索引。
+各 bench 的配置见对应 README（见 §6.1）：
 
 | Bench | `--harness` | README | 一句话 |
 | --- | --- | --- | --- |
 | `wildclawbench` | `openclaw` | [WildClawBench](wildclawbench.md) | 60 个真实场景任务，6 类；grader 在容器里跑，26 个任务的 `gt/` 走 `stage` |
 
-接入前先读对应 README 的"上游旋钮 → Roller 对应"表和"未搬"清单 ——
-少一个旋钮不会报错，只会让分数不可比。
+运行前请核对对应 README 中的参数映射和未支持项。配置缺失不一定触发错误，
+却可能改变评测条件，使分数无法直接比较。

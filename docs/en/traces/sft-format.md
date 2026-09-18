@@ -1,9 +1,9 @@
 # SFT data format
 
-[Documentation home](../index.md) · [Trajectory outputs](trajectory-outputs.md) · [Task format](../tasks/task-format.md) · [External Thinking](external-thinking.md)
+[Documentation home](../index.md) · [Trajectory outputs](trajectory-outputs.md) · [Task format](../tasks/task-format.md)
 
-While keeping the raw trace and ACTF, Roller also generates one training-only
-`trace_SFT.json` for every successful trajectory. Run-root `sft.jsonl` aggregates
+Roller generates a training file, `trace_SFT.json`, for each successful trajectory,
+alongside the raw trace and ACTF. Run-root `sft.jsonl` aggregates
 every successful sample in request-index order. Each line is identical to the
 corresponding `trace_SFT.json`.
 
@@ -104,7 +104,8 @@ The contract is:
   encodes the occurrence sequence, not a blob store.
 - Text-only records never gain an `images` key, so existing pure-text data and
   consumers stay backward compatible.
-- Because `<image>` is reserved, a record with images fails conversion when
+- Collision checks cover message content, reasoning, and tool-call arguments.
+  Because `<image>` is reserved, a record with images fails conversion when
   source text already contains a literal `<image>` that cannot be told apart
   from a placeholder.
 
@@ -140,47 +141,6 @@ and `details` do not enter SFT. The text of a tool error is still kept as-is.
 GPT Responses encrypted reasoning does not enter the training data. Only the
 visible reasoning summary in ACTF enters `reasoning_content`.
 
-When `--external-thinking` is enabled, raw/ACTF keep the real `deep_think` call
-protocol. Dedicated SFT normalizes it into the `reasoning_content` of the
-assistant that corresponds to the following actual action:
-
-```json
-{
-  "role": "assistant",
-  "reasoning_content": "完整、显式的中间推理",
-  "content": "",
-  "tool_calls": [{
-    "id": "call_business",
-    "type": "function",
-    "function": {
-      "name": "read",
-      "arguments": "{\"path\":\"input.txt\"}"
-    }
-  }]
-}
-```
-
-The converter deletes the `deep_think` tool call, its `------` result, the
-top-level schema, and the matching entry in the system-prompt tool list.
-Thoughts from a standalone THINK message are merged into the next ACT
-assistant. A think that sits beside a business tool in the same response is
-merged into the current assistant. Business tool calls/results are kept as-is.
-If existing `reasoning_content` is also non-empty, the segments are joined in
-order with a blank line. An isolated think with no following action fails SFT
-conversion; the content is not silently dropped.
-
-Codex native raw uses an outer programmatic `exec` to call local MCP. The ACTF
-converter first restores it to canonical `deep_think` from the real MCP
-completion event (`item_completed/McpToolCall` or `mcp_tool_call_end`), then
-shares the same SFT folding logic with OpenClaw. Dedicated SFT therefore
-contains no `exec` wrapper, MCP server name, or `------` placeholder result.
-
-The `reasoning_content` here is Roller's training-oriented normalized field. It
-does not claim the provider natively returned that field.
-`--no-keep-thinking` does not delete explicit external CoT. To exclude it you
-must use `--external-thinking off`. See [External Thinking](external-thinking.md)
-for the full mode description.
-
 ## 4. Data integrity
 
 The exporter requires:
@@ -195,13 +155,21 @@ The exporter requires:
 Image blocks are accepted in the base64 `source` form (Claude Code), the flat
 `data` + `mimeType` form (OpenClaw/Pi native), and the inline data-URI form.
 The media type must be `image/png`, `image/jpeg`, `image/webp`, or
-`image/gif`, and the payload must decode as strict base64. Anything else —
+`image/gif`, and the payload must decode as strict base64. It is then re-encoded
+canonically, removing decodable redundant padding without changing the image
+bytes. Export, aggregation, and Resume share the same parser; saved `images`
+must use the canonical representation. Anything else —
 audio or other unknown block types, unsupported media types, malformed
 base64, or an image block that only references a file path without bytes —
 still fails conversion and marks the sample as a trajectory conversion error;
 Roller never silently drops content. The converter itself never reads files
 or networks: a harness whose image tool only leaves a path must materialize
 the bytes into the ACTF layer while the file is still accessible.
+
+These are accepted SFT block shapes, not a claim that every Harness supports
+image export. OpenClaw and Claude Code retain image tool results. Pi/OpenCode
+reject images at the ACTF boundary. Codex still serializes image result blocks
+as text and does not produce `images`; that output is not lossless multimodal SFT.
 
 ## 5. File locations
 

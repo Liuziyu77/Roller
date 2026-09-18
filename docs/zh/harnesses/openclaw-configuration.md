@@ -2,7 +2,7 @@
 
 [文档中心](../index.md) · [快速上手](../start/getting-started.md) · [Codex](codex-configuration.md) · [Claude Code](claude-code-configuration.md) · [CLI 参数](../start/cli-reference.md)
 
-本页只说明 OpenClaw 专属的镜像、模型 provider、API adapter、thinking、搜索、gateway 和排错。Task 字段见 [Task 格式参考](../tasks/task-format.md)，所有 Harness 共用的产物语义见 [轨迹产出文件指南](../traces/trajectory-outputs.md)。
+本页介绍 OpenClaw 专属的镜像、模型 provider、API adapter、thinking、搜索、gateway 和排错。Task 字段见 [Task 格式参考](../tasks/task-format.md)，各 Harness 的产物说明见 [轨迹产出文件指南](../traces/trajectory-outputs.md)。
 
 > 快速定位：镜像与 Docker（第 1 节）· provider JSON（第 2–4 节）· reasoning/wire（第 5 节）· 并行端口（第 7 节）· 参数速查与排错（第 8–10 节）
 
@@ -15,9 +15,9 @@
 - OpenClaw Docker 镜像；
 - 模型服务所需的 API 地址与凭证。
 
-Roller 默认固定使用官方稳定镜像 `ghcr.io/openclaw/openclaw:2026.7.1-2`。该镜像已包含
-OpenClaw、Node.js 与 Python 3；Roller 直接运行它，不修改镜像内 OpenClaw 源码，也不要求
-派生镜像。在线与离线准备方式二选一：
+Roller 默认使用固定版本的官方稳定镜像 `ghcr.io/openclaw/openclaw:2026.7.1-2`，其中包含
+OpenClaw、Node.js 与 Python 3。Roller 直接运行该镜像，无需修改 OpenClaw 源码或构建
+派生镜像。可以在线拉取，也可以离线加载：
 
 ```bash
 docker pull --platform linux/amd64 ghcr.io/openclaw/openclaw:2026.7.1-2
@@ -181,7 +181,7 @@ roller collect ... --pass-env INTERNAL_SERVICE_TOKEN
 
 ### 逻辑档位与 provider effort
 
-Roller 的 `--thinking` 使用 OpenClaw 的**逻辑档位**，而不是把字符串直接写入任意模型 API：
+Roller 的 `--thinking` 接受 OpenClaw 的逻辑档位，再由 OpenClaw 转成对应的模型 API 参数：
 
 ```text
 off | minimal | low | medium | high | xhigh | adaptive | max | ultra
@@ -195,7 +195,7 @@ off | minimal | low | medium | high | xhigh | adaptive | max | ultra
 roller collect ... --thinking high
 ```
 
-档位先由 Roller 原样交给 OpenClaw，再由 OpenClaw 当前 model profile 校验并映射成 provider 参数。因此 Roller 接受某个逻辑档位，不代表每个模型都支持它：
+档位先由 Roller 原样交给 OpenClaw，再由 OpenClaw 当前 model profile 校验并映射成 provider 参数。各模型支持的档位有所不同：
 
 | Roller 输入 | OpenClaw 规范值 | GPT-5.6 Sol 的 Responses API | 说明 |
 | --- | --- | --- | --- |
@@ -211,8 +211,8 @@ roller collect ... --thinking high
 
 对 `gpt-5.6-sol` 的实际 Responses 请求已逐项验证：`none/low/medium/high/xhigh/max` 成功；`minimal/adaptive/ultra` 作为原生 effort 会返回 400。`off` 必须由 OpenClaw 转成 `none`，不能直接发给 GPT API。官方支持矩阵以 [OpenAI GPT-5.6 model guidance](https://developers.openai.com/api/docs/guides/model-guidance?model=gpt-5.6) 为准。
 
-开源模型不在 Roller 中维护一张容易过期的硬编码表。OpenClaw `2026.7.1` 的自定义
-model 使用顶层 `thinkingLevelMap` 把逻辑档位映射为服务值；Chat Completions 服务通过
+Roller 不硬编码开源模型的档位映射。OpenClaw `2026.7.1` 的自定义
+model 使用顶层 `thinkingLevelMap` 将逻辑档位映射为服务接受的值；Chat Completions 服务通过
 `compat.supportsReasoningEffort: true` 声明接受 `reasoning_effort`：
 
 ```json
@@ -249,14 +249,12 @@ model 使用顶层 `thinkingLevelMap` 把逻辑档位映射为服务值；Chat C
 使用原生 thinking 时，Roller 会在本次 rollout 注入的模型配置副本中设置
 `reasoning: true`。Chat Completions adapter 会发送 `reasoning_effort`；Responses adapter
 会发送 reasoning 配置。旧配置中的 `tags: ["reasoning"]` 会自动转换为当前 OpenClaw
-接受的布尔字段。启用下一节的 external thinking 时行为相反：所选 model 副本会设置
-`reasoning: false`，OpenClaw thinking 与 wire `reasoning.effort` 都固定为 `off`/`none`。
+接受的布尔字段。
 
-后端必须真实返回 reasoning 内容。Chat Completions 通常通过流式 `reasoning_content`（也兼容 `reasoning` 和 `reasoning_text`），Responses API 通过 reasoning items。仅在 usage 中报告 `reasoning_tokens`、但不返回 summary/content 时，没有可写入轨迹的文本。
+轨迹中能保存哪些 reasoning，取决于后端返回的内容。Chat Completions 通常通过流式 `reasoning_content`（也兼容 `reasoning` 和 `reasoning_text`），Responses API 通过 reasoning items。仅在 usage 中报告 `reasoning_tokens`、但不返回 summary/content 时，没有可写入轨迹的文本。
 
 对 Qwen、GLM 等能够返回明文 reasoning 的开源模型，默认 `--keep-thinking` 会把该文本保留到
-ACTF/SFT `reasoning_content`，无需启用 external thinking。External thinking 主要用于
-`gpt-5.6-sol` 等只暴露压缩 reasoning summary 的 GPT reasoning 模型。
+ACTF/SFT `reasoning_content`。
 
 对于通过 Responses API 暴露压缩 reasoning summary 的 GPT reasoning 模型，应使用：
 
@@ -268,49 +266,6 @@ ACTF/SFT `reasoning_content`，无需启用 external thinking。External thinkin
 ```
 
 同一模型走 Chat Completions 时可以产生 reasoning token，却不一定返回可见的 `reasoning_content`；Roller 不会从隐藏 token 反推 thinking。
-
-### External Thinking：用工具参数保存显式 CoT
-
-GPT Responses 的 reasoning item 对客户端通常只暴露 summary，而不是生成过程的完整文本。
-Roller 可关闭原生 reasoning，并为一次性 OpenClaw 容器加载本地 `deep_think(thoughts)`
-工具，把模型主动写入 `thoughts` 的文本作为显式 scratchpad：
-
-```bash
-roller collect \
-  --tasks tasks.jsonl \
-  --model my-gpt-proxy/gpt-5.6-sol \
-  --model-config examples/config/openclaw/models-reasoning.json \
-  --external-thinking external_always \
-  --timeout 1200
-```
-
-| 模式 | 请求协议 | 保证 |
-| --- | --- | --- |
-| `off` | 原生 OpenClaw 行为 | 默认值；`--thinking` 决定 provider reasoning |
-| `external` | 首次请求强制 `deep_think`，后续请求保留该工具并允许并行业务工具 | raw 校验首次 response 恰好包含一个非空 think；后续按 instructions 自主调用 |
-| `external_always` | 每个逻辑步骤拆成 THINK 与 ACT；THINK 强制且只允许 `deep_think`，ACT 从 tools 中删除它 | raw 校验严格 THINK/ACT 交替、非空 thoughts、无孤立 THINK |
-
-两个 external 模式都要求所选 provider 的 `api` 精确为 `openai-responses` 且提供可代理的
-绝对 `baseUrl`。Roller 会覆盖 task/CLI 的 `--thinking`，在三个位置关闭原生 reasoning：
-
-1. rollout 内所选 model 设置 `reasoning: false`；
-2. OpenClaw 默认值及每次 `openclaw agent` 调用使用 `--thinking off`；
-3. 代理实际转发的 Responses body 固定 `reasoning.effort: "none"`。
-
-插件由 Roller 从自身 package data 复制到一次性容器，通过 `plugins.load.paths` 加载，并在
-Gateway 启动前修正为容器主进程 uid/gid；镜像内源码和宿主机 OpenClaw 安装均不修改。
-`wire_trace.jsonl` 在 full 模式为每个请求增加 `external_thinking_phase`，便于核对
-`think`、`act` 或 `optional`。
-
-`deep_think` 在实际推理协议中是普通 function tool，因此 raw 和 ACTF 中的 thoughts 位于
-tool-call arguments，对应 tool result 固定为 `------`。专用 SFT 投影会删除这组内部
-call/result 和顶层 `deep_think` schema，并把 thoughts 合并到随后实际 action 对应 assistant
-的 `reasoning_content`；业务工具保持不变。这个字段是训练格式标准化结果，不表示 provider
-原生返回了同名字段。`--no-keep-thinking` 只剥离原生 thinking，不删除显式 external CoT；
-若不希望保存它，应使用 `--external-thinking off`。
-
-完整的安全边界、SFT 形态、与 claw-eval 参考实现的差异见
-[External Thinking 指南](../traces/external-thinking.md)。
 
 ### 保留与剥离
 
@@ -340,8 +295,7 @@ schema，写入 ACTF 顶层后删除中间文件。
 | `full` | 要求可代理 `baseUrl`，额外保留每次完整 JSON 请求体 `wire_trace.jsonl` 和按敏感 key 脱敏后的 `cache_trace.jsonl` |
 | `off` | 不保留 wire 数据，ACTF 的 `tools` 为 `null`；有可代理 model config 时仍可在内存中启用代理做 thinking 规范化/剥离 |
 
-OpenClaw session 文件与模型请求 context 不是同一层：session 保存持久化事件，而模型调用
-前还可能发生 system/runtime 注入、compaction、tool-result pruning、context-engine/hook
+OpenClaw session 文件保存持久化事件。模型调用前还可能发生 system/runtime 注入、compaction、tool-result pruning、context-engine/hook
 处理以及 provider 协议适配。因此 `trace.jsonl` 中存在的消息不保证逐字进入每次请求；
 ACTF/SFT 又是从该 session 文件投影，也不能证明模型当时看到了哪些完整历史。
 
@@ -403,7 +357,6 @@ roller collect ... --gateway-port 22000 --gateway-port-step 10
 | --- | --- | --- |
 | `--docker-image` | `ROLLER_OPENCLAW_IMAGE` 或内置值 | OpenClaw 镜像 |
 | `--container-user` | `0` | 一次性 task 容器用户；`image` 使用镜像默认用户 |
-| `--external-thinking` | `off` | `external` 或 `external_always` 启用显式 `deep_think` CoT |
 | `--docker-binary` | `docker` | Docker CLI 名称或路径 |
 | `--model-config` | 无 | 自定义 provider/model JSON |
 | `--network` | `host` | 容器网络模式 |

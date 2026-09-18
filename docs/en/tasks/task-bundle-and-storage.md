@@ -2,16 +2,16 @@
 
 [Documentation home](../index.md) · [Task format](task-format.md) · [Trajectory outputs](../traces/trajectory-outputs.md) · [SFT format](../traces/sft-format.md)
 
-This page describes the full lifecycle of a task from host files to the Agent workspace and then to the final run/sample, and it collects the rules for snapshots, Context capture, result collection, retry, and Resume. Task fields themselves are in the [Task format reference](task-format.md).
+This guide follows task files from the host into the Agent workspace and the saved run/sample. It covers snapshots, Context capture, result collection, retry, and Resume. For Task fields, see the [Task format reference](task-format.md).
 
 ## 1. File lifecycle
 
-Roller splits files into four stages:
+Files pass through four stages:
 
 1. **Host file pack**: inputs and Context under `file_root`, maintained by the user.
 2. **Task Bundle**: an immutable snapshot built before the run and shared by every model of the same task.
 3. **Agent workspace**: exclusive to each rollout; OpenClaw uses `/tmp_workspace`, Codex, Claude Code, Hermes, OpenCode, DeepSeek, and Pi use `/roller/workspace`.
-4. **Sample**: the final keepers of raw, ACTF, SFT, info, and optional `results/`.
+4. **Sample**: the saved directory containing raw, ACTF, SFT, info, and optional `results/`.
 
 Typical paths:
 
@@ -56,7 +56,7 @@ The Task Bundle lives in a runtime temp directory and is deleted after collectio
 
 ## 3. Context injection and capture
 
-Context differs from ordinary inputs in that ordinary inputs are provided by path only; Context also has a `role` and `target`, and the Harness places it where the Agent can discover it.
+Ordinary inputs are provided by path. Context also declares a `role` and `target`, which the Harness uses to place it where the Agent can discover it.
 
 Each Harness puts Context where it can auto-discover it:
 
@@ -83,7 +83,7 @@ So the default `USER.md` for `role: "user"`, the default `MEMORY.md` for `role: 
 | `hash` | yes | no | yes |
 | `none` | no | no | no |
 
-All three strategies still provide Context to the current rollout. The difference only affects what the runtime Bundle retains and how later Resume decisions are made; the final compact sample does not keep Context source text.
+All three strategies still provide Context to the current rollout. The difference only affects what the runtime Bundle retains and how later Resume decisions are made; the final sample does not keep Context source text.
 
 By default, `user` and `memory` use `hash`, and other roles use `full`. Use `hash` when the content is private but you still need reliable change detection; use `none` when you do not want even a content hash recorded, and accept that the task cannot safely Resume.
 
@@ -112,7 +112,7 @@ Input files are mounted read-only at their source paths, and Context is injected
 
 `/roller/task/outputs` is a stable alias for the task `output_dir`. Even if the task uses `deliverables/final`, the alias still points at the current collectable directory.
 
-Legacy workspace mode copies an entire old workspace snapshot into the working directory; new data should declare inputs and Context explicitly, which keeps unrelated files out and makes digests easier to interpret.
+Legacy workspace mode copies an entire old workspace snapshot into the working directory; new data should declare inputs and Context explicitly, to avoid including unrelated files in snapshots and digest calculations.
 
 ## 5. Output collection
 
@@ -178,8 +178,8 @@ Run `info.json` stores:
 - Aggregated usage across all samples
 - An index of sample relative paths
 
-Run `lock.json` is a redacted, reproducible run lock. It stores the structured configuration that must be compared and reuses
-content digests already computed by the Task Bundle, instead of hashing small config values again.
+Run `lock.json` stores redacted settings for Resume to compare. It keeps configuration as structured data without hashing it again,
+and reuses content digests already computed by the Task Bundle.
 Locked content includes:
 
 - request order, task/model, timeout, and Task Bundle/input/context digests;
@@ -188,7 +188,7 @@ Locked content includes:
 
 API keys, tokens, and other credentials are replaced with `<redacted>`; userinfo and fragments are
 stripped from URLs, and sensitive query values are replaced, while non-sensitive query keys such as `api-version` are kept for consistency checks.
-The lock prevents mixed batches. It is not a secret backup, and it does not verify that credentials still work.
+The lock prevents samples from different configurations entering the same run. It neither stores secrets nor verifies that credentials still work.
 
 Sample `info.json` stores:
 
@@ -221,12 +221,12 @@ The root sample still represents the Task Agent; `user_simulator/` represents th
 
 ### `trace.jsonl`
 
-This is the raw source of truth for OpenClaw transcript semantic events. With the default image, Roller exports
+This file records the original events from the OpenClaw transcript. With the default image, Roller exports
 by session identity through the official public transcript SDK, then serializes each event to JSONL; only legacy OpenClaw falls back
 to copying the session JSONL directly. Roller does not drop tool calls for training, rewrite message text, or merge multiple
 events into a custom text format, but this file is not a byte-for-byte copy of the underlying store or of upstream HTTP responses.
-“Persisted in the session” is also not the same as “sent verbatim in every model request”: OpenClaw may assemble, compact,
-or trim context before a call. To inspect the messages/input the model actually received, use `--wire-trace full`; see
+OpenClaw may assemble, compact, or trim context before a call, so a saved session message may not be sent verbatim
+in every model request. To inspect the messages/input the model actually received, use `--wire-trace full`; see
 [Trajectory output file guide](../traces/trajectory-outputs.md#32-session-history-is-not-the-model-request-context).
 
 ### `trace_ACTF.json`
@@ -292,8 +292,7 @@ Do not put real keys in tasks, JSON examples, or READMEs in the repository. Pref
 
 `--resume` checks two layers. First, the currently resolved `lock.json` must match the old lock exactly; otherwise the command
 reports the diff and stops, and will not mix samples from different configurations into the same run. The lock covers task/model
-order, timeout, Task Bundle digest, model configuration, image ID, thinking, and trajectory policy — options that change sample
-semantics. `--parallel`, `--retries`, gateway port/startup timeout, path locations, and bundle size
+order, timeout, Task Bundle digest, model configuration, image ID, thinking, and trajectory policy, all of which affect the collected sample. `--parallel`, `--retries`, gateway port/startup timeout, path locations, and bundle size
 limits are scheduling or constraint settings and do not change the semantics of already-successful samples, so they may be adjusted on Resume.
 
 Credential and pass-through environment values are not stored in the lock and do not trigger a mismatch; if those
@@ -324,7 +323,7 @@ inconsistent and require a new run name, rather than a silent rerun mixed into t
 - Changes to runtime env, setup, model configuration, image, or thinking/trajectory policy
 
 Multiple models in the same new run go into different sample model directories; after a lock has been created you cannot add, remove, or reorder
-models via Resume — use a new run name for a new model combination.
+models via Resume. Use a new run name for a new model combination.
 
 Runs created by older versions that have no `lock.json` can be migrated with `--resume`. Roller writes the current lock, but because
 it cannot prove the old execution config was the same, the first migration reruns every existing sample; only later resumes may reuse safely.

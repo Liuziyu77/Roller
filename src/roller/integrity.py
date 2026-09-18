@@ -6,7 +6,6 @@ import json
 from pathlib import Path
 from typing import Any, Mapping
 
-from roller.external_thinking import external_thinking_mode_from_metadata
 from roller.models import RunRequest
 from roller.harness_registry import requires_cache_trace
 from roller.sft import actf_to_sft, validate_sft_record
@@ -130,56 +129,9 @@ def _validate_trajectory_files(
         validate_sft_record(actual_sft)
     except ValueError as exc:
         raise ValueError(f"trace_SFT.json is not a valid SFT record: {exc}") from exc
-    runtime = info.get("runtime")
-    mode = external_thinking_mode_from_metadata(
-        runtime if isinstance(runtime, Mapping) else None
-    )
-    expected_sft = actf_to_sft(actf, external_thinking=mode)
+    expected_sft = actf_to_sft(actf)
     if actual_sft != expected_sft:
         raise ValueError("trace_SFT.json does not match the canonical ACTF projection")
-
-    recovery = runtime.get("signature_recovery") if isinstance(runtime, Mapping) else None
-    if isinstance(recovery, Mapping) and recovery.get("mode") in {"fill", "prefer"}:
-        recovery_path = base / "signature_recovery.jsonl"
-        if not recovery_path.is_file():
-            raise ValueError("required signature_recovery.jsonl is missing")
-        rows: list[dict[str, Any]] = []
-        try:
-            with recovery_path.open("r", encoding="utf-8") as source:
-                for line_number, line in enumerate(source, start=1):
-                    if not line.strip():
-                        continue
-                    value = json.loads(line)
-                    if not isinstance(value, dict):
-                        raise ValueError(
-                            f"signature_recovery.jsonl line {line_number} must be an object"
-                        )
-                    if value.get("schema_version") != (
-                        "roller.claude-signature-recovery/v1"
-                    ):
-                        raise ValueError(
-                            "signature_recovery.jsonl has an unsupported schema_version"
-                        )
-                    if "signature" in value:
-                        raise ValueError(
-                            "signature_recovery.jsonl must not duplicate signature values"
-                        )
-                    rows.append(value)
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise ValueError(
-                f"signature_recovery.jsonl is not readable JSONL: {exc}"
-            ) from exc
-        expected_count = recovery.get("candidate_count")
-        if isinstance(expected_count, int) and len(rows) != expected_count:
-            raise ValueError(
-                "signature_recovery.jsonl candidate count does not match info.json"
-            )
-        recovered_count = sum(row.get("status") == "ok" for row in rows)
-        expected_recovered = recovery.get("recovered_count")
-        if isinstance(expected_recovered, int) and recovered_count != expected_recovered:
-            raise ValueError(
-                "signature_recovery.jsonl recovered count does not match info.json"
-            )
 
 
 def validate_resumable_sample(

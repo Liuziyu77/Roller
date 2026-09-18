@@ -13,6 +13,23 @@ from roller.cli import _build_parser, _collect, _docker_preflight
 
 
 class CliTests(unittest.TestCase):
+    def test_retired_cot_flags_are_rejected(self) -> None:
+        for flag, value in (
+            ("--external-thinking", "external"),
+            ("--external-thinking", "external_always"),
+            ("--external-thinking", "off"),
+            ("--claude-signature-recovery", "fill"),
+            ("--claude-signature-recovery", "prefer"),
+            ("--claude-signature-recovery-attempts", "2"),
+            ("--claude-signature-recovery-max-tokens", "8192"),
+        ):
+            with self.subTest(flag=flag, value=value):
+                errors = io.StringIO()
+                with contextlib.redirect_stderr(errors), self.assertRaises(SystemExit) as raised:
+                    _build_parser().parse_args(["collect", "--tasks", "tasks.jsonl", flag, value])
+                self.assertEqual(raised.exception.code, 2)
+                self.assertIn("unrecognized arguments", errors.getvalue())
+
     def test_collect_help_groups_shared_options_by_scope(self) -> None:
         parser = _build_parser()
         collect_parser = parser._subparsers._group_actions[0].choices["collect"]
@@ -45,8 +62,6 @@ class CliTests(unittest.TestCase):
                 "xhigh",
                 "--reasoning-summary",
                 "detailed",
-                "--external-thinking",
-                "external_always",
                 "--codex-websockets",
             ]
         )
@@ -54,7 +69,6 @@ class CliTests(unittest.TestCase):
         self.assertEqual(args.api_key_env, "ROLLER_CODEX_KEY")
         self.assertEqual(args.thinking, "xhigh")
         self.assertEqual(args.reasoning_summary, "detailed")
-        self.assertEqual(args.external_thinking, "external_always")
         self.assertTrue(args.codex_websockets)
 
     def test_parser_accepts_claude_code_harness_options(self) -> None:
@@ -75,12 +89,6 @@ class CliTests(unittest.TestCase):
                 "20",
                 "--claude-max-thinking-tokens",
                 "4096",
-                "--claude-signature-recovery",
-                "prefer",
-                "--claude-signature-recovery-attempts",
-                "2",
-                "--claude-signature-recovery-max-tokens",
-                "12000",
                 "--claude-permission-mode",
                 "bypassPermissions",
             ]
@@ -91,9 +99,6 @@ class CliTests(unittest.TestCase):
         self.assertEqual(args.thinking, "high")
         self.assertEqual(args.claude_max_turns, 20)
         self.assertEqual(args.claude_max_thinking_tokens, 4096)
-        self.assertEqual(args.claude_signature_recovery, "prefer")
-        self.assertEqual(args.claude_signature_recovery_attempts, 2)
-        self.assertEqual(args.claude_signature_recovery_max_tokens, 12000)
 
     def test_claude_code_dry_run_normalizes_without_docker_or_secret(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -127,29 +132,6 @@ class CliTests(unittest.TestCase):
         self.assertEqual(payload["trajectories"], 1)
         self.assertEqual(payload["plan"][0]["turns"]["count"], 1)
 
-    def test_claude_code_rejects_external_thinking_before_docker(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            tasks = Path(temporary) / "tasks.jsonl"
-            tasks.write_text(
-                json.dumps({"id": "hello", "prompt": "say hello"}) + "\n",
-                encoding="utf-8",
-            )
-            args = _build_parser().parse_args(
-                [
-                    "collect",
-                    "--tasks",
-                    str(tasks),
-                    "--harness",
-                    "claude-code",
-                    "--model",
-                    "claude-sonnet-4-6-thinking",
-                    "--external-thinking",
-                    "external",
-                    "--dry-run",
-                ]
-            )
-            with self.assertRaisesRegex(ValueError, "not implemented"):
-                _collect(args)
 
     def test_task_harness_is_used_when_cli_harness_is_omitted(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
