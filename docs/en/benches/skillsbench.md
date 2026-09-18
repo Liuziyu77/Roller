@@ -2,15 +2,15 @@
 
 [Documentation](../index.md) · [Bench integration and scoring](bench-format.md) · [OpenCode configuration](../harnesses/opencode-configuration.md)
 
-Roller supports both SkillsBench conditions, `with-skill` and `no-skill`, and runs each
-task's own `verifier/test.sh`. Upstream: <https://github.com/benchflow-ai/skillsbench>.
+Roller runs both SkillsBench conditions, `with-skill` and `no-skill`. The upstream data is at
+<https://github.com/benchflow-ai/skillsbench>.
 
-SkillsBench v1.1 does not use an LLM judge: all 87 tasks are scored by their own
-`verifier/test.sh`. GPT-5.5 in the upstream README is an agent-under-test model, not a
-grading model. Reproducing that entry requires a real GPT-5.5 endpoint for `collect --model`;
-a Kimi-K3 run uses the same verifiers but is a Kimi-K3 result, not a model-matched reproduction.
+All 87 tasks in v1.1 use their repository's `verifier/test.sh`; SkillsBench does not use an LLM
+judge. GPT-5.5 in the upstream README is the agent under test. To compare against that result,
+`collect --model` must point to a real GPT-5.5 service. A run with another model uses the same
+verifiers but produces a score for that model.
 
-## Shortest path
+## Set up and run
 
 ```bash
 # Fetch and verify SkillsBench v1.1, then build Roller's OpenCode base image.
@@ -36,51 +36,53 @@ roller collect --bench skillsbench --bench-root "$SKILLSBENCH_ROOT" \
   --output "$ROLLER_RUN_ROOT" --run-name kimi-no-skill
 ```
 
-The preparation script is idempotent: it leaves an existing checkout untouched, verifies that it
-is the pinned v1.1 commit, and checks/builds the harness base image again. Its argument may be any
-persistent directory, and it neither reads nor writes API keys. The equivalent manual procedure is
-to clone the `v1.1` tag from <https://github.com/benchflow-ai/skillsbench> and build
-`docker/opencode`.
+`prepare-skillsbench.sh` accepts any persistent directory. It clones v1.1 when the directory is
+missing. For an existing checkout, it verifies the commit without changing the data. It also builds
+`roller-opencode:1.18.30` and never reads or writes an API key. To prepare the environment by hand,
+check out the `v1.1` tag and build `docker/opencode`.
 
-Each command automatically writes `tasks.jsonl` and `bench-report.json` inside its run.
-For SkillsBench, the one-command defaults are 3 trials per task, 100 OpenCode
-steps per trial, and 32768 output tokens per model response; `--samples`,
-`--opencode-max-steps`, and `--opencode-output-tokens` can override them.
-Pin official comparisons to tag `v1.1` (peeled commit
-`b63b7b2850226b6aa4fb5929a8c1ac7bc4d9a6af`) rather than a moving `main` checkout.
+Each `collect` command writes `tasks.jsonl` and `bench-report.json` to its run directory.
+SkillsBench defaults to three samples per task, 100 OpenCode steps per turn, and 32768 output tokens
+per model response. Change these with `--samples`, `--opencode-max-steps`, and
+`--opencode-output-tokens`.
 
-Start with `--bench-task-id 3d-scan-calc` as a one-task smoke test. Both
-`--bench-category` and `--bench-task-id` are repeatable. For a slower model, add
-`--bench-timeout-multiplier 2`; this scales both the agent and verifier budgets.
-Use `--samples N` for a non-standard repeat count.
+For comparable runs, use the `v1.1` tag at commit
+`b63b7b2850226b6aa4fb5929a8c1ac7bc4d9a6af`. Start with
+`--bench-task-id 3d-scan-calc` to check the model endpoint, image, and output directory.
+`--bench-category` and `--bench-task-id` may be repeated. For a slow model,
+`--bench-timeout-multiplier 2` increases both the agent and verifier time limits.
 
-## What Roller does
+## How Roller runs a task
 
-- Exports the ordered set in `integrations/agentbeats/task_sets/skillsbench-v1.1.json`,
-  falling back to scanning `tasks/` when the set is absent.
-- Builds each `environment/Dockerfile`, then layers the pinned OpenCode harness onto it.
-  Image tags contain an environment digest and are reused; pass `--rebuild-task-images`
-  to force a rebuild.
-- Uses the final Dockerfile `WORKDIR` as the Agent workspace.
-- Removes Dockerfile skill copies from the base environment. `with-skill` injects
-  `environment/skills/` at runtime, while `no-skill` clears supported skill lookup paths.
-  The two conditions therefore share the same task environment and differ only by skills.
-- Stages `verifier/` only after the Agent finishes, runs `/verifier/test.sh`, and reads
-  `/logs/verifier/reward.txt`; verifier files are not exposed to the Agent.
-- Reports upstream-style score eligibility: agent timeouts/errors and verifier or
-  infrastructure errors remain visible but are excluded from pass rate and mean reward.
+Roller first reads the ordered task set from
+`integrations/agentbeats/task_sets/skillsbench-v1.1.json`. If that file is missing, it scans
+`tasks/`.
 
-A task's first run may spend substantial time downloading dependencies. Docker builds, task
-containers, and verifiers inherit `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY` from the current
-shell without storing their values in the exported task list. Add private model endpoints to
-`NO_PROXY`. Verifiers retry transient download or DNS failures that occur before tests start;
-samples that still fail remain score-ineligible. Put real run output on persistent shared storage.
+Each task has an `environment/Dockerfile`. Roller builds that environment and adds the pinned
+OpenCode harness. The image tag includes a digest of the environment, so an unchanged image can be
+reused. Pass `--rebuild-task-images` to rebuild it. The last `WORKDIR` in the Dockerfile becomes
+the agent's working directory.
 
-## Boundaries
+Roller removes skill copies while building the base environment. For `with-skill`, it injects
+`environment/skills/` when the task starts. For `no-skill`, it clears the supported harness skill
+directories. Both conditions therefore use the same task environment and differ only in whether
+the skill is available.
 
-The adapter targets upstream's default `tasks/` set and does not automatically include
-`tasks-extra/`. Declared taxonomy, CPU, memory, storage, GPU, network, and OS values are retained
-in bench metadata but are not currently translated into Docker
-resource limits; enforce them outside Roller when strict resource comparability matters.
-For the few upstream compose definitions, their verifiers support starting the needed service
-inside the main image, so Roller builds the main Dockerfile.
+After the agent exits, Roller copies `verifier/` into the container, runs
+`/verifier/test.sh`, and reads `/logs/verifier/reward.txt`. The agent cannot inspect verifier
+files while solving the task. Agent timeouts, agent errors, verifier errors, and infrastructure
+errors remain in the report but do not count toward the pass rate or mean reward.
+
+## Network, cache, and current limits
+
+The first run of a task may download a large set of dependencies. Docker builds, task containers,
+and verifiers inherit `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY` from the shell. Roller does
+not store those values in the exported task JSONL. Add private model endpoints to `NO_PROXY`.
+The verifier retries temporary download and DNS failures that happen before tests begin. A sample
+that still fails is marked score-ineligible. Write formal run output to persistent shared storage.
+
+The adapter reads the default upstream `tasks/` set and does not include `tasks-extra/`
+automatically. It keeps declared taxonomy, CPU, memory, storage, GPU, network, and OS values in
+bench metadata, but it does not turn them into Docker resource limits. Apply resource limits
+outside Roller when a comparison requires them. A few tasks include compose files; their verifiers
+can start the required services inside the main container, so Roller builds the main Dockerfile.
