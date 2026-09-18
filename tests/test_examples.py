@@ -84,17 +84,6 @@ class ExampleFilesTests(unittest.TestCase):
         self.assertEqual(multimodal_model["id"], "my-multimodal-model")
         self.assertEqual(multimodal_model["input"], ["text", "image"])
 
-        deepseek = load_model_config(
-            self.examples_root
-            / "config"
-            / "openclaw"
-            / "deepseek-v4.1-self-gateway.json",
-            {"VLLM_API_KEY": "secret"},
-        )
-        deepseek_model = deepseek["providers"]["deepseek"]["models"][0]
-        self.assertEqual(deepseek_model["id"], "DeepSeek-V4.1-Flash")
-        self.assertEqual(deepseek_model["input"], ["text", "image"])
-
     def test_native_harness_config_examples_are_safe_and_parseable(self) -> None:
         codex_path = (
             self.examples_root / "config" / "codex" / "config.toml.example"

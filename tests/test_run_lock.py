@@ -129,14 +129,14 @@ class RunLockTests(unittest.TestCase):
                 request.model,
                 request.timeout_seconds,
                 request.bundle,
-                model_label="Kimi-K3",
+                model_label="display-model",
             )
             lock = build_run_lock(
                 [request], roller_version="1.2.3", execution={}, model_config=None
             )
 
         self.assertEqual(lock["requests"][0]["model"], "proxy/model")
-        self.assertEqual(lock["requests"][0]["model_label"], "Kimi-K3")
+        self.assertEqual(lock["requests"][0]["model_label"], "display-model")
 
     def test_reuses_only_an_equal_existing_lock(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

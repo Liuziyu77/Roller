@@ -11,10 +11,9 @@ hybrid grader 和多 session。上游仓库是 <https://github.com/pinchbench/sk
 scripts/prepare-pinchbench.sh "$PWD/.benchmarks/pinchbench"
 export PINCHBENCH_ROOT="$PWD/.benchmarks/pinchbench"
 
-set -a
-. /mnt/public/users/dingshengyuan/_shared/harness_evals/.env
-set +a
-export ROLLER_RUN_ROOT=/mnt/public/users/$USER/_shared/roller-runs/pinchbench
+export MODEL_API_BASE_URL=https://api.example.com/v1
+export MODEL_API_KEY=replace-with-your-api-key
+export ROLLER_RUN_ROOT="$PWD/runs/pinchbench"
 mkdir -p "$ROLLER_RUN_ROOT"
 ```
 
@@ -24,18 +23,19 @@ mkdir -p "$ROLLER_RUN_ROOT"
 <https://github.com/pinchbench/skill>，再拉取
 `ghcr.io/openclaw/openclaw:2026.7.1-2`。
 
-OpenClaw 还需要一份不含明文 key 的模型配置。下面的兼容 model ID 实际使用 Kimi-K3：
+OpenClaw 还需要一份模型配置。把下面的内容保存为 `example.models.json`，再把 API 地址、
+key 和模型 ID 换成模型服务商提供的值：
 
 ```json
 {
   "mode": "merge",
   "providers": {
-    "kimi": {
-      "baseUrl": "https://joyrouter.jd.com/v1",
-      "apiKey": "${HE_JUDGE_KEY}",
+    "example": {
+      "baseUrl": "${MODEL_API_BASE_URL}",
+      "apiKey": "${MODEL_API_KEY}",
       "api": "openai-completions",
       "timeoutSeconds": 600,
-      "models": [{"id": "Qwen3-32B-for-Game-Judge", "name": "Kimi-K3"}]
+      "models": [{"id": "example-model", "name": "Example model"}]
     }
   }
 }
@@ -47,13 +47,13 @@ OpenClaw 还需要一份不含明文 key 的模型配置。下面的兼容 model
 roller collect --bench pinchbench --bench-root "$PINCHBENCH_ROOT" \
   --bench-variant automated-only \
   --bench-task-id task_sanity --bench-task-id task_files \
-  --model kimi/Qwen3-32B-for-Game-Judge --model-config kimi.models.json \
+  --model example/example-model --model-config example.models.json \
   --parallel 1 --grader-parallel 1 \
-  --output "$ROLLER_RUN_ROOT" --run-name kimi-smoke
+  --output "$ROLLER_RUN_ROOT" --run-name smoke
 ```
 
-命令完成后，结果在 `kimi-smoke/tasks.jsonl` 和
-`kimi-smoke/bench-report.json`。
+命令完成后，结果在 `smoke/tasks.jsonl` 和
+`smoke/bench-report.json`。
 
 `all` 和 `core` 中有 LLM/hybrid 任务。需要和 PinchBench 官方设置比较时，使用默认 judge
 `anthropic/claude-haiku-4.5`。Roller 默认请求
@@ -64,9 +64,9 @@ export OPENROUTER_API_KEY=...
 
 roller collect --bench pinchbench --bench-root "$PINCHBENCH_ROOT" \
   --bench-variant core --bench-timeout-multiplier 2 \
-  --model kimi/Qwen3-32B-for-Game-Judge --model-config kimi.models.json \
+  --model example/example-model --model-config example.models.json \
   --samples 1 --parallel 1 --grader-parallel 1 \
-  --output "$ROLLER_RUN_ROOT" --run-name kimi-core
+  --output "$ROLLER_RUN_ROOT" --run-name core
 ```
 
 ## Variant

@@ -12,10 +12,9 @@ judging, hybrid grading, and multiple sessions. The upstream repository is
 scripts/prepare-pinchbench.sh "$PWD/.benchmarks/pinchbench"
 export PINCHBENCH_ROOT="$PWD/.benchmarks/pinchbench"
 
-set -a
-. /mnt/public/users/dingshengyuan/_shared/harness_evals/.env
-set +a
-export ROLLER_RUN_ROOT=/mnt/public/users/$USER/_shared/roller-runs/pinchbench
+export MODEL_API_BASE_URL=https://api.example.com/v1
+export MODEL_API_KEY=replace-with-your-api-key
+export ROLLER_RUN_ROOT="$PWD/runs/pinchbench"
 mkdir -p "$ROLLER_RUN_ROOT"
 ```
 
@@ -25,19 +24,19 @@ prints the commit for experiment records and does not read or write API keys. To
 environment by hand, clone <https://github.com/pinchbench/skill> and pull
 `ghcr.io/openclaw/openclaw:2026.7.1-2`.
 
-OpenClaw also needs a model configuration without a literal key. This example uses a compatibility
-model ID backed by Kimi-K3:
+OpenClaw also needs a model configuration. Save the following as `example.models.json`, then
+replace the API URL, key, and model ID with values from your model provider:
 
 ```json
 {
   "mode": "merge",
   "providers": {
-    "kimi": {
-      "baseUrl": "https://joyrouter.jd.com/v1",
-      "apiKey": "${HE_JUDGE_KEY}",
+    "example": {
+      "baseUrl": "${MODEL_API_BASE_URL}",
+      "apiKey": "${MODEL_API_KEY}",
       "api": "openai-completions",
       "timeoutSeconds": 600,
-      "models": [{"id": "Qwen3-32B-for-Game-Judge", "name": "Kimi-K3"}]
+      "models": [{"id": "example-model", "name": "Example model"}]
     }
   }
 }
@@ -49,13 +48,13 @@ Run two automatically graded tasks before starting a larger job. They do not nee
 roller collect --bench pinchbench --bench-root "$PINCHBENCH_ROOT" \
   --bench-variant automated-only \
   --bench-task-id task_sanity --bench-task-id task_files \
-  --model kimi/Qwen3-32B-for-Game-Judge --model-config kimi.models.json \
+  --model example/example-model --model-config example.models.json \
   --parallel 1 --grader-parallel 1 \
-  --output "$ROLLER_RUN_ROOT" --run-name kimi-smoke
+  --output "$ROLLER_RUN_ROOT" --run-name smoke
 ```
 
-The command writes `kimi-smoke/tasks.jsonl` and
-`kimi-smoke/bench-report.json`.
+The command writes `smoke/tasks.jsonl` and
+`smoke/bench-report.json`.
 
 The `all` and `core` variants contain LLM and hybrid grading tasks. For a result comparable to
 the upstream PinchBench setup, keep the default judge,
@@ -67,9 +66,9 @@ export OPENROUTER_API_KEY=...
 
 roller collect --bench pinchbench --bench-root "$PINCHBENCH_ROOT" \
   --bench-variant core --bench-timeout-multiplier 2 \
-  --model kimi/Qwen3-32B-for-Game-Judge --model-config kimi.models.json \
+  --model example/example-model --model-config example.models.json \
   --samples 1 --parallel 1 --grader-parallel 1 \
-  --output "$ROLLER_RUN_ROOT" --run-name kimi-core
+  --output "$ROLLER_RUN_ROOT" --run-name core
 ```
 
 ## Variants

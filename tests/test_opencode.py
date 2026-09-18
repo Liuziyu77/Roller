@@ -266,11 +266,14 @@ class FakeRuntime:
 
 class OpenCodeHarnessTests(unittest.TestCase):
     def test_local_services_bypass_inherited_proxy(self):
-        environment = {"NO_PROXY": "joyrouter.jd.com,localhost", "no_proxy": "example.test"}
+        environment = {
+            "NO_PROXY": "models.example.test,localhost",
+            "no_proxy": "example.test",
+        }
 
         _ensure_local_proxy_bypass(environment)
 
-        expected = "localhost,127.0.0.1,::1,joyrouter.jd.com,example.test"
+        expected = "localhost,127.0.0.1,::1,models.example.test,example.test"
         self.assertEqual(environment["NO_PROXY"], expected)
         self.assertEqual(environment["no_proxy"], expected)
 
