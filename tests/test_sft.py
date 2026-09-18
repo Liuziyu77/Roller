@@ -415,6 +415,14 @@ class MultimodalSFTTests(unittest.TestCase):
         for payload, canonical in (
             ("AAAA====", "AAAA"), ("YWJj===", "YWJj"), ("AB==", "AA=="),
         ):
+            # Strict decoders differ across Python releases on excess padding.
+            # Decide the expected outcome independently of Roller's converter.
+            try:
+                base64.b64decode(payload, validate=True)
+            except ValueError:
+                rejected_by_decoder = True
+            else:
+                rejected_by_decoder = False
             for block in (
                 {"type": "image", "mimeType": "image/png", "data": payload},
                 {"type": "image", "data": f"data:image/png;base64,{payload}"},
@@ -425,11 +433,15 @@ class MultimodalSFTTests(unittest.TestCase):
             ):
                 with self.subTest(payload=payload, block=block):
                     original = deepcopy(block)
-                    record = actf_to_sft(self._trajectory(block))
-                    self.assertEqual(
-                        record["images"], [f"data:image/png;base64,{canonical}"]
-                    )
-                    validate_sft_record(record)
+                    if rejected_by_decoder:
+                        with self.assertRaisesRegex(SFTConversionError, "base64"):
+                            actf_to_sft(self._trajectory(block))
+                    else:
+                        record = actf_to_sft(self._trajectory(block))
+                        self.assertEqual(
+                            record["images"], [f"data:image/png;base64,{canonical}"]
+                        )
+                        validate_sft_record(record)
                     self.assertEqual(block, original)
 
     def test_rejects_missing_or_unsupported_media_type(self) -> None:

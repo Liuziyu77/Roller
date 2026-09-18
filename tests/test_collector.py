@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import tempfile
 import threading
@@ -253,11 +254,11 @@ class CollectorTests(unittest.TestCase):
                 ["data:image/png;base64,AA=="],
             )
 
-    def test_normalized_image_padding_aggregates_and_resumes(self) -> None:
+    def test_normalized_image_base64_aggregates_and_resumes(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             run_dir = Path(temporary) / "run"
             state = self._state()
-            state.update(image_result=True, image_data="AAAA====")
+            state.update(image_result=True, image_data="AB==")
             requests = make_requests()[:1]
             results = Collector(
                 CollectionConfig(run_dir=run_dir),
@@ -268,10 +269,10 @@ class CollectorTests(unittest.TestCase):
             self.assertEqual(run_info["state"], "finished")
             sample = next((run_dir / "samples").glob("*/*"))
             sft = json.loads((sample / "trace_SFT.json").read_text())
-            self.assertEqual(sft["images"], ["data:image/png;base64,AAAA"])
+            self.assertEqual(sft["images"], ["data:image/png;base64,AA=="])
             self.assertEqual(json.loads((run_dir / "sft.jsonl").read_text()), sft)
-            self.assertIn("AAAA====", (sample / "trace.jsonl").read_text())
-            self.assertIn("AAAA====", (sample / "trace_ACTF.json").read_text())
+            self.assertIn("AB==", (sample / "trace.jsonl").read_text())
+            self.assertIn("AB==", (sample / "trace_ACTF.json").read_text())
             before = {
                 p.name: (p.read_bytes(), p.stat().st_mtime_ns)
                 for p in sample.iterdir() if p.is_file()
@@ -287,6 +288,66 @@ class CollectorTests(unittest.TestCase):
                 for p in sample.iterdir() if p.is_file()
             }
             self.assertEqual(before, after)
+
+    def test_image_decode_errors_do_not_interrupt_batch_aggregation(self) -> None:
+        # Include both version-dependent excess padding and an always-invalid
+        # payload, so the rejection path runs even on permissive Python builds.
+        for payload in ("AAAA====", "not*base64"):
+            with self.subTest(payload=payload), tempfile.TemporaryDirectory() as temporary:
+                try:
+                    base64.b64decode(payload, validate=True)
+                except ValueError:
+                    accepted = False
+                else:
+                    accepted = True
+                states = [self._state(), self._state()]
+                for state, image_data in zip(states, (payload, "AA==")):
+                    state.update(image_result=True, image_data=image_data)
+
+                def factory(slot: int, request: RunRequest) -> FakeHarness:
+                    return FakeHarness(states[request.index], slot)
+
+                run_dir = Path(temporary) / "run"
+                requests = make_requests()[:2]
+                results = Collector(
+                    CollectionConfig(run_dir=run_dir), factory,
+                ).collect(requests)
+                self.assertEqual(
+                    [result["status"] for result in results],
+                    ["ok" if accepted else "error", "ok"],
+                )
+                if not accepted:
+                    self.assertIn("base64", results[0]["error"])
+                self.assertEqual(
+                    json.loads((run_dir / "info.json").read_text())["state"], "finished",
+                )
+                dataset = (run_dir / "sft.jsonl").read_bytes()
+                rows = [json.loads(line) for line in dataset.splitlines()]
+                self.assertEqual(
+                    [row["images"] for row in rows],
+                    ([["data:image/png;base64,AAAA"]] if accepted else [])
+                    + [["data:image/png;base64,AA=="]],
+                )
+                sample = next((run_dir / "samples").glob("*/00000000_task-0"))
+                self.assertEqual((sample / "trace_SFT.json").exists(), accepted)
+                self.assertIn(payload, (sample / "trace.jsonl").read_text())
+                self.assertIn(payload, (sample / "trace_ACTF.json").read_text())
+
+                resumed = Collector(
+                    CollectionConfig(run_dir=run_dir, resume=True), factory,
+                ).collect(requests)
+                self.assertEqual(
+                    [result["status"] for result in resumed],
+                    ["skipped" if accepted else "error", "skipped"],
+                )
+                self.assertEqual(
+                    states[0]["calls"][("task-0", "provider/model")], 1 if accepted else 2,
+                )
+                self.assertEqual(states[1]["calls"][("task-1", "provider/model")], 1)
+                self.assertEqual((run_dir / "sft.jsonl").read_bytes(), dataset)
+                self.assertEqual(
+                    json.loads((run_dir / "info.json").read_text())["state"], "finished",
+                )
 
     def test_retries_then_resumes_completed_samples(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

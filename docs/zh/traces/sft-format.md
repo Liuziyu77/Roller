@@ -143,6 +143,9 @@ image block 接受三种形态：base64 `source` 结构（Claude Code）、扁�
 `image/png`、`image/jpeg`、`image/webp` 或 `image/gif`，payload 必须能通过严格
 base64 解码，随后重新编码为规范形式（消除可解码的冗余 padding，图片字节不变）。
 导出、汇总与 Resume 使用同一套解析规则；保存的 `images` 必须采用规范形式。
+严格解码沿用当前 Python 标准库的行为：冗余 padding 在部分版本中会直接被拒绝，
+不保证跨版本接受。被拒绝的样本保留 raw/ACTF、标记转换失败并排除出 SFT 汇总，
+不影响其他正常样本完成汇总；Roller 不会为兼容异常 padding 放宽解码规则。
 其余情况——audio 等未知 block 类型、不支持的 media type、损坏的
 base64、只引用文件路径而没有字节的 image block——仍然令转换失败并把 sample 标记为
 trajectory conversion error；Roller 不会静默删除内容。转换器本身不读文件也不访问

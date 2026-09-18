@@ -158,7 +158,12 @@ The media type must be `image/png`, `image/jpeg`, `image/webp`, or
 `image/gif`, and the payload must decode as strict base64. It is then re-encoded
 canonically, removing decodable redundant padding without changing the image
 bytes. Export, aggregation, and Resume share the same parser; saved `images`
-must use the canonical representation. Anything else —
+must use the canonical representation. Strict decoding follows the current Python
+standard library: some releases reject excess padding, so its acceptance is not
+guaranteed across versions. Rejected samples retain raw/ACTF, are marked as
+conversion failures, and are excluded from SFT aggregation without preventing
+valid samples from being aggregated. Roller does not relax decoding to accept
+invalid padding. Anything else —
 audio or other unknown block types, unsupported media types, malformed
 base64, or an image block that only references a file path without bytes —
 still fails conversion and marks the sample as a trajectory conversion error;
