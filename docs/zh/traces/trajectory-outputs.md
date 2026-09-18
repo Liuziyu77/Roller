@@ -229,11 +229,12 @@ system/tools 在调用间的变化；需要检查这些变化时使用 full wire
 还可结合 full cache trace。
 
 只要 raw 存在，Roller 就会尝试转换，包括 Harness 已经失败或超时的 sample。因此错误
-sample 可能仍有 ACTF。转换失败会把 sample 状态设为 `error`。
+sample 可能仍有 ACTF。已显式记录的转换不可用状态见
+`runtime.trajectory_conversion`；它与 Harness 的采集状态分开保存。
 
 ### 4.3 `trace_SFT.json`：单条最小训练样本
 
-SFT 从 ACTF 生成，顶层严格只有：
+SFT 从 ACTF 生成，纯文本样本顶层只有以下字段，图片样本额外包含 `images`：
 
 ```json
 {"messages": [], "tools": []}
@@ -261,7 +262,9 @@ GPT Responses 的扁平 tools 与 Chat Completions 的嵌套 tools 都会统一�
 schema。image 工具结果会导出为 `<image>` 占位符加顶层 `images` data-URI 列表，对齐
 约定见 [SFT 数据格式](sft-format.md)。其余无法无损导出的内容——audio 等未知 block
 类型、不支持的 media type、损坏的 base64、只引用路径而没有字节的 image block——仍会
-令 SFT 转换失败并把 sample 标记为 `error`；Roller 不会静默丢失内容。
+令 SFT 转换失败。Collector 在 `runtime.trajectory_conversion` 中记录
+`target: "sft"`、`status: "unavailable"` 和原因，保留采集状态及 raw/ACTF；
+汇总跳过该样本，Resume 不为导出失败重新调用模型。Roller 不会静默丢失内容。
 
 完整字段定义见 [SFT 数据格式](sft-format.md)。
 
@@ -503,7 +506,7 @@ OpenClaw 仍要求 `--model-config` 中存在可代理 `baseUrl`；Codex 和 Cla
 
 ### 7.1 成功保证
 
-状态为 `ok` 的普通 sample 保证存在：
+状态为 `ok` 的普通 sample 通常存在：
 
 - `trace.jsonl`；
 - `trace_ACTF.json`；
@@ -511,7 +514,9 @@ OpenClaw 仍要求 `--model-config` 中存在可代理 `baseUrl`；Codex 和 Cla
 - `info.json`。
 
 User Simulator sample 还保证根 `conversation.json` 和 Simulator 自己的 raw/ACTF/SFT。
-`results/`、cache trace 和 wire trace 始终是条件产物，不属于成功必备文件。
+`results/`、cache trace 和 wire trace 始终是条件产物，不属于成功必备文件。若原生附件或
+多模态事件无法无损投影，评测结果仍可保持成功；`runtime.trajectory_conversion` 会记录
+ACTF 或 SFT 哪一层不可用，run 级 `sft.jsonl` 会跳过该样本。
 
 ### 7.2 失败 sample
 
@@ -522,7 +527,7 @@ run 级 `sft.jsonl`。
 以下情况会把原本成功的 Harness 结果改为 `error`：
 
 - 找不到 raw session trace；
-- ACTF 或 SFT 转换失败；
+- 缺少必需轨迹且没有显式 conversion downgrade；
 - task 输出目录复制失败；
 - 输出中发现符号链接或特殊文件；
 - User Simulator 任一参与方失败或其轨迹转换失败。

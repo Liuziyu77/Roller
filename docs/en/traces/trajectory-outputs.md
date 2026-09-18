@@ -274,11 +274,13 @@ OpenClaw can also combine it with the full cache trace.
 
 As long as raw exists, Roller attempts conversion, including samples whose
 Harness already failed or timed out. A failed sample may therefore still have
-ACTF. A conversion failure sets the sample status to `error`.
+ACTF. Explicitly recorded conversion unavailability is stored in
+`runtime.trajectory_conversion`, separately from the Harness collection status.
 
 ### 4.3 `trace_SFT.json`: one minimal training sample
 
-SFT is generated from ACTF. Its top level contains only:
+SFT is generated from ACTF. Text-only records contain these top-level fields;
+image records also contain `images`:
 
 ```json
 {"messages": [], "tools": []}
@@ -312,8 +314,11 @@ placeholder plus a top-level `images` data-URI list; see
 [SFT data format](sft-format.md) for the alignment contract. Anything that
 cannot be exported losslessly — audio or other unknown block types,
 unsupported media types, malformed base64, or an image block that only
-references a path — still fails conversion and marks the sample `error`;
-Roller never silently drops content.
+references a path — still fails conversion. The Collector records
+`target: "sft"`, `status: "unavailable"`, and the reason in
+`runtime.trajectory_conversion`, retaining the collection status and raw/ACTF.
+Aggregation skips that sample; Resume does not call the model again for an
+export failure. Roller never silently drops content.
 
 See [SFT data format](sft-format.md) for the full field definition.
 
@@ -606,7 +611,7 @@ ACTF/SFT alone is not enough. You must also keep full cache/wire.
 
 ### 7.1 Success guarantees
 
-An ordinary sample with status `ok` is guaranteed to have:
+An ordinary sample with status `ok` normally has:
 
 - `trace.jsonl`;
 - `trace_ACTF.json`;
@@ -615,7 +620,10 @@ An ordinary sample with status `ok` is guaranteed to have:
 
 A User Simulator sample also guarantees a root `conversation.json` and the
 Simulator's own raw/ACTF/SFT. `results/`, cache trace, and wire trace are always
-conditional artifacts. They are not required for success.
+conditional artifacts. They are not required for success. A lossless projection
+may also be impossible for some native attachment or multimodal events. In that
+case the sample remains a valid evaluation result, `runtime.trajectory_conversion`
+records whether ACTF or SFT is unavailable, and run-level `sft.jsonl` skips it.
 
 ### 7.2 Failed samples
 
@@ -627,7 +635,7 @@ run-level `sft.jsonl`.
 These cases turn an otherwise successful Harness result into `error`:
 
 - No raw session trace found;
-- ACTF or SFT conversion failed;
+- A required trajectory is missing without an explicit conversion downgrade;
 - Copying the task output directory failed;
 - A symbolic link or special file was found in the output;
 - Either User Simulator participant failed, or its trajectory conversion

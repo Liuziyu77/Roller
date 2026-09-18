@@ -46,6 +46,7 @@ python -m http.server -d _build/html 8000
 | 目标 | 文档 |
 | --- | --- |
 | 从空环境完成第一次采集 | [快速上手](zh/start/getting-started.md) |
+| 配置 Docker 构建的 apt、npm、Python 镜像源与代理 | [Docker 构建与镜像源](zh/start/docker-builds.md) |
 | 查某个 CLI 参数、默认值或适用 Harness | [CLI 参数参考](zh/start/cli-reference.md) |
 | 连接 Responses、Chat Completions 或开源模型服务 | [OpenClaw Harness 指南](zh/harnesses/openclaw-configuration.md) |
 | 使用 Codex CLI 采集轨迹 | [Codex Harness 指南](zh/harnesses/codex-configuration.md) |
@@ -67,6 +68,8 @@ python -m http.server -d _build/html 8000
 | --- | --- |
 | 运行 benchmark 并评分 | [Bench 接入与评分](zh/benches/bench-format.md#7-cli) |
 | 运行 WildClawBench（上游参数对应、search shim、已知问题） | [WildClawBench](zh/benches/wildclawbench.md) |
+| 跑 SkillsBench 的 with-skill / no-skill 对照 | [SkillsBench](zh/benches/skillsbench.md) |
+| 跑 PinchBench（自动、混合与 LLM judge） | [PinchBench](zh/benches/pinchbench.md) |
 | 接入一个新 bench | [Bench 接入与评分](zh/benches/bench-format.md#6-加一个新-bench) |
 | 看懂 `score.json` 与聚合口径 | [Bench 接入与评分](zh/benches/bench-format.md#5-聚合口径) |
 | 确保答案不泄漏给 Agent | [Bench 接入与评分](zh/benches/bench-format.md#4-stage答案不能放在-agent-的工作目录里) |

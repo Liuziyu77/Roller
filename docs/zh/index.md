@@ -65,6 +65,7 @@ Roller 需要 Python 3.10+，使用 Task schema `roller.task/v1` 和轨迹格式
 start/getting-started
 start/examples
 start/cli-reference
+start/docker-builds
 ```
 
 ```{toctree}
@@ -104,4 +105,6 @@ traces/viewer
 
 benches/bench-format
 benches/wildclawbench
+benches/skillsbench
+benches/pinchbench
 ```

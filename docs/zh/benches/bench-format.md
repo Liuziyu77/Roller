@@ -7,7 +7,9 @@ Roller 在 task 结束后销毁容器。Bench 层为采集流程增加任务导�
 1. 把已 checkout 的 benchmark 转换为 `roller.task/v1` 任务清单（`roller bench export`）；
 2. 在容器销毁前、Agent 最后一轮之后，在同一个容器里执行该 bench 自带的 grader，将分数写入 `score.json`。
 
-Bench 层不改采集流程。已注册的 adapter 见 `roller bench list`。
+`roller collect --bench NAME --bench-root ROOT` 会一键完成转换、采集、评分和聚合；
+`bench export` / 普通 `collect` / `bench report` 三步接口仍保留给需要检查或修改中间
+task JSONL 的高级流程。已注册的 adapter 见 `roller bench list`。
 
 ## 1. 为什么 grader 必须在容器里跑
 
@@ -35,8 +37,8 @@ Bench 层复用以下三个接口：
 | `_finalize_sample` | 把 `HarnessResult.metadata` 里除三个保留 key 外的内容全拷进 `info.json["runtime"]` | 评分结果随 metadata 写入文件，无需修改结果 schema |
 | `finish()` | 销毁容器且做了记忆化 | 用 `GradedHarness` 在销毁容器前执行评分，无需修改 harness |
 
-接入时还需修改两处：`_prune_sample` 的保留名单里加 `score.json`（不加会被清掉），
-以及 CLI 增加 `bench` 子命令和 `--task-timeouts`。
+这些机制是加法式扩展：普通 `--tasks` 采集仍保持原语义；bench 模式额外启用逐题 timeout、
+容器内评分、任务快照和自动报告。
 
 ## 3. `bench` 块（`roller.bench/v1`）
 
@@ -209,7 +211,13 @@ class MyBenchAdapter(BenchAdapter):
 # 有哪些 adapter
 roller bench list
 
-# 翻译成任务清单（不执行任何东西）
+# 推荐：转换、采集、评分、汇总一条命令完成
+roller collect --bench wildclawbench --bench-root /path/to/WildClawBench \
+    --bench-category 03_Social_Interaction --model <provider>/<model> \
+    --harness openclaw --openclaw-image wildclawbench-ubuntu:v1.3 \
+    --parallel 4 --pass-env JUDGE_MODEL --pass-env OPENROUTER_API_KEY
+
+# 高级三步流程：先翻译成任务清单（不执行任何东西）
 roller bench export wildclawbench /path/to/WildClawBench --output tasks/wcb.jsonl
 roller bench export wildclawbench /path/to/WildClawBench -o /tmp/one.jsonl \
     --category 03_Social_Interaction --task-id 03_Social_Interaction_task_2_group_chat_zh
@@ -225,10 +233,12 @@ roller bench report runs/<run-name>
 roller bench report runs/<run-name> --output report.json
 ```
 
-`--category` 和 `--task-id` 都可重复。运行 bench 时应启用 `--task-timeouts`，
-使用任务各自的超时（WildClawBench 实测有 300/360/600/900/1200 五档）。
-否则 `build_requests` 只使用全局 `--timeout`，可能给短任务过多时间，
-或提前终止长任务，影响评分的可比性。
+`--category` 和 `--task-id` 都可重复。`--task-timeouts` 是 bench 跑的关键：
+bench 的每个任务自带超时（WildClawBench 实测有 300/360/600/900/1200 五档），
+而 `build_requests` 平时只吃一个全局 `--timeout`；不加这个开关，
+短任务会被给过多时间、长任务会被墙钟砍掉，砍掉的样子跟模型不会做很像。
+一键 `collect --bench` 会自动启用逐题 timeout，并在 run 目录保存 `tasks.jsonl` 和
+`bench-report.json`，无需再传 `--task-timeouts` 或执行 `bench report`。
 
 grader 需要的环境变量要用 `--pass-env` 透传（哪些变量由 bench 的任务定义声明）。
 缺少变量时 Roller 会警告并继续运行。正式采集前，确认日志中没有
@@ -241,6 +251,8 @@ grader 需要的环境变量要用 `--pass-env` 透传（哪些变量由 bench �
 | Bench | `--harness` | README | 一句话 |
 | --- | --- | --- | --- |
 | `wildclawbench` | `openclaw` | [WildClawBench](wildclawbench.md) | 60 个真实场景任务，6 类；grader 在容器里跑，26 个任务的 `gt/` 走 `stage` |
+| `skillsbench` | `opencode` | [SkillsBench](skillsbench.md) | 按 task 构建环境；支持 `with-skill` / `no-skill` 对照和官方 verifier |
+| `pinchbench` | `openclaw` | [PinchBench](pinchbench.md) | 从 manifest 导出，支持自动、LLM judge、hybrid 与多 session |
 
 运行前请核对对应 README 中的参数映射和未支持项。配置缺失不一定触发错误，
 却可能改变评测条件，使分数无法直接比较。

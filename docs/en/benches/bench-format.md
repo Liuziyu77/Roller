@@ -11,8 +11,11 @@ task export and scoring before that teardown:
    bench's own grader in the same container, and write the score to
    `score.json`.
 
-The bench layer does not change the collection flow. Registered adapters are
-listed by `roller bench list`.
+`roller collect --bench NAME --bench-root ROOT` performs translation,
+collection, grading, and aggregation in one command. The three-step `bench
+export` / ordinary `collect` / `bench report` interface remains available when
+you need to inspect or edit the intermediate task JSONL. Registered adapters
+are listed by `roller bench list`.
 
 ## 1. Why the grader must run inside the container
 
@@ -42,9 +45,9 @@ The bench layer uses three existing interfaces:
 | `_finalize_sample` | Copies everything in `HarnessResult.metadata` except three reserved keys into `info.json["runtime"]` | Scores are saved with metadata, without changing the result schema |
 | `finish()` | Destroys the container and is memoized | Use `GradedHarness` to score before teardown without changing the harness |
 
-Two other changes support the integration: add `score.json` to the
-keep-list in `_prune_sample` (otherwise it is deleted), and add the `bench`
-subcommand plus `--task-timeouts` to the CLI.
+These mechanisms are additive: ordinary `--tasks` collection retains its
+semantics, while bench mode adds per-task timeouts, in-container grading, a
+task snapshot, and an automatic report.
 
 ## 3. The `bench` block (`roller.bench/v1`)
 
@@ -238,30 +241,40 @@ Roller and upstream runs use the same evaluation conditions.
 ## 7. CLI
 
 ```bash
-# 有哪些 adapter
+# List adapters
 roller bench list
 
-# 翻译成任务清单（不执行任何东西）
+# Recommended: translate, collect, grade, and report in one command
+roller collect --bench wildclawbench --bench-root /path/to/WildClawBench \
+    --bench-category 03_Social_Interaction --model <provider>/<model> \
+    --harness openclaw --openclaw-image wildclawbench-ubuntu:v1.3 \
+    --parallel 4 --pass-env JUDGE_MODEL --pass-env OPENROUTER_API_KEY
+
+# Advanced three-step workflow: translate without executing
 roller bench export wildclawbench /path/to/WildClawBench --output tasks/wcb.jsonl
 roller bench export wildclawbench /path/to/WildClawBench -o /tmp/one.jsonl \
     --category 03_Social_Interaction --task-id 03_Social_Interaction_task_2_group_chat_zh
 
-# 采集并评分。--task-timeouts 让每行用自己的 timeout_seconds
+# Collect and grade; --task-timeouts honors each row's timeout_seconds
 roller collect --tasks tasks/wcb.jsonl --model <provider>/<model> \
     --harness openclaw --openclaw-image wildclawbench-ubuntu:v1.3 \
     --task-timeouts --parallel 4 \
     --pass-env JUDGE_MODEL --pass-env OPENROUTER_API_KEY --pass-env OPENROUTER_BASE_URL
 
-# 汇总（run_dir 是位置参数，不是 --run）
+# Aggregate (run_dir is positional, not --run)
 roller bench report runs/<run-name>
 roller bench report runs/<run-name> --output report.json
 ```
 
-`--category` and `--task-id` can both be repeated. Enable `--task-timeouts` for
-bench runs to use each task's timeout (WildClawBench has five measured values:
-300/360/600/900/1200). Otherwise, `build_requests` uses only the global
-`--timeout`, which may give short tasks too much time or terminate long tasks
-early, affecting score comparability.
+`--category` and `--task-id` can both be repeated. `--task-timeouts` is the key
+switch for a bench run: each bench task carries its own timeout (WildClawBench
+has five measured values: 300/360/600/900/1200), while `build_requests`
+normally consumes only one global `--timeout`. Without this flag, short tasks
+get too much time and long tasks are cut by the wall clock. Being cut looks a
+lot like the model cannot do the task.
+One-command `collect --bench` enables per-task timeouts automatically and saves
+`tasks.jsonl` plus `bench-report.json` in the run directory, so it needs neither
+`--task-timeouts` nor a separate `bench report` invocation.
 
 Environment variables the grader needs must be passed with `--pass-env` (which
 variables are declared by the bench's task definition). When a variable is
@@ -275,6 +288,8 @@ See each bench's README for its configuration (see §6.1):
 | Bench | `--harness` | README | One-liner |
 | --- | --- | --- | --- |
 | `wildclawbench` | `openclaw` | [WildClawBench](wildclawbench.md) | 60 real-scenario tasks in 6 categories; the grader runs in the container; `gt/` for 26 tasks goes through `stage` |
+| `skillsbench` | `opencode` | [SkillsBench](skillsbench.md) | Builds each task environment; supports `with-skill` / `no-skill` and official verifiers |
+| `pinchbench` | `openclaw` | [PinchBench](pinchbench.md) | Manifest-driven export with automated, LLM-judge, hybrid, and multi-session tasks |
 
 Before running, check the README's parameter mappings and unsupported options.
 Missing configuration may change evaluation conditions without raising an

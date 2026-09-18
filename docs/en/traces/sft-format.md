@@ -166,8 +166,11 @@ valid samples from being aggregated. Roller does not relax decoding to accept
 invalid padding. Anything else —
 audio or other unknown block types, unsupported media types, malformed
 base64, or an image block that only references a file path without bytes —
-still fails conversion and marks the sample as a trajectory conversion error;
-Roller never silently drops content. The converter itself never reads files
+still fails conversion. The Collector records `target: "sft"`,
+`status: "unavailable"`, and the reason in `runtime.trajectory_conversion`,
+retains raw/ACTF, and omits SFT and its aggregate entry. This does not turn a
+completed collection into a failure; Resume reuses the collected sample without
+calling the model again. Roller never silently drops content. The converter itself never reads files
 or networks: a harness whose image tool only leaves a path must materialize
 the bytes into the ACTF layer while the file is still accessible.
 

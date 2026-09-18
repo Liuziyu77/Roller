@@ -14,6 +14,10 @@ class SFTConversionError(ValueError):
     """Raised when an ACTF trajectory cannot form a valid SFT conversation."""
 
 
+class SFTUnsupportedContentError(SFTConversionError):
+    """Raised when valid ACTF content cannot be represented without data loss."""
+
+
 # Multimodal SFT contract: every image in a tool result becomes one
 # ``<image>`` placeholder in the message text and one entry in the top-level
 # ``images`` list. Scanning ``messages`` front to back, the Nth placeholder
@@ -174,7 +178,7 @@ def _tool_result_content(value: Any, field: str, images: list[str]) -> str:
             parts.append(block)
             continue
         if not isinstance(block, dict):
-            raise SFTConversionError(
+            raise SFTUnsupportedContentError(
                 f"{block_field} is non-text; SFT export would lose data"
             )
         if block.get("type") == "text":
@@ -188,7 +192,7 @@ def _tool_result_content(value: Any, field: str, images: list[str]) -> str:
             images.append(_image_data_uri(block, block_field))
             parts.append(IMAGE_PLACEHOLDER)
         else:
-            raise SFTConversionError(
+            raise SFTUnsupportedContentError(
                 f"{block_field} is non-text; SFT export would lose data"
             )
     return "\n".join(parts)

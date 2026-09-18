@@ -18,6 +18,8 @@ python -m roller collect \
 
 The endpoint must support streaming Chat Completions, tools, and DeepSeek thinking fields. Model IDs, including gateway prefixes, are sent unchanged. The host needs Python 3.10+ and Docker; SDK dependencies and the official runtime wheel are isolated inside the image. The default base is `python:3.12-slim`; `BASE_IMAGE` can select a Debian/Ubuntu image with Python 3.10+. Official wheels provide Linux x86_64 and aarch64 runtimes.
 
+For `DEBIAN_MIRROR` and `DEBIAN_SECURITY_MIRROR`, see [Docker builds and package mirrors](../start/docker-builds.md).
+
 ## Configuration
 
 | Option | Default and behavior |

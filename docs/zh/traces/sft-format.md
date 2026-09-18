@@ -147,8 +147,11 @@ base64 解码，随后重新编码为规范形式（消除可解码的冗余 pad
 不保证跨版本接受。被拒绝的样本保留 raw/ACTF、标记转换失败并排除出 SFT 汇总，
 不影响其他正常样本完成汇总；Roller 不会为兼容异常 padding 放宽解码规则。
 其余情况——audio 等未知 block 类型、不支持的 media type、损坏的
-base64、只引用文件路径而没有字节的 image block——仍然令转换失败并把 sample 标记为
-trajectory conversion error；Roller 不会静默删除内容。转换器本身不读文件也不访问
+base64、只引用文件路径而没有字节的 image block——仍然令转换失败。
+Collector 会在 `runtime.trajectory_conversion` 中记录 `target: "sft"`、
+`status: "unavailable"` 和原因，保留 raw/ACTF，不生成 SFT、不计入汇总。
+这不会把已完成的采集改成失败；Resume 复用已有采集，不会为此重新调用模型。
+Roller 不会静默删除内容。转换器本身不读文件也不访问
 网络：若某 harness 的读图工具只留下路径，必须在文件仍可访问时由对应 ACTF 层把
 字节物化成 image block。
 

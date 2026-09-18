@@ -20,6 +20,7 @@ class FakeHarness(Harness):
     def __init__(self, state: dict, slot: int) -> None:
         self.state = state
         self.slot = slot
+        self.name = state.get("harness_name", "fake")
 
     def run(self, request: RunRequest, output_dir: Path, attempt: int) -> HarnessResult:
         key = (request.task.id, request.model)
@@ -134,6 +135,40 @@ class FakeHarness(Harness):
                 "request_count": 1,
             }
             metadata = {"slot": self.slot}
+            trajectory_path = str(trajectory)
+            if self.state.get("raw_only"):
+                trajectory.unlink()
+                trajectory_path = None
+                if self.state.get("structured_conversion_error", True):
+                    metadata["trajectory_conversion"] = {
+                        "status": "unavailable",
+                        "target": "actf",
+                        "error": "attachments cannot be exported as text-only SFT",
+                    }
+            elif self.state.get("non_text_observation"):
+                payload = json.loads(trajectory.read_text(encoding="utf-8"))
+                payload["tools"] = [
+                    {"type": "function", "function": {"name": "inspect"}}
+                ]
+                step = payload["steps"][0]
+                call = {
+                    "type": "toolCall",
+                    "id": "inspect:0",
+                    "name": "inspect",
+                    "arguments": {},
+                }
+                step["assistant_content"]["tool_calls"] = [call]
+                step["tools"] = [call]
+                step["observation"] = [
+                    {
+                        "role": "toolResult",
+                        "toolCallId": "inspect:0",
+                        "toolName": "inspect",
+                        "content": [{"type": "image", "data": "redacted"}],
+                        "isError": False,
+                    }
+                ]
+                trajectory.write_text(json.dumps(payload), encoding="utf-8")
             if self.state.get("record_output"):
                 artifact = output_dir / "results" / "artifact.txt"
                 artifact.parent.mkdir(parents=True, exist_ok=True)
@@ -147,7 +182,7 @@ class FakeHarness(Harness):
                 elapsed_seconds=0.01,
                 usage=usage,
                 trace_path=str(trace),
-                trajectory_path=str(trajectory),
+                trajectory_path=trajectory_path,
                 metadata=metadata,
             )
         finally:
@@ -314,10 +349,16 @@ class CollectorTests(unittest.TestCase):
                 ).collect(requests)
                 self.assertEqual(
                     [result["status"] for result in results],
-                    ["ok" if accepted else "error", "ok"],
+                    ["ok", "ok"],
                 )
                 if not accepted:
-                    self.assertIn("base64", results[0]["error"])
+                    conversion = results[0]["runtime"]["trajectory_conversion"]
+                    self.assertEqual(conversion["status"], "unavailable")
+                    self.assertEqual(conversion["target"], "sft")
+                    self.assertIn("base64", conversion["error"])
+                    self.assertIsNone(results[0]["trajectory"]["sft"])
+                else:
+                    self.assertNotIn("trajectory_conversion", results[0]["runtime"])
                 self.assertEqual(
                     json.loads((run_dir / "info.json").read_text())["state"], "finished",
                 )
@@ -338,16 +379,72 @@ class CollectorTests(unittest.TestCase):
                 ).collect(requests)
                 self.assertEqual(
                     [result["status"] for result in resumed],
-                    ["skipped" if accepted else "error", "skipped"],
+                    ["skipped", "skipped"],
                 )
                 self.assertEqual(
-                    states[0]["calls"][("task-0", "provider/model")], 1 if accepted else 2,
+                    states[0]["calls"][("task-0", "provider/model")], 1,
                 )
                 self.assertEqual(states[1]["calls"][("task-1", "provider/model")], 1)
                 self.assertEqual((run_dir / "sft.jsonl").read_bytes(), dataset)
                 self.assertEqual(
                     json.loads((run_dir / "info.json").read_text())["state"], "finished",
                 )
+
+    def test_repeated_samples_use_distinct_directories(self) -> None:
+        task = Task(id="repeat", prompts=("hello",), source_index=0)
+        requests = [
+            RunRequest(
+                index=index,
+                task=task,
+                model="provider/model",
+                timeout_seconds=30,
+                sample_index=index,
+                sample_count=2,
+            )
+            for index in range(2)
+        ]
+        with tempfile.TemporaryDirectory() as temporary:
+            run_dir = Path(temporary) / "run"
+            state = self._state()
+            collector = Collector(
+                CollectionConfig(run_dir=run_dir),
+                lambda slot: FakeHarness(state, slot),
+            )
+            collector.collect(requests)
+            model_dir = next((run_dir / "samples").iterdir())
+            sample_dirs = sorted(model_dir.iterdir())
+            infos = [json.loads((path / "info.json").read_text()) for path in sample_dirs]
+
+            self.assertEqual(
+                [path.name for path in sample_dirs],
+                ["00000000_repeat__sample_001", "00000000_repeat__sample_002"],
+            )
+            self.assertEqual([info["sample_index"] for info in infos], [0, 1])
+            self.assertTrue(all(info["sample_count"] == 2 for info in infos))
+
+    def test_model_label_changes_paths_but_preserves_served_model(self) -> None:
+        task = Task(id="alias", prompts=("hello",), source_index=0)
+        request = RunRequest(
+            index=0,
+            task=task,
+            model="provider/external-served-id",
+            timeout_seconds=30,
+            model_label="Example model",
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            run_dir = Path(temporary) / "run"
+            state = self._state()
+            result = Collector(
+                CollectionConfig(run_dir=run_dir),
+                lambda slot: FakeHarness(state, slot),
+            ).collect([request])[0]
+
+            sample = run_dir / "samples" / "Example model" / "00000000_alias"
+            self.assertTrue((sample / "info.json").is_file())
+            self.assertEqual(result["model"], "provider/external-served-id")
+            self.assertEqual(result["model_label"], "Example model")
+            info = json.loads((run_dir / "info.json").read_text())
+            self.assertEqual(info["samples"][0]["path"], "samples/Example model/00000000_alias")
 
     def test_retries_then_resumes_completed_samples(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -369,6 +466,80 @@ class CollectorTests(unittest.TestCase):
             ).collect(requests)
             self.assertEqual(resumed[0]["status"], "skipped")
             self.assertEqual(state["calls"][("task-0", "provider/model")], 2)
+
+    def test_raw_only_conversion_failure_stays_ok_and_resumes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            run_dir = Path(temporary) / "run"
+            state = self._state()
+            state["raw_only"] = True
+            state["harness_name"] = "opencode"
+            requests = make_requests()[:1]
+
+            first = Collector(
+                CollectionConfig(run_dir=run_dir),
+                lambda slot: FakeHarness(state, slot),
+            ).collect(requests)
+
+            self.assertEqual(first[0]["status"], "ok")
+            self.assertIsNone(first[0]["trajectory"]["actf"])
+            self.assertIsNone(first[0]["trajectory"]["sft"])
+            self.assertEqual((run_dir / "sft.jsonl").read_text(), "")
+            sample = next((run_dir / "samples").glob("*/*"))
+            self.assertTrue((sample / "trace.jsonl").is_file())
+            self.assertFalse((sample / "trace_ACTF.json").exists())
+
+            resumed = Collector(
+                CollectionConfig(run_dir=run_dir, resume=True),
+                lambda slot: FakeHarness(state, slot),
+            ).collect(requests)
+            self.assertEqual(resumed[0]["status"], "skipped")
+            self.assertEqual(state["calls"][("task-0", "provider/model")], 1)
+
+    def test_missing_actf_without_structured_conversion_error_is_an_error(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            run_dir = Path(temporary) / "run"
+            state = self._state()
+            state["raw_only"] = True
+            state["harness_name"] = "opencode"
+            state["structured_conversion_error"] = False
+
+            result = Collector(
+                CollectionConfig(run_dir=run_dir),
+                lambda slot: FakeHarness(state, slot),
+            ).collect(make_requests()[:1])[0]
+
+            self.assertEqual(result["status"], "error")
+            self.assertEqual(
+                result["error"],
+                "harness finished but no canonical ACTF trajectory was found",
+            )
+
+    def test_non_text_actf_stays_ok_without_sft_and_resumes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            run_dir = Path(temporary) / "run"
+            state = self._state()
+            state["non_text_observation"] = True
+            requests = make_requests()[:1]
+
+            first = Collector(
+                CollectionConfig(run_dir=run_dir),
+                lambda slot: FakeHarness(state, slot),
+            ).collect(requests)
+
+            self.assertEqual(first[0]["status"], "ok")
+            self.assertEqual(
+                first[0]["runtime"]["trajectory_conversion"]["target"], "sft"
+            )
+            self.assertEqual(first[0]["trajectory"]["actf"], "trace_ACTF.json")
+            self.assertIsNone(first[0]["trajectory"]["sft"])
+            self.assertEqual((run_dir / "sft.jsonl").read_text(), "")
+
+            resumed = Collector(
+                CollectionConfig(run_dir=run_dir, resume=True),
+                lambda slot: FakeHarness(state, slot),
+            ).collect(requests)
+            self.assertEqual(resumed[0]["status"], "skipped")
+            self.assertEqual(state["calls"][("task-0", "provider/model")], 1)
 
     def test_resume_reruns_sample_when_canonical_sft_is_corrupt(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
