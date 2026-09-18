@@ -20,6 +20,8 @@ python -m roller collect \
 
 镜像额外预装带 SHA-256 校验的官方 `fd 10.2.0`，供原生 `find` 工具使用；运行时无需下载工具。
 
+Debian 镜像参数 `DEBIAN_MIRROR`、`DEBIAN_SECURITY_MIRROR` 的用法见 [Docker 构建与镜像源](../start/docker-builds.md)。npm 下载可通过 `NPM_REGISTRY` 指定镜像；未设置时沿用 npm 原有配置。
+
 ## 配置
 
 | 参数 | 默认值与行为 |

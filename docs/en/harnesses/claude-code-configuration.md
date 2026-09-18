@@ -58,6 +58,8 @@ docker build \
   .
 ```
 
+For `DEBIAN_MIRROR` and `DEBIAN_SECURITY_MIRROR`, see [Docker builds and package mirrors](../start/docker-builds.md). Set `NPM_REGISTRY` to override npm downloads, or leave it unset to keep the existing npm configuration.
+
 When the default Debian mirrors are unreachable, pass mirror URLs:
 
 ```bash

@@ -56,6 +56,8 @@ docker build \
   .
 ```
 
+Debian 镜像参数 `DEBIAN_MIRROR`、`DEBIAN_SECURITY_MIRROR` 的用法见 [Docker 构建与镜像源](../start/docker-builds.md)。npm 下载可通过 `NPM_REGISTRY` 指定镜像；未设置时沿用 npm 原有配置。
+
 如果默认 Debian 软件源在当前网络较慢，可在构建时覆盖镜像地址，而无需修改
 Dockerfile：
 

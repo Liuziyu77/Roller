@@ -19,6 +19,8 @@ The initial adapter requires OpenAI-compatible **streaming Chat Completions with
 
 The image also prepares native plugin dependencies at build time. Each isolated container uses the image dependencies with its own configuration directory, avoiding package downloads during task startup.
 
+For `DEBIAN_MIRROR` and `DEBIAN_SECURITY_MIRROR`, see [Docker builds and package mirrors](../start/docker-builds.md).
+
 ## Configuration
 
 | Option | Behavior |
