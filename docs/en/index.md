@@ -65,6 +65,7 @@ For runnable commands, see [Examples](start/examples.md).
 start/getting-started
 start/examples
 start/cli-reference
+start/docker-builds
 ```
 
 ```{toctree}

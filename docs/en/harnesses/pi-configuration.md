@@ -20,6 +20,8 @@ This adapter supports streaming **OpenAI Chat Completions** with tool calls. Mod
 
 The image also installs the official `fd 10.2.0` binary with SHA-256 verification for the native `find` tool. Runtime tool downloads remain disabled.
 
+For `DEBIAN_MIRROR` and `DEBIAN_SECURITY_MIRROR`, see [Docker builds and package mirrors](../start/docker-builds.md). Set `NPM_REGISTRY` to override npm downloads, or leave it unset to keep the existing npm configuration.
+
 ## Configuration
 
 | Flag | Default and behavior |

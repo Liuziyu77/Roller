@@ -24,6 +24,8 @@ The model ID is sent to the provider as supplied. It does not require an OpenCla
 
 The default Docker base is Python 3.11. `--build-arg BASE_IMAGE=...` accepts an alternative Linux image with Python 3.11 to 3.13, `apt-get`, and `pip`. Hermes dependencies come from its frozen `uv.lock`. The runner checks the revision and required hooks before making model calls. Changing only the image tag does not bypass that check; adapting another Hermes revision requires reviewing and testing the bridge.
 
+For `DEBIAN_MIRROR` and `DEBIAN_SECURITY_MIRROR`, see [Docker builds and package mirrors](../start/docker-builds.md).
+
 ## Configuration
 
 | Option | Default / behavior |
@@ -65,7 +67,7 @@ The matrix contains 204 Hermes input tasks and 28 additional mixed Simulator tas
 
 The initial adapter supports Chat Completions and text-oriented terminal/file execution. Vision tools, direct multimodal messages, provider-specific authentication flows, Hermes gateways, remote terminal backends, persistent memory, and skill learning are outside this scope. The optional Hermes vision group documents unsupported visual inputs and is excluded from the required passing set. Binary file access is tested separately from media understanding.
 
-For networks that require package mirrors, set `--build-arg PIP_INDEX_URL=...` and `--build-arg PYPI_DOWNLOAD_BASE=...`. The latter replaces the download origin in `uv.lock` while preserving package versions and SHA-256 hashes; use a mirror with the same `/packages/` layout.
+`PIP_INDEX_URL` controls pip installation of uv; prefer an HTTPS index with a valid certificate. A trusted internal HTTP index on a non-loopback host requires an explicit `PIP_TRUSTED_HOST`. `PYPI_DOWNLOAD_BASE` changes only the download prefix in `uv.lock`; the mirror must preserve the `/packages/` layout, versions, and SHA-256 hashes. uv connection trust uses the separate `UV_INSECURE_HOST` argument; pip settings do not apply to uv. Hermes source still needs to be fetched from GitHub.
 
 ## Reproducible adapter tests
 

@@ -19,6 +19,8 @@ python -m roller collect \
 
 需要支持流式响应、工具调用和 DeepSeek thinking 字段的 Chat Completions 服务。模型 ID 原样发送，包含网关前缀时也不拆分。宿主仅需 Roller、Python 3.10+ 与 Docker；SDK 和包含原生运行时的官方 wheel 安装在镜像的独立 Python 环境中。默认基础镜像为 `python:3.12-slim`，可用 `--build-arg BASE_IMAGE=...` 指定含 Python 3.10+ 的 Debian/Ubuntu 镜像。官方 wheel 提供 Linux x86_64/aarch64 版本。
 
+Debian 镜像参数 `DEBIAN_MIRROR`、`DEBIAN_SECURITY_MIRROR` 的用法见 [Docker 构建与镜像源](../start/docker-builds.md)。
+
 ## 配置
 
 | 参数 | 默认值与行为 |

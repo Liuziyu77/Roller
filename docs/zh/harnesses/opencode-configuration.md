@@ -20,6 +20,8 @@ python -m roller collect \
 
 Dockerfile 默认基础镜像为 `python:3.12-slim-bookworm`。可以通过 `--build-arg BASE_IMAGE=...` 使用已有 Linux 镜像，需含 Python 3.10+ 和 `apt-get`。支持 Linux x86_64/aarch64；x86_64 使用 baseline 二进制。`NPM_REGISTRY` 构建参数可指定兼容 npm 元数据和 tarball 的镜像站。
 
+Debian 镜像参数 `DEBIAN_MIRROR`、`DEBIAN_SECURITY_MIRROR` 的用法见 [Docker 构建与镜像源](../start/docker-builds.md)。
+
 ## 参数
 
 | 参数 | 默认值与行为 |
