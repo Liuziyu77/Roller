@@ -17,21 +17,20 @@ verifiers but produces a score for that model.
 scripts/prepare-skillsbench.sh "$PWD/.benchmarks/skillsbench-v1.1"
 export SKILLSBENCH_ROOT="$PWD/.benchmarks/skillsbench-v1.1"
 
-set -a
-. /path/to/credentials.env
-set +a
-export ROLLER_RUN_ROOT=$PWD/runs/skillsbench
+export MODEL_API_BASE_URL=https://api.example.com/v1
+export MODEL_API_KEY=replace-with-your-api-key
+export ROLLER_RUN_ROOT="$PWD/runs/skillsbench"
 mkdir -p "$ROLLER_RUN_ROOT"
 
 roller collect --bench skillsbench --bench-root "$SKILLSBENCH_ROOT" \
   --bench-variant with-skill --model example-model \
-  --opencode-api-base https://api.example.com/v1 \
+  --opencode-api-base "$MODEL_API_BASE_URL" \
   --opencode-api-key-env MODEL_API_KEY --parallel 1 --grader-parallel 1 \
   --output "$ROLLER_RUN_ROOT" --run-name with-skill
 
 roller collect --bench skillsbench --bench-root "$SKILLSBENCH_ROOT" \
   --bench-variant no-skill --model example-model \
-  --opencode-api-base https://api.example.com/v1 \
+  --opencode-api-base "$MODEL_API_BASE_URL" \
   --opencode-api-key-env MODEL_API_KEY --parallel 1 --grader-parallel 1 \
   --output "$ROLLER_RUN_ROOT" --run-name no-skill
 ```
@@ -40,6 +39,9 @@ roller collect --bench skillsbench --bench-root "$SKILLSBENCH_ROOT" \
 missing. For an existing checkout, it verifies the commit without changing the data. It also builds
 `roller-opencode:1.18.30` and never reads or writes an API key. To prepare the environment by hand,
 check out the `v1.1` tag and build `docker/opencode`.
+
+Replace the example API URL, key, and model ID with values from your model provider before running
+the commands.
 
 Each `collect` command writes `tasks.jsonl` and `bench-report.json` to its run directory.
 SkillsBench defaults to three samples per task, 100 OpenCode steps per turn, and 32768 output tokens
@@ -77,7 +79,8 @@ errors remain in the report but do not count toward the pass rate or mean reward
 
 The first run of a task may download a large set of dependencies. Docker builds, task containers,
 and verifiers inherit `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY` from the shell. Roller does
-not store those values in the exported task JSONL. Add private model endpoints to `NO_PROXY`.
+not store those values in the exported task JSONL. Add model endpoints that should bypass the proxy
+to `NO_PROXY`.
 The verifier retries temporary download and DNS failures that happen before tests begin. A sample
 that still fails is marked score-ineligible. Write formal run output to persistent shared storage.
 
