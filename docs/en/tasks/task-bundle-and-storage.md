@@ -252,13 +252,13 @@ Conversion rules:
 - The current user message is written to `user_content`.
 - OpenClaw usage is mapped to the step `metric`.
 
-If the Harness finishes successfully but no usable raw trace is available, the sample is marked `error`. An ACTF conversion failure is also not treated as a successful sample.
+If the Harness finishes successfully but no usable raw trace is available, the sample is marked `error`. If a trusted OpenClaw/OpenCode converter cannot represent an otherwise valid raw trace as ACTF, or ACTF contains non-text content that cannot be represented losslessly as SFT, evaluation remains `ok`. `runtime.trajectory_conversion` records the unavailable target and error; unavailable files are omitted rather than fabricated.
 
 ### `trace_SFT.json` and `sft.jsonl`
 
 `trace_SFT.json` is projected from ACTF. Its top level is strictly `messages` and `tools` only; it does not include
-task/model, usage, timestamps, or other run metadata. The run-root `sft.jsonl` aggregates every successful Task Agent in request
-order, one record of the same shape per line. Full fields and validation rules are in
+task/model, usage, timestamps, or other run metadata. The run-root `sft.jsonl` aggregates every successful Task Agent with a lossless SFT projection in request
+order, one record of the same shape per line. Samples with an explicit `runtime.trajectory_conversion` downgrade are omitted. Full fields and validation rules are in
 [SFT data format](../traces/sft-format.md).
 
 Conditions for every trace layer, auxiliary file, parameter combination, and failure/Resume output are in the
@@ -302,8 +302,8 @@ After the run lock matches, only samples that meet every condition are reused:
 
 1. The old status is `ok`.
 2. The sample's request/task/model identity matches the current request.
-3. `trace.jsonl` contains a valid message, the ACTF schema is correct, and step IDs are consecutive from 1.
-4. `trace_SFT.json` matches the current ACTF's canonical SFT projection exactly.
+3. `trace.jsonl` contains a valid message. Normally the ACTF schema is also correct and step IDs are consecutive from 1.
+4. Normally `trace_SFT.json` matches the current ACTF's canonical SFT projection exactly. A structured `trajectory_conversion` downgrade may instead omit ACTF/SFT or only SFT; Resume validates every retained layer and the explicit marker.
 5. The current Task Bundle digest matches the old sample, and Context did not use `capture=none`.
 6. Recorded output files are still under `results/`, exist, and have the same size. The stored SHA-256 can still be used for
    deep audit; Resume only checks path, existence, and size so large files are not reread.

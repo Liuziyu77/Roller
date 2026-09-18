@@ -46,10 +46,13 @@ roller collect --tasks tasks.jsonl --model provider/model ...
 | --- | --- | --- |
 | `--tasks PATH` | 必填 | JSON 或 JSONL task 清单 |
 | `--model MODEL` | task `model` | 可重复；为每条 task 运行所有指定模型 |
+| `--model-label LABEL` | 实际服务模型 ID | sample 目录和容器名使用的安全本地名称；要求最终只有一个模型，不改变发给上游的模型 ID |
 | `--harness NAME` | task `harness` 或 `openclaw` | `openclaw`、`codex`、`claude-code`、`hermes`、`opencode`、`deepseek` 或 `pi`；显式提供时统一覆盖 Task Agent 的字段 |
 | `--docker-image IMAGE` | 对应 Harness 默认镜像 | 统一镜像覆盖；混合参与者可用 `--openclaw-image`、`--codex-image`、`--claude-code-image`、`--hermes-image`、`--opencode-image`、`--deepseek-image`、`--pi-image` 分别指定 |
 | `--api-base URL` / `--api-key-env NAME` | 各 Harness 默认值 | 兼容旧用法；混合运行可用 `--codex-api-base`、`--claude-api-base`、`--hermes-api-base`、`--opencode-api-base`、`--deepseek-api-base`、`--pi-api-base` 及对应 `*-api-key-env` 分别指定 |
 | `--parallel N` | `1` | 最大并行 rollout 数，必须至少为 1 |
+| `--grader-parallel N` | `--parallel` | 最大并行 grader 数；可单独压低满载 judge 服务的请求并发 |
+| `--samples N` | SkillsBench 为 `3`，其他为 `1` | 每个 task/model 独立重复次数；每次使用独立 sample 目录 |
 | `--retries N` | `0` | 首次失败后的额外尝试次数 |
 | `--timeout SECONDS` | `600` | 每条 rollout 的总超时，必须大于 0 |
 | `--task-timeouts` | 关闭 | 改用每条 task 自己的 `timeout_seconds`，缺失时回落到 `--timeout`。bench 跑通常必须开启，见 [Bench 接入与评分](../benches/bench-format.md#7-cli) |
@@ -85,7 +88,7 @@ roller collect --tasks tasks.jsonl --model provider/model ...
 | `--thinking LEVEL` | 未设置 | Harness reasoning/thinking 档位 |
 | `--keep-thinking` / `--no-keep-thinking` | 开启 | 控制 ACTF/SFT 是否导出 reasoning；OpenClaw 还控制请求历史剥离 |
 | `--wire-trace MODE` | `actf` | `off`、`actf` 或 `full` |
-| `--keep-container-on-error` | 关闭 | 失败时保留一次性容器便于调试 |
+| `--keep-container-on-error` | 关闭 | 失败时保留已停止的一次性容器便于调试（不会继续占用 gateway 端口） |
 
 `--thinking` 的解析值为：
 
@@ -189,9 +192,15 @@ roller view RUN_DIR [--host HOST] [--port PORT]
 
 ```bash
 roller bench list
-roller bench export NAME ROOT --output TASKS.jsonl [--category CAT]... [--task-id ID]...
+roller collect --bench NAME --bench-root ROOT [--bench-category CAT]... [--bench-task-id ID]... [--bench-variant NAME] [--bench-timeout-multiplier N] ...
+roller bench export NAME ROOT --output TASKS.jsonl [--category CAT]... [--task-id ID]... [--variant NAME] [--timeout-multiplier N]
 roller bench report RUN_DIR [--output REPORT.json]
 ```
+
+推荐直接使用 `collect --bench`：一条命令完成任务转换、容器执行、评分和聚合，并在
+run 目录保存 `tasks.jsonl` 与 `bench-report.json`。它自动采用每条 bench task 的 timeout。
+`--bench-category`、`--bench-task-id` 可重复，`--bench-variant` 和
+`--bench-timeout-multiplier` 对应下表中的 export 参数。
 
 | 参数 | 默认值 | 说明 |
 | --- | --- | --- |
@@ -200,10 +209,13 @@ roller bench report RUN_DIR [--output REPORT.json]
 | `--output` / `-o` | export 必填 | export 写出的 task JSONL；report 时为可选的报告 JSON |
 | `--category CAT` | 不限制 | 只导出该类别，可重复 |
 | `--task-id ID` | 不限制 | 只导出该 task，可重复；写错的 id 会报错而不是静默跳过 |
+| `--variant NAME` | adapter 默认值 | 选择 bench 条件，例如 SkillsBench 的 `with-skill` / `no-skill` |
 | `RUN_DIR` | 必填 | 已完成的 run 目录，**位置参数**（不是 `--run`） |
 
 `bench export` 只做翻译，不执行任何任务、不联网、不启容器。
-采集时加上 `--task-timeouts`，并用 `--pass-env` 透传 grader 需要的变量。
+`--timeout-multiplier` 必须是有限正数，并在导出时缩放每条任务自己的超时。
+手工采用 export + collect 流程时记得给 collect 加 `--task-timeouts`；两种流程都用
+`--pass-env` 透传 grader 需要的变量。
 
 字段语义、评分时序、`stage` 防泄漏规则和聚合口径见 [Bench 接入与评分](../benches/bench-format.md)。
 
@@ -226,9 +238,9 @@ Hermes 接受 `off/minimal/low/medium/high/xhigh` reasoning 提示，最终由�
 | `--opencode-image` | `roller-opencode:1.18.30` |
 | `--opencode-api-base` | `--api-base` / `OPENAI_BASE_URL` |
 | `--opencode-api-key-env` | `--api-key-env` / `OPENAI_API_KEY` |
-| `--opencode-max-steps` | 12 |
+| `--opencode-max-steps` | SkillsBench 为 `100`，其他为 `12` |
 | `--opencode-context-length` | 128000 |
-| `--opencode-output-tokens` | 8192 |
+| `--opencode-output-tokens` | SkillsBench 为 32768，其他情况为 8192 |
 
 [原生会话、请求捕获和限制](../harnesses/opencode-configuration.md)。
 

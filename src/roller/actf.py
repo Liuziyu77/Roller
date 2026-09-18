@@ -89,13 +89,15 @@ def _assistant_parts(content: Any) -> tuple[str, str, list[dict[str, Any]]]:
     return "\n".join(visible), "\n".join(reasoning), calls
 
 
-def _observation(message: dict[str, Any]) -> dict[str, Any]:
+def _observation(
+    message: dict[str, Any], tool_call_namespace: str | None = None
+) -> dict[str, Any]:
     content = message.get("content", [])
     if not isinstance(content, list):
         content = [{"type": "text", "text": _text(content)}]
     row: dict[str, Any] = {
         "role": "toolResult",
-        "toolCallId": str(message.get("toolCallId", "")),
+        "toolCallId": _tool_call_id(message.get("toolCallId", ""), tool_call_namespace),
         "toolName": str(message.get("toolName", "")),
         "content": deepcopy(content),
         "isError": bool(message.get("isError", False)),
@@ -105,6 +107,11 @@ def _observation(message: dict[str, Any]) -> dict[str, Any]:
     if "details" in message:
         row["details"] = deepcopy(message["details"])
     return row
+
+
+def _tool_call_id(value: Any, namespace: str | None) -> str:
+    identifier = str(value)
+    return f"{namespace}:{identifier}" if namespace else identifier
 
 
 def _message_event(raw: Any) -> dict[str, Any] | None:
@@ -170,6 +177,8 @@ def openclaw_events_to_actf(
     """
 
     rows = list(events)
+    multiple_sessions = sum(row.get("type") == "session" for row in rows) > 1
+    session_index = 0
     delivery_tracker = OpenClawDeliveryTracker()
     system_prompt_list = list(system_prompts) if system_prompts is not None else []
     system_prompt = system_prompt_list[0] if system_prompt_list else ""
@@ -181,6 +190,7 @@ def openclaw_events_to_actf(
     pending_user_time: str | None = None
     expected_users = tuple(user_messages) if user_messages is not None else ()
     user_index = 0
+    retry_after_empty_error = False
     steps: list[dict[str, Any]] = []
     current: dict[str, Any] | None = None
 
@@ -194,6 +204,8 @@ def openclaw_events_to_actf(
         current = None
 
     for row in rows:
+        if row.get("type") == "session":
+            session_index += 1
         delivery = delivery_tracker.observe(row) if isinstance(row, dict) else None
         message = _message_event(row)
         if message is None:
@@ -201,12 +213,19 @@ def openclaw_events_to_actf(
         role = message.get("role")
         message_time = _timestamp(row.get("timestamp") or message.get("timestamp"))
         if role == "user":
-            finish_current(message_time)
             value = (
                 expected_users[user_index]
                 if user_index < len(expected_users)
                 else _text(message.get("content"))
             )
+            if retry_after_empty_error and pending_user and value == pending_user:
+                # OpenClaw records its internal provider retry as the same user
+                # message again. Keep that transport detail in the raw trace,
+                # but do not turn it into duplicate training context.
+                retry_after_empty_error = False
+                continue
+            retry_after_empty_error = False
+            finish_current(message_time)
             user_index += 1
             pending_user = f"{pending_user}\n\n{value}" if pending_user and value else value
             pending_user_time = pending_user_time or message_time
@@ -217,8 +236,27 @@ def openclaw_events_to_actf(
                 # skipping it before finish_current keeps the real step's
                 # finished_at derived from genuine conversation events only.
                 continue
-            finish_current(message_time)
             content, reasoning, tool_calls = _assistant_parts(message.get("content"))
+            tool_call_namespace = (
+                f"session-{session_index}" if multiple_sessions else None
+            )
+            for tool_call in tool_calls:
+                tool_call["id"] = _tool_call_id(
+                    tool_call.get("id", ""), tool_call_namespace
+                )
+            if (
+                not content.strip()
+                and not reasoning.strip()
+                and not tool_calls
+                and message.get("errorMessage")
+            ):
+                # A provider idle timeout can leave an empty, aborted assistant
+                # event before OpenClaw retries the prompt. It is audit evidence,
+                # not a model response suitable for ACTF/SFT.
+                retry_after_empty_error = True
+                continue
+            retry_after_empty_error = False
+            finish_current(message_time)
             # Malformed counters are sanitized by OpenClawUsage so they can
             # neither crash (NaN/Infinity int() conversion) nor contaminate
             # step metrics with negative values. skip_usage stays the only
@@ -259,7 +297,12 @@ def openclaw_events_to_actf(
             pending_user_time = None
             continue
         if role == "toolResult" and current is not None:
-            current["observation"].append(_observation(message))
+            tool_call_namespace = (
+                f"session-{session_index}" if multiple_sessions else None
+            )
+            current["observation"].append(
+                _observation(message, tool_call_namespace)
+            )
             current["finished_at"] = message_time or current.get("finished_at")
 
     last_time = next(

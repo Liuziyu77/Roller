@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from roller.cli import _build_parser, _collect, _docker_preflight
+from roller.cli import _build_parser, _collect, _docker_preflight, _jsonl_equivalent
 
 
 class CliTests(unittest.TestCase):
@@ -29,6 +29,120 @@ class CliTests(unittest.TestCase):
                     _build_parser().parse_args(["collect", "--tasks", "tasks.jsonl", flag, value])
                 self.assertEqual(raised.exception.code, 2)
                 self.assertIn("unrecognized arguments", errors.getvalue())
+
+    def test_jsonl_equivalence_ignores_object_key_order(self) -> None:
+        self.assertTrue(
+            _jsonl_equivalent(
+                b'{"id":"one","runtime":{"image":"test","args":{"a":1,"b":2}}}\n',
+                b'{"runtime":{"args":{"b":2,"a":1},"image":"test"},"id":"one"}\n',
+            )
+        )
+        self.assertFalse(
+            _jsonl_equivalent(b'{"id":"one"}\n', b'{"id":"two"}\n')
+        )
+
+    def test_parser_accepts_samples_grader_parallel_and_bench_timeout_scale(self) -> None:
+        collect = _build_parser().parse_args(
+            [
+                "collect", "--tasks", "tasks.jsonl", "--samples", "3",
+                "--grader-parallel", "2",
+            ]
+        )
+        export = _build_parser().parse_args(
+            [
+                "bench", "export", "skillsbench", "/bench", "-o", "tasks.jsonl",
+                "--timeout-multiplier", "2.5",
+            ]
+        )
+        self.assertEqual((collect.samples, collect.grader_parallel), (3, 2))
+        self.assertEqual(export.timeout_multiplier, 2.5)
+
+    def test_contextual_skillsbench_defaults_are_applied(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            task = root / "tasks" / "demo"
+            (task / "environment" / "skills").mkdir(parents=True)
+            (task / "verifier").mkdir()
+            (task / "environment" / "Dockerfile").write_text(
+                "FROM python:3.12-slim\nWORKDIR /root\n", encoding="utf-8"
+            )
+            (task / "verifier" / "test.sh").write_text(
+                "echo 1 > /logs/verifier/reward.txt\n", encoding="utf-8"
+            )
+            (task / "task.md").write_text(
+                "---\nmetadata:\n  category: demo\n"
+                "agent:\n  timeout_sec: 30\n"
+                "verifier:\n  timeout_sec: 30\n"
+                "environment:\n  build_timeout_sec: 30\n"
+                "---\n\nDo it.\n",
+                encoding="utf-8",
+            )
+            args = _build_parser().parse_args(
+                [
+                    "collect",
+                    "--bench",
+                    "skillsbench",
+                    "--bench-root",
+                    str(root),
+                    "--model",
+                    "test-model",
+                    "--dry-run",
+                ]
+            )
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                self.assertEqual(_collect(args), 0)
+            payload = json.loads(output.getvalue())
+
+        self.assertEqual(payload["samples"], 3)
+        self.assertEqual(payload["trajectories"], 3)
+        self.assertEqual(payload["opencode_max_steps"], 100)
+        self.assertEqual(payload["opencode_output_tokens"], 32768)
+        self.assertTrue(payload["opencode_vision"])
+
+    def test_parser_requires_exactly_one_task_source(self) -> None:
+        parser = _build_parser()
+        with self.assertRaises(SystemExit):
+            parser.parse_args(["collect", "--dry-run"])
+        with self.assertRaises(SystemExit):
+            parser.parse_args(
+                [
+                    "collect",
+                    "--tasks",
+                    "tasks.jsonl",
+                    "--bench",
+                    "skillsbench",
+                ]
+            )
+
+    def test_dry_run_model_label_preserves_upstream_id(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            tasks = Path(temporary) / "tasks.jsonl"
+            tasks.write_text(
+                json.dumps({"id": "hello", "prompt": "say hello"}) + "\n",
+                encoding="utf-8",
+            )
+            args = _build_parser().parse_args(
+                [
+                    "collect",
+                    "--tasks",
+                    str(tasks),
+                    "--model",
+                    "provider/external-served-id",
+                    "--model-label",
+                    "Example model",
+                    "--dry-run",
+                ]
+            )
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                _collect(args)
+
+        payload = json.loads(output.getvalue())
+        self.assertEqual(payload["models"], ["provider/external-served-id"])
+        self.assertEqual(payload["model_labels"], ["Example model"])
+        self.assertEqual(payload["plan"][0]["model"], "provider/external-served-id")
+        self.assertEqual(payload["plan"][0]["model_label"], "Example model")
 
     def test_collect_help_groups_shared_options_by_scope(self) -> None:
         parser = _build_parser()

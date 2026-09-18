@@ -20,7 +20,7 @@ from urllib.parse import urlsplit, urlunsplit
 from roller.actf import convert_openclaw_trace
 from roller.artifacts import ArtifactCollectionResult, collect_output_directory
 from roller.harnesses.base import InteractiveHarness, InteractiveSession, TurnResult
-from roller.harnesses.docker import DockerRuntime
+from roller.harnesses.docker import DockerRuntime, remove_container
 from roller.models import HarnessResult, RunRequest
 from roller.storage import safe_component
 from roller.thinking import normalize_thinking, resolve_thinking
@@ -44,6 +44,7 @@ OUTPUTS_CONTAINER_PATH = "/roller/task/outputs"
 # (and full request messages) for every LLM call made by the agent.
 CACHE_TRACE_CONTAINER_PATH = "/tmp/roller-cache-trace.jsonl"
 TRANSCRIPT_EXPORT_CONTAINER_PATH = "/tmp/roller-session-trace.jsonl"
+TASK_ENVIRONMENT_CONTAINER_PATH = "/roller/task/environment"
 
 ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
@@ -531,7 +532,10 @@ exec node --input-type=module -e "$1"
         if request.bundle is not None:
             args.extend(["-v", f"{request.bundle.inputs_root}:{INPUTS_CONTAINER_PATH}:ro"])
             args.extend(["-v", f"{request.bundle.context_root}:{CONTEXT_CONTAINER_PATH}:ro"])
-            if not request.bundle.legacy_workspace:
+            if (
+                not request.bundle.legacy_workspace
+                and request.task.input_mode == "mount"
+            ):
                 for input_file in request.task.inputs:
                     input_path = request.bundle.inputs_root / input_file.path
                     if not input_path.exists():
@@ -557,7 +561,7 @@ exec node --input-type=module -e "$1"
         workspace = self.config.workspace_container_path
         output_root = f"{workspace}/{request.task.output_dir}"
         if request.bundle is not None:
-            if request.bundle.legacy_workspace:
+            if request.bundle.legacy_workspace or request.task.input_mode == "copy":
                 setup = (
                     f"mkdir -p {workspace} && cp -a {INPUTS_CONTAINER_PATH}/. {workspace}/ && "
                     f"chmod -R u+w {workspace} && rm -rf {workspace}/context && "
@@ -796,6 +800,8 @@ exec node --input-type=module -e "$1"
             self._checked(
                 [
                     "exec",
+                    "-e",
+                    f"ROLLER_GATEWAY_PORT={self.gateway_port}",
                     "-w",
                     self.config.workspace_container_path,
                     container,
@@ -832,8 +838,8 @@ exec node --input-type=module -e "$1"
     def _prompts(self, request: RunRequest) -> tuple[str, ...]:
         return request.task.prompts
 
-    def _session_scope(self) -> dict[str, str]:
-        session_id = self.config.session_id
+    def _session_scope(self, session_id: str | None = None) -> dict[str, str]:
+        session_id = session_id or self.config.session_id
         return {
             "agentId": "main",
             "sessionId": session_id,
@@ -847,11 +853,12 @@ exec node --input-type=module -e "$1"
         *,
         output_path: str | None = None,
         state_dir: str | None = None,
+        session_id: str | None = None,
     ) -> subprocess.CompletedProcess[str]:
         args = [
             "exec",
             "-e",
-            f"ROLLER_SESSION_SCOPE={json.dumps(self._session_scope(), separators=(',', ':'))}",
+            f"ROLLER_SESSION_SCOPE={json.dumps(self._session_scope(session_id), separators=(',', ':'))}",
         ]
         if output_path is not None:
             args.extend(["-e", f"ROLLER_TRACE_OUTPUT={output_path}"])
@@ -873,10 +880,17 @@ exec node --input-type=module -e "$1"
         return self.runtime.run(args)
 
     def _latest_assistant_content(
-        self, container: str, *, state_dir: str | None = None
+        self,
+        container: str,
+        *,
+        state_dir: str | None = None,
+        session_id: str | None = None,
     ) -> tuple[str, int]:
         result = self._run_transcript_sdk(
-            container, self._SDK_LAST_ASSISTANT_SCRIPT, state_dir=state_dir
+            container,
+            self._SDK_LAST_ASSISTANT_SCRIPT,
+            state_dir=state_dir,
+            session_id=session_id,
         )
         if result.returncode != 0:
             logger.debug(
@@ -884,7 +898,8 @@ exec node --input-type=module -e "$1"
                 self._error_text(result),
             )
             script = self._LEGACY_LAST_ASSISTANT_SCRIPT.replace(
-                "__ROLLER_SESSION_FILE__", repr(f"{self.config.session_id}.jsonl")
+                "__ROLLER_SESSION_FILE__",
+                repr(f"{session_id or self.config.session_id}.jsonl"),
             )
             result = self._checked(
                 ["exec", container, "python3", "-c", script],
@@ -911,6 +926,7 @@ exec node --input-type=module -e "$1"
         attempt: int,
         *,
         state_dir: str | None = None,
+        session_ids: Sequence[str] | None = None,
     ) -> Path | None:
         rollout_dir = output_dir / "rollout"
         rollout_dir.mkdir(parents=True, exist_ok=True)
@@ -918,32 +934,14 @@ exec node --input-type=module -e "$1"
         trace_path = rollout_dir / "trace.jsonl"
         attempt_trace_path.unlink(missing_ok=True)
 
-        sdk_result = self._run_transcript_sdk(
+        container_trace = self._export_combined_transcript(
             container,
-            self._SDK_EXPORT_TRANSCRIPT_SCRIPT,
-            output_path=TRANSCRIPT_EXPORT_CONTAINER_PATH,
+            session_ids or (self.config.session_id,),
             state_dir=state_dir,
         )
-        if sdk_result.returncode == 0:
-            result = self.runtime.run(
-                [
-                    "cp",
-                    f"{container}:{TRANSCRIPT_EXPORT_CONTAINER_PATH}",
-                    str(attempt_trace_path),
-                ]
-            )
-        else:
-            logger.debug(
-                "OpenClaw transcript SDK unavailable; copying legacy JSONL trace: %s",
-                self._error_text(sdk_result),
-            )
-            container_path = (
-                f"{OPENCLAW_STATE_CONTAINER_PATH}/agents/main/sessions/"
-                f"{self.config.session_id}.jsonl"
-            )
-            result = self.runtime.run(
-                ["cp", f"{container}:{container_path}", str(attempt_trace_path)]
-            )
+        result = self.runtime.run(
+            ["cp", f"{container}:{container_trace}", str(attempt_trace_path)]
+        ) if container_trace else subprocess.CompletedProcess([], 1, "", "")
         if result.returncode != 0:
             latest = self.runtime.run(
                 ["exec", container, "python3", "-c", self._LATEST_SESSION_SCRIPT]
@@ -961,6 +959,51 @@ exec node --input-type=module -e "$1"
             return None
         shutil.copyfile(attempt_trace_path, trace_path)
         return trace_path
+
+    def _export_combined_transcript(
+        self,
+        container: str,
+        session_ids: Sequence[str],
+        *,
+        state_dir: str | None = None,
+    ) -> str | None:
+        """Export one or more OpenClaw sessions into one grader-visible JSONL."""
+
+        sources: list[str] = []
+        session_root = state_dir or OPENCLAW_STATE_CONTAINER_PATH
+        for index, session_id in enumerate(session_ids):
+            destination = f"{TRANSCRIPT_EXPORT_CONTAINER_PATH}.{index}"
+            result = self._run_transcript_sdk(
+                container,
+                self._SDK_EXPORT_TRANSCRIPT_SCRIPT,
+                output_path=destination,
+                state_dir=state_dir,
+                session_id=session_id,
+            )
+            if result.returncode == 0:
+                sources.append(destination)
+                continue
+            logger.debug(
+                "OpenClaw transcript SDK unavailable for %s; using legacy JSONL: %s",
+                session_id,
+                self._error_text(result),
+            )
+            sources.append(f"{session_root}/agents/main/sessions/{session_id}.jsonl")
+        if not sources:
+            return None
+        quoted = " ".join(shlex.quote(path) for path in sources)
+        combined = shlex.quote(TRANSCRIPT_EXPORT_CONTAINER_PATH)
+        result = self.runtime.run(
+            [
+                "exec",
+                container,
+                "/bin/sh",
+                "-c",
+                f"cat {quoted} > {combined}",
+            ],
+            timeout=60,
+        )
+        return TRANSCRIPT_EXPORT_CONTAINER_PATH if result.returncode == 0 else None
 
     def _collect_cache_trace(self, container: str, output_dir: Path) -> Path | None:
         """Copy the OpenClaw cache-trace file (system prompts per LLM call) into the sample."""
@@ -1062,10 +1105,15 @@ exec node --input-type=module -e "$1"
         started = time.monotonic()
         try:
             session.start()
-            for prompt in self._prompts(request):
+            for index, prompt in enumerate(self._prompts(request)):
                 remaining = request.timeout_seconds - (time.monotonic() - started)
                 if remaining <= 0:
                     raise TimeoutError(f"task exceeded {request.timeout_seconds}s")
+                if (
+                    index < len(request.task.new_session)
+                    and request.task.new_session[index]
+                ):
+                    session.reset()
                 session.send(prompt, remaining)
             status = "ok"
         except (TimeoutError, subprocess.TimeoutExpired):
@@ -1097,7 +1145,7 @@ class OpenClawSession(InteractiveSession):
         self.started = time.monotonic()
         self.started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
         self.container = (
-            f"roller-{request.index}-{safe_component(request.model, 24)}-"
+            f"roller-{request.index}-{safe_component(request.display_model, 24)}-"
             f"{uuid.uuid4().hex[:8]}"
         ).lower()
         self.gateway_token = uuid.uuid4().hex
@@ -1107,6 +1155,8 @@ class OpenClawSession(InteractiveSession):
         self.state_dir = OPENCLAW_STATE_CONTAINER_PATH
         self.return_codes: list[int] = []
         self.messages: list[str] = []
+        self.session_id = harness.config.session_id
+        self.session_ids = [self.session_id]
         self.environment: dict[str, str] = {}
         self.image_digest = harness._image_digest()
         self._assistant_count = 0
@@ -1160,10 +1210,13 @@ class OpenClawSession(InteractiveSession):
                 "-w",
                 self.harness.config.workspace_container_path,
                 self.container,
-                "openclaw",
-                "gateway",
-                "--port",
-                str(self.harness.gateway_port),
+                "/bin/bash",
+                "-lc",
+                "set -a; "
+                f"if [ -f {TASK_ENVIRONMENT_CONTAINER_PATH} ]; then "
+                f". {TASK_ENVIRONMENT_CONTAINER_PATH}; fi; "
+                "set +a; "
+                f"exec openclaw gateway --port {self.harness.gateway_port}",
             ],
             self.output_dir / "rollout" / f"gateway.attempt-{self.attempt}.log",
         )
@@ -1189,7 +1242,7 @@ class OpenClawSession(InteractiveSession):
             "openclaw",
             "agent",
             "--session-id",
-            self.harness.config.session_id,
+            self.session_id,
             "--timeout",
             str(max(1, int(timeout_seconds))),
         ]
@@ -1232,13 +1285,33 @@ class OpenClawSession(InteractiveSession):
                 f"OpenClaw agent turn exited with code {return_code}{suffix}"
             )
         content, assistant_count = self.harness._latest_assistant_content(
-            self.container, state_dir=self.state_dir
+            self.container,
+            state_dir=self.state_dir,
+            session_id=self.session_id,
         )
         if assistant_count <= self._assistant_count:
             raise RuntimeError("OpenClaw turn produced no new assistant response")
         self._assistant_count = assistant_count
         self.messages.append(message)
         return TurnResult(content, time.monotonic() - turn_started, return_code)
+
+    def reset(self) -> None:
+        """Select a fresh OpenClaw session while preserving this container."""
+
+        if not self.container_started or self.gateway_process is None:
+            raise RuntimeError("OpenClaw session is not running")
+        self.session_id = f"{self.harness.config.session_id}-{len(self.session_ids) + 1}"
+        self.session_ids.append(self.session_id)
+        self._assistant_count = 0
+
+    def prepare_transcript_for_grading(self) -> str | None:
+        if not self.container_started:
+            return None
+        return self.harness._export_combined_transcript(
+            self.container,
+            self.session_ids,
+            state_dir=self.state_dir,
+        )
 
     def finish(self, status: str, error: str | None = None) -> HarnessResult:
         if self._finished is not None:
@@ -1248,6 +1321,8 @@ class OpenClawSession(InteractiveSession):
         legacy_records: list[dict[str, Any]] = []
         artifact_result: ArtifactCollectionResult | None = None
         output_copy_error: str | None = None
+        warnings: list[str] = []
+        trajectory_conversion = None
         if self.container_started:
             try:
                 trace_path = self.harness._collect_trace(
@@ -1255,6 +1330,7 @@ class OpenClawSession(InteractiveSession):
                     self.output_dir,
                     self.attempt,
                     state_dir=self.state_dir,
+                    session_ids=self.session_ids,
                 )
             except Exception as exc:
                 logger.warning("[%s] trace collection failed: %s", self.request.task.id, exc)
@@ -1315,9 +1391,15 @@ class OpenClawSession(InteractiveSession):
                 )
             except Exception as exc:
                 trajectory_path = None
-                if status == "ok":
-                    status = "error"
-                    error = f"OpenClaw trajectory conversion failed: {exc}"
+                conversion_error = str(exc)
+                warnings.append(
+                    "OpenClaw trajectory conversion failed: " + conversion_error
+                )
+                trajectory_conversion = {
+                    "status": "unavailable",
+                    "target": "actf",
+                    "error": conversion_error,
+                }
 
         if status == "ok" and trace_path is None:
             status = "error"
@@ -1328,23 +1410,42 @@ class OpenClawSession(InteractiveSession):
         if status == "ok" and artifact_result is not None and not artifact_result.passed:
             status = "error"
             error = "unsafe output files were rejected"
-        if self.container_started and not (
-            self.harness.config.keep_container_on_error and status != "ok"
-        ):
+        retained = (
+            self.container_started
+            and self.harness.config.keep_container_on_error
+            and status != "ok"
+        )
+        if self.container_started:
             try:
-                remove_result = self.harness.runtime.run(
-                    ["rm", "-f", self.container], timeout=30
-                )
-                if remove_result.returncode != 0:
-                    logger.warning(
-                        "[%s] failed to remove container %s",
-                        self.request.task.id,
-                        self.container,
+                if retained:
+                    # Preserve the filesystem for debugging without leaving
+                    # the host-network gateway alive to occupy a future
+                    # worker's deterministic port.
+                    stop_result = self.harness.runtime.run(
+                        ["stop", "--time", "1", self.container], timeout=30
                     )
+                    if stop_result.returncode != 0:
+                        logger.warning(
+                            "[%s] failed to stop retained container %s",
+                            self.request.task.id,
+                            self.container,
+                        )
+                else:
+                    remove_result = remove_container(
+                        self.harness.runtime, self.container
+                    )
+                    if remove_result.returncode != 0:
+                        logger.warning(
+                            "[%s] failed to remove container %s",
+                            self.request.task.id,
+                            self.container,
+                        )
             except Exception as exc:
+                action = "stop" if retained else "remove"
                 logger.warning(
-                    "[%s] failed to remove container %s: %s",
+                    "[%s] failed to %s container %s: %s",
                     self.request.task.id,
+                    action,
                     self.container,
                     exc,
                 )
@@ -1426,7 +1527,7 @@ class OpenClawSession(InteractiveSession):
                 "gateway_port": self.harness.gateway_port,
                 "container": (
                     self.container
-                    if self.harness.config.keep_container_on_error and status != "ok"
+                    if retained
                     else None
                 ),
                 "agent_return_codes": self.return_codes,
@@ -1434,6 +1535,8 @@ class OpenClawSession(InteractiveSession):
                 "output_collection": output_metadata,
                 "output_copy_error": output_copy_error,
                 "legacy_artifacts": legacy_records,
+                "warnings": warnings,
+                "trajectory_conversion": trajectory_conversion,
                 "attempt": self.attempt,
                 "provenance": provenance,
             },

@@ -1,0 +1,17 @@
+{
+  "mode": "merge",
+  "providers": {
+    "example": {
+      "baseUrl": "https://api.example.com/v1",
+      "apiKey": "${MODEL_API_KEY}",
+      "api": "openai-completions",
+      "timeoutSeconds": 600,
+      "models": [
+        {
+          "id": "example-model",
+          "name": "Example model"
+        }
+      ]
+    }
+  }
+}

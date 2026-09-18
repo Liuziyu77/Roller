@@ -11,6 +11,31 @@ from roller.harness_registry import requires_cache_trace
 from roller.sft import actf_to_sft
 
 
+def trajectory_conversion_unavailable(
+    metadata: Mapping[str, Any] | None,
+) -> str | None:
+    """Return the unavailable trajectory target explicitly recorded in metadata.
+
+    A warning string is deliberately insufficient: callers must provide a
+    structured, non-empty conversion error. Older OpenCode results emitted no
+    target and are interpreted as ACTF failures.
+    """
+
+    if not isinstance(metadata, Mapping):
+        return None
+    conversion = metadata.get("trajectory_conversion")
+    valid = (
+        isinstance(conversion, Mapping)
+        and conversion.get("status") == "unavailable"
+        and isinstance(conversion.get("error"), str)
+        and bool(conversion["error"].strip())
+    )
+    if not valid:
+        return None
+    target = conversion.get("target", "actf")
+    return target if target in {"actf", "sft"} else None
+
+
 def _json_object(path: Path) -> dict[str, Any]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
@@ -98,9 +123,38 @@ def _validate_trajectory_files(
     raw_path = base / "trace.jsonl"
     actf_path = base / "trace_ACTF.json"
     sft_path = base / "trace_SFT.json"
-    for path in (raw_path, actf_path, sft_path):
-        if not path.is_file():
-            raise ValueError(f"required trajectory file is missing: {path.name}")
+    if not raw_path.is_file():
+        raise ValueError(f"required trajectory file is missing: {raw_path.name}")
+    runtime = info.get("runtime")
+    conversion_target = trajectory_conversion_unavailable(
+        runtime if isinstance(runtime, Mapping) else None
+    )
+    raw_only = (
+        info.get("harness") in {"opencode", "openclaw"}
+        and conversion_target == "actf"
+    )
+    sft_unavailable = conversion_target == "sft"
+    if raw_only:
+        trajectory = info.get("trajectory")
+        if not isinstance(trajectory, Mapping):
+            raise ValueError("info.json trajectory must be an object")
+        if trajectory.get("actf") is not None or trajectory.get("sft") is not None:
+            raise ValueError(
+                "raw-only trajectory metadata must not reference ACTF/SFT artifacts"
+            )
+        if actf_path.exists() or sft_path.exists():
+            raise ValueError("raw-only sample contains unexpected ACTF/SFT artifacts")
+    else:
+        if not actf_path.is_file():
+            raise ValueError(f"required trajectory file is missing: {actf_path.name}")
+        if sft_unavailable:
+            trajectory = info.get("trajectory")
+            if not isinstance(trajectory, Mapping) or trajectory.get("sft") is not None:
+                raise ValueError("SFT-unavailable trajectory metadata must have null SFT")
+            if sft_path.exists():
+                raise ValueError("SFT-unavailable sample contains an unexpected SFT artifact")
+        elif not sft_path.is_file():
+            raise ValueError(f"required trajectory file is missing: {sft_path.name}")
     if require_wire_trace and not (base / "wire_trace.jsonl").is_file():
         raise ValueError("required full-mode wire_trace.jsonl is missing")
     # Only OpenClaw emits cache traces. Finalized metadata records the actual
@@ -111,6 +165,9 @@ def _validate_trajectory_files(
         raise ValueError("required full-mode cache_trace.jsonl is missing")
     if not _has_json_event(raw_path):
         raise ValueError("trace.jsonl contains no valid JSON object event")
+
+    if raw_only:
+        return
 
     actf = _json_object(actf_path)
     if actf.get("schema_version") != "ACTF_v1.0":
@@ -124,12 +181,13 @@ def _validate_trajectory_files(
                 "trace_ACTF.json step_id values must be sequential from 1"
             )
 
-    actual_sft = _json_object(sft_path)
-    if set(actual_sft) != {"messages", "tools"}:
-        raise ValueError("trace_SFT.json must contain only messages and tools")
-    expected_sft = actf_to_sft(actf)
-    if actual_sft != expected_sft:
-        raise ValueError("trace_SFT.json does not match the canonical ACTF projection")
+    if not sft_unavailable:
+        actual_sft = _json_object(sft_path)
+        if set(actual_sft) != {"messages", "tools"}:
+            raise ValueError("trace_SFT.json must contain only messages and tools")
+        expected_sft = actf_to_sft(actf)
+        if actual_sft != expected_sft:
+            raise ValueError("trace_SFT.json does not match the canonical ACTF projection")
 
 
 def validate_resumable_sample(
@@ -152,12 +210,15 @@ def validate_resumable_sample(
         raise ValueError("info.json status is not ok")
     expected_identity = {
         "request_index": request.index,
+        "sample_index": request.sample_index,
+        "sample_count": request.sample_count,
         "source_index": request.task.source_index,
         "task_id": request.task.id,
         "model": request.model,
     }
+    legacy_defaults = {"sample_index": 0, "sample_count": 1}
     for key, expected in expected_identity.items():
-        if info.get(key) != expected:
+        if info.get(key, legacy_defaults.get(key)) != expected:
             raise ValueError(
                 f"info.json {key} does not match current request: "
                 f"{info.get(key)!r} != {expected!r}"

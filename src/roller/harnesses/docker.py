@@ -43,3 +43,30 @@ class DockerRuntime:
         log_file = getattr(process, "_roller_log_file", None)
         if log_file is not None and not log_file.closed:
             log_file.close()
+
+
+def remove_container(
+    runtime: DockerRuntime,
+    name: str,
+    *,
+    timeouts: Sequence[float] = (30, 60),
+) -> subprocess.CompletedProcess[str]:
+    """Remove a task container, retrying transient Docker/Podman failures once."""
+
+    if not timeouts:
+        raise ValueError("container removal requires at least one timeout")
+    last_result: subprocess.CompletedProcess[str] | None = None
+    last_error: subprocess.TimeoutExpired | None = None
+    for timeout in timeouts:
+        try:
+            last_result = runtime.run(["rm", "-f", name], timeout=timeout)
+            last_error = None
+        except subprocess.TimeoutExpired as exc:
+            last_error = exc
+            continue
+        if last_result.returncode == 0:
+            return last_result
+    if last_error is not None:
+        raise last_error
+    assert last_result is not None
+    return last_result

@@ -1,0 +1,21 @@
+{
+  "mode": "merge",
+  "providers": {
+    "example": {
+      "baseUrl": "https://api.example.com/v1",
+      "apiKey": "${VLLM_API_KEY}",
+      "api": "openai-completions",
+      "timeoutSeconds": 600,
+      "models": [
+        {
+          "id": "example-model",
+          "name": "Example model"
+        },
+        {
+          "id": "Example model",
+          "name": "Example model compatibility alias"
+        }
+      ]
+    }
+  }
+}
