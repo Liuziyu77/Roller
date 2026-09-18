@@ -602,7 +602,7 @@ ACTF/SFT alone is not enough. You must also keep full cache/wire.
 
 ### 7.1 Success guarantees
 
-An ordinary sample with status `ok` is guaranteed to have:
+An ordinary sample with status `ok` normally has:
 
 - `trace.jsonl`;
 - `trace_ACTF.json`;
@@ -611,7 +611,10 @@ An ordinary sample with status `ok` is guaranteed to have:
 
 A User Simulator sample also guarantees a root `conversation.json` and the
 Simulator's own raw/ACTF/SFT. `results/`, cache trace, and wire trace are always
-conditional artifacts. They are not required for success.
+conditional artifacts. They are not required for success. A lossless projection
+may also be impossible for some native attachment or multimodal events. In that
+case the sample remains a valid evaluation result, `runtime.trajectory_conversion`
+records whether ACTF or SFT is unavailable, and run-level `sft.jsonl` skips it.
 
 ### 7.2 Failed samples
 
@@ -623,7 +626,7 @@ run-level `sft.jsonl`.
 These cases turn an otherwise successful Harness result into `error`:
 
 - No raw session trace found;
-- ACTF or SFT conversion failed;
+- A required trajectory is missing without an explicit conversion downgrade;
 - Copying the task output directory failed;
 - A symbolic link or special file was found in the output;
 - Either User Simulator participant failed, or its trajectory conversion

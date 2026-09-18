@@ -18,7 +18,7 @@ from urllib.parse import urlsplit, urlunsplit
 from roller.artifacts import ArtifactCollectionResult, collect_output_directory
 from roller.claude_code_actf import convert_claude_code_trace
 from roller.harnesses.base import Harness, InteractiveHarness, InteractiveSession, TurnResult
-from roller.harnesses.docker import DockerRuntime
+from roller.harnesses.docker import DockerRuntime, remove_container
 from roller.models import HarnessResult, RunRequest
 from roller.storage import safe_component
 from roller.thinking import normalize_thinking, resolve_thinking
@@ -345,7 +345,10 @@ class ClaudeCodeHarness(InteractiveHarness):
             args.extend(
                 ["-v", f"{request.bundle.context_root}:{CONTEXT_CONTAINER_PATH}:ro"]
             )
-            if not request.bundle.legacy_workspace:
+            if (
+                not request.bundle.legacy_workspace
+                and request.task.input_mode == "mount"
+            ):
                 for input_file in request.task.inputs:
                     input_path = request.bundle.inputs_root / input_file.path
                     if input_path.exists():
@@ -374,7 +377,7 @@ class ClaudeCodeHarness(InteractiveHarness):
         workspace = self.config.workspace_container_path
         output_root = f"{workspace}/{request.task.output_dir}"
         if request.bundle is not None:
-            if request.bundle.legacy_workspace:
+            if request.bundle.legacy_workspace or request.task.input_mode == "copy":
                 setup = (
                     f"mkdir -p {shlex.quote(workspace)} && "
                     f"cp -a {INPUTS_CONTAINER_PATH}/. {shlex.quote(workspace)}/ && "
@@ -629,7 +632,7 @@ class ClaudeCodeHarness(InteractiveHarness):
         started = time.monotonic()
         started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
         container = (
-            f"roller-claude-{request.index}-{safe_component(request.model, 20)}-"
+            f"roller-claude-{request.index}-{safe_component(request.display_model, 20)}-"
             f"{uuid.uuid4().hex[:8]}"
         ).lower()
         status = "error"
@@ -744,7 +747,7 @@ class ClaudeCodeHarness(InteractiveHarness):
             if self.config.keep_container_on_error and status != "ok":
                 retained_container = container
             else:
-                removed = self.runtime.run(["rm", "-f", container], timeout=30)
+                removed = remove_container(self.runtime, container)
                 if removed.returncode != 0:
                     logger.warning(
                         "[%s] failed to remove container %s",
@@ -865,7 +868,7 @@ class ClaudeCodeSession(InteractiveSession):
         self.started = False
         self.container_started = False
         self.container = (
-            f"roller-claude-{request.index}-{safe_component(request.model, 20)}-"
+            f"roller-claude-{request.index}-{safe_component(request.display_model, 20)}-"
             f"{uuid.uuid4().hex[:8]}"
         ).lower()
         self.messages: list[str] = []
@@ -1004,7 +1007,7 @@ class ClaudeCodeSession(InteractiveSession):
             if config.keep_container_on_error and final_status != "ok":
                 retained_container = self.container
             else:
-                removed = self.harness.runtime.run(["rm", "-f", self.container], timeout=30)
+                removed = remove_container(self.harness.runtime, self.container)
                 if removed.returncode != 0:
                     logger.warning("[%s] failed to remove container %s", self.request.task.id, self.container)
         elapsed = time.monotonic() - self.started_monotonic

@@ -22,7 +22,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Sequence
 
-from roller.benches.base import BenchAdapter, BenchBinding, BenchFormatError, GradeSpec
+from roller.benches.base import (
+    BenchAdapter,
+    BenchBinding,
+    BenchFormatError,
+    GradeSpec,
+    validate_timeout_multiplier,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -328,13 +334,19 @@ class WildClawBenchAdapter(BenchAdapter):
         *,
         categories: Sequence[str] | None = None,
         task_ids: Sequence[str] | None = None,
+        variant: str | None = None,
+        timeout_multiplier: float = 1.0,
     ) -> list[dict[str, Any]]:
+        if variant is not None:
+            raise BenchFormatError(f"{self.name}: this bench has no variants")
         tasks_root = self._tasks_root(root)
-        multiplier = (
-            self._timeout_multiplier
-            if self._timeout_multiplier is not None
-            else timeout_multiplier_from_env()
-        )
+        multiplier = validate_timeout_multiplier(timeout_multiplier)
+        if timeout_multiplier == 1.0:
+            multiplier = (
+                validate_timeout_multiplier(self._timeout_multiplier)
+                if self._timeout_multiplier is not None
+                else timeout_multiplier_from_env()
+            )
         if multiplier != 1.0:
             logger.info(
                 "scaling every task timeout by %s; the prompt preamble states the "

@@ -9,6 +9,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
@@ -24,6 +25,7 @@ from roller.benches import (
 from roller.benches.grading import GradedHarness
 from roller.bundles import BundlePolicy, TaskBundleStore
 from roller.conversation import ConversationManager
+from roller.image_build import prepare_task_images
 from roller.harnesses.claude_code import (
     COMMON_ENV_NAMES as CLAUDE_CODE_COMMON_ENV_NAMES,
     DEFAULT_CLAUDE_CODE_IMAGE,
@@ -82,6 +84,17 @@ from roller.viewer import serve as serve_viewer
 logger = logging.getLogger(__name__)
 
 
+def _jsonl_equivalent(left: bytes, right: bytes) -> bool:
+    """Compare JSONL snapshots by value, ignoring object key order."""
+
+    try:
+        return [json.loads(line) for line in left.splitlines()] == [
+            json.loads(line) for line in right.splitlines()
+        ]
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return False
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="roller",
@@ -118,6 +131,16 @@ def _build_parser() -> argparse.ArgumentParser:
         default=[],
         help="restrict to a task id (repeatable)",
     )
+    bench_export.add_argument(
+        "--variant",
+        help="bench variant/condition (for example with-skill or no-skill)",
+    )
+    bench_export.add_argument(
+        "--timeout-multiplier",
+        type=float,
+        default=1.0,
+        help="multiply every exported task timeout (default: 1.0)",
+    )
 
     bench_report = bench_sub.add_parser(
         "report", help="aggregate bench scores from a finished run"
@@ -128,12 +151,51 @@ def _build_parser() -> argparse.ArgumentParser:
     )
 
     collect = subparsers.add_parser("collect", help="collect trajectories")
-    collect.add_argument("--tasks", required=True, help="JSON or JSONL task list")
+    task_source = collect.add_mutually_exclusive_group(required=True)
+    task_source.add_argument("--tasks", help="JSON or JSONL task list")
+    task_source.add_argument(
+        "--bench",
+        choices=tuple(adapter.name for adapter in list_benches()),
+        help="load, run, grade, and report a checked-out benchmark in one command",
+    )
+    collect.add_argument(
+        "--bench-root",
+        help="path to the checked-out benchmark (required with --bench)",
+    )
+    collect.add_argument(
+        "--bench-variant",
+        help="benchmark variant/condition (for example with-skill or no-skill)",
+    )
+    collect.add_argument(
+        "--bench-category",
+        action="append",
+        default=[],
+        help="restrict benchmark categories (repeatable)",
+    )
+    collect.add_argument(
+        "--bench-task-id",
+        action="append",
+        default=[],
+        help="restrict benchmark task ids (repeatable)",
+    )
+    collect.add_argument(
+        "--bench-timeout-multiplier",
+        type=float,
+        default=1.0,
+        help="multiply benchmark task timeouts (default: 1.0)",
+    )
     collect.add_argument(
         "--model",
         action="append",
         default=[],
         help="model identifier; repeat to run every task on multiple models",
+    )
+    collect.add_argument(
+        "--model-label",
+        help=(
+            "safe local label used in sample directories and container names; "
+            "requires exactly one resolved model and does not change the model ID sent upstream"
+        ),
     )
     collect.add_argument(
         "--harness",
@@ -146,6 +208,20 @@ def _build_parser() -> argparse.ArgumentParser:
     collect.add_argument("--workspace", help="default host workspace copied into each container")
     collect.add_argument("--timeout", type=int, default=600, help="per-trajectory timeout in seconds")
     collect.add_argument("--parallel", type=int, default=1)
+    collect.add_argument(
+        "--grader-parallel",
+        type=int,
+        help="maximum concurrent benchmark graders (default: --parallel)",
+    )
+    collect.add_argument(
+        "--samples",
+        type=int,
+        default=None,
+        help=(
+            "independent runs per task/model pair "
+            "(default: 3 for SkillsBench, 1 otherwise)"
+        ),
+    )
     collect.add_argument("--retries", type=int, default=0)
     collect.add_argument("--start-index", type=int, default=0, help="first normalized task index")
     collect.add_argument("--limit", type=int, help="maximum number of tasks")
@@ -200,6 +276,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Docker user for the disposable task container (default: root); use 'image' for the image default",
     )
     runtime.add_argument("--docker-binary", default="docker")
+    runtime.add_argument(
+        "--rebuild-task-images",
+        action="store_true",
+        help="rebuild task-specific benchmark images even when their tags exist locally",
+    )
     runtime.add_argument("--network", default="host")
     runtime.add_argument(
         "--thinking",
@@ -302,9 +383,28 @@ def _build_parser() -> argparse.ArgumentParser:
     hermes.add_argument("--hermes-context-length", type=int, help="override Hermes model context window (at least 64000 tokens)")
 
     opencode = collect.add_argument_group("OpenCode")
-    opencode.add_argument("--opencode-max-steps", type=int, default=12, help="maximum model steps per OpenCode user turn (default: 12)")
+    opencode.add_argument(
+        "--opencode-max-steps",
+        type=int,
+        default=None,
+        help="maximum model steps per OpenCode user turn (default: 100 for SkillsBench, 12 otherwise)",
+    )
     opencode.add_argument("--opencode-context-length", type=int, default=128000, help="OpenCode model context window (default: 128000 tokens)")
-    opencode.add_argument("--opencode-output-tokens", type=int, default=8192, help="OpenCode maximum output tokens (default: 8192)")
+    opencode.add_argument(
+        "--opencode-output-tokens",
+        type=int,
+        default=None,
+        help=(
+            "OpenCode maximum output tokens "
+            "(default: 32768 for SkillsBench, 8192 otherwise)"
+        ),
+    )
+    opencode.add_argument(
+        "--opencode-vision",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="declare image input support to OpenCode (default: enabled)",
+    )
 
     deepseek = collect.add_argument_group("DeepSeek")
     deepseek.add_argument("--deepseek-max-steps", type=int, default=12, help="maximum model steps per DeepSeek user turn (default: 12)")
@@ -421,15 +521,25 @@ def _dry_run_payload(args: argparse.Namespace, requests: list) -> dict:
         "docker_image": args.docker_image,
         "tasks": len({request.task.id for request in requests}),
         "models": list(dict.fromkeys(request.model for request in requests)),
+        "model_labels": list(dict.fromkeys(request.display_model for request in requests)),
         "trajectories": len(requests),
         "parallel": args.parallel,
+        "grader_parallel": args.grader_parallel or args.parallel,
+        "samples": args.samples,
+        "opencode_max_steps": args.opencode_max_steps,
+        "opencode_output_tokens": args.opencode_output_tokens,
+        "opencode_vision": args.opencode_vision,
         "timeout_seconds": args.timeout,
         "plan": [
             {
                 "request_index": request.index,
+                "sample_index": request.sample_index,
+                "sample_count": request.sample_count,
                 "task_id": request.task.id,
                 "harness": cli_harness or request.task.harness,
                 "model": request.model,
+                "model_label": request.display_model,
+                "timeout_seconds": request.timeout_seconds,
                 "turns": (
                     {
                         "mode": "user_simulator",
@@ -451,6 +561,10 @@ def _dry_run_payload(args: argparse.Namespace, requests: list) -> dict:
                 "inputs": len(request.task.inputs),
                 "context_files": len(request.task.context_files),
                 "output_dir": request.task.output_dir,
+                "input_mode": request.task.input_mode,
+                "docker_image": request.task.docker_image,
+                "image_build": request.task.image_build is not None,
+                "workspace_container_path": request.task.workspace_container_path,
                 "output_collection": "all",
                 "legacy_workspace": request.task.legacy_workspace,
             }
@@ -476,8 +590,18 @@ def _with_task_timeout(request):
 
 
 def _collect(args: argparse.Namespace) -> int:
+    if args.samples is None:
+        args.samples = 3 if args.bench == "skillsbench" else 1
+    if args.opencode_max_steps is None:
+        args.opencode_max_steps = 100 if args.bench == "skillsbench" else 12
+    if args.opencode_output_tokens is None:
+        args.opencode_output_tokens = 32768 if args.bench == "skillsbench" else 8192
     if args.parallel < 1:
         raise ValueError("--parallel must be at least 1")
+    if args.grader_parallel is not None and args.grader_parallel < 1:
+        raise ValueError("--grader-parallel must be at least 1")
+    if args.samples < 1:
+        raise ValueError("--samples must be at least 1")
     if args.retries < 0:
         raise ValueError("--retries cannot be negative")
     if args.timeout <= 0:
@@ -494,7 +618,47 @@ def _collect(args: argparse.Namespace) -> int:
     workspace = Path(args.workspace).expanduser().resolve() if args.workspace else None
     if workspace is not None and not workspace.is_dir():
         raise FileNotFoundError(f"workspace is not a directory: {workspace}")
-    tasks_path = Path(args.tasks).expanduser().resolve()
+
+    bench_context: dict[str, Any] | None = None
+    bench_manifest: bytes | None = None
+    bench_temporary: tempfile.TemporaryDirectory[str] | None = None
+    if args.bench:
+        if not args.bench_root:
+            raise ValueError("--bench-root is required with --bench")
+        root = Path(args.bench_root).expanduser().resolve()
+        if not root.is_dir():
+            raise FileNotFoundError(f"bench root is not a directory: {root}")
+        adapter = get_bench(args.bench)
+        rows = adapter.load(
+            root,
+            categories=args.bench_category or None,
+            task_ids=args.bench_task_id or None,
+            variant=args.bench_variant,
+            timeout_multiplier=args.bench_timeout_multiplier,
+        )
+        if not rows:
+            raise TaskFormatError(f"{adapter.name}: selection matched no tasks")
+        bench_manifest = "".join(
+            json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n" for row in rows
+        ).encode("utf-8")
+        bench_temporary = tempfile.TemporaryDirectory(prefix="roller-bench-")
+        tasks_path = Path(bench_temporary.name) / "tasks.jsonl"
+        tasks_path.write_bytes(bench_manifest)
+        bench_context = {
+            "name": adapter.name,
+            "root": str(root),
+            "variant": args.bench_variant or adapter.default_variant,
+            "categories": list(args.bench_category),
+            "task_ids": list(args.bench_task_id),
+            "timeout_multiplier": args.bench_timeout_multiplier,
+            "exported_task_count": len(rows),
+        }
+    else:
+        if args.bench_root or args.bench_variant or args.bench_category or args.bench_task_id:
+            raise ValueError("--bench-* selection options require --bench")
+        if args.bench_timeout_multiplier != 1.0:
+            raise ValueError("--bench-timeout-multiplier requires --bench")
+        tasks_path = Path(args.tasks).expanduser().resolve()
     tasks = load_tasks(
         tasks_path,
         prompt_key=args.prompt_key,
@@ -503,10 +667,20 @@ def _collect(args: argparse.Namespace) -> int:
     )
     end_index = args.start_index + args.limit if args.limit is not None else None
     tasks = tasks[args.start_index:end_index]
-    requests = build_requests(tasks, args.model, args.timeout)
+    requests = build_requests(
+        tasks, args.model, args.timeout, samples_per_task=args.samples
+    )
     if not requests:
         raise TaskFormatError("task list contains no tasks")
-    if getattr(args, "task_timeouts", False):
+    if args.model_label is not None:
+        resolved_models = {request.model for request in requests}
+        if len(resolved_models) != 1:
+            raise ValueError("--model-label requires exactly one resolved model")
+        requests = [
+            dataclasses.replace(request, model_label=args.model_label)
+            for request in requests
+        ]
+    if args.bench or getattr(args, "task_timeouts", False):
         # Benches size their own timeouts per task; a single global value would
         # either cut long tasks short or let short ones idle.
         requests = [_with_task_timeout(request) for request in requests]
@@ -720,6 +894,7 @@ def _collect(args: argparse.Namespace) -> int:
             pass_env=_deduplicate((*OPENCODE_COMMON_ENV_NAMES, *args.pass_env)),
             reasoning_effort=args.thinking, max_steps=args.opencode_max_steps,
             context_length=args.opencode_context_length, output_tokens=args.opencode_output_tokens,
+            vision=args.opencode_vision,
             wire_trace_mode=args.wire_trace, keep_thinking=args.keep_thinking,
             keep_container_on_error=args.keep_container_on_error, docker_binary=args.docker_binary,
         )
@@ -770,13 +945,23 @@ def _collect(args: argparse.Namespace) -> int:
         # Exercise all path, hash, collision and size checks without leaving a run directory.
         with tempfile.TemporaryDirectory(prefix="roller-dry-run-") as temporary:
             TaskBundleStore(Path(temporary), bundle_policy).prepare_all(tasks)
-        print(json.dumps(_dry_run_payload(args, requests), ensure_ascii=False, indent=2))
+        payload = _dry_run_payload(args, requests)
+        if bench_context is not None:
+            payload["bench"] = bench_context
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
         return 0
 
     docker_image_digests = {
         harness: _docker_preflight(args.docker_binary, image)
         for harness, image in images.items()
     }
+    task_image_digests = prepare_task_images(
+        args.docker_binary,
+        requests,
+        images,
+        cli_harness=cli_harness,
+        rebuild=args.rebuild_task_images,
+    )
     run_label = next(iter(agent_harnesses)) if len(agent_harnesses) == 1 else "mixed"
     output_root = Path(args.output).expanduser().resolve()
     run_dir = output_root / _run_name(run_label, args.run_name)
@@ -786,6 +971,24 @@ def _collect(args: argparse.Namespace) -> int:
     if existing_run:
         check_retired_cot_samples(run_dir, requests)
     output_root.mkdir(parents=True, exist_ok=True)
+
+    tasks_snapshot: Path | None = None
+    if bench_manifest is not None:
+        tasks_snapshot = run_dir / "tasks.jsonl"
+        if tasks_snapshot.is_file():
+            recorded_manifest = tasks_snapshot.read_bytes()
+            if (
+                recorded_manifest != bench_manifest
+                and not _jsonl_equivalent(recorded_manifest, bench_manifest)
+            ):
+                raise TaskFormatError(
+                    "benchmark selection differs from the existing run's tasks.jsonl; "
+                    "use a new --run-name"
+                )
+        elif existing_run:
+            raise TaskFormatError(
+                "cannot safely resume this benchmark run: tasks.jsonl is missing"
+            )
 
     previous_info: dict[str, object] = {}
     previous_info_path = run_dir / "info.json"
@@ -878,6 +1081,7 @@ def _collect(args: argparse.Namespace) -> int:
             "api_key_env": opencode_api_key_env, "reasoning_effort": args.thinking,
             "max_steps": args.opencode_max_steps, "opencode_version": OPENCODE_VERSION,
             "context_length": args.opencode_context_length, "output_tokens": args.opencode_output_tokens,
+            "vision": args.opencode_vision,
             "tools": list(OPENCODE_TOOLS), "api_mode": "chat_completions",
             "wire_trace": args.wire_trace,
             "keep_thinking": args.keep_thinking, "pass_env_names": list(opencode_config.pass_env),
@@ -917,12 +1121,19 @@ def _collect(args: argparse.Namespace) -> int:
             "harness": run_label,
             "agent_harnesses": sorted(agent_harnesses),
             "simulator_harnesses": sorted(simulator_harnesses),
-            "tasks": str(tasks_path),
+            "tasks": str(tasks_snapshot or tasks_path),
+            "bench": (
+                {**bench_context, "tasks_snapshot": "tasks.jsonl"}
+                if bench_context is not None
+                else None
+            ),
             "models": args.model,
             "trajectory_count": len(requests),
             "workspace": str(workspace) if workspace else None,
             "timeout_seconds": args.timeout,
             "parallel": args.parallel,
+            "grader_parallel": args.grader_parallel or args.parallel,
+            "samples": args.samples,
             "retries": args.retries,
             "start_index": args.start_index,
             "limit": args.limit,
@@ -939,6 +1150,14 @@ def _collect(args: argparse.Namespace) -> int:
             "bundle_policy": {
                 "max_input_file_bytes": args.max_input_file_bytes,
                 "max_task_input_bytes": args.max_task_input_bytes,
+            },
+            "task_images": {
+                task.id: {
+                    "image": task.docker_image,
+                    "digest": task_image_digests.get(task.id),
+                }
+                for task in tasks
+                if task.docker_image is not None
             },
             **harness_configurations,
         },
@@ -961,6 +1180,8 @@ def _collect(args: argparse.Namespace) -> int:
             bundles = bundle_store.prepare_all(tasks)
             requests = bundle_store.attach(requests, bundles)
             run_dir.mkdir(parents=True, exist_ok=True)
+            if tasks_snapshot is not None and not tasks_snapshot.exists():
+                tasks_snapshot.write_bytes(bench_manifest or b"")
             run_lock = build_run_lock(
                 requests,
                 roller_version=__version__,
@@ -970,6 +1191,14 @@ def _collect(args: argparse.Namespace) -> int:
                     "simulator_harnesses": sorted(simulator_harnesses),
                     "task_schema": "roller.task/v1",
                     "output_collection": "all",
+                    "task_images": {
+                        task.id: {
+                            "image": task.docker_image,
+                            "digest": task_image_digests.get(task.id),
+                        }
+                        for task in tasks
+                        if task.docker_image is not None
+                    },
                     **{
                         name: {
                             **payload,
@@ -1008,38 +1237,65 @@ def _collect(args: argparse.Namespace) -> int:
             }
             atomic_write_json(run_dir / "info.json", run_info)
             keep_aux_traces = args.wire_trace == "full"
+            grading_semaphore = threading.BoundedSemaphore(
+                args.grader_parallel or args.parallel
+            )
 
-            def make_harness(name: str, slot: int):
+            def make_harness(
+                name: str,
+                slot: int,
+                task_image: str | None = None,
+                task_workspace: str | None = None,
+            ):
+                replacements = {"docker_image": task_image} if task_image else {}
+                if task_workspace:
+                    replacements["workspace_container_path"] = task_workspace
                 if name == "openclaw":
                     assert openclaw_config is not None
-                    return OpenClawHarness(openclaw_config, slot)
+                    config = dataclasses.replace(openclaw_config, **replacements)
+                    return OpenClawHarness(config, slot)
                 if name == "codex":
                     assert codex_config is not None
-                    return CodexHarness(codex_config, slot)
+                    config = dataclasses.replace(codex_config, **replacements)
+                    return CodexHarness(config, slot)
                 if name == "claude-code":
                     assert claude_code_config is not None
-                    return ClaudeCodeHarness(claude_code_config, slot)
+                    config = dataclasses.replace(claude_code_config, **replacements)
+                    return ClaudeCodeHarness(config, slot)
                 if name == "hermes":
                     assert hermes_config is not None
-                    return HermesHarness(hermes_config, slot)
+                    config = dataclasses.replace(hermes_config, **replacements)
+                    return HermesHarness(config, slot)
                 if name == "opencode":
                     assert opencode_config is not None
-                    return OpenCodeHarness(opencode_config, slot)
+                    config = dataclasses.replace(opencode_config, **replacements)
+                    return OpenCodeHarness(config, slot)
                 if name == "deepseek":
                     assert deepseek_config is not None
-                    return DeepSeekHarness(deepseek_config, slot)
+                    config = dataclasses.replace(deepseek_config, **replacements)
+                    return DeepSeekHarness(config, slot)
                 if name == "pi":
                     assert pi_config is not None
-                    return PiHarness(pi_config, slot)
+                    config = dataclasses.replace(pi_config, **replacements)
+                    return PiHarness(config, slot)
                 raise ValueError(f"unknown Harness: {name}")
 
             def harness_factory(slot: int, request):
-                agent = make_harness(cli_harness or request.task.harness, slot)
+                agent = make_harness(
+                    cli_harness or request.task.harness,
+                    slot,
+                    request.task.docker_image,
+                    request.task.workspace_container_path,
+                )
                 binding = binding_from_task_row(getattr(request.task, "raw", None) or {})
                 if binding is not None and binding.grade is not None:
                     # Grading has to read the container the agent just wrote to,
                     # so it runs inside the session rather than after teardown.
-                    return GradedHarness(agent, binding)
+                    return GradedHarness(
+                        agent,
+                        binding,
+                        grading_semaphore=grading_semaphore,
+                    )
                 spec = request.task.user_simulator
                 if spec is None:
                     return agent
@@ -1076,13 +1332,30 @@ def _collect(args: argparse.Namespace) -> int:
     print(f"Collected {len(results)} trajectories ({failed} failed).")
     print(f"Run directory: {run_dir}")
     print(f"Info: {run_dir / 'info.json'}")
+    if bench_context is not None:
+        report_path = run_dir / "bench-report.json"
+        try:
+            _bench_report(
+                argparse.Namespace(run_dir=str(run_dir), output=str(report_path))
+            )
+        except TaskFormatError:
+            if not failed:
+                raise
+            logger.warning(
+                "benchmark report was not generated because no graded samples were produced"
+            )
     return 1 if failed else 0
 
 
 def _bench(args: argparse.Namespace) -> int:
     if args.bench_command == "list":
         for adapter in list_benches():
-            print(f"{adapter.name:<16} {adapter.description}")
+            variants = (
+                f" [variants: {', '.join(adapter.variants)}]"
+                if adapter.variants
+                else ""
+            )
+            print(f"{adapter.name:<16} {adapter.description}{variants}")
         return 0
     if args.bench_command == "export":
         adapter = get_bench(args.name)
@@ -1093,6 +1366,8 @@ def _bench(args: argparse.Namespace) -> int:
             root,
             categories=args.category or None,
             task_ids=args.task_id or None,
+            variant=args.variant,
+            timeout_multiplier=args.timeout_multiplier,
         )
         if not rows:
             raise TaskFormatError(f"{adapter.name}: selection matched no tasks")
@@ -1138,9 +1413,11 @@ def _bench_report(args: argparse.Namespace) -> int:
                 "task_id": info.get("task_id"),
                 "model": info.get("model"),
                 "status": info.get("status"),
+                "error": info.get("error"),
                 "bench_scores": payload.get("scores"),
                 "bench_score_key": payload.get("score_key"),
                 "bench_category": payload.get("category"),
+                "bench_error": payload.get("error"),
             }
         )
     if not rows:

@@ -11,25 +11,22 @@ bench 层通用机制（`bench` 块、grading 时序、`stage` 防泄漏、聚�
 ## 1. 最短路径
 
 ```bash
-# 1) 上游 checkout（Roller 不提供 setup 脚本，bench export 就是那层翻译）
+# 1) 上游 checkout
 git clone https://github.com/InternLM/WildClawBench ~/WildClawBench
 
 # 2) 上游的环境变量照常 source —— Roller 复用同一批变量名，见 §3
 set -a; . ~/WildClawBench/.env; set +a
 
-# 3) 翻译成 task 行（不执行、不联网、不起容器）
-roller bench export wildclawbench ~/WildClawBench -o /tmp/wcb.jsonl
-
-# 4) 采集 + 判分（--task-timeouts 必须开：每个任务自带超时，见 §4）
-roller collect --tasks /tmp/wcb.jsonl --model <provider>/<model> \
+# 3) 一键转换 + 采集 + 判分 + 汇总
+roller collect --bench wildclawbench --bench-root ~/WildClawBench \
+  --model <provider>/<model> \
   --harness openclaw --openclaw-image wildclawbench-ubuntu:v1.3 \
-  --model-config my_api.json --task-timeouts --parallel 4 \
+  --model-config my_api.json --parallel 4 \
   --output /tmp/wcb --run-name run1 \
   --pass-env NODE_EXTRA_CA_CERTS
-
-# 5) 汇总
-roller bench report /tmp/wcb/run1
 ```
+
+任务快照与报告分别保存在 `run1/tasks.jsonl` 和 `run1/bench-report.json`。
 
 ## 2. 上游旋钮 → Roller 对应
 
@@ -37,7 +34,7 @@ roller bench report /tmp/wcb/run1
 
 | 上游 | Roller | 备注 |
 | --- | --- | --- |
-| `--task` / `--category` | `bench export --task-id` / `--category` | Roller 可重复传多个；写错的 id 报错而不是静默跑空 |
+| `--task` / `--category` | `collect --bench-task-id` / `--bench-category` | Roller 可重复传多个；写错的 id 报错而不是静默跑空 |
 | `--model` | `collect --model` | 可重复，多模型笛卡尔展开 |
 | `--parallel` | `collect --parallel` | |
 | `--agent-backend` | `collect --harness` | adapter 写 `openclaw`；`codex`/`claude-code`/`hermes` 可用 `--harness` 覆盖，原 `hermesagent` 可选择 `--harness hermes` |

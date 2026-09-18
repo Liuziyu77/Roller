@@ -13,7 +13,14 @@ import unittest
 from unittest.mock import Mock, patch
 
 from roller.cli import _build_parser, _collect
-from roller.harnesses.opencode import OpenCodeConfig, OpenCodeHarness, RUNNER_PATH
+from roller.harnesses.opencode import (
+    OPENCODE_TOOLS,
+    RUNNER_PATH,
+    OpenCodeConfig,
+    OpenCodeHarness,
+    _ensure_local_proxy_bypass,
+    _system_prompt,
+)
 from roller.opencode_actf import convert_opencode_trace, extract_opencode_usage, opencode_events_to_actf
 from roller.models import RunRequest, Task
 from roller.sft import actf_to_sft
@@ -70,6 +77,63 @@ class OpenCodeTraceTests(unittest.TestCase):
         self.assertEqual(opencode_events_to_actf([events[0], *updates, events[-1], events[-1]]), opencode_events_to_actf(events))
         self.assertEqual(opencode_events_to_actf([events[0], *updates]), opencode_events_to_actf(events))
 
+    def test_empty_unfinished_timeout_placeholder_is_not_training_data(self):
+        events = sample_events()
+        events[-1]["data"]["messages"].append(
+            {
+                "info": {
+                    "id": "m4",
+                    "role": "assistant",
+                    "sessionID": "s1",
+                    "parentID": "m1",
+                    "time": {"created": 1005},
+                    "tokens": {
+                        "input": 0,
+                        "output": 0,
+                        "cache": {"read": 0, "write": 0},
+                    },
+                },
+                "parts": [],
+            }
+        )
+
+        actf = opencode_events_to_actf(events)
+
+        self.assertEqual(len(actf["steps"]), 2)
+        self.assertEqual(actf_to_sft(actf)["messages"][-1]["content"], "TOKEN")
+
+    def test_completed_reasoning_only_turn_is_skipped_when_thinking_is_removed(self):
+        events = sample_events()
+        messages = events[-1]["data"]["messages"]
+        messages.insert(
+            -1,
+            {
+                "info": {
+                    "id": "m-reasoning",
+                    "role": "assistant",
+                    "sessionID": "s1",
+                    "parentID": "m1",
+                    "time": {"created": 1002.5, "completed": 1002.7},
+                    "finish": "stop",
+                },
+                "parts": [
+                    {
+                        "id": "p-reasoning",
+                        "messageID": "m-reasoning",
+                        "type": "reasoning",
+                        "text": "private only",
+                    }
+                ],
+            },
+        )
+
+        stripped = opencode_events_to_actf(events, keep_thinking=False)
+        retained = opencode_events_to_actf(events, keep_thinking=True)
+
+        self.assertEqual(len(stripped["steps"]), 2)
+        self.assertEqual(len(retained["steps"]), 3)
+        actf_to_sft(stripped)
+
     def test_two_user_turns_keep_native_ids_and_identical_replies(self):
         events = sample_events()
         second = deepcopy(events[-1])
@@ -85,7 +149,7 @@ class OpenCodeTraceTests(unittest.TestCase):
         self.assertEqual(sum(m["role"] == "assistant" and m.get("content") == "TOKEN" for m in sft["messages"]), 2)
 
     def test_unsafe_or_incomplete_native_data_is_rejected(self):
-        for kind in ("schema", "changed_schema", "arguments", "duplicate", "pending", "attachment", "media", "error", "system"):
+        for kind in ("schema", "changed_schema", "arguments", "duplicate", "pending", "attachment_shape", "media", "error", "system"):
             with self.subTest(kind=kind):
                 events = sample_events()
                 rows = events[-1]["data"]["messages"]
@@ -97,17 +161,54 @@ class OpenCodeTraceTests(unittest.TestCase):
                 elif kind == "duplicate":
                     other = deepcopy(tool);other["id"] = "p31";rows[1]["parts"].append(other)
                 elif kind == "pending":tool["state"]["status"] = "pending"
-                elif kind == "attachment":tool["state"]["attachments"] = [{"type": "file", "mime": "image/png"}]
+                elif kind == "attachment_shape":tool["state"]["attachments"] = {"type": "file", "mime": "image/png"}
                 elif kind == "media":rows[0]["parts"][0]["type"] = "file"
                 elif kind == "error":rows[1]["info"]["error"] = {"name": "APIError"}
                 else:events[0]["body"]["messages"] = []
                 with self.assertRaises(ValueError):opencode_events_to_actf(events)
+
+    def test_tool_attachments_are_bounded_and_exportable_to_sft(self):
+        events = sample_events()
+        data_url = "data:image/png;base64," + "A" * 5000
+        tool = events[-1]["data"]["messages"][1]["parts"][1]
+        tool["state"]["attachments"] = [
+            {"type": "file", "mime": "image/png", "url": data_url}
+        ]
+
+        actf = opencode_events_to_actf(events)
+        observation = actf["steps"][0]["observation"][0]
+        attachment = observation["details"]["attachments"][0]
+        self.assertEqual(attachment["type"], "file")
+        self.assertEqual(attachment["mime"], "image/png")
+        self.assertTrue(attachment["url"]["omitted"])
+        self.assertEqual(attachment["url"]["scheme"], "data")
+        self.assertEqual(attachment["url"]["payload_characters"], 5000)
+        self.assertNotIn(data_url, json.dumps(actf))
+
+        sft = actf_to_sft(actf)
+        tool_result = next(m for m in sft["messages"] if m["role"] == "tool")
+        self.assertTrue(tool_result["content"].startswith("TOKEN\n"))
+        self.assertIn("OpenCode attachments omitted", tool_result["content"])
+        self.assertNotIn(data_url, json.dumps(sft))
 
     def test_corrupt_journal_fails(self):
         with tempfile.TemporaryDirectory() as tmp:
             source = Path(tmp) / "trace.jsonl"
             source.write_text('{"type":')
             with self.assertRaises(ValueError):convert_opencode_trace(source, Path(tmp)/"trace_ACTF.json")
+
+    def test_unicode_line_separator_inside_json_string_is_preserved(self):
+        events = sample_events()
+        events[-1]["data"]["messages"][-1]["parts"][0]["text"] = "TOKEN\u2028next"
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "trace.jsonl"
+            source.write_text(
+                "".join(json.dumps(event, ensure_ascii=False) + "\n" for event in events),
+                encoding="utf-8",
+            )
+            destination = Path(tmp) / "trace_ACTF.json"
+            actf = convert_opencode_trace(source, destination)
+            self.assertEqual(actf_to_sft(actf)["messages"][-1]["content"], "TOKEN\u2028next")
 
     def test_final_reply_checks_completion_and_current_user(self):
         spec = importlib.util.spec_from_file_location("opencode_runner_test", RUNNER_PATH)
@@ -118,10 +219,31 @@ class OpenCodeTraceTests(unittest.TestCase):
             changed = deepcopy(export);changed["messages"][-1]["info"][field] = value
             with self.assertRaises(ValueError):runner.native_reply(changed)
 
+    def test_session_export_streams_large_json_to_file(self):
+        spec = importlib.util.spec_from_file_location("opencode_runner_export_test", RUNNER_PATH)
+        runner = importlib.util.module_from_spec(spec);spec.loader.exec_module(runner)
+        payload = {"info": {"id": "s1"}, "content": "x" * 200_000}
+
+        def fake_run(args, *, stdout, stderr, text, timeout):
+            self.assertEqual(args, ["opencode", "export", "s1"])
+            self.assertEqual(stderr, subprocess.PIPE)
+            self.assertTrue(text)
+            self.assertEqual(timeout, 30)
+            json.dump(payload, stdout)
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        with tempfile.TemporaryDirectory() as tmp, patch.object(
+            runner.subprocess, "run", side_effect=fake_run
+        ):
+            state = Path(tmp)
+            self.assertEqual(runner.export_session(state, "s1", 30), payload)
+            self.assertGreater((state / "session-export.json").stat().st_size, 64 * 1024)
+
 
 class FakeRuntime:
     def __init__(self):
         self.calls = []
+        self.turn_configs = []
         self.result = {"ok": True, "content": "TOKEN"}
         self.process = Mock();self.process.wait.return_value = 0
 
@@ -130,6 +252,8 @@ class FakeRuntime:
         if args[:2] == ["image", "inspect"]:stdout = "sha256:test"
         elif args[-1] == "--check":stdout = "1.18.30"
         elif args[-1].endswith("/result.json"):stdout = json.dumps(self.result)
+        elif args[0] == "cp" and args[1].endswith(".opencode-turn.json"):
+            self.turn_configs.append(json.loads(Path(args[1]).read_text()))
         elif args[0] == "cp" and args[1].endswith(":/roller/opencode-state/trace.jsonl"):write_events(Path(args[2]))
         elif args[0] == "cp" and args[1].endswith("/outputs/."):(Path(args[2])/"answer.txt").write_text("TOKEN")
         return subprocess.CompletedProcess(args, 0, stdout, "")
@@ -141,6 +265,56 @@ class FakeRuntime:
 
 
 class OpenCodeHarnessTests(unittest.TestCase):
+    def test_local_services_bypass_inherited_proxy(self):
+        environment = {"NO_PROXY": "joyrouter.jd.com,localhost", "no_proxy": "example.test"}
+
+        _ensure_local_proxy_bypass(environment)
+
+        expected = "localhost,127.0.0.1,::1,joyrouter.jd.com,example.test"
+        self.assertEqual(environment["NO_PROXY"], expected)
+        self.assertEqual(environment["no_proxy"], expected)
+
+    def test_native_skill_tool_is_allowed(self):
+        self.assertIn("skill", OPENCODE_TOOLS)
+        spec = importlib.util.spec_from_file_location("opencode_runner_tools", RUNNER_PATH)
+        runner = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(runner)
+        self.assertIn("skill", runner.TOOLS)
+
+    def test_skillsbench_prompt_preserves_upstream_output_paths(self):
+        task = Task(
+            "test",
+            ("one",),
+            0,
+            raw={"bench": {"name": "skillsbench"}},
+            output_dir=".roller_outputs",
+        )
+        prompt = _system_prompt(RunRequest(0, task, "model", 60), "/root")
+        self.assertIn("exact requested output paths", prompt)
+        self.assertNotIn(".roller_outputs", prompt)
+
+    def test_task_image_cache_location_is_not_overridden(self):
+        runtime = FakeRuntime()
+        harness = OpenCodeHarness(
+            OpenCodeConfig(api_key_env="LOCAL_TEST_KEY", wire_trace_mode="off"),
+            0,
+            runtime,
+        )
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(
+            os.environ, {"LOCAL_TEST_KEY": "test-secret"}
+        ):
+            harness.run(
+                RunRequest(0, Task("test", ("one",), 0), "model", 60),
+                Path(tmp),
+                1,
+            )
+        docker_run = next(call for call in runtime.calls if call[0] == "run")
+        self.assertFalse(
+            any(value.startswith("XDG_CACHE_HOME=") for value in docker_run)
+        )
+        self.assertIn("NO_PROXY=localhost,127.0.0.1,::1", docker_run)
+        self.assertIn("no_proxy=localhost,127.0.0.1,::1", docker_run)
+
     def test_session_outputs_cleanup_and_redaction(self):
         runtime = FakeRuntime()
         harness = OpenCodeHarness(OpenCodeConfig(api_key_env="LOCAL_TEST_KEY", wire_trace_mode="off"), 0, runtime)
@@ -148,6 +322,8 @@ class OpenCodeHarnessTests(unittest.TestCase):
             result = harness.run(RunRequest(0, Task("test", ("one", "two"), 0), "model", 60), Path(tmp), 1)
             self.assertEqual(result.status, "ok", result.error)
             self.assertEqual(result.metadata["turn_count"], 2)
+            self.assertTrue(runtime.turn_configs[0]["vision"])
+            self.assertTrue(result.metadata["settings"]["vision"])
             self.assertEqual((Path(tmp)/"results/answer.txt").read_text(), "TOKEN")
             self.assertFalse((Path(tmp)/".opencode-turn.json").exists())
             self.assertTrue(any(a[:2] == ["rm", "-f"] for a in runtime.calls))
@@ -155,6 +331,56 @@ class OpenCodeHarnessTests(unittest.TestCase):
             result = harness.run(RunRequest(1, Task("error", ("one",), 0), "model", 60), Path(tmp)/"error", 1)
             self.assertEqual(result.status, "error")
             self.assertNotIn("test-secret", result.error)
+
+    def test_vision_capability_can_be_disabled(self):
+        runtime = FakeRuntime()
+        harness = OpenCodeHarness(
+            OpenCodeConfig(
+                api_key_env="LOCAL_TEST_KEY", wire_trace_mode="off", vision=False
+            ),
+            0,
+            runtime,
+        )
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(
+            os.environ, {"LOCAL_TEST_KEY": "test-secret"}
+        ):
+            result = harness.run(
+                RunRequest(0, Task("test", ("one",), 0), "model", 60),
+                Path(tmp),
+                1,
+            )
+        self.assertEqual(result.status, "ok", result.error)
+        self.assertFalse(runtime.turn_configs[0]["vision"])
+        self.assertFalse(result.metadata["settings"]["vision"])
+
+    def test_new_session_boundary_clears_only_conversation_state(self):
+        runtime = FakeRuntime()
+        harness = OpenCodeHarness(
+            OpenCodeConfig(api_key_env="LOCAL_TEST_KEY", wire_trace_mode="off"),
+            0,
+            runtime,
+        )
+        task = Task(
+            "test",
+            ("one", "two"),
+            0,
+            new_session=(False, True),
+        )
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            patch.dict(os.environ, {"LOCAL_TEST_KEY": "test-secret"}),
+        ):
+            result = harness.run(
+                RunRequest(0, task, "model", 60), Path(tmp), 1
+            )
+
+        self.assertEqual(result.status, "ok", result.error)
+        reset = [
+            call
+            for call in runtime.calls
+            if call[-3:] == ["rm", "-f", "/roller/opencode-state/session.json"]
+        ]
+        self.assertEqual(len(reset), 1)
 
     def test_timeout_stops_container_and_recovers_outputs(self):
         runtime = FakeRuntime();runtime.process.wait.side_effect = [subprocess.TimeoutExpired("run", 1), 0]
@@ -170,8 +396,19 @@ class OpenCodeHarnessTests(unittest.TestCase):
         harness = OpenCodeHarness(OpenCodeConfig(api_key_env="LOCAL_TEST_KEY", wire_trace_mode="off"), 0, runtime)
         with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {"LOCAL_TEST_KEY": "test-secret"}), patch("roller.harnesses.opencode.convert_opencode_trace", side_effect=ValueError("invalid journal")):
             result = harness.run(RunRequest(0, Task("test", ("one",), 0), "model", 60), Path(tmp), 1)
-            self.assertEqual(result.status, "error")
-            self.assertIn("invalid journal", result.error)
+            self.assertEqual(result.status, "ok")
+            self.assertIsNone(result.error)
+            self.assertTrue(
+                any("invalid journal" in item for item in result.metadata["warnings"])
+            )
+            self.assertEqual(
+                result.metadata["trajectory_conversion"],
+                {
+                    "status": "unavailable",
+                    "target": "actf",
+                    "error": "invalid journal",
+                },
+            )
             self.assertIsNone(result.trajectory_path)
             self.assertTrue((Path(tmp)/result.trace_path).is_file())
             self.assertEqual((Path(tmp)/"results/answer.txt").read_text(), "TOKEN")

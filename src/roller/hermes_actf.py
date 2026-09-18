@@ -101,7 +101,9 @@ def hermes_events_to_actf(events: Iterable[dict[str, Any]], *, keep_thinking: bo
 
 def read_hermes_events(source: Path) -> list[dict[str, Any]]:
     # Do not silently turn a truncated/corrupt journal into a successful sample.
-    events = [json.loads(line) for line in source.read_text(encoding="utf-8").splitlines() if line.strip()]
+    # Split only on LF: U+2028/U+2029 are valid JSON string content rather than
+    # JSON Lines record separators.
+    events = [json.loads(line) for line in source.read_text(encoding="utf-8").split("\n") if line.strip()]
     if not all(isinstance(event, dict) for event in events):
         raise ValueError("Hermes journal must contain JSON object events")
     return events

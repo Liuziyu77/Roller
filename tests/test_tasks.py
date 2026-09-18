@@ -173,6 +173,37 @@ class TaskLoadingTests(unittest.TestCase):
                 ],
             )
 
+    def test_samples_repeat_each_task_model_with_stable_task_ids(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            task_file = Path(temporary) / "tasks.json"
+            task_file.write_text(
+                json.dumps([{"id": "one", "prompt": "a"}]), encoding="utf-8"
+            )
+            tasks = load_tasks(task_file)
+            requests = build_requests(tasks, ["provider/a", "provider/b"], 60, 2)
+
+            self.assertEqual(len(requests), 4)
+            self.assertEqual([request.index for request in requests], list(range(4)))
+            self.assertEqual(
+                [
+                    (
+                        request.task.id,
+                        request.model,
+                        request.sample_index,
+                        request.sample_count,
+                    )
+                    for request in requests
+                ],
+                [
+                    ("one", "provider/a", 0, 2),
+                    ("one", "provider/a", 1, 2),
+                    ("one", "provider/b", 0, 2),
+                    ("one", "provider/b", 1, 2),
+                ],
+            )
+            with self.assertRaisesRegex(ValueError, "samples_per_task"):
+                build_requests(tasks, ["provider/a"], 60, 0)
+
     def test_resolves_sources_against_task_file_root(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             project = Path(temporary) / "project"
@@ -251,7 +282,7 @@ class TaskLoadingTests(unittest.TestCase):
             with self.assertRaisesRegex(TaskFormatError, "reserved"):
                 load_tasks(task_file)
 
-    def test_rejects_removed_input_target_and_output_declarations(self) -> None:
+    def test_accepts_renamed_and_inline_inputs_but_rejects_output_declarations(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             (root / "input.txt").write_text("input", encoding="utf-8")
@@ -264,16 +295,23 @@ class TaskLoadingTests(unittest.TestCase):
                             "prompt": "read",
                             "files": {
                                 "inputs": [
-                                    {"source": "input.txt", "target": "renamed.txt"}
-                                ]
+                                    {"source": "input.txt", "target": "renamed.txt"},
+                                    {"path": "inline/config.yaml", "content": "ok: true\n"},
+                                ],
+                                "input_mode": "copy",
                             },
                         }
                     ]
                 ),
                 encoding="utf-8",
             )
-            with self.assertRaisesRegex(TaskFormatError, "target.*no longer supported"):
-                load_tasks(task_file)
+            task = load_tasks(task_file)[0]
+            self.assertEqual(task.input_mode, "copy")
+            self.assertEqual(task.inputs[0].source, root / "input.txt")
+            self.assertEqual(task.inputs[0].path, "renamed.txt")
+            self.assertIsNone(task.inputs[1].source)
+            self.assertEqual(task.inputs[1].path, "inline/config.yaml")
+            self.assertEqual(task.inputs[1].content, "ok: true\n")
 
             task_file.write_text(
                 json.dumps(
@@ -289,6 +327,64 @@ class TaskLoadingTests(unittest.TestCase):
             )
             with self.assertRaisesRegex(TaskFormatError, "files.outputs.*no longer supported"):
                 load_tasks(task_file)
+
+    def test_rejects_invalid_input_mode_and_target(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "input.txt").write_text("input", encoding="utf-8")
+            task_file = root / "tasks.json"
+            task_file.write_text(
+                json.dumps(
+                    [{
+                        "id": "bad-mode",
+                        "prompt": "read",
+                        "files": {"inputs": ["input.txt"], "input_mode": "move"},
+                    }]
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(TaskFormatError, "input_mode"):
+                load_tasks(task_file)
+
+            task_file.write_text(
+                json.dumps(
+                    [{
+                        "id": "bad-target",
+                        "prompt": "read",
+                        "files": {
+                            "inputs": [
+                                {"source": "input.txt", "target": "../outside.txt"}
+                            ]
+                        },
+                    }]
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(TaskFormatError, "parent traversal"):
+                load_tasks(task_file)
+
+    def test_loads_fresh_session_boundaries(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            task_file = Path(temporary) / "tasks.json"
+            task_file.write_text(
+                json.dumps(
+                    [{
+                        "id": "sessions",
+                        "messages": [
+                            {"role": "user", "content": "first"},
+                            {
+                                "role": "user",
+                                "content": "second",
+                                "new_session": True,
+                            },
+                        ],
+                    }]
+                ),
+                encoding="utf-8",
+            )
+            task = load_tasks(task_file)[0]
+            self.assertEqual(task.prompts, ("first", "second"))
+            self.assertEqual(task.new_session, (False, True))
 
     def test_rejects_input_outside_file_root_and_output_overlap(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

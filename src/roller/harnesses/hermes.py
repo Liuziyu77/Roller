@@ -17,7 +17,7 @@ import uuid
 
 from roller.artifacts import collect_output_directory
 from roller.harnesses.base import InteractiveHarness, InteractiveSession, TurnResult
-from roller.harnesses.docker import DockerRuntime
+from roller.harnesses.docker import DockerRuntime, remove_container
 from roller.hermes_actf import convert_hermes_trace, extract_hermes_usage
 from roller.models import HarnessResult, RunRequest
 from roller.storage import atomic_write_json
@@ -188,7 +188,7 @@ class HermesSession(InteractiveSession):
             args += ["-e", f"{name}={value}"]
         if bundle:
             args += ["-v", f"{bundle.inputs_root}:/roller/task/inputs:ro", "-v", f"{bundle.context_root}:/roller/task/context:ro"]
-            if not bundle.legacy_workspace:
+            if not bundle.legacy_workspace and task.input_mode == "mount":
                 for spec in task.inputs:
                     source = bundle.inputs_root / spec.path
                     if source.exists():
@@ -204,7 +204,7 @@ class HermesSession(InteractiveSession):
         workspace = shlex.quote(config.workspace_container_path)
         output = shlex.quote(f"{config.workspace_container_path}/{task.output_dir}")
         script = f"mkdir -p {workspace} {STATE} /roller/hermes-home /roller/task"
-        if bundle and bundle.legacy_workspace:
+        if bundle and (bundle.legacy_workspace or task.input_mode == "copy"):
             script += f" && cp -a /roller/task/inputs/. {workspace}/ && chmod -R u+w {workspace}"
         elif task.workspace and not bundle:
             script += f" && cp -a /roller-input/. {workspace}/ && chmod -R u+w {workspace}"
@@ -323,7 +323,7 @@ class HermesSession(InteractiveSession):
             retained = self.container_started and config.keep_container_on_error and status != "ok"
             if self.container_started and not retained:
                 try:
-                    removed = runtime.run(["rm", "-f", self.container], timeout=30)
+                    removed = remove_container(runtime, self.container)
                     if removed.returncode:
                         logger.warning("Hermes container removal failed: %s", self.container)
                 except Exception:

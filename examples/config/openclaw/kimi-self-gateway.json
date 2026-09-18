@@ -1,0 +1,21 @@
+{
+  "mode": "merge",
+  "providers": {
+    "kimi": {
+      "baseUrl": "http://180.184.148.170:20165/v1",
+      "apiKey": "${VLLM_API_KEY}",
+      "api": "openai-completions",
+      "timeoutSeconds": 600,
+      "models": [
+        {
+          "id": "Kimi-K3-for-GameDev",
+          "name": "Kimi-K3"
+        },
+        {
+          "id": "Kimi-K3",
+          "name": "Kimi-K3 compatibility alias"
+        }
+      ]
+    }
+  }
+}

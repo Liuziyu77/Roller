@@ -1,0 +1,17 @@
+{
+  "mode": "merge",
+  "providers": {
+    "kimi": {
+      "baseUrl": "https://joyrouter.jd.com/v1",
+      "apiKey": "${HE_JUDGE_KEY}",
+      "api": "openai-completions",
+      "timeoutSeconds": 600,
+      "models": [
+        {
+          "id": "Qwen3-32B-for-Game-Judge",
+          "name": "Kimi-K3"
+        }
+      ]
+    }
+  }
+}

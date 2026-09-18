@@ -13,25 +13,23 @@ leak prevention, aggregation) are in
 ## 1. Shortest path
 
 ```bash
-# 1) 上游 checkout（Roller 不提供 setup 脚本，bench export 就是那层翻译）
+# 1) Check out upstream
 git clone https://github.com/InternLM/WildClawBench ~/WildClawBench
 
 # 2) 上游的环境变量照常 source —— Roller 复用同一批变量名，见 §3
 set -a; . ~/WildClawBench/.env; set +a
 
-# 3) 翻译成 task 行（不执行、不联网、不起容器）
-roller bench export wildclawbench ~/WildClawBench -o /tmp/wcb.jsonl
-
-# 4) 采集 + 判分（--task-timeouts 必须开：每个任务自带超时，见 §4）
-roller collect --tasks /tmp/wcb.jsonl --model <provider>/<model> \
+# 3) Translate + collect + grade + report in one command
+roller collect --bench wildclawbench --bench-root ~/WildClawBench \
+  --model <provider>/<model> \
   --harness openclaw --openclaw-image wildclawbench-ubuntu:v1.3 \
-  --model-config my_api.json --task-timeouts --parallel 4 \
+  --model-config my_api.json --parallel 4 \
   --output /tmp/wcb --run-name run1 \
   --pass-env NODE_EXTRA_CA_CERTS
-
-# 5) 汇总
-roller bench report /tmp/wcb/run1
 ```
+
+The task snapshot and report are saved as `run1/tasks.jsonl` and
+`run1/bench-report.json`.
 
 ## 2. Upstream knobs → Roller equivalents
 
@@ -39,7 +37,7 @@ CLI flags of `eval/run_batch.py`:
 
 | Upstream | Roller | Notes |
 | --- | --- | --- |
-| `--task` / `--category` | `bench export --task-id` / `--category` | Roller can pass several; a wrong id errors instead of silently running empty |
+| `--task` / `--category` | `collect --bench-task-id` / `--bench-category` | Roller can pass several; a wrong id errors instead of silently running empty |
 | `--model` | `collect --model` | Repeatable; multi-model Cartesian expansion |
 | `--parallel` | `collect --parallel` | |
 | `--agent-backend` | `collect --harness` | The adapter writes `openclaw`; `codex`/`claude-code`/`hermes` can override with `--harness`; use `--harness hermes` for Hermes tasks |

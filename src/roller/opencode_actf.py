@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime, timezone
+import hashlib
 import json
 from pathlib import Path
 from typing import Any, Iterable
@@ -13,7 +14,10 @@ from roller.usage import ZERO_USAGE
 
 
 def read_opencode_events(path: Path) -> list[dict[str, Any]]:
-    events = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    # JSON Lines records are delimited by LF, not every character recognized by
+    # str.splitlines().  In particular, U+2028/U+2029 are legal inside a JSON
+    # string and must remain part of the record.
+    events = [json.loads(line) for line in path.read_text(encoding="utf-8").split("\n") if line.strip()]
     if not all(isinstance(e, dict) for e in events):
         raise ValueError("OpenCode journal must contain JSON object events")
     return events
@@ -46,6 +50,44 @@ def _timestamp(milliseconds):
     if isinstance(milliseconds, (int, float)):
         return datetime.fromtimestamp(milliseconds / 1000, timezone.utc).isoformat()
     return None
+
+
+def _attachment_metadata(value: Any) -> Any:
+    """Keep attachment provenance without copying large inline payloads to ACTF.
+
+    OpenCode's ``read`` tool returns images as data URLs in ``attachments``.
+    The native JSONL remains the lossless source, while ACTF/SFT gets a bounded,
+    auditable description instead of duplicating multi-megabyte base64 strings.
+    """
+
+    if isinstance(value, dict):
+        return {str(key): _attachment_metadata(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_attachment_metadata(item) for item in value]
+    if isinstance(value, str) and len(value) > 4096:
+        summary: dict[str, Any] = {
+            "omitted": True,
+            "characters": len(value),
+            "sha256": hashlib.sha256(value.encode("utf-8")).hexdigest(),
+        }
+        if value.startswith("data:"):
+            header, separator, payload = value.partition(",")
+            summary.update(
+                {
+                    "scheme": "data",
+                    "header": header,
+                    "payload_characters": len(payload) if separator else 0,
+                }
+            )
+        return summary
+    return deepcopy(value)
+
+
+def _attachment_placeholder(attachments: list[Any]) -> str:
+    metadata = _attachment_metadata(attachments)
+    return "[OpenCode attachments omitted from text-only export: " + json.dumps(
+        metadata, ensure_ascii=False, separators=(",", ":")
+    ) + "]"
 
 
 def opencode_events_to_actf(events: Iterable[dict[str, Any]], *, keep_thinking: bool = True) -> dict[str, Any]:
@@ -92,8 +134,6 @@ def opencode_events_to_actf(events: Iterable[dict[str, Any]], *, keep_thinking: 
                 state = part["state"]
                 if state["status"] not in {"completed", "error"}:
                     raise ValueError("OpenCode tool did not complete")
-                if state.get("attachments"):
-                    raise ValueError("OpenCode tool attachments cannot be exported as text-only SFT")
                 call_id, name, arguments = part["callID"], part["tool"], state["input"]
                 if not isinstance(arguments, dict):
                     raise ValueError("OpenCode tool arguments must be a JSON object")
@@ -106,11 +146,53 @@ def opencode_events_to_actf(events: Iterable[dict[str, Any]], *, keep_thinking: 
                 result = state.get("error") if state["status"] == "error" else state.get("output")
                 if not isinstance(result, str):
                     raise ValueError("OpenCode tool result must be text")
-                results.append({"type": "message", "timestamp": _timestamp(state.get("time", {}).get("end")), "message": {"role": "toolResult", "toolCallId": call_id, "toolName": name, "content": result, "isError": state["status"] == "error"}})
+                attachments = state.get("attachments")
+                message: dict[str, Any] = {"role": "toolResult", "toolCallId": call_id, "toolName": name, "content": result, "isError": state["status"] == "error"}
+                if attachments:
+                    if not isinstance(attachments, list):
+                        raise ValueError("OpenCode tool attachments must be a list")
+                    metadata = _attachment_metadata(attachments)
+                    message["content"] = [
+                        {"type": "text", "text": result},
+                        {"type": "text", "text": _attachment_placeholder(attachments)},
+                    ]
+                    message["details"] = {"attachments": metadata}
+                results.append({"type": "message", "timestamp": _timestamp(state.get("time", {}).get("end")), "message": message})
             elif kind in {"step-start", "step-finish", "snapshot", "patch", "retry"}:
                 continue  # Execution metadata remains in the native journal.
             else:
                 raise ValueError(f"OpenCode part would lose data in text-only SFT: {kind}")
+        visible_content = any(
+            part.get("type") == "toolCall"
+            or (part.get("type") == "text" and bool(part.get("text")))
+            or (
+                keep_thinking
+                and part.get("type") == "thinking"
+                and bool(part.get("thinking"))
+            )
+            for part in content
+        )
+        if role == "assistant" and not visible_content and not results:
+            # Some providers emit a completed reasoning-only turn before the
+            # next assistant message. Once private reasoning is stripped that
+            # turn cannot be represented as valid SFT. Keep it in the native
+            # journal, but omit it from ACTF so a successful rollout does not
+            # become an invalid empty assistant message.
+            continue
+        if (
+            role == "assistant"
+            and not content
+            and not results
+            and not info.get("finish")
+            and not info.get("time", {}).get("completed")
+        ):
+            # OpenCode creates the next assistant record before sending the
+            # provider request. If Roller reaches its wall-clock timeout while
+            # that request is still in flight, the native export can end with
+            # this completely empty, unfinished placeholder. Preserve it in
+            # the raw journal for diagnosis, but do not turn it into an invalid
+            # empty training message.
+            continue
         tokens = info.get("tokens") or {}
         cache = tokens.get("cache") or {}
         message = {"role": role, "content": content, "usage": {"input": (tokens.get("input") or 0) + (cache.get("read") or 0) + (cache.get("write") or 0), "output": tokens.get("output") or 0}, "stopReason": info.get("finish", "")}

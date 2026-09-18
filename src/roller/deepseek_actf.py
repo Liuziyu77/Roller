@@ -13,7 +13,9 @@ from roller.usage import ZERO_USAGE
 
 
 def read_deepseek_events(path: Path) -> list[dict[str, Any]]:
-    events = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    # JSONL uses LF as its record separator.  ``splitlines`` would also split
+    # legal U+2028/U+2029 characters embedded in JSON strings.
+    events = [json.loads(line) for line in path.read_text(encoding="utf-8").split("\n") if line.strip()]
     if not all(isinstance(event, dict) for event in events):
         raise ValueError("DeepSeek journal must contain JSON objects")
     return events

@@ -102,6 +102,19 @@ class HermesTraceTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 convert_hermes_trace(source, Path(tmp) / "actf.json")
 
+    def test_unicode_line_separator_inside_json_string_is_preserved(self):
+        events = sample_events()
+        events[-1]["message"]["content"] = "TOKEN\u2028next"
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "trace.jsonl"
+            source.write_text(
+                "".join(json.dumps(event, ensure_ascii=False) + "\n" for event in events),
+                encoding="utf-8",
+            )
+            destination = Path(tmp) / "actf.json"
+            actf = convert_hermes_trace(source, destination)
+            self.assertEqual(actf_to_sft(actf)["messages"][-1]["content"], "TOKEN\u2028next")
+
     def test_usage_counts_each_response_once_and_handles_null_details(self):
         with tempfile.TemporaryDirectory() as tmp:
             source = Path(tmp) / "trace.jsonl"
