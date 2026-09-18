@@ -1,5 +1,14 @@
 FROM node:22-bookworm-slim
 
+# Node slim has no system CA bundle. Seed it before contacting HTTPS apt mirrors;
+# apt installs Debian's ca-certificates below. Preserve custom base-image roots.
+RUN set -eu; \
+    if [ ! -s /etc/ssl/certs/ca-certificates.crt ]; then \
+        mkdir -p /etc/ssl/certs; \
+        node -p 'require("node:tls").rootCertificates.join("\n")' \
+            > /etc/ssl/certs/ca-certificates.crt; \
+    fi
+
 ARG CLAUDE_CODE_VERSION=2.1.222
 ARG NPM_REGISTRY
 ARG DEBIAN_MIRROR

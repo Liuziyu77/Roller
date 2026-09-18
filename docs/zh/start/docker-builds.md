@@ -27,6 +27,10 @@ docker build \
 
 自定义基础镜像中已经改成其他地址的仓库、Ubuntu 仓库和第三方仓库保持原样；这两个参数不会将它们转换成 Debian 仓库。没有对应源文件时会跳过替换。OpenCode、Pi、DeepSeek 原有的工具检查仍决定是否执行 apt；Hermes、Codex 和 Claude Code 仍执行 apt 安装。
 
+Pi、Codex、Claude Code 使用的 Node slim 基础镜像可能没有系统 CA 证书包。构建会在替换软件源和首次执行 apt 之前，检查 `/etc/ssl/certs/ca-certificates.crt`；仅在文件缺失或为空时，用 [Node 内置的 Mozilla 根证书](https://nodejs.org/docs/latest-v22.x/api/tls.html#tlsrootcertificates) 初始化它。这个步骤不需要网络，已有的非空证书文件不会被覆盖，后续 apt 安装步骤仍包含 Debian 的 `ca-certificates` 包。HTTPS 证书验证和 apt 仓库签名校验保持开启。
+
+内部 HTTPS 镜像如果使用私有 CA，需要预先将该 CA 安装到基础镜像的系统信任库中；Node 内置根证书不包含企业私有 CA。
+
 ## npm registry
 
 | Harness | 参数 | 默认行为 |
@@ -69,3 +73,22 @@ docker build \
 - 基础镜像的拉取由 Docker daemon 处理，需要在 daemon 侧配置相应网络。
 
 代理参数用法见 [Docker 构建变量](https://docs.docker.com/build/building/variables/#proxy-arguments)。
+
+## 构建配置回归测试
+
+在仓库根目录执行配置测试；CA 初始化测试需要 Node，npm 配置测试需要 npm：
+
+```bash
+python -m unittest discover -s tests -p test_docker_build_config.py -v
+```
+
+真实 HTTPS 测试默认跳过，需要 Docker 和可访问 `deb.debian.org` 的网络。它使用三个 Node Harness 的默认基础镜像，执行 Dockerfile 中的证书初始化与镜像替换步骤，通过 HTTPS 下载 apt 索引、实际安装 `ca-certificates`，再模拟安装各 Harness 所需的 apt 包，不安装 Harness 的 npm 依赖，也不调用模型 API：
+
+```bash
+docker pull node:22.22.0-bookworm-slim
+docker pull node:22-bookworm-slim
+ROLLER_DOCKER_BUILD_NETWORK_TEST=1 python -m unittest discover \
+  -s tests -p test_docker_build_https.py -v
+```
+
+测试会向容器传递 `http_proxy`、`https_proxy`、`no_proxy` 及其大写形式。Linux 上使用宿主机回环地址的代理时，可额外设置 `ROLLER_DOCKER_TEST_NETWORK=host`；这只影响测试容器的网络，不修改 Docker daemon 配置。

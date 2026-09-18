@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import shlex
 import shutil
+import ssl
 import subprocess
 import tempfile
 import unittest
@@ -13,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 HARNESSES = ("codex", "claude-code", "opencode", "pi", "deepseek", "hermes")
 MAIN = "http://deb.debian.org/debian"
 SECURITY = "http://deb.debian.org/debian-security"
+NODE_HARNESSES = ("codex", "claude-code", "pi")
 
 
 def instructions(harness: str) -> list[tuple[str, str]]:
@@ -29,6 +31,61 @@ def instructions(harness: str) -> list[tuple[str, str]]:
         result.append((kind, body))
         pending = ""
     return result
+
+
+@unittest.skipUnless(shutil.which("node"), "Node is needed to check CA bootstrapping")
+class NodeCertificateTests(unittest.TestCase):
+    def bootstrap(self, harness, certificate_directory, *, path=None):
+        commands = instructions(harness)
+        index, command = next(
+            (index, body) for index, (kind, body) in enumerate(commands)
+            if kind == "RUN" and "rootCertificates" in body
+        )
+        for later, (kind, body) in enumerate(commands):
+            if kind == "RUN" and ("DEBIAN_MIRROR" in body or "apt-get" in body):
+                self.assertLess(index, later, "CA bootstrap must precede mirror setup and apt")
+        return subprocess.run(
+            ["/bin/sh", "-c", command.replace("/etc/ssl/certs", str(certificate_directory))],
+            env={"PATH": path or os.environ["PATH"]},
+            capture_output=True, text=True, timeout=10,
+        )
+
+    def test_missing_or_empty_bundle_contains_usable_certificates(self):
+        for harness in NODE_HARNESSES:
+            for empty in (False, True):
+                with self.subTest(harness=harness, empty=empty), tempfile.TemporaryDirectory() as directory:
+                    certs = Path(directory) / "certs"
+                    bundle = certs / "ca-certificates.crt"
+                    if empty:
+                        certs.mkdir()
+                        bundle.touch()
+                    result = self.bootstrap(harness, certs)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+                    context.load_verify_locations(cafile=str(bundle))
+                    self.assertGreater(context.cert_store_stats()["x509_ca"], 0)
+
+    def test_custom_bundle_is_preserved_without_running_node(self):
+        for harness in NODE_HARNESSES:
+            with self.subTest(harness=harness), tempfile.TemporaryDirectory() as directory:
+                certs = Path(directory)
+                bundle = certs / "ca-certificates.crt"
+                original = b"existing custom trust bundle\n"
+                bundle.write_bytes(original)
+                # An existing bundle requires neither Node nor other programs.
+                result = self.bootstrap(harness, certs, path=str(certs / "no-programs"))
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(bundle.read_bytes(), original)
+
+    def test_node_failure_stops_bootstrap(self):
+        for harness in NODE_HARNESSES:
+            with self.subTest(harness=harness), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                binary = root / "node"
+                binary.write_text("#!/bin/sh\nexit 42\n")
+                binary.chmod(0o755)
+                result = self.bootstrap(harness, root / "certs", path=str(root) + os.pathsep + os.defpath)
+                self.assertEqual(result.returncode, 42, result.stderr)
 
 
 class DebianMirrorTests(unittest.TestCase):
