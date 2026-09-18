@@ -16,7 +16,7 @@ from roller.external_thinking import external_thinking_mode_from_metadata
 from roller.harnesses.base import Harness
 from roller.integrity import validate_resumable_sample
 from roller.models import HarnessResult, RunRequest
-from roller.sft import write_sft
+from roller.sft import validate_sft_record, write_sft
 from roller.storage import atomic_write_json, safe_component, write_jsonl
 
 logger = logging.getLogger(__name__)
@@ -413,8 +413,14 @@ class Collector:
                     raise RuntimeError(
                         f"cannot aggregate SFT sample {path}: {exc}"
                     ) from exc
-                if not isinstance(row, dict) or set(row) != {"messages", "tools"}:
+                if not isinstance(row, dict):
                     raise RuntimeError(f"invalid SFT sample shape: {path}")
+                try:
+                    validate_sft_record(row)
+                except ValueError as exc:
+                    raise RuntimeError(
+                        f"invalid SFT sample shape ({exc}): {path}"
+                    ) from exc
                 yield row
 
         write_jsonl(self.run_dir / "sft.jsonl", rows())

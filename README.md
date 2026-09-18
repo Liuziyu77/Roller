@@ -29,7 +29,7 @@ Docker 中的 Agent Harness
 
 - 批量采集单轮、多轮或工具型 Agent 轨迹；
 - 同一批 task 对比多个模型或 Harness；
-- 生成顶层严格为 `messages` 和 `tools` 的 SFT JSONL；
+- 生成顶层为 `messages` 和 `tools`（含图片时追加 `images`）的 SFT JSONL；
 - 保存 reasoning、工具调用、工具结果与任务文件产物；
 - 用 run lock、重试和 Resume 构建可恢复的数据生产流程；
 - 在内置 Viewer 中逐步检查每个 task 的思考与行动轨迹。
@@ -160,7 +160,7 @@ Task 清单支持 `.jsonl`、JSON 数组或 `{"tasks": [...]}`。一条 task 可
 | --- | --- |
 | `trace.jsonl` | 保留 Harness-native session，便于追溯与重新转换 |
 | `trace_ACTF.json` | 使用 `ACTF_v1.0` 统一 reasoning、工具调用和工具结果 |
-| `trace_SFT.json` | 单条最小训练样本，顶层只有 `messages` 与 `tools` |
+| `trace_SFT.json` | 单条最小训练样本，顶层为 `messages` 与 `tools`，含图片时追加 `images` |
 | `info.json` | 状态、耗时、usage、版本和输入来源 |
 | `results/` | task `output_dir` 中生成了文件时存在 |
 

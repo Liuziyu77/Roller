@@ -11,7 +11,7 @@ from roller.claude_code_actf import (
     convert_claude_code_trace,
     extract_anthropic_wire_context,
 )
-from roller.sft import SFTConversionError, actf_to_sft
+from roller.sft import actf_to_sft
 from roller.usage import extract_claude_code_usage
 
 
@@ -206,7 +206,7 @@ class ClaudeCodeActfTests(unittest.TestCase):
             stripped["steps"][0]["assistant_content"]["reasoning_content"], ""
         )
 
-    def test_preserves_non_text_tool_result_and_refuses_lossy_sft(self) -> None:
+    def test_preserves_image_tool_result_and_exports_multimodal_sft(self) -> None:
         events = _events()
         events[2]["message"]["content"][0]["content"] = [
             {
@@ -225,8 +225,13 @@ class ClaudeCodeActfTests(unittest.TestCase):
             trajectory["steps"][0]["observation"][0]["content"][0]["type"],
             "image",
         )
-        with self.assertRaises(SFTConversionError):
-            actf_to_sft(trajectory)
+        record = actf_to_sft(trajectory)
+        self.assertEqual(set(record), {"messages", "tools", "images"})
+        tool_message = record["messages"][3]
+        self.assertEqual(tool_message["role"], "tool")
+        self.assertEqual(tool_message["tool_call_id"], "toolu-1")
+        self.assertEqual(tool_message["content"], "<image>")
+        self.assertEqual(record["images"], ["data:image/png;base64,AA=="])
 
     def test_file_conversion_and_usage_deduplicate_streamed_message_ids(self) -> None:
         events = _events()

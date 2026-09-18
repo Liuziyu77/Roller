@@ -179,7 +179,7 @@ Resume 审计调用 Collector 的样本复用判定，不启动容器、不改�
 - Hermes 首版固定启用 `terminal`、`file`，不启用视觉工具；它的视觉组用于记录当前能力边界，不能作为要求全部通过的验收组。构建与限制见 [Hermes 指南](../../docs/zh/harnesses/hermes-configuration.md)。
 - DeepSeek 使用官方 `sdk-minimal`，提供持久化 Bash，视觉验收不在首版范围；见 [DeepSeek 指南](../../docs/zh/harnesses/deepseek-configuration.md)。
 - OpenCode 首版支持文本与文件工具，视觉组记录暂不支持的验收范围；见 [OpenCode 指南](../../docs/zh/harnesses/opencode-configuration.md)。
-- 视觉工具可能产生当前 SFT 导出尚不支持的非文本内容，需结合 raw、ACTF 和错误信息定位。文本模型的视觉失败不能直接作为文件传输失败的证据。
+- 携带 base64 字节的 image 工具结果会导出为 `<image>` 占位符加顶层 `images`（见 [SFT 数据格式](../../docs/zh/traces/sft-format.md)）；OpenCode 等在 ACTF 层就拒绝附件的 harness 仍会失败，需结合 raw、ACTF 和错误信息定位。文本模型的视觉失败不能直接作为文件传输失败的证据。
 - Context/skill 任务显式要求读取注入文件，测试可访问性和 capture 策略。`context/none` 不可 Resume 是预期行为。
 - `bench/file_grader` 使用内嵌 Python 标准库评分，不依赖外部 benchmark；当前没有和 Simulator 组合。输入场景与全部 Simulator 配对未做完整笛卡尔积。
 

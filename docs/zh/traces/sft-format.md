@@ -8,7 +8,7 @@ Roller 在保留 raw trace 和 ACTF 的同时，为每条成功轨迹生成一�
 
 ## 1. 顶层结构
 
-SFT record 顶层严格只有 `messages` 和 `tools`：
+纯文本 SFT record 顶层严格只有 `messages` 和 `tools`：
 
 ```json
 {
@@ -58,6 +58,50 @@ SFT record 顶层严格只有 `messages` 和 `tools`：
 SFT record 不包含 schema version、task/model、usage、时间戳、step ID、stop reason、
 运行路径或其他 metadata。这些信息仍保留在相邻的 `info.json` 和 `trace_ACTF.json`。
 
+### 多模态 record
+
+当工具结果携带图片、且 ACTF 层已无损捕获为 base64 字节时，record 会额外增加顶层
+`images` 列表。图片不再内联保留：它在消息文本中的位置变成保留占位符 `<image>`，
+归一化后的 data URI 追加进 `images`：
+
+```json
+{
+  "messages": [
+    {"role": "system", "content": "You are a helpful assistant."},
+    {"role": "user", "content": "描述 chart.png"},
+    {
+      "role": "assistant",
+      "reasoning_content": "",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call-1",
+          "type": "function",
+          "function": {
+            "name": "read",
+            "arguments": "{\"path\":\"chart.png\"}"
+          }
+        }
+      ]
+    },
+    {"role": "tool", "tool_call_id": "call-1", "content": "Image size: 2x1\n<image>"},
+    {"role": "assistant", "reasoning_content": "", "content": "图表内容是……", "tool_calls": []}
+  ],
+  "tools": [],
+  "images": ["data:image/png;base64,iVBORw0KGgo…"]
+}
+```
+
+约定如下：
+
+- 从前到后扫描 `messages`，第 N 个 `<image>` 占位符对应 `images[N-1]`，因此占位符
+  数量恒等于 `len(images)`。
+- `images` 元素是完整的 `data:image/png|jpeg|webp|gif;base64,…` URI，不保存裸
+  base64。相同图片不去重：列表编码的是出现顺序，不是 blob 存储。
+- 纯文本 record 永远不会出现 `images` 键，现有纯文本数据和消费方完全向后兼容。
+- `<image>` 是保留占位符；含图片的 record 若源文本中已出现无法与占位符区分的字面
+  `<image>`，转换直接失败。
+
 ## 2. Message 规则
 
 - 第一条固定为 `system`；没有捕获到 system prompt 时 `content` 为 `""`。
@@ -77,6 +121,7 @@ SFT record 不包含 schema version、task/model、usage、时间戳、step ID�
 | `steps[*].user_content` | user message（非空时） |
 | `steps[*].assistant_content` | assistant message |
 | `steps[*].observation` | tool message |
+| `steps[*].observation[*].content[*]` 的 image block | tool message 中的 `<image>` 占位符，外加一条顶层 `images` 记录 |
 | 顶层 `tools` | 顶层 `tools` |
 
 `metric`、`started_at`、`finished_at`、observation 的 `toolName`、`isError` 和
@@ -126,10 +171,16 @@ canonical `deep_think`，之后与 OpenClaw 共用同一套 SFT 折叠逻辑。�
 - 每个 call 在同一 step 内恰好有一个匹配的 tool result；
 - call 的工具名存在于顶层 tools schema；
 - arguments 可以编码为 JSON object；
-- 工具结果只包含字符串或 text blocks。
+- 工具结果只包含字符串、text blocks 或内嵌 base64 字节的 image blocks。
 
-遇到 image 等非文本工具结果时，Roller 不会静默删除内容，而是将该 sample 标记为
-trajectory conversion error。多模态 SFT 需要单独定义 content-block schema。
+image block 接受三种形态：base64 `source` 结构（Claude Code）、扁平 `data` +
+`mimeType` 结构（OpenClaw/Pi 原生）和内联 data URI。media type 必须是
+`image/png`、`image/jpeg`、`image/webp` 或 `image/gif`，payload 必须能通过严格
+base64 解码。其余情况——audio 等未知 block 类型、不支持的 media type、损坏的
+base64、只引用文件路径而没有字节的 image block——仍然令转换失败并把 sample 标记为
+trajectory conversion error；Roller 不会静默删除内容。转换器本身不读文件也不访问
+网络：若某 harness 的读图工具只留下路径，必须在文件仍可访问时由对应 ACTF 层把
+字节物化成 image block。
 
 ## 5. 文件位置
 

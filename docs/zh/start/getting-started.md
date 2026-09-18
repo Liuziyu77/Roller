@@ -248,7 +248,8 @@ info.json
 1. run `info.json.status` 是否为 `completed`，成功/失败数量是否符合预期；
 2. sample `info.json.status` 是否为 `ok`，`usage` 和版本字段是否存在；
 3. `trace_ACTF.json` 中 reasoning、工具调用与结果是否正确配对；
-4. `trace_SFT.json` 顶层是否只有 `messages` 和 `tools`；
+4. `trace_SFT.json` 顶层是否只有 `messages` 和 `tools`（含图片的样本会额外带
+   `images`，且 `<image>` 占位符数量与之一致）；
 5. 需要文件交付的 task，其 sample `results/` 是否包含预期文件；
 6. run `sft.jsonl` 行数是否等于可纳入训练的成功 sample 数。
 
