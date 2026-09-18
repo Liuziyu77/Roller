@@ -188,6 +188,27 @@ class TaskBundleStore:
             temporary.unlink(missing_ok=True)
         return destination
 
+    def _store_inline_blob(self, content: str, digest: str) -> Path:
+        destination = self.blobs_root / digest
+        if destination.is_file():
+            return destination
+        encoded = content.encode("utf-8")
+        fd, temporary_name = tempfile.mkstemp(
+            prefix=f".{digest}.", dir=self.blobs_root
+        )
+        try:
+            with os.fdopen(fd, "wb") as stream:
+                stream.write(encoded)
+            temporary = Path(temporary_name)
+            temporary.chmod(0o444)
+            try:
+                temporary.replace(destination)
+            except FileExistsError:
+                temporary.unlink(missing_ok=True)
+        finally:
+            Path(temporary_name).unlink(missing_ok=True)
+        return destination
+
     @staticmethod
     def _add_directory(
         target: str, files: set[str], directories: set[str], label: str
@@ -219,6 +240,53 @@ class TaskBundleStore:
         total_bytes = 0
 
         for index, spec in enumerate(task.inputs):
+            if spec.content is not None:
+                encoded = spec.content.encode("utf-8")
+                size = len(encoded)
+                if size > self.policy.max_file_bytes:
+                    raise BundleError(
+                        f"task {task.id} input {index} exceeds max_file_bytes "
+                        f"({size} > {self.policy.max_file_bytes})"
+                    )
+                total_bytes += size
+                if total_bytes > self.policy.max_task_input_bytes:
+                    raise BundleError(
+                        f"task {task.id} inputs exceed max_task_input_bytes "
+                        f"({total_bytes} > {self.policy.max_task_input_bytes})"
+                    )
+                digest = hashlib.sha256(encoded).hexdigest()
+                if spec.expected_sha256 and digest != spec.expected_sha256:
+                    raise BundleError(
+                        f"task {task.id} input {index} sha256 mismatch: "
+                        f"expected {spec.expected_sha256}, got {digest}"
+                    )
+                self._ensure_available(
+                    spec.path,
+                    occupied_files,
+                    directories,
+                    f"task {task.id} input",
+                )
+                blob = self._store_inline_blob(spec.content, digest)
+                declarations.append(
+                    {
+                        "path": spec.path,
+                        "required": True,
+                        "present": True,
+                        "source_digest": digest,
+                        "inline": True,
+                    }
+                )
+                file_records.append(
+                    {
+                        "logical_path": spec.path,
+                        "sha256": digest,
+                        "size": size,
+                        "mode": 0o644,
+                        "blob": blob.relative_to(self.run_dir).as_posix(),
+                    }
+                )
+                continue
+            assert spec.source is not None
             scanned = self._scan_source(spec.source, spec.required, f"task {task.id} input {index}")
             if scanned is None:
                 declarations.append(
@@ -457,12 +525,16 @@ class TaskBundleStore:
                 "context_manifest_digest": context_manifest_digest,
                 "output_dir": task.output_dir,
                 "output_collection": "all",
+                "input_mode": task.input_mode,
             },
             "runtime": {
                 "env": list(task.env_names),
                 "setup": list(task.setup_commands),
                 "thinking": task.thinking,
+                "image": task.docker_image,
+                "workspace_path": task.workspace_container_path,
             },
+            "new_session": list(task.new_session),
             "user_simulator": (
                 {
                     "instruction": task.user_simulator.instruction,

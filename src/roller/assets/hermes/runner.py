@@ -27,7 +27,11 @@ class Journal:
         self.lock = threading.RLock()
         self.tools_seen = set()
         if self.path.exists():
-            for line in self.path.read_text().splitlines():
+            # JSONL is LF-delimited; preserve Unicode line separators inside
+            # JSON string values.
+            for line in self.path.read_text().split("\n"):
+                if not line.strip():
+                    continue
                 event = json.loads(line)
                 message = event.get("message", {})
                 if message.get("role") == "tool":

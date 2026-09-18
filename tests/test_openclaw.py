@@ -439,6 +439,7 @@ class OpenClawHelpersTests(unittest.TestCase):
             id="task",
             prompts=("Use $HOME and 'quotes' literally", "Finish"),
             source_index=0,
+            setup_commands=("true",),
         )
         request = RunRequest(
             index=0,
@@ -482,6 +483,9 @@ class OpenClawHelpersTests(unittest.TestCase):
         self.assertTrue(
             any("openclaw config set gateway.bind loopback" in command for command in flattened_commands)
         )
+        self.assertTrue(
+            any("ROLLER_GATEWAY_PORT=18789" in command for command in flattened_commands)
+        )
 
     def test_harness_counts_single_request_when_transcript_has_cli_delivery_copy(self) -> None:
         task = Task(id="task", prompts=("Summarize inputs",), source_index=0)
@@ -517,6 +521,35 @@ class OpenClawHelpersTests(unittest.TestCase):
         self.assertEqual(result.usage["request_count"], 1)
         self.assertEqual(result.usage["total_tokens"], 5)
         self.assertEqual(len(trajectory["steps"]), 1)
+
+    def test_trace_conversion_failure_does_not_invalidate_evaluation(self) -> None:
+        task = Task(id="task", prompts=("Summarize inputs",), source_index=0)
+        request = RunRequest(0, task, "provider/model", 30)
+        harness = OpenClawHarness(
+            OpenClawConfig(docker_image="test-image", set_image_model=False),
+            worker_slot=0,
+            runtime=FakeDockerRuntime(),
+        )
+
+        with (
+            tempfile.TemporaryDirectory() as temporary,
+            mock.patch(
+                "roller.harnesses.openclaw.convert_openclaw_trace",
+                side_effect=ValueError("invalid trace"),
+            ),
+        ):
+            result = harness.run(request, Path(temporary), attempt=1)
+
+        self.assertEqual(result.status, "ok", result.error)
+        self.assertIsNone(result.trajectory_path)
+        self.assertEqual(
+            result.metadata["trajectory_conversion"],
+            {
+                "status": "unavailable",
+                "target": "actf",
+                "error": "invalid trace",
+            },
+        )
 
     def test_cli_only_reply_finalizes_as_successful_sft_sample(self) -> None:
         from roller.collector import CollectionConfig, Collector
@@ -575,8 +608,12 @@ class OpenClawHelpersTests(unittest.TestCase):
         agent_commands = [command for command in runtime.commands if "agent" in command]
         self.assertEqual(len(agent_commands), 2)
         gateway_command = next(
-            command for command in runtime.commands if "gateway" in command
+            command
+            for command in runtime.commands
+            if any("openclaw gateway" in argument for argument in command)
         )
+        self.assertIn("/roller/task/environment", gateway_command[-1])
+        self.assertIn("exec openclaw gateway", gateway_command[-1])
         gateway_token = next(
             value for value in gateway_command if value.startswith("OPENCLAW_GATEWAY_TOKEN=")
         )
@@ -630,6 +667,57 @@ class OpenClawHelpersTests(unittest.TestCase):
         )
 
         self.assertEqual(harness._prompts(request), (prompt,))
+
+    def test_new_session_boundary_uses_fresh_id_and_keeps_one_container(self) -> None:
+        runtime = FakeDockerRuntime()
+        task = Task(
+            id="task",
+            prompts=("first", "second"),
+            source_index=0,
+            new_session=(False, True),
+        )
+        request = RunRequest(0, task, "provider/model", 30)
+        harness = OpenClawHarness(
+            OpenClawConfig(docker_image="test-image", set_image_model=False),
+            worker_slot=0,
+            runtime=runtime,
+        )
+
+        with tempfile.TemporaryDirectory() as temporary:
+            result = harness.run(request, Path(temporary), attempt=1)
+
+        self.assertEqual(result.status, "ok", result.error)
+        agent_commands = [command for command in runtime.commands if "agent" in command]
+        self.assertEqual(len(agent_commands), 2)
+        self.assertEqual(
+            [command[command.index("--session-id") + 1] for command in agent_commands],
+            ["roller", "roller-2"],
+        )
+        starts = [command for command in runtime.commands if command[:2] == ["run", "-d"]]
+        self.assertEqual(len(starts), 1)
+
+    def test_retained_error_container_is_stopped_to_release_gateway_port(self) -> None:
+        runtime = FakeDockerRuntime()
+        request = RunRequest(0, Task("task", ("first",), 0), "provider/model", 30)
+        harness = OpenClawHarness(
+            OpenClawConfig(
+                docker_image="test-image",
+                set_image_model=False,
+                keep_container_on_error=True,
+            ),
+            worker_slot=0,
+            runtime=runtime,
+        )
+
+        with tempfile.TemporaryDirectory() as temporary:
+            session = harness.create_session(request, Path(temporary), attempt=1)
+            session.start()
+            result = session.finish("error", "test failure")
+
+        self.assertEqual(result.status, "error")
+        self.assertEqual(result.metadata["container"], session.container)
+        self.assertIn(["stop", "--time", "1", session.container], runtime.commands)
+        self.assertNotIn(["rm", "-f", session.container], runtime.commands)
 
     def test_harness_mounts_bundle_injects_context_and_collects_all_outputs(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -699,6 +787,49 @@ class OpenClawHelpersTests(unittest.TestCase):
                 any(
                     "openclaw config set agents.defaults.workspace /tmp_workspace" in command
                     for command in flattened_commands
+                )
+            )
+
+    def test_copy_input_mode_uses_a_writable_workspace_copy(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "seed.txt").write_text("before", encoding="utf-8")
+            tasks_path = root / "tasks.json"
+            tasks_path.write_text(
+                json.dumps(
+                    [{
+                        "id": "editable",
+                        "prompt": "edit seed.txt",
+                        "files": {
+                            "inputs": ["seed.txt"],
+                            "input_mode": "copy",
+                        },
+                    }]
+                ),
+                encoding="utf-8",
+            )
+            task = load_tasks(tasks_path)[0]
+            bundle = TaskBundleStore(root / "run").prepare(task)
+            request = RunRequest(0, task, "provider/model", 30, bundle=bundle)
+            runtime = FakeDockerRuntime()
+            harness = OpenClawHarness(
+                OpenClawConfig(docker_image="test-image", set_image_model=False),
+                worker_slot=0,
+                runtime=runtime,
+            )
+
+            result = harness.run(request, root / "sample", attempt=1)
+            commands = [" ".join(command) for command in runtime.commands]
+
+            self.assertEqual(result.status, "ok", result.error)
+            self.assertFalse(
+                any("/tmp_workspace/seed.txt:ro" in command for command in commands)
+            )
+            self.assertTrue(
+                any(
+                    "cp -a /roller/task/inputs/. /tmp_workspace/" in command
+                    and "chmod -R u+w /tmp_workspace" in command
+                    for command in commands
                 )
             )
 

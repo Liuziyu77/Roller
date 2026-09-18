@@ -12,6 +12,10 @@ class SFTConversionError(ValueError):
     """Raised when an ACTF trajectory cannot form a valid SFT conversation."""
 
 
+class SFTUnsupportedContentError(SFTConversionError):
+    """Raised when valid ACTF content cannot be represented without data loss."""
+
+
 def _string(value: Any, field: str) -> str:
     if not isinstance(value, str):
         raise SFTConversionError(f"{field} must be a string")
@@ -104,7 +108,7 @@ def _tool_result_content(value: Any, field: str) -> str:
             parts.append(block)
             continue
         if not isinstance(block, dict) or block.get("type") != "text":
-            raise SFTConversionError(
+            raise SFTUnsupportedContentError(
                 f"{field}[{index}] is non-text; text-only SFT export would lose data"
             )
         text = block.get("text")

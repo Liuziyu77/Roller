@@ -407,4 +407,4 @@ Adjust `--gateway-port` and reserve enough ports for `parallel × number of part
 
 ### The task replied successfully but the sample failed
 
-Roller requires a successful sample to have an OpenClaw raw trace, a convertible ACTF, and a standardized SFT. Also check the output directory for rejected symlinks or special files. For output conditions see [Trajectory output file guide](../traces/trajectory-outputs.md). For result safety rules see [Result storage](../tasks/task-bundle-and-storage.md#5-output-collection).
+Roller requires a successful sample to have an OpenClaw raw trace. ACTF/SFT are normally required too; a structured `runtime.trajectory_conversion` warning records the rare case where native attachment or multimodal content cannot be projected losslessly without invalidating the benchmark score. Also check the output directory for rejected symlinks or special files. For output conditions see [Trajectory output file guide](../traces/trajectory-outputs.md). For result safety rules see [Result storage](../tasks/task-bundle-and-storage.md#5-output-collection).
