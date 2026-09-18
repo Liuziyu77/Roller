@@ -26,6 +26,10 @@ roller bench export qwenclawbench /NAS/zqy/QwenClawBench \
 `workspace_files.source/content -> dest` 规则物化到
 `QWENCLAW_CACHE_DIR`；默认缓存目录是
 `~/.cache/roller/benches/qwenclawbench`。
+部分上游任务在 prompt 和资产目标中使用 `workspace/...`，但 grader 又把已配置的
+workspace 本身视为此前缀。Agent 启动前，Roller 会把初始 `workspace/` 子树合并到
+workspace 根，并创建 `workspace -> .` 兼容别名；因此模型和 grader 使用两种写法时
+看到的是同一文件。最终输出快照不会包含该别名。
 
 重复运行的 id 为 `<task_id>__run_01`、`__run_02`、`__run_03`。
 原始 id、当前序号和总运行数分别保存在
@@ -52,8 +56,13 @@ MODEL_CONFIG=examples/config/openclaw/models-local-vllm.json \
 脚本默认使用 OpenClaw、每题运行 3 次。`TASK_IDS` 和 `CATEGORIES` 接受逗号分隔
 列表；`PARALLEL`、`RETRIES`、`RUNS_PER_TASK`、`OUTPUT_ROOT` 和 `RUN_NAME`
 可覆盖默认值。仅运行纯 automated task 时，可设置
-`QWENCLAW_REQUIRE_JUDGE=0`。使用其他 Harness 时设置 `HARNESS`、`API_BASE` 和
-`API_KEY_ENV`，其中 `API_KEY_ENV` 是保存模型 API Key 的变量名：
+`QWENCLAW_REQUIRE_JUDGE=0`。OpenClaw 的
+`OPENCLAW_MODEL_REQUEST_TIMEOUT_SECONDS` 默认为 `300`，用于避免慢速或缓冲式
+provider 触发运行时默认的 120 秒流式空闲上限。当 `MODEL` 包含 `glm` 时，runner
+还会将 `RETRIES` 默认为 `1`、将 `OPENCLAW_MAX_TOKENS` 默认为 `32768`；其他模型
+默认不重试，并保留模型配置中的 `maxTokens`。显式设置的 `RETRIES` 与
+`OPENCLAW_MAX_TOKENS` 始终优先。使用其他 Harness 时设置 `HARNESS`、`API_BASE`
+和 `API_KEY_ENV`，其中 `API_KEY_ENV` 是保存模型 API Key 的变量名：
 
 ```bash
 export ROLLER_MODEL_API_KEY=replace-me
@@ -176,4 +185,4 @@ roller bench report /tmp/qcb-runs/local-qwen --output /tmp/qcb-report.json
 
 ## 7. 评测报告
 
-- [DeepSeek V4 Flash 与 GLM-5.2 全量评测（2026-09-17，英文）](../../en/benches/qwenclawbench-evaluation-2026-09-17.md)
+- [DeepSeek V4 Flash 与 GLM-5.2 审计评测（2026-09-17 至 2026-09-18，英文）](../../en/benches/qwenclawbench-evaluation-2026-09-17.md)

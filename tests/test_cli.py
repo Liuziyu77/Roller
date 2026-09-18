@@ -24,6 +24,8 @@ class CliTests(unittest.TestCase):
         self.assertIn("thinking", groups["Harness runtime and trajectory"])
         self.assertIn("wire_trace", groups["Harness runtime and trajectory"])
         self.assertIn("model_config", groups["OpenClaw"])
+        self.assertIn("openclaw_model_request_timeout", groups["OpenClaw"])
+        self.assertIn("openclaw_max_tokens", groups["OpenClaw"])
         self.assertNotIn("thinking", groups["OpenClaw"])
         self.assertIn("api_base", groups["Harness API"])
         self.assertIn("api_key_env", groups["Harness API"])
@@ -56,6 +58,26 @@ class CliTests(unittest.TestCase):
         self.assertEqual(args.reasoning_summary, "detailed")
         self.assertEqual(args.external_thinking, "external_always")
         self.assertTrue(args.codex_websockets)
+
+    def test_parser_accepts_openclaw_model_request_timeout(self) -> None:
+        args = _build_parser().parse_args(
+            [
+                "collect",
+                "--tasks",
+                "tasks.jsonl",
+                "--harness",
+                "openclaw",
+                "--model-config",
+                "models.json",
+                "--openclaw-model-request-timeout",
+                "300",
+                "--openclaw-max-tokens",
+                "32768",
+            ]
+        )
+
+        self.assertEqual(args.openclaw_model_request_timeout, 300)
+        self.assertEqual(args.openclaw_max_tokens, 32768)
 
     def test_parser_accepts_claude_code_harness_options(self) -> None:
         args = _build_parser().parse_args(

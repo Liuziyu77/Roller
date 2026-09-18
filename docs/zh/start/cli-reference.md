@@ -118,6 +118,8 @@ off | minimal | low | medium | high | xhigh | adaptive | max | ultra
 | 参数 | 默认值 | 说明 |
 | --- | --- | --- |
 | `--model-config PATH` | 无 | OpenClaw providers/models JSON，支持 `${ENV_NAME}` |
+| `--openclaw-model-request-timeout SEC` | 无 | 覆盖所选 provider 的 HTTP 与流式空闲超时；要求同时设置 `--model-config` |
+| `--openclaw-max-tokens TOKENS` | 无 | 覆盖所选模型的 `maxTokens`；要求同时设置 `--model-config` |
 | `--gateway-port N` | `18789` | worker 0 的 gateway 起始端口 |
 | `--gateway-port-step N` | `10` | worker slot 之间的端口间隔 |
 | `--gateway-startup-timeout SEC` | `30` | 等待 gateway 就绪的时间 |

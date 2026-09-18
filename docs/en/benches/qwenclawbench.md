@@ -29,6 +29,12 @@ At export time, Roller materializes the upstream
 `workspace_files.source/content -> dest` mapping under
 `QWENCLAW_CACHE_DIR`, which defaults to
 `~/.cache/roller/benches/qwenclawbench`.
+Some upstream tasks use `workspace/...` in prompts and asset destinations while
+their graders treat the configured workspace itself as that prefix. Before the
+agent starts, Roller merges any initial `workspace/` subtree into the workspace
+root and installs `workspace -> .` as a compatibility alias. The model and
+grader therefore see the same file through either spelling. The alias is not
+included in the final output snapshot.
 
 Repeated row ids end in `__run_01`, `__run_02`, and `__run_03`. The original
 id, run index, and total run count remain in
@@ -56,8 +62,14 @@ The script defaults to OpenClaw and three runs per task. `TASK_IDS` and
 `CATEGORIES` accept comma-separated lists. `PARALLEL`, `RETRIES`,
 `RUNS_PER_TASK`, `OUTPUT_ROOT`, and `RUN_NAME` override their defaults. Set
 `QWENCLAW_REQUIRE_JUDGE=0` only when selecting automated-only tasks. For
-another Harness, set `HARNESS`, `API_BASE`, and `API_KEY_ENV`; `API_KEY_ENV`
-is the name of the variable holding the model API key:
+OpenClaw, `OPENCLAW_MODEL_REQUEST_TIMEOUT_SECONDS` defaults to `300`, avoiding
+the runtime's implicit 120-second stream-idle ceiling for slow or buffered
+providers. When `MODEL` contains `glm`, the runner also defaults `RETRIES` to
+`1` and `OPENCLAW_MAX_TOKENS` to `32768`; other models default to zero retries
+and preserve the model config's `maxTokens`. Explicit `RETRIES` and
+`OPENCLAW_MAX_TOKENS` values always win. For another Harness, set `HARNESS`,
+`API_BASE`, and `API_KEY_ENV`;
+`API_KEY_ENV` is the name of the variable holding the model API key:
 
 ```bash
 export ROLLER_MODEL_API_KEY=replace-me
@@ -191,4 +203,4 @@ completed `runs_per_task` for every upstream task.
 
 ## 7. Evaluation reports
 
-- [Full evaluation of DeepSeek V4 Flash and GLM-5.2 (2026-09-17)](qwenclawbench-evaluation-2026-09-17.md)
+- [Audited evaluation of DeepSeek V4 Flash and GLM-5.2 (2026-09-17 to 2026-09-18)](qwenclawbench-evaluation-2026-09-17.md)

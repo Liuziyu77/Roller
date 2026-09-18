@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import re
+import shlex
 import shutil
 import stat
 import tempfile
@@ -19,7 +20,11 @@ from typing import Any
 import yaml
 
 from roller.benches.base import BenchAdapter, BenchBinding, BenchFormatError, GradeSpec
-from roller.benches.grading import GradedHarness, GradeOutcome
+from roller.benches.grading import (
+    GradedHarness,
+    GradeOutcome,
+    workspace_container_path,
+)
 from roller.benches.report import mean_aggregate, sample_score
 from roller.benches.transcripts import grader_messages, session_trajectory
 
@@ -671,8 +676,49 @@ def build_grader_source(task: QwenClawTask) -> str:
     return (automated + "\n\n" if automated else "") + runtime.strip() + "\n"
 
 
+def workspace_compatibility_script(workspace: str) -> str:
+    """Make ``workspace/...`` and workspace-relative paths refer to one tree."""
+
+    root = workspace.rstrip("/")
+    alias = f"{root}/workspace"
+    quoted_root = shlex.quote(root)
+    quoted_alias = shlex.quote(alias)
+    return (
+        "set -eu; "
+        f"if [ -L {quoted_alias} ]; then "
+        f'test "$(readlink -f {quoted_alias})" = "$(readlink -f {quoted_root})"; '
+        f"elif [ -d {quoted_alias} ]; then "
+        f"cp -a {quoted_alias}/. {quoted_root}/; "
+        f"rm -rf {quoted_alias}; "
+        f"ln -s . {quoted_alias}; "
+        f"elif [ -e {quoted_alias} ]; then "
+        "echo 'workspace compatibility path is not a directory' >&2; exit 1; "
+        f"else ln -s . {quoted_alias}; fi"
+    )
+
+
 class QwenClawGradedHarness(GradedHarness):
     """Normalize each native journal before the upstream grader sees it."""
+
+    def _prepare_session(self, session) -> None:
+        super()._prepare_session(session)
+        workspace = workspace_container_path(session)
+        result = self.inner.runtime.run(
+            [
+                "exec",
+                session.container,
+                "/bin/sh",
+                "-c",
+                workspace_compatibility_script(workspace),
+            ],
+            timeout=30,
+        )
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout or "").strip()[-500:]
+            raise RuntimeError(
+                "QwenClawBench workspace compatibility setup failed"
+                + (f": {detail}" if detail else "")
+            )
 
     def _grade(self, session, request, status):
         if not getattr(session, "container_started", False):

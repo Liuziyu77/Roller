@@ -63,11 +63,26 @@ case "$harness" in
 esac
 
 parallel="${PARALLEL:-1}"
-retries="${RETRIES:-0}"
+model_lower="${MODEL,,}"
+if [[ -n "${RETRIES+x}" ]]; then
+  retries="$RETRIES"
+elif [[ "$model_lower" == *glm* ]]; then
+  retries=1
+else
+  retries=0
+fi
 runs_per_task="${RUNS_PER_TASK:-3}"
 output_root="${OUTPUT_ROOT:-/tmp/qwenclawbench-runs}"
 run_name="${RUN_NAME:-qwenclawbench-${harness}-$(date -u +%Y%m%d_%H%M%S)}"
 model_config="${MODEL_CONFIG:-$repo_root/examples/config/openclaw/models.json}"
+model_request_timeout_seconds="${OPENCLAW_MODEL_REQUEST_TIMEOUT_SECONDS:-300}"
+if [[ -n "${OPENCLAW_MAX_TOKENS+x}" ]]; then
+  openclaw_max_tokens="$OPENCLAW_MAX_TOKENS"
+elif [[ "$model_lower" == *glm* ]]; then
+  openclaw_max_tokens=32768
+else
+  openclaw_max_tokens=""
+fi
 max_steps="${MAX_STEPS:-}"
 require_judge="${QWENCLAW_REQUIRE_JUDGE:-1}"
 
@@ -102,7 +117,13 @@ collect_args=(
 
 if [[ "$harness" == "openclaw" ]]; then
   [[ -f "$model_config" ]] || fail "MODEL_CONFIG is not a file: $model_config"
-  collect_args+=(--model-config "$model_config")
+  collect_args+=(
+    --model-config "$model_config"
+    --openclaw-model-request-timeout "$model_request_timeout_seconds"
+  )
+  if [[ -n "$openclaw_max_tokens" ]]; then
+    collect_args+=(--openclaw-max-tokens "$openclaw_max_tokens")
+  fi
 else
   api_base="${API_BASE:-}"
   if [[ -z "${API_KEY_ENV:-}" ]]; then

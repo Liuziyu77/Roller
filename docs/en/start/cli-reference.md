@@ -118,6 +118,8 @@ Authoritative mappings are in the reasoning sections of each Harness guide.
 | Flag | Default | Description |
 | --- | --- | --- |
 | `--model-config PATH` | None | OpenClaw providers/models JSON; supports `${ENV_NAME}` |
+| `--openclaw-model-request-timeout SEC` | None | Override the selected provider's HTTP and stream-idle timeout; requires `--model-config` |
+| `--openclaw-max-tokens TOKENS` | None | Override `maxTokens` for the selected model; requires `--model-config` |
 | `--gateway-port N` | `18789` | Starting gateway port for worker 0 |
 | `--gateway-port-step N` | `10` | Port stride between worker slots |
 | `--gateway-startup-timeout SEC` | `30` | How long to wait for the gateway to become ready |

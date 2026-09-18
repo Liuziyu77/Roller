@@ -246,7 +246,8 @@ system/tools 在调用间的变化；需要检查这些变化时使用 full wire
 还可结合 full cache trace。
 
 只要 raw 存在，Roller 就会尝试转换，包括 Harness 已经失败或超时的 sample。因此错误
-sample 可能仍有 ACTF。转换失败会把 sample 状态设为 `error`。
+sample 可能仍有 ACTF。OpenClaw 中 stop reason 为 `aborted`、`error` 或 `length`
+的空尝试保留在 raw 中，但不会进入 ACTF；其他转换失败会把 sample 状态设为 `error`。
 
 ### 4.3 `trace_SFT.json`：单条最小训练样本
 
@@ -258,8 +259,8 @@ SFT 从 ACTF 生成，顶层严格只有：
 
 它删除 schema version、task/model、usage、metric、step ID、stop reason、时间戳、运行
 路径以及 observation metadata。Assistant 固定保存 `role`、`reasoning_content`、
-`content` 和 `tool_calls`；tool message 只保存 `role`、`tool_call_id` 和字符串
-`content`。
+`content` 和 `tool_calls`；tool message 只保存 `role`、`tool_call_id` 和 `content`：
+纯文本使用字符串，包含内嵌图片时使用有序的 `text` / `image_url` blocks。
 
 SFT 表达的是从 session 事件重建的逻辑对话，不是每次 provider 请求的快照。它适合
 训练，但不能用于逐请求重放或证明某个较早 tool result 在后续模型调用中仍然可见。
@@ -277,11 +278,11 @@ external thinking 还有一层训练专用投影：`deep_think` call、固定 pl
 - 每个 tool call 在同一 step 恰好对应一个 tool result；
 - 被调用工具存在于顶层 tools schema；
 - arguments 可编码为 JSON object；
-- tool result 是字符串或纯 text blocks。
+- tool result 包含文本或有效的内嵌图片。
 
 GPT Responses 的扁平 tools 与 Chat Completions 的嵌套 tools 都会统一为嵌套 function
-schema。遇到 image 等非文本工具结果时，Roller 不会静默丢失内容，而会让 SFT 转换
-失败并把 sample 标记为 `error`。多模态 SFT 需要另行定义 content-block schema。
+schema。内嵌图片转换为 `image_url` data URL，保留图像字节和 block 顺序。
+尚不支持的非文本块及无效图片仍会让 SFT 转换失败，并把 sample 标记为 `error`。
 
 完整字段定义见 [SFT 数据格式](sft-format.md)。
 

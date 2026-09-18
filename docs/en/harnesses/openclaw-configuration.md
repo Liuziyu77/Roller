@@ -345,11 +345,15 @@ system/runtime injection, compaction, tool-result pruning, context-engine/hook p
 adaptation may still happen before a model call. So a message present in `trace.jsonl` is not guaranteed to enter each
 request verbatim. ACTF/SFT are projected from that session file and also cannot prove which full history the model saw at the time.
 
-If an interrupted upstream request leaves only a trailing empty assistant
-placeholder with an `aborted` or `error` stop reason, ACTF omits that
-non-semantic terminal step so the preceding complete steps can still produce
-SFT. The raw event remains in `trace.jsonl`, the sample retains the original
-Agent error, and nonterminal empty messages are never silently discarded.
+If an upstream request leaves an empty assistant attempt with an `aborted`,
+`error`, or `length` stop reason, ACTF omits that non-semantic attempt while
+retaining its original event and usage in `trace.jsonl`. If OpenClaw later
+recovers, the pending user message remains attached to the next real assistant
+action. A terminal empty attempt still causes the Harness to retain the
+original Agent error because no visible reply was delivered.
+Reply extraction reads the last assistant event, including empty failures;
+it never substitutes an earlier visible message. Terminal `aborted/error`
+events remain errors even if they contain partial text.
 
 Use `full` when you need to audit the real request context. The proxy sits between the OpenClaw provider adapter and the
 real model API. For valid JSON, it records and forwards the same request body after optional historical-thinking
