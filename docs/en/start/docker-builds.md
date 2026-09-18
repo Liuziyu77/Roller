@@ -27,6 +27,10 @@ The build checks `/etc/apt/sources.list` and `.list`/`.sources` files under `/et
 
 Repositories already configured with other URLs in a custom base image, Ubuntu repositories, and third-party repositories remain unchanged. Missing source files are skipped. OpenCode, Pi, and DeepSeek still run apt only when their tool checks require it; Hermes, Codex, and Claude Code still run apt installation.
 
+The Node slim bases used by Pi, Codex, and Claude Code may lack a system CA bundle. Before rewriting repositories or running apt, the build checks `/etc/ssl/certs/ca-certificates.crt`. If it is missing or empty, the build initializes it from [Node's bundled Mozilla root certificates](https://nodejs.org/docs/latest-v22.x/api/tls.html#tlsrootcertificates). This step needs no network and preserves an existing non-empty bundle. The later apt installation still includes Debian's `ca-certificates` package. HTTPS certificate verification and apt repository signature checks remain enabled.
+
+For an internal HTTPS mirror using a private CA, install that CA into the base image's system trust store first. Node's bundled roots do not include private enterprise CAs.
+
 ## npm registry
 
 | Harness | Argument | Default behavior |
@@ -69,3 +73,22 @@ These settings control apt, npm, or specific Python installation steps. They do 
 - The Docker daemon pulls base images and needs its own network configuration.
 
 See [Docker build variables](https://docs.docker.com/build/building/variables/#proxy-arguments) for proxy settings.
+
+## Build configuration regression tests
+
+Run the configuration tests from the repository root. CA bootstrap tests require Node, and npm configuration tests require npm:
+
+```bash
+python -m unittest discover -s tests -p test_docker_build_config.py -v
+```
+
+The real HTTPS test is skipped by default and requires Docker and network access to `deb.debian.org`. It uses the three Node Harnesses' default base images, executes the Dockerfile CA bootstrap and mirror configuration steps, downloads apt indexes over HTTPS, installs `ca-certificates`, and simulates installation of each Harness's apt packages. It does not install Harness npm dependencies or call a model API:
+
+```bash
+docker pull node:22.22.0-bookworm-slim
+docker pull node:22-bookworm-slim
+ROLLER_DOCKER_BUILD_NETWORK_TEST=1 python -m unittest discover \
+  -s tests -p test_docker_build_https.py -v
+```
+
+The test forwards `http_proxy`, `https_proxy`, `no_proxy`, and their uppercase equivalents to the container. For a proxy on the host's loopback address on Linux, also set `ROLLER_DOCKER_TEST_NETWORK=host`. This selects the test container's network without changing Docker daemon configuration.
