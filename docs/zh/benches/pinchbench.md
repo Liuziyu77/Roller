@@ -2,10 +2,10 @@
 
 [文档中心](../index.md) · [Bench 接入与评分](bench-format.md) · [OpenClaw 配置](../harnesses/openclaw-configuration.md)
 
-Roller 从 PinchBench 的 canonical `tasks/manifest.yaml` 导出任务，支持 automated、LLM judge、
-hybrid grader 和真正的多 session 任务。上游：<https://github.com/pinchbench/skill>。
+Roller 从 PinchBench 的 `tasks/manifest.yaml` 读取任务。目前支持 automated、LLM judge、
+hybrid grader 和多 session。上游仓库是 <https://github.com/pinchbench/skill>。
 
-## 最短路径
+## 准备环境
 
 ```bash
 scripts/prepare-pinchbench.sh "$PWD/.benchmarks/pinchbench"
@@ -18,13 +18,13 @@ export ROLLER_RUN_ROOT=$PWD/runs/pinchbench
 mkdir -p "$ROLLER_RUN_ROOT"
 ```
 
-准备脚本会 clone 上游数据并拉取固定的 `linux/amd64` OpenClaw 镜像。脚本可重复执行，
-已有 checkout 时不会自动 pull 或改写它，且不读取或写入任何 key。脚本最后会打印
-实际 commit，正式对比时应记录该 revision。若手工准备，等价步骤是 clone
-<https://github.com/pinchbench/skill> 并拉取 `ghcr.io/openclaw/openclaw:2026.7.1-2`。
+`prepare-pinchbench.sh` 会在目录不存在时 clone 上游数据，并拉取固定的
+`linux/amd64` OpenClaw 镜像。已有 checkout 不会被自动更新。脚本会打印实际 commit，方便把
+数据版本记进实验记录。它不读取或写入 key。手工准备时，clone
+<https://github.com/pinchbench/skill>，再拉取
+`ghcr.io/openclaw/openclaw:2026.7.1-2`。
 
-准备一个不含真实 key 的 OpenClaw 模型配置，例如 `example.models.json`。这里的 model ID
-虽然是兼容名称，实际后端是 Example model：
+OpenClaw 还需要一份不含明文 key 的模型配置。下面的兼容 model ID 实际使用 Example model：
 
 ```json
 {
@@ -41,7 +41,7 @@ mkdir -p "$ROLLER_RUN_ROOT"
 }
 ```
 
-先跑无需 judge 的自动评分 smoke test：
+先跑两道自动评分题。这一步不需要 judge：
 
 ```bash
 roller collect --bench pinchbench --bench-root "$PINCHBENCH_ROOT" \
@@ -52,12 +52,12 @@ roller collect --bench pinchbench --bench-root "$PINCHBENCH_ROOT" \
   --output "$ROLLER_RUN_ROOT" --run-name smoke
 ```
 
-这条命令会自动导出任务、按逐题 timeout 执行并评分，最后写出
-`smoke/tasks.jsonl` 与 `smoke/bench-report.json`。
+命令完成后，结果在 `smoke/tasks.jsonl` 和
+`smoke/bench-report.json`。
 
-运行 `all` 或 `core` 中的 LLM/hybrid 任务时，正式可比口径使用 PinchBench 当前的
-默认 judge `anthropic/claude-haiku-4.5`。只需提供 OpenRouter key；Roller 默认使用
-`https://openrouter.ai/api/v1`：
+`all` 和 `core` 中有 LLM/hybrid 任务。需要和 PinchBench 官方设置比较时，使用默认 judge
+`anthropic/claude-haiku-4.5`。Roller 默认请求
+`https://openrouter.ai/api/v1`，因此只需设置 OpenRouter key：
 
 ```bash
 export OPENROUTER_API_KEY=...
@@ -69,44 +69,53 @@ roller collect --bench pinchbench --bench-root "$PINCHBENCH_ROOT" \
   --output "$ROLLER_RUN_ROOT" --run-name core
 ```
 
-## Variant 与执行语义
+## Variant
 
 | Variant | 内容 |
 | --- | --- |
-| `all` | manifest 中的全部任务；默认值 |
-| `automated-only` | 只含纯自动 grader 的任务，适合便宜的 smoke test |
-| `core` | manifest 的代表性 core 子集 |
+| `all` | manifest 中的全部任务，也是默认值 |
+| `automated-only` | 只跑自动 grader，适合先检查环境 |
+| `core` | manifest 声明的 core 子集 |
 
-- `workspace_files` 会先做内容寻址快照，再复制为每个 sample 的可写工作区；源 checkout 不会被修改。
-- `sessions[].new_session: true` 会创建新的 OpenClaw session，但保留同一容器与文件系统；评分时合并所有 session transcript。
-- 私有图片答案只在 Agent 完成后进入容器，避免答案泄漏。
-- judge 默认模型、prompt、system message 和直连请求参数均与当前上游一致：
-  `anthropic/claude-haiku-4.5`、`temperature=0`、`max_completion_tokens=2048`、非流式、
-  300 秒超时和单次请求。grader 总墙钟上限为 3600 秒；它只防止外围 grader 进程挂死，
-  不改变 judge 请求参数。
-- 自定义 OpenAI-compatible 网关可通过 `PINCHBENCH_JUDGE_BASE_URL`、
-  `PINCHBENCH_JUDGE_API_KEY`、`PINCHBENCH_JUDGE_MODEL` 覆盖。若兼容服务只接受
-  `max_tokens`，显式设置 `PINCHBENCH_JUDGE_MAX_TOKENS_FIELD=max_tokens`；若必须流式，
-  显式设置 `PINCHBENCH_JUDGE_STREAM=true`。这些运行属于兼容性验证，judge 模型不同则
-  分数不能宣称与官方口径可比。
-- 思考型兼容 judge 可能在输出 JSON 前耗尽官方默认的 2048 token；这类模型可将
-  `PINCHBENCH_JUDGE_MAX_TOKENS` 调大（例如 `8192`）。设置非零
-  `PINCHBENCH_JUDGE_RETRIES` 后，Roller 不仅重试传输错误，也会重试 HTTP 成功但没有可解析
-  分数的响应；流式响应正文为空时，还会回退解析 `reasoning_content`。
-- frontmatter 的 `prerequisites` 会保留在 bench metadata。对于 4 个 FWS/GWS/GitHub integration 任务，Roller 会在一次性任务容器内自动安装固定兼容版本的 `fws`、`gws` 和 `gh`，启动上游 FWS mock service，并把 CLI 暴露给 OpenClaw；下载会遵循当前 shell 的标准 HTTP(S) 代理环境变量。
+## 执行和评分
 
-## 上游参数映射
+`workspace_files` 会先做内容寻址快照，再复制到每个 sample 的可写工作区。Roller 不会修改
+上游 checkout。`sessions[].new_session: true` 会在同一个容器里新建 OpenClaw session，
+文件系统保持不变；评分时会合并这些 session 的 transcript。图片分类题的私有答案在 Agent
+结束后才放入容器。
+
+默认 judge 请求与当前上游 PinchBench 一致：模型为
+`anthropic/claude-haiku-4.5`，`temperature=0`，
+`max_completion_tokens=2048`，非流式，超时 300 秒，只请求一次。grader 外层还有
+3600 秒墙钟限制，用来结束挂住的 grader 进程，不会改变 judge 请求。
+
+自定义 OpenAI-compatible judge 时，设置 `PINCHBENCH_JUDGE_BASE_URL`、
+`PINCHBENCH_JUDGE_API_KEY` 和 `PINCHBENCH_JUDGE_MODEL`。只有在服务要求时才设置
+`PINCHBENCH_JUDGE_MAX_TOKENS_FIELD=max_tokens` 或
+`PINCHBENCH_JUDGE_STREAM=true`。judge 模型发生变化后，分数不能和官方结果直接比较。
+
+推理模型可能在输出 JSON 前耗完默认的 2048 tokens。可用
+`PINCHBENCH_JUDGE_MAX_TOKENS=8192` 提高上限。`PINCHBENCH_JUDGE_RETRIES` 大于 0
+时，Roller 会重试网络错误和没有可解析分数的成功响应。流式响应的 `content` 为空时，
+grader 也会尝试读取 `reasoning_content`。
+
+Roller 会保留 frontmatter 中的 `prerequisites`。四个 FWS/GWS/GitHub integration 任务会在
+临时任务容器中安装固定版本的 `fws`、`gws` 和 `gh`，然后启动上游 FWS mock service。
+这些下载使用 shell 中的 HTTP(S) 代理设置。
+
+## 上游参数对应
 
 | PinchBench | Roller |
 | --- | --- |
 | `--model`、`--base-url`、`--thinking` | `collect --model`、模型配置/`--api-base`、`--thinking` |
-| `--judge` | 默认与官方 judge 一致；也可用 `PINCHBENCH_JUDGE_MODEL` 与 judge base URL/key 环境变量覆盖 |
+| `--judge` | 默认使用官方 judge；也可通过 judge model、base URL 和 key 环境变量覆盖 |
 | `--suite all/automated-only`、task ID、core/category | `collect --bench-variant`、`--bench-task-id`、`--bench-category` |
 | `--runs N` | `collect --samples N` |
 | `--timeout-multiplier N` | `collect --bench-timeout-multiplier N` |
-| parallel judge 开关 | `collect --grader-parallel N`；设为 1 即串行判分 |
-| `--no-fail-fast` | Roller 默认跑完所有任务并逐条记录失败 |
-| upload/register/trend/judge-cache | 不属于 rollout 执行；Roller 报告只写本地，不自动上传 |
+| parallel judge 开关 | `collect --grader-parallel N`；设为 1 时串行评分 |
+| `--no-fail-fast` | Roller 默认记录失败并继续运行 |
+| upload/register/trend/judge cache | Roller 不处理这些 leaderboard 和后处理功能 |
 
-Roller 本地报告不会自动上传 PinchBench leaderboard。其他依赖搜索、第三方 integration 或
-skill registry 的任务仍可能需要对应网络与凭据；上游 4 个 FWS mock 任务会由 Roller 自动准备。
+Roller 只把报告写到本地，不会上传 PinchBench leaderboard。依赖搜索、邮件、日历、第三方
+integration 或 skill registry 的任务仍需要相应的网络和凭据。四个上游 FWS mock 任务由
+Roller 自动准备。
