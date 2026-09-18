@@ -12,10 +12,9 @@ judging, hybrid grading, and multiple sessions. The upstream repository is
 scripts/prepare-pinchbench.sh "$PWD/.benchmarks/pinchbench"
 export PINCHBENCH_ROOT="$PWD/.benchmarks/pinchbench"
 
-set -a
-. /path/to/credentials.env
-set +a
-export ROLLER_RUN_ROOT=$PWD/runs/pinchbench
+export MODEL_API_BASE_URL=https://api.example.com/v1
+export MODEL_API_KEY=replace-with-your-api-key
+export ROLLER_RUN_ROOT="$PWD/runs/pinchbench"
 mkdir -p "$ROLLER_RUN_ROOT"
 ```
 
@@ -25,15 +24,15 @@ prints the commit for experiment records and does not read or write API keys. To
 environment by hand, clone <https://github.com/pinchbench/skill> and pull
 `ghcr.io/openclaw/openclaw:2026.7.1-2`.
 
-OpenClaw also needs a model configuration without a literal key. This example uses a compatibility
-model ID backed by Example model:
+OpenClaw also needs a model configuration. Save the following as `example.models.json`, then
+replace the API URL, key, and model ID with values from your model provider:
 
 ```json
 {
   "mode": "merge",
   "providers": {
     "example": {
-      "baseUrl": "https://api.example.com/v1",
+      "baseUrl": "${MODEL_API_BASE_URL}",
       "apiKey": "${MODEL_API_KEY}",
       "api": "openai-completions",
       "timeoutSeconds": 600,

@@ -231,7 +231,7 @@ class CollectorTests(unittest.TestCase):
             task=task,
             model="provider/external-served-id",
             timeout_seconds=30,
-            model_label="Example model",
+            model_label="display-model",
         )
         with tempfile.TemporaryDirectory() as temporary:
             run_dir = Path(temporary) / "run"
@@ -241,12 +241,15 @@ class CollectorTests(unittest.TestCase):
                 lambda slot: FakeHarness(state, slot),
             ).collect([request])[0]
 
-            sample = run_dir / "samples" / "Example model" / "00000000_alias"
+            sample = run_dir / "samples" / "display-model" / "00000000_alias"
             self.assertTrue((sample / "info.json").is_file())
             self.assertEqual(result["model"], "provider/external-served-id")
-            self.assertEqual(result["model_label"], "Example model")
+            self.assertEqual(result["model_label"], "display-model")
             info = json.loads((run_dir / "info.json").read_text())
-            self.assertEqual(info["samples"][0]["path"], "samples/Example model/00000000_alias")
+            self.assertEqual(
+                info["samples"][0]["path"],
+                "samples/display-model/00000000_alias",
+            )
 
     def test_retries_then_resumes_completed_samples(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

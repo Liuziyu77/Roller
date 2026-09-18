@@ -16,21 +16,20 @@ README 里的 GPT-5.5 指被测 Agent。只有把 `collect --model` 接到 GPT-5
 scripts/prepare-skillsbench.sh "$PWD/.benchmarks/skillsbench-v1.1"
 export SKILLSBENCH_ROOT="$PWD/.benchmarks/skillsbench-v1.1"
 
-set -a
-. /path/to/credentials.env
-set +a
-export ROLLER_RUN_ROOT=$PWD/runs/skillsbench
+export MODEL_API_BASE_URL=https://api.example.com/v1
+export MODEL_API_KEY=replace-with-your-api-key
+export ROLLER_RUN_ROOT="$PWD/runs/skillsbench"
 mkdir -p "$ROLLER_RUN_ROOT"
 
 roller collect --bench skillsbench --bench-root "$SKILLSBENCH_ROOT" \
   --bench-variant with-skill --model example-model \
-  --opencode-api-base https://api.example.com/v1 \
+  --opencode-api-base "$MODEL_API_BASE_URL" \
   --opencode-api-key-env MODEL_API_KEY --parallel 1 --grader-parallel 1 \
   --output "$ROLLER_RUN_ROOT" --run-name with-skill
 
 roller collect --bench skillsbench --bench-root "$SKILLSBENCH_ROOT" \
   --bench-variant no-skill --model example-model \
-  --opencode-api-base https://api.example.com/v1 \
+  --opencode-api-base "$MODEL_API_BASE_URL" \
   --opencode-api-key-env MODEL_API_KEY --parallel 1 --grader-parallel 1 \
   --output "$ROLLER_RUN_ROOT" --run-name no-skill
 ```
@@ -39,6 +38,8 @@ roller collect --bench skillsbench --bench-root "$SKILLSBENCH_ROOT" \
 它只检查 commit，不会改动数据。脚本还会构建 `roller-opencode:1.18.30`，但不会读取或写入
 API key。手工准备也可以：checkout SkillsBench 的 `v1.1` tag，再构建
 `docker/opencode`。
+
+运行前，请把示例 API 地址、key 和模型 ID 换成模型服务商提供的值。
 
 两条 `collect` 命令会在各自的 run 目录写入 `tasks.jsonl` 和 `bench-report.json`。
 SkillsBench 默认每题跑 3 次，每个 OpenCode turn 最多 100 步，单次模型响应最多
@@ -73,7 +74,7 @@ Agent error、verifier error 和基础设施错误都会写进报告，但不计
 
 第一次跑某题时，镜像可能需要下载不少依赖。Docker build、任务容器和 verifier 会继承当前
 shell 的 `HTTP_PROXY`、`HTTPS_PROXY` 和 `NO_PROXY`，这些值不会写进导出的 task
-JSONL。内网模型地址应放进 `NO_PROXY`。Verifier 会重试测试开始前出现的临时下载或 DNS
+JSONL。不经过代理的模型地址应放进 `NO_PROXY`。Verifier 会重试测试开始前出现的临时下载或 DNS
 错误；重试后仍失败的样本标为不可计分。正式输出应写到持久化共享盘。
 
 当前 adapter 只读取上游默认的 `tasks/`，不会自动加入 `tasks-extra/`。任务声明的

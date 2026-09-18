@@ -190,7 +190,7 @@ def grade(transcript, workspace_path):
                     "--model",
                     "provider/external-served-id",
                     "--model-label",
-                    "Example model",
+                    "display-model",
                     "--dry-run",
                 ]
             )
@@ -200,9 +200,9 @@ def grade(transcript, workspace_path):
 
         payload = json.loads(output.getvalue())
         self.assertEqual(payload["models"], ["provider/external-served-id"])
-        self.assertEqual(payload["model_labels"], ["Example model"])
+        self.assertEqual(payload["model_labels"], ["display-model"])
         self.assertEqual(payload["plan"][0]["model"], "provider/external-served-id")
-        self.assertEqual(payload["plan"][0]["model_label"], "Example model")
+        self.assertEqual(payload["plan"][0]["model_label"], "display-model")
 
     def test_collect_help_groups_shared_options_by_scope(self) -> None:
         parser = _build_parser()
