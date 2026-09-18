@@ -167,7 +167,9 @@ def redact_jsonl_file(path: Path) -> None:
 def extract_wire_tools(path: Path) -> list[Any] | None:
     """Return the tools schema recorded in a wire trace file, if any."""
     try:
-        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        # JSONL records are separated by LF.  Unicode line separators can
+        # legally occur inside string values and must not split a record.
+        lines = path.read_text(encoding="utf-8", errors="replace").split("\n")
     except OSError:
         return None
     for line in lines:

@@ -31,6 +31,7 @@ For `DEBIAN_MIRROR` and `DEBIAN_SECURITY_MIRROR`, see [Docker builds and package
 | `--opencode-max-steps` | 12 native model steps per user turn; also bounded by the rollout timeout |
 | `--opencode-context-length` | 134200 tokens by default, minimum 1024; match the actual model |
 | `--opencode-output-tokens` | 8192 by default, positive and smaller than the context window |
+| `--opencode-vision` / `--no-opencode-vision` | Declares image-input support to OpenCode; enabled by default and explicitly disableable for text-only models |
 | `--thinking` / `runtime.thinking` | `off/minimal/low/medium/high/xhigh`; `off` maps to `none`; provider support is required |
 | `--wire-trace` | Native requests and schemas are captured in every mode; `full` adds HTTP records and requires an explicit API base and host networking |
 | `--no-keep-thinking` | Removes reasoning from ACTF/SFT only; native logs and continuation history are retained |
@@ -43,7 +44,7 @@ Each participant gets an independent container and HOME/XDG directories. Inputs 
 
 The adapter permits bash, read, write, edit, apply_patch, glob, and grep; native model selection determines which tools are exposed. Each user turn resumes the same native session and workspace with a new CLI process. Background process handles do not survive. Auto-sharing, updates, model catalog refresh, LSP, formatters, compaction, pruning, and implicit project configuration are disabled. Context/skill coverage checks file accessibility; skill tools, MCP, subagents, and network tools are outside the initial scope.
 
-A local plugin records the serialized provider request without rewriting it. `trace.jsonl` contains requests, native message/part updates, and session exports. ACTF merges native IDs and captures actual tool schemas, visible reasoning, tool calls, and results. Incomplete or empty replies, API errors, truncated replies, invalid journals, changing/missing schemas, and nontext attachments fail explicitly. Timeout recovery preserves available artifacts and removes the container.
+A local plugin records the serialized provider request without rewriting it. `trace.jsonl` contains requests, native message/part updates, and session exports. ACTF merges native IDs and captures actual tool schemas, visible reasoning, tool calls, and results. Large inline attachment payloads remain losslessly available in the native trace; ACTF/SFT records bounded metadata and a content hash. Incomplete or empty replies, API errors, truncated replies, invalid journals, and changing/missing schemas fail explicitly. Timeout recovery preserves available artifacts and removes the container.
 
 OpenCode emits no OpenClaw cache trace. Resume validates each participant separately; full mode still requires HTTP traces, and `capture: none` remains non-reusable.
 
@@ -59,4 +60,4 @@ ROLLER_OPENCODE_DOCKER_TEST=1 PYTHONPATH=src \
 
 Docker tests use a deterministic local streaming API and a fake key while executing real OpenCode tools. No external model charges are incurred. The suite adds 204 input tasks and 36 simulator tasks, four per group. Select 200 nonvision inputs with `--case '*/opencode' --exclude-case 'vision/*'`. Select the nine relevant pairings with `--case 'simulators/pair/opencode--*' --case 'simulators/pair/*--opencode'`; overlaps are deduplicated. See the [coverage guide](../../../examples/coverage/README.en.md).
 
-Direct multimodal messages, visual acceptance, native account/OAuth login, custom provider SDKs, MCP, subagents, and persistent memory are not supported. Vision groups document unsupported visual inputs and are optional. Long tasks need enough configured context because automatic compaction is disabled.
+Image-capable models can receive image attachments produced by OpenCode's `read` tool. Direct multimodal task messages, native account/OAuth login, custom provider SDKs, MCP, subagents, and persistent memory are not supported. Long tasks need enough configured context because automatic compaction is disabled.

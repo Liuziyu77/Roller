@@ -6,7 +6,14 @@ import re
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterable
 
-from roller.models import ContextFile, InputFile, RunRequest, Task, UserSimulatorSpec
+from roller.models import (
+    ContainerImageBuild,
+    ContextFile,
+    InputFile,
+    RunRequest,
+    Task,
+    UserSimulatorSpec,
+)
 from roller.harness_registry import HARNESS_NAMES
 from roller.thinking import normalize_thinking
 
@@ -47,26 +54,38 @@ def _string_list(value: Any, field_name: str, index: int) -> tuple[str, ...]:
     raise TaskFormatError(f"task {index}: {field_name!r} must be a string or string list")
 
 
-def _parse_messages(value: Any, index: int) -> tuple[str, ...]:
+def _parse_messages(value: Any, index: int) -> tuple[tuple[str, ...], tuple[bool, ...]]:
     if not isinstance(value, list) or not value:
         raise TaskFormatError(f"task {index}: 'messages' must be a non-empty list")
     prompts: list[str] = []
+    new_session: list[bool] = []
     for message_index, item in enumerate(value):
         if isinstance(item, str):
             content = item
+            reset = False
         elif isinstance(item, dict):
             role = item.get("role", "user")
             content = item.get("content")
+            reset = item.get("new_session", False)
             if role != "user":
                 raise TaskFormatError(
                     f"task {index}, message {message_index}: only user messages are accepted"
                 )
         else:
             raise TaskFormatError(f"task {index}, message {message_index}: invalid message")
+        if not isinstance(reset, bool):
+            raise TaskFormatError(
+                f"task {index}, message {message_index}: new_session must be boolean"
+            )
+        if message_index == 0 and reset:
+            raise TaskFormatError(
+                f"task {index}, message {message_index}: the first message already starts a new session"
+            )
         if not isinstance(content, str) or not content.strip():
             raise TaskFormatError(f"task {index}, message {message_index}: empty content")
         prompts.append(content.strip())
-    return tuple(prompts)
+        new_session.append(reset)
+    return tuple(prompts), tuple(new_session)
 
 
 def _parse_user_simulator(value: Any, index: int) -> UserSimulatorSpec | None:
@@ -198,21 +217,31 @@ def _parse_inputs(value: Any, base_dir: Path, index: int) -> tuple[InputFile, ..
         label = f"task {index}, input {file_index}"
         if isinstance(item, str):
             source_value = item
+            target_value = item
+            content = None
             required = True
             expected_sha256 = None
         elif isinstance(item, dict):
-            if "target" in item:
-                raise TaskFormatError(
-                    f"{label}: 'target' is no longer supported; input paths are "
-                    "preserved relative to file_root"
-                )
             source_value = item.get("source")
+            content = item.get("content")
+            if source_value is not None and content is not None:
+                raise TaskFormatError(
+                    f"{label}: source and content are mutually exclusive"
+                )
+            if source_value is None and not isinstance(content, str):
+                raise TaskFormatError(
+                    f"{label}: requires either source or string content"
+                )
+            target_value = item.get("target", item.get("path", source_value))
             required = item.get("required", True)
             expected_sha256 = item.get("sha256")
         else:
             raise TaskFormatError(f"{label}: expected a source string or object")
-        logical_path = normalize_relative_path(source_value, f"{label}.source")
-        source = Path(os.path.abspath(base_dir / Path(logical_path)))
+        logical_path = normalize_relative_path(target_value, f"{label}.target")
+        source = None
+        if source_value is not None:
+            source_path = normalize_relative_path(source_value, f"{label}.source")
+            source = Path(os.path.abspath(base_dir / Path(source_path)))
         if not isinstance(required, bool):
             raise TaskFormatError(f"{label}: required must be boolean")
         if expected_sha256 is not None:
@@ -227,9 +256,60 @@ def _parse_inputs(value: Any, base_dir: Path, index: int) -> tuple[InputFile, ..
                 path=logical_path,
                 required=required,
                 expected_sha256=expected_sha256,
+                content=content,
             )
         )
     return tuple(inputs)
+
+
+def _parse_image_build(
+    value: Any, image: str | None, base_dir: Path, index: int
+) -> ContainerImageBuild | None:
+    if value is None:
+        return None
+    label = f"task {index}: runtime.image_build"
+    if not isinstance(value, dict):
+        raise TaskFormatError(f"{label} must be an object")
+    if not image:
+        raise TaskFormatError(f"{label} requires runtime.image")
+    base_image = value.get("base_image")
+    if not isinstance(base_image, str) or not base_image.strip():
+        raise TaskFormatError(f"{label}.base_image must be a non-empty string")
+    context_value = value.get("context")
+    if not isinstance(context_value, str) or not context_value.strip():
+        raise TaskFormatError(f"{label}.context must be a non-empty path")
+    context = Path(context_value).expanduser()
+    if not context.is_absolute():
+        context = base_dir / context
+    context = context.resolve()
+    if not context.is_dir():
+        raise TaskFormatError(f"{label}.context is not a directory: {context}")
+    dockerfile = value.get("dockerfile")
+    if not isinstance(dockerfile, str) or not dockerfile.strip():
+        raise TaskFormatError(f"{label}.dockerfile must be non-empty Dockerfile source")
+    harness = value.get("harness")
+    if not isinstance(harness, str) or harness not in HARNESS_NAMES:
+        raise TaskFormatError(
+            f"{label}.harness must be one of {', '.join(HARNESS_NAMES)}"
+        )
+    build_args = value.get("args", {})
+    if not isinstance(build_args, dict) or not all(
+        isinstance(key, str) and isinstance(item, (str, int, float, bool))
+        for key, item in build_args.items()
+    ):
+        raise TaskFormatError(f"{label}.args must be an object of scalar values")
+    timeout = value.get("timeout_seconds", 3600)
+    if isinstance(timeout, bool) or not isinstance(timeout, int) or timeout <= 0:
+        raise TaskFormatError(f"{label}.timeout_seconds must be a positive integer")
+    return ContainerImageBuild(
+        image=image,
+        base_image=base_image.strip(),
+        context=context,
+        dockerfile=dockerfile,
+        harness=harness,
+        build_args=tuple((key, str(item)) for key, item in sorted(build_args.items())),
+        timeout_seconds=timeout,
+    )
 
 
 def _default_context_target(role: str, source: Path) -> str:
@@ -417,8 +497,9 @@ def load_tasks(
                     f"{', '.join(conflicting)}"
                 )
             prompts = ()
+            new_session = ()
         elif "messages" in row:
-            prompts = _parse_messages(row["messages"], index)
+            prompts, new_session = _parse_messages(row["messages"], index)
         else:
             prompt = row.get(prompt_key)
             if prompt is None and prompt_key == "prompt":
@@ -428,6 +509,7 @@ def load_tasks(
                     f"task {index}: missing non-empty {prompt_key!r} (or compatibility key 'question')"
                 )
             prompts = (prompt.strip(),)
+            new_session = (False,)
 
         workspace = global_workspace
         row_workspace = row.get("workspace") or row.get("workspace_path")
@@ -452,6 +534,11 @@ def load_tasks(
             )
         output_dir = _parse_output_dir(files.get("output_dir"), index)
         inputs = _parse_inputs(files.get("inputs"), file_root, index)
+        input_mode = files.get("input_mode", "mount")
+        if input_mode not in {"mount", "copy"}:
+            raise TaskFormatError(
+                f"task {index}: files.input_mode must be 'mount' or 'copy'"
+            )
         _validate_output_input_paths(output_dir, inputs, index)
         legacy_workspace = workspace is not None and not inputs
         if legacy_workspace:
@@ -510,6 +597,23 @@ def load_tasks(
         runtime = row.get("runtime", {})
         if not isinstance(runtime, dict):
             raise TaskFormatError(f"task {index}: runtime must be an object")
+        image = runtime.get("image")
+        if image is not None and (
+            not isinstance(image, str) or not image.strip()
+        ):
+            raise TaskFormatError(f"task {index}: runtime.image must be a non-empty string")
+        docker_image = image.strip() if isinstance(image, str) else None
+        image_build = _parse_image_build(
+            runtime.get("image_build"), docker_image, file_root, index
+        )
+        workspace_container_path = runtime.get("workspace_path")
+        if workspace_container_path is not None and (
+            not isinstance(workspace_container_path, str)
+            or not workspace_container_path.startswith("/")
+        ):
+            raise TaskFormatError(
+                f"task {index}: runtime.workspace_path must be an absolute container path"
+            )
         try:
             thinking = normalize_thinking(
                 runtime.get("thinking", row.get("thinking")),
@@ -529,6 +633,7 @@ def load_tasks(
                 context_files=context_files,
                 output_dir=output_dir,
                 legacy_workspace=legacy_workspace,
+                input_mode=input_mode,
                 workspace=workspace,
                 harness=task_harness,
                 model=model.strip() if isinstance(model, str) else None,
@@ -538,6 +643,10 @@ def load_tasks(
                     "runtime.setup",
                     index,
                 ),
+                new_session=new_session,
+                docker_image=docker_image,
+                image_build=image_build,
+                workspace_container_path=workspace_container_path,
                 thinking=thinking,
                 user_simulator=user_simulator,
             )
@@ -546,10 +655,15 @@ def load_tasks(
 
 
 def build_requests(
-    tasks: Iterable[Task], models: list[str] | None, timeout_seconds: int
+    tasks: Iterable[Task],
+    models: list[str] | None,
+    timeout_seconds: int,
+    samples_per_task: int = 1,
 ) -> list[RunRequest]:
     if timeout_seconds <= 0:
         raise ValueError("timeout_seconds must be greater than zero")
+    if samples_per_task <= 0:
+        raise ValueError("samples_per_task must be greater than zero")
     normalized_models = list(
         dict.fromkeys(model.strip() for model in (models or []) if model.strip())
     )
@@ -561,7 +675,15 @@ def build_requests(
                 f"task {task.id!r} has no model; pass --model or set the task's 'model' field"
             )
         for model in task_models:
-            requests.append(
-                RunRequest(len(requests), task, model, timeout_seconds)
-            )
+            for sample_index in range(samples_per_task):
+                requests.append(
+                    RunRequest(
+                        len(requests),
+                        task,
+                        model,
+                        timeout_seconds,
+                        sample_index=sample_index,
+                        sample_count=samples_per_task,
+                    )
+                )
     return requests

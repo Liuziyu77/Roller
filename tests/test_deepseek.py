@@ -108,6 +108,19 @@ class DeepSeekTraceTests(unittest.TestCase):
             source.write_text('{"type":')
             with self.assertRaises(ValueError): convert_deepseek_trace(source, Path(tmp)/"trace_ACTF.json")
 
+    def test_unicode_line_separator_inside_json_string_is_preserved(self):
+        events = sample_events()
+        events[-2]["payload"]["event"]["data"]["message"]["content"][0]["text"] = "TOKEN\u2028next"
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "trace.jsonl"
+            source.write_text(
+                "".join(json.dumps(event, ensure_ascii=False) + "\n" for event in events),
+                encoding="utf-8",
+            )
+            destination = Path(tmp) / "trace_ACTF.json"
+            actf = convert_deepseek_trace(source, destination)
+            self.assertEqual(actf_to_sft(actf)["messages"][-1]["content"], "TOKEN\u2028next")
+
 
 class FakeRuntime:
     def __init__(self):

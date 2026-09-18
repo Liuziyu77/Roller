@@ -37,6 +37,13 @@ class InteractiveSession(ABC):
     def send(self, message: str, timeout_seconds: float) -> TurnResult:
         """Send one user message and return the final visible assistant reply."""
 
+    def reset(self) -> None:
+        """Start fresh conversation state while preserving the live workspace."""
+
+        raise NotImplementedError(
+            f"{type(self).__name__} does not support fresh-session boundaries"
+        )
+
     @abstractmethod
     def finish(self, status: str, error: str | None = None) -> HarnessResult:
         """Collect traces and outputs, then release runtime resources."""

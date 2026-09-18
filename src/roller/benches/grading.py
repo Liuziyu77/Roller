@@ -7,6 +7,7 @@ import re
 import shlex
 import subprocess
 import tempfile
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -90,7 +91,7 @@ class GradeOutcome:
 
 
 def _error_scores(message: str) -> dict[str, Any]:
-    return {"overall_score": 0.0, "error": message}
+    return {"overall_score": 0.0, "score_eligible": False, "error": message}
 
 
 def build_runner_source(spec: GradeSpec, workspace_path: str) -> str:
@@ -144,18 +145,22 @@ class ContainerGrader:
 
     def _env_args(self, task_id: str) -> list[str]:
         args: list[str] = []
-        for name in self.spec.env_names:
+        required = set(self.spec.env_names)
+        for name in (*self.spec.env_names, *self.spec.optional_env_names):
             if not ENV_NAME_RE.fullmatch(name):
                 raise ValueError(f"invalid grading environment variable name: {name!r}")
             value = os.environ.get(name)
             if not value:
-                logger.warning(
-                    "[%s] grading environment variable %s is unset; grader may fail",
-                    task_id,
-                    name,
-                )
+                if name in required:
+                    logger.warning(
+                        "[%s] grading environment variable %s is unset; grader may fail",
+                        task_id,
+                        name,
+                    )
                 continue
-            args.extend(["-e", f"{name}={value}"])
+            # Docker/Podman copies NAME from this process's environment. Do not
+            # place secret values in argv, where process listings can expose them.
+            args.extend(["-e", name])
         return args
 
     def grade(
@@ -319,6 +324,11 @@ def transcript_container_path(
 
     if spec is not None and spec.transcript_path:
         return spec.transcript_path
+    prepare = getattr(session, "prepare_transcript_for_grading", None)
+    if callable(prepare):
+        prepared = prepare()
+        if isinstance(prepared, str) and prepared:
+            return prepared
     explicit = getattr(session, "transcript_container_path", None)
     if isinstance(explicit, str) and explicit:
         return explicit
@@ -354,6 +364,7 @@ class GradedHarness(Harness):
         binding: BenchBinding,
         *,
         write_score_file: bool = True,
+        grading_semaphore: threading.Semaphore | None = None,
     ) -> None:
         if not isinstance(inner, InteractiveHarness):
             raise TypeError(
@@ -363,6 +374,7 @@ class GradedHarness(Harness):
         self.inner = inner
         self.binding = binding
         self.write_score_file = write_score_file
+        self.grading_semaphore = grading_semaphore
         self.name = inner.name
 
     def run(self, request: RunRequest, output_dir: Path, attempt: int) -> HarnessResult:
@@ -372,10 +384,15 @@ class GradedHarness(Harness):
         started = time.monotonic()
         try:
             session.start()
-            for prompt in self._prompts(request):
+            for index, prompt in enumerate(self._prompts(request)):
                 remaining = request.timeout_seconds - (time.monotonic() - started)
                 if remaining <= 0:
                     raise TimeoutError(f"task exceeded {request.timeout_seconds}s")
+                if (
+                    index < len(request.task.new_session)
+                    and request.task.new_session[index]
+                ):
+                    session.reset()
                 session.send(prompt, remaining)
             status = "ok"
         except (TimeoutError, subprocess.TimeoutExpired):
@@ -405,6 +422,12 @@ class GradedHarness(Harness):
         spec = self.binding.grade
         if spec is None:
             return None
+        if status != "ok":
+            # Agent timeouts/errors are excluded by benchmark protocol. A timed
+            # out harness may already have stopped its container, so attempting
+            # an exec here only obscures the real failure with a runtime error.
+            message = f"agent {status}; benchmark grading skipped"
+            return GradeOutcome(_error_scores(message), 0.0, error=message)
         container = getattr(session, "container", None)
         if not getattr(session, "container_started", False) or not container:
             # The container never came up, so there is nothing to inspect. A
@@ -422,14 +445,35 @@ class GradedHarness(Harness):
                 error="no docker runtime",
             )
         grader = ContainerGrader(spec)
+        grade_started = time.monotonic()
         try:
-            return grader.grade(
-                runtime,
-                container,
-                task_id=request.task.id,
-                workspace_path=workspace_container_path(session),
-                transcript_container_path=transcript_container_path(session, spec),
+            if self.grading_semaphore is None:
+                logger.info("[%s] benchmark grading started", request.task.id)
+                outcome = grader.grade(
+                    runtime,
+                    container,
+                    task_id=request.task.id,
+                    workspace_path=workspace_container_path(session),
+                    transcript_container_path=transcript_container_path(session, spec),
+                )
+            else:
+                logger.info("[%s] waiting for benchmark grader slot", request.task.id)
+                with self.grading_semaphore:
+                    logger.info("[%s] benchmark grading started", request.task.id)
+                    outcome = grader.grade(
+                        runtime,
+                        container,
+                        task_id=request.task.id,
+                        workspace_path=workspace_container_path(session),
+                        transcript_container_path=transcript_container_path(session, spec),
+                    )
+            logger.info(
+                "[%s] benchmark grading finished in %.1fs%s",
+                request.task.id,
+                time.monotonic() - grade_started,
+                f": {outcome.error}" if outcome.error else "",
             )
+            return outcome
         except Exception as exc:
             logger.exception("[%s] grading raised", request.task.id)
             return GradeOutcome(_error_scores(str(exc)), 0.0, error=str(exc))
