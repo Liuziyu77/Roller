@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import tempfile
 import threading
 import unittest
@@ -9,7 +10,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, ClassVar
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from roller.benches.base import (
     BenchBinding,
@@ -24,6 +25,7 @@ from roller.benches.qwenclaw import (
     QwenClawGradedHarness,
     build_grader_source,
     parse_task_markdown,
+    workspace_compatibility_script,
 )
 from roller.benches.transcripts import grader_messages
 from roller.harnesses.hermes import HermesConfig, HermesHarness
@@ -122,6 +124,76 @@ class _JudgeHandler(BaseHTTPRequestHandler):
 
 
 class QwenClawWorkspaceTests(unittest.TestCase):
+    def test_workspace_prefix_and_root_paths_share_one_tree(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            nested_skill = root / "workspace" / "skills" / "github" / "SKILL.md"
+            root_script = root / "skills" / "github" / "scripts" / "check-auth.sh"
+            nested_skill.parent.mkdir(parents=True)
+            root_script.parent.mkdir(parents=True)
+            nested_skill.write_text("nested skill", encoding="utf-8")
+            root_script.write_text("root script", encoding="utf-8")
+
+            subprocess.run(
+                ["/bin/sh", "-c", workspace_compatibility_script(str(root))],
+                check=True,
+            )
+            subprocess.run(
+                ["/bin/sh", "-c", workspace_compatibility_script(str(root))],
+                check=True,
+            )
+
+            self.assertTrue((root / "workspace").is_symlink())
+            self.assertEqual((root / "workspace").readlink(), Path("."))
+            self.assertEqual(
+                (root / "skills" / "github" / "SKILL.md").read_text(),
+                "nested skill",
+            )
+            self.assertEqual(
+                (root / "workspace" / "skills" / "github" / "scripts" / "check-auth.sh").read_text(),
+                "root script",
+            )
+            (root / "workspace" / "skills" / "github" / "new.md").write_text(
+                "shared", encoding="utf-8"
+            )
+            self.assertEqual(
+                (root / "skills" / "github" / "new.md").read_text(),
+                "shared",
+            )
+
+    def test_qwenclaw_wrapper_prepares_workspace_compatibility_alias(self) -> None:
+        runtime = Mock()
+        runtime.run.return_value = SimpleNamespace(
+            returncode=0, stdout="", stderr=""
+        )
+        inner = HermesHarness(
+            HermesConfig(docker_image="registry.example/hermes:test"),
+            0,
+            runtime,
+        )
+        binding = BenchBinding(
+            name="qwenclawbench",
+            grade=GradeSpec(
+                code="def roller_grade(transcript, workspace_path): return {}",
+                workspace_path="/home/node/workspace",
+            ),
+        )
+        session = SimpleNamespace(
+            container_started=True,
+            container="agent-container",
+            harness=inner,
+        )
+
+        QwenClawGradedHarness(inner, binding)._prepare_session(session)
+
+        self.assertEqual(runtime.run.call_count, 2)
+        alias_command = runtime.run.call_args_list[0].args[0][-1]
+        compatibility_command = runtime.run.call_args_list[1].args[0][-1]
+        self.assertIn("ln -s /roller/workspace /home/node/workspace", alias_command)
+        self.assertIn(
+            "ln -s . /roller/workspace/workspace", compatibility_command
+        )
+
     def test_load_maps_sources_and_inline_content(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
