@@ -50,7 +50,7 @@ class CliTests(unittest.TestCase):
         )
         export = _build_parser().parse_args(
             [
-                "bench", "export", "skillsbench", "/bench", "-o", "tasks.jsonl",
+                "bench", "export", "pinchbench", "/bench", "-o", "tasks.jsonl",
                 "--timeout-multiplier", "2.5",
             ]
         )
@@ -111,9 +111,69 @@ class CliTests(unittest.TestCase):
                     "--tasks",
                     "tasks.jsonl",
                     "--bench",
-                    "skillsbench",
+                    "pinchbench",
                 ]
             )
+
+    def test_one_command_bench_dry_run_loads_selection_and_task_timeout(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            tasks_dir = root / "tasks"
+            assets_dir = root / "assets"
+            tasks_dir.mkdir()
+            assets_dir.mkdir()
+            (tasks_dir / "manifest.yaml").write_text(
+                "run_first: [task_sanity]\ncategories:\n  setup: [task_sanity]\n",
+                encoding="utf-8",
+            )
+            (tasks_dir / "task_sanity.md").write_text(
+                """---
+id: task_sanity
+name: Sanity
+category: setup
+grading_type: automated
+timeout_seconds: 45
+---
+
+## Prompt
+
+Say hello.
+
+## Automated Checks
+
+```python
+def grade(transcript, workspace_path):
+    return {"ok": 1.0}
+```
+""",
+                encoding="utf-8",
+            )
+            args = _build_parser().parse_args(
+                [
+                    "collect",
+                    "--bench",
+                    "pinchbench",
+                    "--bench-root",
+                    str(root),
+                    "--bench-task-id",
+                    "task_sanity",
+                    "--model",
+                    "provider/model",
+                    "--timeout",
+                    "5",
+                    "--dry-run",
+                ]
+            )
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                result = _collect(args)
+
+        payload = json.loads(output.getvalue())
+        self.assertEqual(result, 0)
+        self.assertEqual(payload["bench"]["name"], "pinchbench")
+        self.assertEqual(payload["bench"]["task_ids"], ["task_sanity"])
+        self.assertEqual(payload["tasks"], 1)
+        self.assertEqual(payload["plan"][0]["timeout_seconds"], 45)
 
     def test_dry_run_model_label_preserves_upstream_id(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

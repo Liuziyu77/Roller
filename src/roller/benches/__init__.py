@@ -16,6 +16,7 @@ from roller.benches.base import (
     GradeSpec,
     binding_from_task_row,
 )
+from roller.benches.pinchbench import PinchBenchAdapter
 from roller.benches.report import (
     SCORE_FILE,
     format_report,
@@ -29,6 +30,7 @@ from roller.benches.wildclaw import WildClawBenchAdapter
 BENCHES: dict[str, BenchAdapter] = {
     adapter.name: adapter
     for adapter in (
+        PinchBenchAdapter(),
         SkillsBenchAdapter(),
         WildClawBenchAdapter(),
     )
@@ -55,6 +57,7 @@ __all__ = [
     "BenchBinding",
     "BenchFormatError",
     "GradeSpec",
+    "PinchBenchAdapter",
     "SkillsBenchAdapter",
     "WildClawBenchAdapter",
     "binding_from_task_row",
