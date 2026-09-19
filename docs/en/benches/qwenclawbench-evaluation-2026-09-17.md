@@ -22,6 +22,24 @@ evaluation, with invalid samples counted as zero.
 | 12 | MiniMax-M2.7high | 50.5 | 70.6 | 65.1 |
 | below published rows | **DeepSeek V4 Flash (this evaluation)** | **46.52** | **60.99** | **55.84** |
 
+## Evaluated results
+
+Each evaluated model covers 100 tasks with three OpenClaw rollouts per task.
+Invalid samples count as zero.
+
+| Model | Samples | Valid samples | Completion rate | Score | Auto | LLM |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `glm-5.2` | 300 | 282 | 94.00% | **59.2645** | **72.4988** | **69.0950** |
+| `bailian/deepseek-v4-flash` | 300 | 245 | 81.67% | **46.5202** | **60.9912** | **55.8392** |
+
+## Published-score comparison
+
+| Evaluated model | Published reference | Score delta | Auto delta | LLM delta |
+| --- | --- | ---: | ---: | ---: |
+| `glm-5.2` | GLM-5.1 | **+0.56** | -2.10 | -1.81 |
+| `glm-5.2` | GLM-5 | **+4.36** | -0.40 | +2.40 |
+| `bailian/deepseek-v4-flash` | DeepSeek-V3.2-Thinking | **-4.18** | -10.21 | -6.56 |
+
 The two evaluated models are reference projections rather than official
 rankings. The official leaderboard uses Claude as judge, while this evaluation
 uses GLM-5.2, and the model, harness, endpoint, and service versions differ.
