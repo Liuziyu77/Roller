@@ -93,7 +93,21 @@ export ROLLER_CODEX_IMAGE=roller-codex:0.149.0
 不要在正式数据集中使用未锁定的 `@openai/codex@latest`。Codex native event 会随 CLI
 演进；Roller 会把实际 `codex_version`、镜像 tag 和镜像 ID 写入 run/sample 信息及运行锁。
 
-## 3. API 与 Key
+(codex-cli-flags)=
+## 3. CLI 专属参数、API 与 Key
+
+下表集中列出 Codex 专属入口。单一 Codex 运行可以使用通用形式，混合 Harness 运行应使用 Codex 专属形式。
+
+| 参数 | 默认值 | 用途 |
+| --- | --- | --- |
+| `--docker-image` / `--codex-image` | `ROLLER_CODEX_IMAGE` 或 `roller-codex:0.149.0` | 覆盖 Codex 镜像 |
+| `--api-base` / `--codex-api-base` | `OPENAI_BASE_URL` | Responses API 地址 |
+| `--api-key-env` / `--codex-api-key-env` | `OPENAI_API_KEY` | 存放 API Key 的宿主机变量名 |
+| `--codex-config` | 无 | 注入隔离容器的原生 `config.toml` |
+| `--reasoning-summary` | Codex 默认值 | `auto`、`concise`、`detailed` 或 `none` |
+| `--codex-web-search` | `disabled` | `disabled`、`cached` 或 `live` |
+| `--codex-websockets` / `--no-codex-websockets` | 关闭 | 自定义 provider 是否使用 Responses WebSocket |
+
 
 推荐把 Key 放在自定义宿主机环境变量中，再用 `--api-key-env` 映射为容器内短期存在的
 `OPENAI_API_KEY`：

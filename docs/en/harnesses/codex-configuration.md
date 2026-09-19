@@ -93,7 +93,21 @@ export ROLLER_CODEX_IMAGE=roller-codex:0.149.0
 Do not use an unlocked `@openai/codex@latest` in a production dataset. Codex native events evolve with the
 CLI. Roller writes the actual `codex_version`, image tag, and image ID into run/sample info and the run lock.
 
-## 3. API and Key
+(codex-cli-flags)=
+## 3. Harness-specific CLI flags, API, and Key
+
+This table collects the Codex-specific entry points. Generic forms are convenient for a Codex-only run, while mixed-Harness runs should use the Codex-specific forms.
+
+| Flag | Default | Purpose |
+| --- | --- | --- |
+| `--docker-image` / `--codex-image` | `ROLLER_CODEX_IMAGE` or `roller-codex:0.149.0` | Overrides the Codex image |
+| `--api-base` / `--codex-api-base` | `OPENAI_BASE_URL` | Responses API address |
+| `--api-key-env` / `--codex-api-key-env` | `OPENAI_API_KEY` | Host environment variable containing the API key |
+| `--codex-config` | None | Injects a native `config.toml` into the isolated container |
+| `--reasoning-summary` | Codex default | `auto`, `concise`, `detailed`, or `none` |
+| `--codex-web-search` | `disabled` | `disabled`, `cached`, or `live` |
+| `--codex-websockets` / `--no-codex-websockets` | Off | Whether the custom provider uses Responses WebSocket |
+
 
 Put the key in a custom host environment variable, then map it with `--api-key-env` to a short-lived
 `OPENAI_API_KEY` inside the container:

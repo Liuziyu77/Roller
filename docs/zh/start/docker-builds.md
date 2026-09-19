@@ -1,10 +1,8 @@
 # Docker 构建与镜像源
 
-[文档中心](../index.md) · [快速上手](getting-started.md)
-
 Codex、Claude Code、Hermes、OpenCode、DeepSeek 和 Pi 的 Dockerfile 支持下面的构建参数。OpenClaw 使用上游镜像，准备方式见 [OpenClaw 指南](../harnesses/openclaw-configuration.md)。这些参数通过 `docker build --build-arg` 传入，不是 `roller collect` 参数。
 
-## Debian 软件源
+## 1. Debian 软件源
 
 六个 Dockerfile 均支持：
 
@@ -31,7 +29,7 @@ Pi、Codex、Claude Code 使用的 Node slim 基础镜像可能没有系统 CA �
 
 内部 HTTPS 镜像如果使用私有 CA，需要预先将该 CA 安装到基础镜像的系统信任库中；Node 内置根证书不包含企业私有 CA。
 
-## npm registry
+## 2. npm registry
 
 | Harness | 参数 | 默认行为 |
 | --- | --- | --- |
@@ -42,7 +40,7 @@ Codex、Claude Code 和 Pi 在安装步骤中将非空参数传给 `npm_config_r
 
 OpenCode 的下载镜像需要同时提供 npm 包元数据与 tarball。Pi 的 `fd` 仍从 GitHub Releases 下载；修改 npm registry 不会改变该地址。
 
-## Hermes 的 Python 依赖
+## 3. Hermes 的 Python 依赖
 
 | 参数 | 控制的步骤 | 默认值 |
 | --- | --- | --- |
@@ -64,7 +62,7 @@ docker build \
 
 `PIP_INDEX_URL` 不会重定向已锁定的 Hermes 依赖下载。`uv sync --frozen` 仍使用 `uv.lock`；`PYPI_DOWNLOAD_BASE` 只替换下载前缀，镜像需保留 `/packages/` 路径布局，版本与 SHA-256 校验不变。Hermes 源码仍从 GitHub 拉取。
 
-## 其他下载与代理
+## 4. 其他下载与代理
 
 这些参数分别控制 apt、npm 或指定的 Python 下载步骤，不能让整个构建自动离线。基础镜像拉取、GitHub 下载和其他依赖仍需要网络：
 
@@ -74,7 +72,7 @@ docker build \
 
 代理参数用法见 [Docker 构建变量](https://docs.docker.com/build/building/variables/#proxy-arguments)。
 
-## 构建配置回归测试
+## 5. 构建配置回归测试
 
 在仓库根目录执行配置测试；CA 初始化测试需要 Node，npm 配置测试需要 npm：
 

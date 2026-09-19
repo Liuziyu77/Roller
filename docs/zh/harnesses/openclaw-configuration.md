@@ -349,11 +349,12 @@ gateway_port = --gateway-port + worker_slot × --gateway-port-step
 roller collect ... --gateway-port 22000 --gateway-port-step 10
 ```
 
+(openclaw-cli-flags)=
 ## 8. 常用 OpenClaw 参数
 
 | 参数 | 默认值 | 用途 |
 | --- | --- | --- |
-| `--docker-image` | `ROLLER_OPENCLAW_IMAGE` 或内置值 | OpenClaw 镜像 |
+| `--docker-image` / `--openclaw-image` | `ROLLER_OPENCLAW_IMAGE` 或内置值 | 覆盖 OpenClaw 镜像，混合 Harness 运行使用专属形式 |
 | `--container-user` | `0` | 一次性 task 容器用户；`image` 使用镜像默认用户 |
 | `--docker-binary` | `docker` | Docker CLI 名称或路径 |
 | `--model-config` | 无 | 自定义 provider/model JSON |

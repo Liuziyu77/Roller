@@ -80,7 +80,23 @@ export ROLLER_CLAUDE_CODE_IMAGE=roller-claude-code:2.1.222
 正式数据集应固定 Claude Code 版本。Native session 字段、permission mode 和 effort 列表会随
 CLI 演进；Roller 会把实际 `claude_code_version`、镜像 tag 和镜像 ID 写入 run/sample 信息。
 
-## 3. Anthropic API 与 Key
+(claude-code-cli-flags)=
+## 3. CLI 专属参数、Anthropic API 与 Key
+
+下表集中列出 Claude Code 专属入口。单一 Claude Code 运行可以使用通用形式，混合 Harness 运行应使用 Claude Code 专属形式。
+
+| 参数 | 默认值 | 用途 |
+| --- | --- | --- |
+| `--docker-image` / `--claude-code-image` | `ROLLER_CLAUDE_CODE_IMAGE` 或 `roller-claude-code:2.1.222` | 覆盖 Claude Code 镜像 |
+| `--api-base` / `--anthropic-base-url` / `--claude-api-base` | `ANTHROPIC_BASE_URL` | Anthropic API 地址或完整 `/v1/messages` endpoint |
+| `--api-key-env` / `--claude-api-key-env` | `ANTHROPIC_API_KEY` | 存放 API Key 的宿主机变量名 |
+| `--claude-settings` | 无 | 注入隔离容器的原生 `settings.json` |
+| `--claude-max-turns` | 无 | 每条预定义 user message 的 agent turn 上限 |
+| `--claude-max-thinking-tokens` | 无 | 传给 Claude Code 的 `MAX_THINKING_TOKENS` |
+| `--claude-permission-mode` | `bypassPermissions` | Claude Code permission mode |
+
+旧的 `--claude-signature-recovery*` 参数已移除。旧命令应直接删除这些参数。
+
 
 Claude Code 使用 Anthropic Messages API。推荐把 Key 放在自定义宿主机环境变量中，再由
 `--api-key-env` 映射为一次性容器内的 `ANTHROPIC_API_KEY`：

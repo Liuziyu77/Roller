@@ -1,10 +1,8 @@
 # Docker builds and package mirrors
 
-[Documentation home](../index.md) · [Getting started](getting-started.md)
-
 The Codex, Claude Code, Hermes, OpenCode, DeepSeek, and Pi Dockerfiles accept the build arguments below. OpenClaw uses an upstream image; see the [OpenClaw guide](../harnesses/openclaw-configuration.md). Pass these settings with `docker build --build-arg`, not to `roller collect`.
 
-## Debian repositories
+## 1. Debian repositories
 
 All six Dockerfiles support:
 
@@ -31,7 +29,7 @@ The Node slim bases used by Pi, Codex, and Claude Code may lack a system CA bund
 
 For an internal HTTPS mirror using a private CA, install that CA into the base image's system trust store first. Node's bundled roots do not include private enterprise CAs.
 
-## npm registry
+## 2. npm registry
 
 | Harness | Argument | Default behavior |
 | --- | --- | --- |
@@ -42,7 +40,7 @@ Codex, Claude Code, and Pi pass a non-empty argument through `npm_config_registr
 
 An OpenCode mirror must serve npm package metadata and tarballs. Pi still downloads `fd` from GitHub Releases; changing the npm registry does not redirect that download.
 
-## Hermes Python dependencies
+## 3. Hermes Python dependencies
 
 | Argument | Step controlled | Default |
 | --- | --- | --- |
@@ -64,7 +62,7 @@ docker build \
 
 `PIP_INDEX_URL` does not redirect Hermes' locked dependency downloads. `uv sync --frozen` still uses `uv.lock`; `PYPI_DOWNLOAD_BASE` changes only the download prefix. The mirror must preserve the `/packages/` path layout. Versions and SHA-256 checks remain unchanged. Hermes source is still fetched from GitHub.
 
-## Other downloads and proxies
+## 4. Other downloads and proxies
 
 These settings control apt, npm, or specific Python installation steps. They do not make the entire build work offline. Base images, GitHub downloads, and other dependencies still need network access:
 
@@ -74,7 +72,7 @@ These settings control apt, npm, or specific Python installation steps. They do 
 
 See [Docker build variables](https://docs.docker.com/build/building/variables/#proxy-arguments) for proxy settings.
 
-## Build configuration regression tests
+## 5. Build configuration regression tests
 
 Run the configuration tests from the repository root. CA bootstrap tests require Node, and npm configuration tests require npm:
 

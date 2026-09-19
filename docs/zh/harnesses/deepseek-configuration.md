@@ -44,6 +44,7 @@ python -m roller collect \
 
 Debian 镜像参数 `DEBIAN_MIRROR`、`DEBIAN_SECURITY_MIRROR` 的用法见 [Docker 构建与镜像源](../start/docker-builds.md)。
 
+(deepseek-cli-flags)=
 ## 3. 配置
 
 | 参数 | 默认值与行为 |
@@ -52,7 +53,7 @@ Debian 镜像参数 `DEBIAN_MIRROR`、`DEBIAN_SECURITY_MIRROR` 的用法见 [Doc
 | `--deepseek-api-base` | 回退到 `--api-base`、`DEEPSEEK_BASE_URL`、`https://api.deepseek.com` |
 | `--deepseek-api-key-env` | 回退到 `--api-key-env`、`DEEPSEEK_API_KEY`；参数是变量名 |
 | `--deepseek-max-steps` | 每条用户消息最多 12 次模型请求，另受任务/对话轮次超时约束 |
-| `--deepseek-context-length` | 默认 134200，至少 1024；按实际服务设置 |
+| `--deepseek-context-length` | 默认 128000，至少 1024，按实际服务设置 |
 | `--deepseek-output-tokens` | 默认 8192，必须为正且小于上下文窗口 |
 | `--thinking` / `runtime.thinking` | 原生支持 `off/low/high/max`；`none` 是 `off` 别名；省略时由官方适配器决定 |
 | `--wire-trace` | 每种模式均保留实际请求和 schema；`full` 额外保存 HTTP 请求，要求显式 API base 和 host 网络 |

@@ -350,11 +350,12 @@ With the default `--network host`, keep that port range free on the Docker host.
 roller collect ... --gateway-port 22000 --gateway-port-step 10
 ```
 
+(openclaw-cli-flags)=
 ## 8. Common OpenClaw flags
 
 | Flag | Default | Purpose |
 | --- | --- | --- |
-| `--docker-image` | `ROLLER_OPENCLAW_IMAGE` or the built-in value | OpenClaw image |
+| `--docker-image` / `--openclaw-image` | `ROLLER_OPENCLAW_IMAGE` or the built-in value | Overrides the OpenClaw image, use the specific form in mixed-Harness runs |
 | `--container-user` | `0` | User inside the one-shot task container; `image` uses the image default user |
 | `--docker-binary` | `docker` | Docker CLI name or path |
 | `--model-config` | none | Custom provider/model JSON |

@@ -51,6 +51,7 @@ For `DEBIAN_MIRROR` and `DEBIAN_SECURITY_MIRROR`, see [Docker builds and package
 
 Build networks can set `--build-arg PIP_INDEX_URL=...` and `--build-arg PYPI_DOWNLOAD_BASE=...`. The latter replaces the download origin in `uv.lock` while preserving package versions and SHA-256 hashes; use a mirror with the same `/packages/` layout.
 
+(hermes-cli-flags)=
 ## 3. Configuration
 
 | Option | Default / behavior |
