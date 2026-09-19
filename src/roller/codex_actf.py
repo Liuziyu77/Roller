@@ -110,23 +110,45 @@ def _arguments(payload: Mapping[str, Any]) -> tuple[dict[str, Any], Any]:
     return {"value": deepcopy(parsed)}, raw
 
 
+def _is_output_content_block(value: Any) -> bool:
+    if not isinstance(value, Mapping):
+        return False
+    block_type = value.get("type")
+    if block_type in {"text", "input_text", "output_text"}:
+        return isinstance(value.get("text"), str)
+    if block_type in {"image", "input_image"}:
+        return isinstance(value.get("data", value.get("image_url")), str)
+    return False
+
+
+def _is_output_content_block_list(value: Any) -> bool:
+    # An empty JSON array has no structural evidence that it is a typed block
+    # list. The caller handles a native list object separately so a genuine
+    # empty content-block list can still remain empty.
+    return (
+        isinstance(value, list)
+        and bool(value)
+        and all(_is_output_content_block(item) for item in value)
+    )
+
+
 def _output_content_blocks(value: Any) -> list[dict[str, Any]]:
     if isinstance(value, str):
         return [{"type": "text", "text": value}]
     if isinstance(value, list):
+        if not value:
+            return []
+        if not _is_output_content_block_list(value):
+            return [
+                {
+                    "type": "text",
+                    "text": json.dumps(value, ensure_ascii=False),
+                }
+            ]
         blocks: list[dict[str, Any]] = []
         for item in value:
-            if isinstance(item, str):
-                blocks.append({"type": "text", "text": item})
-                continue
-            if not isinstance(item, Mapping):
-                blocks.append(
-                    {
-                        "type": "text",
-                        "text": json.dumps(item, ensure_ascii=False),
-                    }
-                )
-                continue
+            # _is_output_content_block_list has already validated every item.
+            assert isinstance(item, Mapping)
             block_type = item.get("type")
             if block_type in {"text", "input_text", "output_text"} and isinstance(
                 item.get("text"), str
@@ -139,18 +161,18 @@ def _output_content_blocks(value: Any) -> list[dict[str, Any]]:
                 if "data" not in image and image_url is not None:
                     image["data"] = image_url
                 blocks.append(image)
-            else:
-                blocks.append(
-                    {
-                        "type": "text",
-                        "text": json.dumps(item, ensure_ascii=False),
-                    }
-                )
         return blocks
     if value is None:
         return [{"type": "text", "text": ""}]
     if isinstance(value, Mapping):
-        return _output_content_blocks([value])
+        if _is_output_content_block(value):
+            return _output_content_blocks([value])
+        return [
+            {
+                "type": "text",
+                "text": json.dumps(value, ensure_ascii=False),
+            }
+        ]
     return [{"type": "text", "text": json.dumps(value, ensure_ascii=False)}]
 
 
@@ -158,16 +180,30 @@ def _output_content(
     value: Any,
 ) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
     parsed = value
+    parsed_from_string = False
     if isinstance(value, str):
         try:
             parsed = json.loads(value)
         except json.JSONDecodeError:
             return _output_content_blocks(value), None
+        parsed_from_string = True
+        if isinstance(parsed, list) and not _is_output_content_block_list(parsed):
+            # Preserve ordinary JSON-array tool output as one JSON value. In
+            # particular, the string "[]" must not collapse into no output.
+            return _output_content_blocks(
+                json.dumps(parsed, ensure_ascii=False)
+            ), None
     if isinstance(parsed, Mapping):
         output = parsed.get("output") if "output" in parsed else parsed
         metadata = parsed.get("metadata")
         if output is None:
             output = json.dumps(parsed, ensure_ascii=False)
+        elif (
+            parsed_from_string
+            and isinstance(output, list)
+            and not _is_output_content_block_list(output)
+        ):
+            output = json.dumps(output, ensure_ascii=False)
         return (
             _output_content_blocks(output),
             deepcopy(metadata) if isinstance(metadata, dict) else None,

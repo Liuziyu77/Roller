@@ -265,6 +265,117 @@ class CodexActfTests(unittest.TestCase):
             ["data:image/png;base64,AA==", "data:image/jpeg;base64,AQ=="],
         )
 
+    def test_preserves_ordinary_json_array_tool_outputs(self) -> None:
+        cases = (
+            ("[]", "[]"),
+            ("[1, 2]", "[1, 2]"),
+            ('["left", "right"]', '["left", "right"]'),
+            (
+                '{"output": [1, 2], "metadata": {"exit_code": 0}}',
+                "[1, 2]",
+            ),
+        )
+        for native_output, expected in cases:
+            with self.subTest(native_output=native_output):
+                events = _events()
+                events[6]["payload"]["output"] = native_output
+                trajectory = codex_events_to_actf(
+                    events, user_messages=["Read values"]
+                )
+                self.assertEqual(
+                    trajectory["steps"][0]["observation"][0]["content"],
+                    [{"type": "text", "text": expected}],
+                )
+                record = actf_to_sft(trajectory)
+                tool_result = next(
+                    message
+                    for message in record["messages"]
+                    if message["role"] == "tool"
+                )
+                self.assertEqual(tool_result["content"], expected)
+
+    def test_only_expands_fully_typed_content_block_arrays(self) -> None:
+        cases = (
+            ([1, 2], "[1, 2]"),
+            (["left", "right"], '["left", "right"]'),
+            (
+                [{"type": "text", "text": "left"}, {"value": "right"}],
+                '[{"type": "text", "text": "left"}, {"value": "right"}]',
+            ),
+            (
+                [{"type": "text", "text": 7}],
+                '[{"type": "text", "text": 7}]',
+            ),
+        )
+        for native_output, expected in cases:
+            with self.subTest(native_output=native_output):
+                events = _events()
+                events[6]["payload"]["output"] = native_output
+                record = actf_to_sft(
+                    codex_events_to_actf(events, user_messages=["Read values"])
+                )
+                tool_result = next(
+                    message
+                    for message in record["messages"]
+                    if message["role"] == "tool"
+                )
+                self.assertEqual(tool_result["content"], expected)
+
+    def test_preserves_ordinary_json_object_tool_output(self) -> None:
+        events = _events()
+        events[6]["payload"]["output"] = '{"values": [1, 2]}'
+
+        record = actf_to_sft(
+            codex_events_to_actf(events, user_messages=["Read values"])
+        )
+        tool_result = next(
+            message for message in record["messages"] if message["role"] == "tool"
+        )
+
+        self.assertEqual(tool_result["content"], '{"values": [1, 2]}')
+
+    def test_distinguishes_json_empty_array_from_empty_content_blocks(self) -> None:
+        json_events = _events()
+        json_events[6]["payload"]["output"] = "[]"
+        block_events = _events()
+        block_events[6]["payload"]["output"] = []
+
+        json_trajectory = codex_events_to_actf(
+            json_events, user_messages=["Read values"]
+        )
+        block_trajectory = codex_events_to_actf(
+            block_events, user_messages=["Read values"]
+        )
+
+        self.assertEqual(
+            json_trajectory["steps"][0]["observation"][0]["content"],
+            [{"type": "text", "text": "[]"}],
+        )
+        self.assertEqual(
+            block_trajectory["steps"][0]["observation"][0]["content"], []
+        )
+
+    def test_expands_json_encoded_typed_image_blocks(self) -> None:
+        events = _events()
+        events[6]["payload"]["output"] = json.dumps(
+            [
+                {"type": "text", "text": "frame"},
+                {
+                    "type": "input_image",
+                    "image_url": "data:image/png;base64,AA==",
+                },
+            ]
+        )
+
+        record = actf_to_sft(
+            codex_events_to_actf(events, user_messages=["inspect frame"])
+        )
+        tool_result = next(
+            message for message in record["messages"] if message["role"] == "tool"
+        )
+        self.assertEqual(tool_result["content"], "frame\n<image>")
+        self.assertEqual(record["images"], ["data:image/png;base64,AA=="])
+
     def test_prefers_visible_reasoning_content_and_filters_codex_context(self) -> None:
         events = _events()
         events.insert(
