@@ -110,31 +110,29 @@ def _arguments(payload: Mapping[str, Any]) -> tuple[dict[str, Any], Any]:
     return {"value": deepcopy(parsed)}, raw
 
 
-def _is_output_content_block(value: Any) -> bool:
-    """Return whether *value* declares a content-block shape.
+_OUTPUT_TEXT_BLOCK_TYPES = frozenset({"text", "input_text", "output_text"})
+_OUTPUT_IMAGE_BLOCK_TYPES = frozenset({"image", "input_image"})
+_OUTPUT_UNSUPPORTED_BLOCK_TYPES = frozenset({"input_file", "input_audio"})
 
-    This deliberately checks only the type discriminator. Field validation
-    belongs to the ACTF-to-SFT converter, which can report malformed text or
-    image data without silently turning a recognizable media result into JSON
-    text.
+
+def _output_block_kind(value: Any) -> str | None:
+    """Classify a declared output block without validating its fields.
+
+    Field validation belongs to the ACTF-to-SFT converter, which can report
+    malformed or unsupported media instead of silently turning a recognizable
+    typed block into JSON text.
     """
 
-    return isinstance(value, Mapping) and value.get("type") in {
-        "text",
-        "input_text",
-        "output_text",
-        "image",
-        "input_image",
-        "input_file",
-        "input_audio",
-    }
-
-
-def _is_output_image_block(value: Any) -> bool:
-    return isinstance(value, Mapping) and value.get("type") in {
-        "image",
-        "input_image",
-    }
+    if not isinstance(value, Mapping):
+        return None
+    block_type = value.get("type")
+    if block_type in _OUTPUT_TEXT_BLOCK_TYPES:
+        return "text"
+    if block_type in _OUTPUT_IMAGE_BLOCK_TYPES:
+        return "image"
+    if block_type in _OUTPUT_UNSUPPORTED_BLOCK_TYPES:
+        return "unsupported"
+    return None
 
 
 def _is_output_content_block_list(value: Any) -> bool:
@@ -148,9 +146,36 @@ def _is_output_content_block_list(value: Any) -> bool:
     # keep the media semantics while losslessly normalizing ordinary siblings,
     # and let malformed known blocks fail validation instead of downgrading the
     # whole result to JSON text.
-    return all(_is_output_content_block(item) for item in value) or any(
-        _is_output_image_block(item) for item in value
-    )
+    block_kinds = [_output_block_kind(item) for item in value]
+    return all(kind is not None for kind in block_kinds) or "image" in block_kinds
+
+
+def _json_text_block(value: Any) -> dict[str, Any]:
+    return {"type": "text", "text": json.dumps(value, ensure_ascii=False)}
+
+
+def _normalize_output_block(value: Any) -> dict[str, Any]:
+    """Normalize one member of a recognized content-block list."""
+
+    if isinstance(value, str):
+        return {"type": "text", "text": value}
+
+    block_kind = _output_block_kind(value)
+    if block_kind == "text":
+        return {"type": "text", "text": deepcopy(value.get("text"))}
+    if block_kind == "image":
+        image = deepcopy(dict(value))
+        image["type"] = "image"
+        image_url = image.pop("image_url", None)
+        if "data" not in image and image_url is not None:
+            image["data"] = image_url
+        return image
+    if block_kind == "unsupported":
+        # Multimodal SFT cannot represent these typed Responses blocks. Keep
+        # them in ACTF so conversion fails explicitly instead of flattening
+        # them into text.
+        return deepcopy(dict(value))
+    return _json_text_block(value)
 
 
 def _output_content_blocks(value: Any) -> list[dict[str, Any]]:
@@ -160,97 +185,56 @@ def _output_content_blocks(value: Any) -> list[dict[str, Any]]:
         if not value:
             return []
         if not _is_output_content_block_list(value):
-            return [
-                {
-                    "type": "text",
-                    "text": json.dumps(value, ensure_ascii=False),
-                }
-            ]
-        blocks: list[dict[str, Any]] = []
-        for item in value:
-            # The list check recognizes block shapes but intentionally leaves
-            # field validation to the ACTF-to-SFT converter.
-            if isinstance(item, str):
-                blocks.append({"type": "text", "text": item})
-                continue
-            if not isinstance(item, Mapping):
-                blocks.append(
-                    {
-                        "type": "text",
-                        "text": json.dumps(item, ensure_ascii=False),
-                    }
-                )
-                continue
-            block_type = item.get("type")
-            if block_type in {"text", "input_text", "output_text"}:
-                blocks.append({"type": "text", "text": deepcopy(item.get("text"))})
-            elif block_type in {"image", "input_image"}:
-                image = deepcopy(dict(item))
-                image["type"] = "image"
-                image_url = image.pop("image_url", None)
-                if "data" not in image and image_url is not None:
-                    image["data"] = image_url
-                blocks.append(image)
-            elif block_type in {"input_file", "input_audio"}:
-                # These are typed Responses content blocks, but multimodal SFT
-                # cannot represent them. Keep the block in ACTF so SFT fails
-                # explicitly instead of silently flattening it into text.
-                blocks.append(deepcopy(dict(item)))
-            else:
-                blocks.append(
-                    {
-                        "type": "text",
-                        "text": json.dumps(item, ensure_ascii=False),
-                    }
-                )
-        return blocks
+            return [_json_text_block(value)]
+        # Classification recognizes block shapes; validation remains in the
+        # ACTF-to-SFT converter so malformed known blocks fail explicitly.
+        return [_normalize_output_block(item) for item in value]
     if value is None:
         return [{"type": "text", "text": ""}]
     if isinstance(value, Mapping):
-        if _is_output_content_block(value):
-            return _output_content_blocks([value])
-        return [
-            {
-                "type": "text",
-                "text": json.dumps(value, ensure_ascii=False),
-            }
-        ]
-    return [{"type": "text", "text": json.dumps(value, ensure_ascii=False)}]
+        if _output_block_kind(value) is not None:
+            return [_normalize_output_block(value)]
+        return [_json_text_block(value)]
+    return [_json_text_block(value)]
+
+
+def _decode_output(value: Any) -> tuple[Any, bool]:
+    """Decode JSON text while retaining whether the raw value was encoded."""
+
+    if not isinstance(value, str):
+        return value, False
+    try:
+        return json.loads(value), True
+    except json.JSONDecodeError:
+        return value, False
+
+
+def _unwrap_output(value: Any) -> tuple[Any, dict[str, Any] | None]:
+    """Extract the output/metadata envelope used by Codex tool results."""
+
+    if not isinstance(value, Mapping):
+        return value, None
+    output = value.get("output") if "output" in value else value
+    if output is None:
+        output = json.dumps(value, ensure_ascii=False)
+    metadata = value.get("metadata")
+    return output, deepcopy(metadata) if isinstance(metadata, dict) else None
 
 
 def _output_content(
     value: Any,
 ) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
-    parsed = value
-    parsed_from_string = False
-    if isinstance(value, str):
-        try:
-            parsed = json.loads(value)
-        except json.JSONDecodeError:
-            return _output_content_blocks(value), None
-        parsed_from_string = True
-        if isinstance(parsed, list) and not _is_output_content_block_list(parsed):
-            # Preserve ordinary JSON-array tool output as one JSON value. In
-            # particular, the string "[]" must not collapse into no output.
-            return _output_content_blocks(
-                json.dumps(parsed, ensure_ascii=False)
-            ), None
-    if isinstance(parsed, Mapping):
-        output = parsed.get("output") if "output" in parsed else parsed
-        metadata = parsed.get("metadata")
-        if output is None:
-            output = json.dumps(parsed, ensure_ascii=False)
-        elif (
-            parsed_from_string
-            and isinstance(output, list)
-            and not _is_output_content_block_list(output)
-        ):
-            output = json.dumps(output, ensure_ascii=False)
-        return (
-            _output_content_blocks(output),
-            deepcopy(metadata) if isinstance(metadata, dict) else None,
-        )
-    return _output_content_blocks(parsed), None
+    decoded, decoded_from_json_string = _decode_output(value)
+    output, metadata = _unwrap_output(decoded)
+    if (
+        decoded_from_json_string
+        and isinstance(output, list)
+        and not _is_output_content_block_list(output)
+    ):
+        # Preserve an encoded ordinary JSON array as one JSON value. In
+        # particular, the string "[]" must not collapse into no output.
+        output = json.dumps(output, ensure_ascii=False)
+    return _output_content_blocks(output), metadata
 
 
 def _usage_number(value: Any) -> int:
