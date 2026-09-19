@@ -449,6 +449,32 @@ class CodexActfTests(unittest.TestCase):
                     record["images"], ["data:image/png;base64,AA=="]
                 )
 
+    def test_rejects_unsupported_typed_file_and_audio_blocks(self) -> None:
+        cases = (
+            {
+                "type": "input_file",
+                "filename": "report.pdf",
+                "file_data": "AA==",
+            },
+            {"type": "input_audio", "input_audio": {"data": "AA=="}},
+        )
+        for block in cases:
+            for native_output in ([block], json.dumps([block])):
+                with self.subTest(native_output=native_output):
+                    events = _events()
+                    events[6]["payload"]["output"] = native_output
+
+                    trajectory = codex_events_to_actf(
+                        events, user_messages=["Inspect result"]
+                    )
+
+                    self.assertEqual(
+                        trajectory["steps"][0]["observation"][0]["content"],
+                        [block],
+                    )
+                    with self.assertRaisesRegex(SFTConversionError, "non-text"):
+                        actf_to_sft(trajectory)
+
     def test_preserves_ordinary_json_object_tool_output(self) -> None:
         events = _events()
         events[6]["payload"]["output"] = '{"values": [1, 2]}'

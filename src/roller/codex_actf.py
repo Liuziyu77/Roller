@@ -125,6 +125,8 @@ def _is_output_content_block(value: Any) -> bool:
         "output_text",
         "image",
         "input_image",
+        "input_file",
+        "input_audio",
     }
 
 
@@ -189,6 +191,11 @@ def _output_content_blocks(value: Any) -> list[dict[str, Any]]:
                 if "data" not in image and image_url is not None:
                     image["data"] = image_url
                 blocks.append(image)
+            elif block_type in {"input_file", "input_audio"}:
+                # These are typed Responses content blocks, but multimodal SFT
+                # cannot represent them. Keep the block in ACTF so SFT fails
+                # explicitly instead of silently flattening it into text.
+                blocks.append(deepcopy(dict(item)))
             else:
                 blocks.append(
                     {
