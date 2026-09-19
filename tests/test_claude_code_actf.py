@@ -212,6 +212,30 @@ class ClaudeCodeActfTests(unittest.TestCase):
         self.assertEqual(tool_message["content"], "<image>")
         self.assertEqual(record["images"], ["data:image/png;base64,AA=="])
 
+    def test_preserves_text_and_multiple_tool_images_in_order(self) -> None:
+        events = _events()
+        events[2]["message"]["content"][0]["content"] = [
+            {"type": "text", "text": "two frames"},
+            {
+                "type": "image",
+                "source": {"type": "base64", "media_type": "image/png", "data": "AA=="},
+            },
+            {
+                "type": "image",
+                "source": {"type": "base64", "media_type": "image/jpeg", "data": "AQ=="},
+            },
+        ]
+
+        record = actf_to_sft(
+            claude_code_events_to_actf(events, user_messages=["inspect input.txt"])
+        )
+        tool_message = record["messages"][3]
+        self.assertEqual(tool_message["content"], "two frames\n<image>\n<image>")
+        self.assertEqual(
+            record["images"],
+            ["data:image/png;base64,AA==", "data:image/jpeg;base64,AQ=="],
+        )
+
     def test_file_conversion_and_usage_deduplicate_streamed_message_ids(self) -> None:
         events = _events()
         duplicate_update = json.loads(json.dumps(events[1]))

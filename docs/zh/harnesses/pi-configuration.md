@@ -13,13 +13,14 @@ Pi Harness 支持：
 - Task Bundle、只读 inputs、Context、setup、显式环境变量、自定义 `output_dir`、文件回收和容器销毁前评分；
 - 流式 **OpenAI Chat Completions**（含工具调用）；
 - 七个原生工具：`read`、`bash`、`edit`、`write`、`grep`、`find`、`ls`；
+- 模型与服务支持图片输入时，可通过 `read` 打开本地图片；
 - ACTF、SFT、reasoning 导出和 usage（cache token 单独统计）；
 - `--wire-trace actf|full|off`；
 - `--thinking off/minimal/low/medium/high/xhigh/max`（经 `reasoning_effort` 发送）。
 
 当前不支持：
 
-- 视觉验收与直接多模态消息；
+- 直接多模态任务消息与视频；
 - 交互登录；
 - 其他 Pi provider 协议；
 - 自定义扩展/插件；
@@ -68,7 +69,7 @@ Thinking 通过 `reasoning_effort` 发送，`off` 映射为 `none`，其他级�
 
 每个参与者拥有独立容器和 `PI_CODING_AGENT_DIR`；同一参与者跨轮复用一个原生 `AgentSession`。对话历史和工作区文件持续保留。Pi 的 Bash 每次启动独立 Shell，`export` 和 `cd` 不会跨工具调用持续生效；需要持续状态时应写文件，或在同一条 Bash 命令中完成操作。
 
-输入只读挂载，Context 复制到声明路径；非 skill Context 通过官方 loader 加入原生 system prompt。Skill 文件可按提示读取，不自动注册为 Pi skill。支持 setup、显式环境变量、自定义输出目录、文件回收，以及容器销毁前评分。
+启用七个原生工具：`read`、`bash`、`edit`、`write`、`grep`、`find`、`ls`。输入只读挂载；所选模型支持图片时，`read` 的原生图片结果会传给模型，并保留到 raw、ACTF 和多模态 SFT。Context 复制到声明路径；非 skill Context 通过官方 loader 加入原生 system prompt。Skill 文件可按提示读取，不自动注册为 Pi skill。支持 setup、显式环境变量、自定义输出目录、文件回收，以及容器销毁前评分。
 
 自动压缩、会话/模型重试、遥测、远程模型目录更新及自动扩展发现均关闭。Roller 保留 Pi 原生 system prompt，并追加工作区、输出目录和 Context 路径说明。
 
@@ -78,19 +79,18 @@ Thinking 通过 `reasoning_effort` 发送，`off` 映射为 `none`，其他级�
 
 空响应、截断、API 错误、超出步数，以及未配对工具调用不会成为成功轨迹。转换器拒绝会改变 system prompt/schema 或丢失非文本内容的轨迹。超时停止容器并回收已生成文件；Pi 不要求 OpenClaw cache trace。
 
-首版以文本与文件任务为范围，与底层 Pi 产品的完整能力范围不同。
+Roller 支持 Pi 的文本与文件任务；当模型与 OpenAI-compatible 服务支持图片输入时，也支持通过 `read` 打开本地图片。直接 user-message 图片附件、视频、交互登录、其他 Pi provider 协议、自定义扩展/插件和自动压缩暂不支持。
 
 ## 6. 可复用验证
 
 ```bash
 python examples/coverage/suite.py validate --case '*/pi'
-python examples/coverage/suite.py run --case '*/pi' \
-  --exclude-case 'vision/*' --dry-run
+python examples/coverage/suite.py run --case '*/pi' --dry-run
 ROLLER_PI_DOCKER_TEST=1 PYTHONPATH=src \
   python -m unittest discover -s tests -p test_pi_docker.py -v
 ```
 
-Docker 测试使用本地确定性流式 API 和虚构 Key，执行真实 Pi SDK 与工具，不消耗模型额度。公开输入样例 204 条，其中非视觉 200 条；涉及 Pi 的 13 种 Agent × Simulator 配对共 52 条，可用 `--case 'simulators/pair/pi--*' --case 'simulators/pair/*--pi'` 选择。视觉组用于记录首版的能力边界。
+Docker 测试使用本地确定性流式 API 和虚构 Key，执行真实 Pi SDK 与工具，不消耗模型额度。公开输入样例 204 条，其中包含 4 条视觉任务；涉及 Pi 的 13 种 Agent × Simulator 配对共 52 条，可用 `--case 'simulators/pair/pi--*' --case 'simulators/pair/*--pi'` 选择。外部模型视觉测试还要求模型与服务端确实支持图片输入。
 
 若同时准备了 DeepSeek 镜像，可额外设置 `ROLLER_PI_MIXED_DOCKER_TEST=1`，验证 Pi ↔ DeepSeek 双向配对与 Resume。
 

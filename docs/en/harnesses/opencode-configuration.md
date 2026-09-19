@@ -69,7 +69,7 @@ The adapter permits bash, read, write, edit, apply_patch, glob, and grep; native
 
 ## 5. Traces, errors, and Resume
 
-A local plugin records the serialized provider request without rewriting it. `trace.jsonl` contains requests, native message/part updates, and session exports. ACTF merges native IDs and captures actual tool schemas, visible reasoning, tool calls, and results. Large inline attachment payloads remain losslessly available in the native trace; ACTF/SFT records bounded metadata and a content hash.
+A local plugin records the serialized provider request without rewriting it. `trace.jsonl` contains requests, native message/part updates, and session exports. ACTF merges native IDs and captures actual tool schemas, visible reasoning, tool calls, and results. Inline image attachments are retained as image blocks and exported to SFT; bounded attachment metadata and a content hash remain in ACTF details for audit. Non-image attachments keep the bounded summary behavior.
 
 Incomplete or empty replies, API errors, truncated replies, invalid journals, and changing/missing schemas fail explicitly. Timeout recovery preserves available artifacts and removes the container.
 

@@ -13,14 +13,15 @@ The Hermes Harness supports:
 - Task Bundle, read-only inputs, Context files, `runtime.setup`, task environment variables, and full `output_dir` collection;
 - parallelism, retry, run lock, and Resume integrity checks;
 - **OpenAI Chat Completions** with tool calls;
-- the Hermes `local` terminal backend, enabling the `terminal` and `file` toolsets;
+- the Hermes `local` terminal backend, enabling the `terminal`, `file`, and optional `vision` toolsets;
+- local-image loading through `vision_analyze` for image-capable models and endpoints;
 - ACTF, SFT, results, provenance, and usage;
 - `--wire-trace actf|full|off`;
 - optional native reasoning hints (`--thinking` / `runtime.thinking`).
 
 Not currently supported:
 
-- vision tools and direct multimodal messages;
+- direct multimodal task messages and video;
 - provider-specific authentication and a separately deployed Hermes gateway;
 - remote terminal backends;
 - persistent memory and skill learning;
@@ -59,6 +60,7 @@ Build networks can set `--build-arg PIP_INDEX_URL=...` and `--build-arg PYPI_DOW
 | `--hermes-api-key-env` | Shared `--api-key-env`, then `OPENAI_API_KEY`; provide a variable name, not a key |
 | `--hermes-context-length` | Optional context window override, at least 64000 tokens |
 | `--hermes-max-iterations` | `12` model iterations per user turn; total rollout timeout also applies |
+| `--hermes-vision` / `--no-hermes-vision` | Enable `vision_analyze` and declare that the selected model accepts image input (enabled by default) |
 | `--thinking` / `runtime.thinking` | Optional native reasoning hint: `off/minimal/low/medium/high/xhigh`; actual support and normalization depend on Hermes and the provider/model |
 | `--wire-trace` | Native request snapshots always preserve schemas and assembled prompts. `full` also records HTTP traffic; requires an explicit API base and `--network host` |
 | `--no-keep-thinking` | Removes reasoning from ACTF/SFT export; raw/native history remains available |
@@ -67,19 +69,19 @@ Participant-specific API/image settings apply to Hermes on either side of a mixe
 
 ## 4. Execution and traces
 
-Each participant gets its own disposable container. Hermes uses its `local` terminal backend **inside that container**, with the `terminal` and `file` toolsets. Immutable inputs, context files, setup commands, task environment variables, output directories, and container-based grading use Roller's normal workspace contract.
+Each participant gets its own disposable container. Hermes uses its `local` terminal backend **inside that container**, with the `terminal`, `file`, and (by default) `vision` toolsets. Immutable inputs, context files, setup commands, task environment variables, output directories, and container-based grading use Roller's normal workspace contract.
 
 Context files of all roles are copied to their declared workspace paths and listed in the task system prompt. Tasks may explicitly read them. The bridge disables implicit profile/context discovery, persistent memory, SOUL identity loading, checkpoints, background review, and automatic dependency installation during rollouts. This supports file-based context and skill fixtures; it does not enable Hermes' skill discovery/learning service.
 
 Each user turn starts a Python agent and restores Hermes' native message history in the same container. Workspace files and conversation history persist across turns. Python process state, including background process handles, does not. Models should finish terminal work within each turn. Sessions are isolated across Agent/Simulator, workers, and retry attempts.
 
-The append-only `rollout/trace.jsonl` journal records actual request messages/tool schemas, model responses/usage, and tool results observed at native persistence hooks before compression. Full request snapshots remain in raw data; ACTF/SFT represent the logical executed conversation. Context summaries in subsequent API requests do not replace earlier executed tools in the exported trajectory. This is a Roller bridge journal, not Hermes' optional ShareGPT export or an OpenClaw trace.
+The append-only `rollout/trace.jsonl` journal records actual request messages/tool schemas, model responses/usage, and tool results observed at native persistence hooks before compression. Full request snapshots remain in raw data; ACTF/SFT represent the logical executed conversation. Native `vision_analyze` results retain image bytes. For OpenAI-compatible gateways that reject images on the `tool` role, the bridge sends the same bytes in a following `user` media message while preserving the original tool result in the journal. Context summaries in subsequent API requests do not replace earlier executed tools in the exported trajectory. This is a Roller bridge journal, not Hermes' optional ShareGPT export or an OpenClaw trace.
 
 The usual outputs are `trace_ACTF.json`, `trace_SFT.json`, results, provenance, and usage. The bridge rejects incomplete turns, empty final replies, malformed tool arguments, missing schemas, and corrupt JSONL. Timeouts stop execution and retain available partial artifacts. Hermes emits no OpenClaw cache trace, so Resume does not require one; `--wire-trace full` still requires the wire trace. Context with `capture: none` still prevents reuse.
 
 ## 5. Verification and scope
 
-See the [coverage guide](../../../examples/coverage/README.en.md) for the test matrix, model configuration, result checks, and Resume auditing.
+See the {download}`coverage guide <../../../examples/coverage/README.en.md>` for the test matrix, model configuration, result checks, and Resume auditing.
 
 ```bash
 python examples/coverage/suite.py validate --case '*/hermes'
@@ -91,7 +93,7 @@ python examples/coverage/suite.py check --case data/txt/hermes
 
 The matrix contains 204 Hermes input tasks and 28 additional mixed Simulator tasks (seven new pairings, four cases each). Tasks include text, files, context, setup/environment, binary inspection, output collection, grading, and short conversations. The complete project matrix is 1368 positive tasks and 20 isolated negative cases.
 
-The initial adapter supports Chat Completions and text-oriented terminal/file execution. Vision tools, direct multimodal messages, provider-specific authentication flows, Hermes gateways, remote terminal backends, persistent memory, and skill learning are outside this scope. The optional Hermes vision group records that capability boundary and is excluded from the required passing set. Binary file access is tested separately from media understanding.
+The adapter supports Chat Completions, terminal/file execution, and local-image loading through `vision_analyze` when `--hermes-vision` is enabled and the selected model is actually vision-capable. Image tool results are preserved in raw, ACTF, and multimodal SFT (`<image>` plus top-level `images`). Direct user-message attachments, video, provider-specific authentication flows, Hermes gateways, remote terminal backends, persistent memory, and skill learning remain outside this scope.
 
 `PIP_INDEX_URL` controls pip installation of uv; prefer an HTTPS index with a valid certificate. A trusted internal HTTP index on a non-loopback host requires an explicit `PIP_TRUSTED_HOST`. `PYPI_DOWNLOAD_BASE` changes only the download prefix in `uv.lock`; the mirror must preserve the `/packages/` layout, versions, and SHA-256 hashes. uv connection trust uses the separate `UV_INSECURE_HOST` argument; pip settings do not apply to uv. Hermes source still needs to be fetched from GitHub.
 
@@ -107,7 +109,7 @@ ROLLER_HERMES_DOCKER_TEST=1 PYTHONPATH=src \
 
 The Docker test uses a localhost HTTP server and a synthetic key. It verifies actual terminal execution, read-only inputs, context/setup/environment, two-turn history, full and disabled wire capture, reasoning export, Resume/run-lock behavior, and timeout cleanup. No external model credentials or model charges are involved. It requires Docker host networking, as used by the adapter’s full wire mode.
 
-Use `--case '*/hermes' --exclude-case 'vision/*'` to select the 200 supported input tasks. Add `--case 'simulators/pair/*'` to include all 196 Agent/Simulator tasks (396 in total, requiring all seven Harnesses). Both `suite.py` and `merge.py` accept these filters.
+Use `--case '*/hermes' --exclude-case 'vision/*'` to select the 200 model-independent nonvision input tasks. Add `--case 'simulators/pair/*'` to include all 196 Agent/Simulator tasks (396 in total, requiring all seven Harnesses). Both `suite.py` and `merge.py` accept these filters.
 
 ## 7. Troubleshooting
 

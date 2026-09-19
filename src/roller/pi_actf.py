@@ -1,4 +1,4 @@
-"""Strict text ACTF projection of pinned Pi events and native API requests."""
+"""Strict ACTF projection of pinned Pi events and native API requests."""
 from __future__ import annotations
 
 from copy import deepcopy
@@ -87,6 +87,10 @@ def pi_events_to_actf(events: Iterable[dict[str, Any]], *, keep_thinking: bool =
                 raise ValueError("Pi content block must be an object")
             block_type = block.get("type")
             if block_type == "text" and isinstance(block.get("text"), str):
+                continue
+            if (role == "toolResult" and block_type == "image"
+                    and isinstance(block.get("data"), str)
+                    and isinstance(block.get("mimeType", block.get("mime_type")), str)):
                 continue
             if role == "assistant" and block_type == "thinking" and isinstance(block.get("thinking"), str):
                 continue

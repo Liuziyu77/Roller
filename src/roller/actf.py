@@ -244,16 +244,12 @@ def openclaw_events_to_actf(
                 tool_call["id"] = _tool_call_id(
                     tool_call.get("id", ""), tool_call_namespace
                 )
-            if (
-                not content.strip()
-                and not reasoning.strip()
-                and not tool_calls
-                and message.get("errorMessage")
-            ):
-                # A provider idle timeout can leave an empty, aborted assistant
-                # event before OpenClaw retries the prompt. It is audit evidence,
-                # not a model response suitable for ACTF/SFT.
-                retry_after_empty_error = True
+            if not content.strip() and not reasoning.strip() and not tool_calls:
+                # OpenClaw can emit an empty assistant event while finalizing a
+                # tool turn (and also before retrying a provider error). Keep the
+                # event in the native trace for auditability, but do not turn it
+                # into an invalid empty ACTF/SFT assistant message.
+                retry_after_empty_error = bool(message.get("errorMessage"))
                 continue
             retry_after_empty_error = False
             finish_current(message_time)

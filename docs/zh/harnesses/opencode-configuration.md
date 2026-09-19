@@ -70,7 +70,7 @@ Debian 镜像参数 `DEBIAN_MIRROR`、`DEBIAN_SECURITY_MIRROR` 的用法见 [Doc
 
 ## 5. 轨迹、错误和 Resume
 
-本地插件在 provider 的 fetch 边界记录实际序列化请求，不改写请求或响应。`trace.jsonl` 保存这些请求、原生 message/part 事件及会话导出；ACTF 根据原生 ID 合并更新，保留多轮对话、reasoning、工具调用和结果。工具 schema 来自真实请求，不根据参数猜测。较大的内联附件 payload 完整保留在原生轨迹中，ACTF/SFT 记录有界元数据和内容哈希。
+本地插件在 provider 的 fetch 边界记录实际序列化请求，不改写请求或响应。`trace.jsonl` 保存这些请求、原生 message/part 事件及会话导出；ACTF 根据原生 ID 合并更新，保留多轮对话、reasoning、工具调用和结果。工具 schema 来自真实请求，不根据参数猜测。内联图片附件会保留为 image block 并导出到 SFT；ACTF details 同时保留有界附件元数据和内容哈希供审计。非图片附件继续只保存有界摘要。
 
 不完整会话、空回复、API 错误、截断回复、缺失或变化的工具 schema、损坏的 JSONL 会触发失败，raw 保留用于排查。超时会停止容器执行并尝试回收已有轨迹和文件。输出继续经过统一的文件安全检查。
 

@@ -90,6 +90,32 @@ def _attachment_placeholder(attachments: list[Any]) -> str:
     ) + "]"
 
 
+def _tool_result_content(result: str, attachments: list[Any]) -> list[dict[str, Any]]:
+    content = [{"type": "text", "text": result}]
+    non_image_attachments: list[Any] = []
+    for attachment in attachments:
+        if not isinstance(attachment, dict):
+            raise ValueError("OpenCode tool attachment must be an object")
+        mime = attachment.get("mime")
+        if isinstance(mime, str) and mime.lower().startswith("image/"):
+            image_url = attachment.get("url")
+            if not isinstance(image_url, str) or not image_url:
+                raise ValueError("OpenCode image attachment must contain a URL")
+            content.append(
+                {"type": "image", "data": image_url, "mimeType": mime.lower()}
+            )
+        else:
+            non_image_attachments.append(attachment)
+    if non_image_attachments:
+        content.append(
+            {
+                "type": "text",
+                "text": _attachment_placeholder(non_image_attachments),
+            }
+        )
+    return content
+
+
 def opencode_events_to_actf(events: Iterable[dict[str, Any]], *, keep_thinking: bool = True) -> dict[str, Any]:
     events = list(events)
     schemas, systems = {}, []
@@ -152,10 +178,7 @@ def opencode_events_to_actf(events: Iterable[dict[str, Any]], *, keep_thinking: 
                     if not isinstance(attachments, list):
                         raise ValueError("OpenCode tool attachments must be a list")
                     metadata = _attachment_metadata(attachments)
-                    message["content"] = [
-                        {"type": "text", "text": result},
-                        {"type": "text", "text": _attachment_placeholder(attachments)},
-                    ]
+                    message["content"] = _tool_result_content(result, attachments)
                     message["details"] = {"attachments": metadata}
                 results.append({"type": "message", "timestamp": _timestamp(state.get("time", {}).get("end")), "message": message})
             elif kind in {"step-start", "step-finish", "snapshot", "patch", "retry"}:
