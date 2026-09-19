@@ -163,6 +163,22 @@ class NormalizeReasoningReplayTests(unittest.TestCase):
             payload["choices"][0]["delta"]["reasoning_content"], "chain"
         )
 
+    def test_client_disconnect_during_stream_write_is_not_raised(self) -> None:
+        class DisconnectedWriter:
+            def write(self, payload: bytes) -> None:
+                del payload
+                raise BrokenPipeError
+
+            def flush(self) -> None:
+                raise AssertionError("flush must not run after a failed write")
+
+        handler = object.__new__(_ProxyHandler)
+        handler.wfile = DisconnectedWriter()
+        handler.close_connection = False
+
+        self.assertFalse(handler._write_client(b"chunk"))
+        self.assertTrue(handler.close_connection)
+
 
 class ExtractWireToolsTests(unittest.TestCase):
     def test_extracts_from_tools_entry(self) -> None:

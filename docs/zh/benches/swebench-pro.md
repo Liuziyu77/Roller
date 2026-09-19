@@ -101,3 +101,14 @@ roller bench report /tmp/swebench-pro-runs/local-qwen
 - 七个 Harness 共用相同的全新官方镜像评分路径。
 - 默认保留容器网络，不等同于上游 `--block_network`。
 - 完整运行会拉取大量按实例区分的镜像；先用 `--task-id` 做 smoke 并监控磁盘。
+
+## 6. 可选环境与评分修正
+
+OpenClaw 的 Node 位于 `/opt/roller-node/bin/node`，项目原有的 Node 保留不变。
+Python API `SWEBenchProAdapter` 另提供三个默认关闭的选项，导出的 manifest 会记录其值：
+
+- `go_proxy="https://goproxy.cn,direct"`：保留镜像的 Go 缓存路径并补齐登录 shell 的 Go 路径。若测试报告缺少 go.sum，下载依赖后在原评分时间预算内重新测试；依赖改动和首次失败日志单独保存。
+- `repair_test_fixtures=True`：从上游 gold patch 中仅提取测试数据目录的非执行文本数据，评分时补齐遗漏的 fixture。该内容不会进入 Agent 工作区或提示词。
+- `exclude_agent_tests=True`：评分时排除模型对 Go/Python/JS 测试源码的改动，避免新增自测与隐藏测试重名。原始 `model.patch` 保留，实际用于评分的补丁另存为 `graded.patch`。
+
+这些选项不改变官方通过标准，仅调整运行环境与评分基础设施。实验报告应同时保留原始成绩和修正后成绩。仅重跑失败任务所得的累计结果不能当作独立 pass@1。

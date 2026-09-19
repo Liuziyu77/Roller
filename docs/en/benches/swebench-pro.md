@@ -118,3 +118,16 @@ roller bench report /tmp/swebench-pro-runs/local-qwen-smoke
   equivalent to upstream `--block_network`.
 - A full run can pull many per-instance images. Start with `--task-id` and
   monitor Docker disk usage.
+
+## 6. Optional environment and grading corrections
+
+OpenClaw uses `/opt/roller-node/bin/node`, preserving the project's original Node.
+The Python `SWEBenchProAdapter` API offers three options, disabled by default and recorded in exported manifests:
+
+- `go_proxy="https://goproxy.cn,direct"`: preserve the image's Go cache paths and make Go available to login shells. If tests report missing go.sum entries, download dependencies and rerun within the original grading time budget. Save dependency edits and the first failed logs separately.
+- `repair_test_fixtures=True`: extract only non-executable text data from test-data directories in the upstream gold patch to supply missing fixtures during grading. These files never enter the Agent workspace or prompt.
+- `exclude_agent_tests=True`: exclude model changes to Go/Python/JS test source during grading to avoid collisions with hidden tests. Preserve `model.patch`; write the actual grading patch to `graded.patch`.
+
+These options preserve the official pass criterion while changing runtime and
+grading infrastructure. Report both original and corrected scores. Cumulative
+recovery from rerunning failures is not an independent pass@1 measurement.

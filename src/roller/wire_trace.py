@@ -198,6 +198,15 @@ class _ProxyHandler(BaseHTTPRequestHandler):
     def log_message(self, format: str, *args: Any) -> None:  # noqa: A002 - stdlib signature
         return
 
+    def _write_client(self, payload: bytes) -> bool:
+        try:
+            self.wfile.write(payload)
+            self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError):
+            self.close_connection = True
+            return False
+        return True
+
     def _record(
         self,
         body: bytes | None,
@@ -310,7 +319,7 @@ class _ProxyHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(payload)))
             self.end_headers()
-            self.wfile.write(payload)
+            self._write_client(payload)
             return
         self.send_response(response.status if hasattr(response, "status") else response.code)
         for key, value in response.headers.items():
@@ -330,8 +339,8 @@ class _ProxyHandler(BaseHTTPRequestHandler):
                 line = response.readline()
                 if not line:
                     break
-                self.wfile.write(self._normalize_sse_reasoning_line(line))
-                self.wfile.flush()
+                if not self._write_client(self._normalize_sse_reasoning_line(line)):
+                    break
             return
         if normalize_reasoning and "json" in content_type:
             payload = response.read()
@@ -343,15 +352,14 @@ class _ProxyHandler(BaseHTTPRequestHandler):
                 ).encode("utf-8")
             except (json.JSONDecodeError, UnicodeDecodeError):
                 pass
-            self.wfile.write(payload)
-            self.wfile.flush()
+            self._write_client(payload)
             return
         while True:
             chunk = response.read(65536)
             if not chunk:
                 break
-            self.wfile.write(chunk)
-            self.wfile.flush()
+            if not self._write_client(chunk):
+                break
 
     @staticmethod
     def _normalize_sse_reasoning_line(line: bytes) -> bytes:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import hashlib
+import importlib
 import json
 import logging
 import os
@@ -11,11 +12,11 @@ import re
 import shlex
 import subprocess
 import tempfile
-import threading
 import time
 import uuid
 from collections.abc import Iterable, Sequence
 from dataclasses import replace
+from importlib import resources
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -27,6 +28,11 @@ from roller.benches.base import (
 )
 from roller.benches.grading import ContainerGrader, GradedHarness, GradeOutcome
 from roller.benches.report import mean_aggregate
+from roller.benches.swebench_pro_images import (
+    _DERIVED_IMAGES,
+    _image_id,
+    ensure_harness_image,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -39,275 +45,14 @@ GRADE_TIMEOUT_SECONDS = 3600
 TEST_TIMEOUT_SECONDS = 3300
 SOURCE_IMAGE_PREFIX = "jefzda/sweap-images:"
 BASELINE_REF = "refs/roller/baseline"
-IMAGE_PULL_ATTEMPTS = 5
-IMAGE_PULL_RETRY_SECONDS = 15
+EVALUATION_PROTOCOL_REVISION = "2026-09-19-v2"
 
-_IMAGE_REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/@:+-]*$")
 _INSTANCE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
-_BUILD_LOCK = threading.Lock()
-_DERIVED_IMAGES: dict[tuple[str, str, str], str] = {}
 
 
-_GRADER_SOURCE = r"""
-import json
-import os
-import re
-import shutil
-import subprocess
-import sys
-import tempfile
-from pathlib import Path, PurePosixPath
-
-_BASELINE_REF = "refs/roller/baseline"
-_GRADE_DIR = ".roller-grade"
-_OUTPUT_DIR = ".roller_outputs"
-
-
-def _run(command, workspace, timeout=None):
-    return subprocess.run(
-        command,
-        cwd=workspace,
-        capture_output=True,
-        text=True,
-        errors="replace",
-        timeout=timeout,
-    )
-
-
-def _detail(result):
-    return (result.stderr or result.stdout or "").strip()[-4000:]
-
-
-def _safe_relative(value):
-    path = PurePosixPath(value)
-    if path.is_absolute() or not path.parts or any(part in ("", ".", "..") for part in path.parts):
-        raise ValueError("unsafe test path: %r" % value)
-    return path
-
-
-def _remove(path):
-    if path.is_symlink() or path.is_file():
-        path.unlink(missing_ok=True)
-    elif path.is_dir():
-        shutil.rmtree(path)
-
-
-def _copy(source, destination):
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    if source.is_symlink():
-        os.symlink(os.readlink(source), destination)
-    elif source.is_dir():
-        shutil.copytree(source, destination, symlinks=True)
-    elif source.is_file():
-        shutil.copy2(source, destination, follow_symlinks=False)
-
-
-def _strip_binary_hunks(patch):
-    sections = re.split(r"(?=^diff --git )", patch, flags=re.MULTILINE)
-    kept = []
-    for section in sections:
-        if not section.strip():
-            continue
-        if re.search(r"^Binary files .* differ$", section, re.MULTILINE):
-            continue
-        if re.search(r"^GIT binary patch$", section, re.MULTILINE):
-            continue
-        kept.append(section)
-    return "".join(kept)
-
-
-def _error(message, **details):
-    payload = {"overall_score": 0.0, "resolved": 0, "error": message}
-    payload.update(details)
-    return payload
-
-
-def roller_grade(
-    workspace_path,
-    fail_to_pass,
-    pass_to_pass,
-    selected_test_files,
-    test_files,
-    test_timeout_seconds=3300,
-):
-    workspace = Path(workspace_path)
-    grade_dir = workspace / _GRADE_DIR
-    output_dir = workspace / _OUTPUT_DIR
-    output_dir.mkdir(parents=True, exist_ok=True)
-    model_patch_path = output_dir / "model.patch"
-    stdout_path = output_dir / "test_stdout.log"
-    stderr_path = output_dir / "test_stderr.log"
-    parsed_path = output_dir / "test_output.json"
-    test_patch_path = grade_dir / "test.patch"
-    run_script_path = grade_dir / "run_script.sh"
-    parser_path = grade_dir / "parser.py"
-
-    try:
-        for path in (test_patch_path, run_script_path, parser_path):
-            if not path.is_file():
-                return _error("missing staged grader file: %s" % path.name)
-
-        intent = _run(["git", "add", "-N", "--", "."], workspace)
-        if intent.returncode != 0:
-            return _error("could not enumerate model changes: %s" % _detail(intent))
-        diff = _run(
-            [
-                "git",
-                "diff",
-                "--binary",
-                "--full-index",
-                "--no-ext-diff",
-                _BASELINE_REF,
-                "--",
-                ".",
-            ],
-            workspace,
-        )
-        if diff.returncode != 0:
-            return _error("could not extract model patch: %s" % _detail(diff))
-        model_patch = _strip_binary_hunks(diff.stdout)
-        model_patch_path.write_text(model_patch, encoding="utf-8")
-
-        reset = _run(["git", "reset", "--hard", _BASELINE_REF], workspace)
-        if reset.returncode != 0:
-            return _error("could not restore benchmark baseline: %s" % _detail(reset))
-        clean = _run(["git", "clean", "-fd"], workspace)
-        if clean.returncode != 0:
-            return _error("could not clean benchmark baseline: %s" % _detail(clean))
-
-        hidden = _run(["git", "apply", "--verbose", str(test_patch_path)], workspace)
-        if hidden.returncode != 0:
-            return _error("hidden test patch did not apply: %s" % _detail(hidden))
-        hidden_intent = _run(["git", "add", "-N", "--", "."], workspace)
-        if hidden_intent.returncode != 0:
-            return _error("could not enumerate hidden tests: %s" % _detail(hidden_intent))
-        changed = _run(
-            [
-                "git",
-                "-c",
-                "core.quotepath=false",
-                "diff",
-                "--name-only",
-                "-z",
-                _BASELINE_REF,
-                "--",
-                ".",
-            ],
-            workspace,
-        )
-        if changed.returncode != 0:
-            return _error("could not enumerate hidden test files: %s" % _detail(changed))
-        hidden_paths = list(test_files)
-        hidden_paths.extend(item for item in changed.stdout.split("\0") if item)
-        hidden_paths = list(dict.fromkeys(hidden_paths))
-
-        with tempfile.TemporaryDirectory(prefix="roller-swebench-tests-") as temporary:
-            snapshot = Path(temporary)
-            present = set()
-            for index, relative in enumerate(hidden_paths):
-                relative_path = _safe_relative(relative)
-                source = workspace.joinpath(*relative_path.parts)
-                if source.exists() or source.is_symlink():
-                    _copy(source, snapshot / str(index))
-                    present.add(index)
-
-            for relative in hidden_paths:
-                relative_path = _safe_relative(relative)
-                _remove(workspace.joinpath(*relative_path.parts))
-            reset = _run(["git", "reset", "--hard", _BASELINE_REF], workspace)
-            if reset.returncode != 0:
-                return _error("could not reset after staging hidden tests: %s" % _detail(reset))
-            clean = _run(["git", "clean", "-fd"], workspace)
-            if clean.returncode != 0:
-                return _error("could not clean after staging hidden tests: %s" % _detail(clean))
-
-            if model_patch.strip():
-                applied = _run(["git", "apply", "--verbose", str(model_patch_path)], workspace)
-                if applied.returncode != 0:
-                    return _error(
-                        "model patch did not apply to a clean instance: %s" % _detail(applied)
-                    )
-
-            for index, relative in enumerate(hidden_paths):
-                relative_path = _safe_relative(relative)
-                destination = workspace.joinpath(*relative_path.parts)
-                _remove(destination)
-                if index in present:
-                    _copy(snapshot / str(index), destination)
-
-        selected_argument = ",".join(selected_test_files)
-        with stdout_path.open("w", encoding="utf-8") as stdout_handle, stderr_path.open(
-            "w", encoding="utf-8"
-        ) as stderr_handle:
-            try:
-                test_result = subprocess.run(
-                    ["bash", str(run_script_path), selected_argument],
-                    cwd=workspace,
-                    stdout=stdout_handle,
-                    stderr=stderr_handle,
-                    text=True,
-                    timeout=test_timeout_seconds,
-                )
-            except subprocess.TimeoutExpired:
-                return _error(
-                    "official test script timed out",
-                    test_timeout_seconds=test_timeout_seconds,
-                )
-
-        parsed = _run(
-            [
-                sys.executable,
-                str(parser_path),
-                str(stdout_path),
-                str(stderr_path),
-                str(parsed_path),
-            ],
-            workspace,
-            timeout=120,
-        )
-        if parsed.returncode != 0 or not parsed_path.is_file():
-            return _error(
-                "official result parser failed: %s" % _detail(parsed),
-                test_returncode=test_result.returncode,
-            )
-        try:
-            output = json.loads(parsed_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            return _error(
-                "official result parser produced invalid JSON: %s" % exc,
-                test_returncode=test_result.returncode,
-            )
-        tests = output.get("tests") if isinstance(output, dict) else None
-        if not isinstance(tests, list):
-            return _error(
-                "official result parser produced no tests list",
-                test_returncode=test_result.returncode,
-            )
-        passed = {
-            item.get("name")
-            for item in tests
-            if isinstance(item, dict)
-            and item.get("status") == "PASSED"
-            and isinstance(item.get("name"), str)
-        }
-        required = set(fail_to_pass) | set(pass_to_pass)
-        missing = sorted(required - passed)
-        resolved = not missing
-        return {
-            "overall_score": float(resolved),
-            "resolved": int(resolved),
-            "test_returncode": test_result.returncode,
-            "tests_seen": len(tests),
-            "required_tests": len(required),
-            "passed_required_tests": len(required) - len(missing),
-            "fail_to_pass_tests": len(fail_to_pass),
-            "pass_to_pass_tests": len(pass_to_pass),
-            "missing_tests": missing,
-            "model_patch_bytes": len(model_patch.encode("utf-8")),
-        }
-    except Exception as exc:
-        return _error("SWE-Bench Pro grader failed: %s: %s" % (type(exc).__name__, exc))
-"""
+_GRADER_SOURCE = "\n" + resources.files("roller.benches").joinpath(
+    "swebench_pro_grader.py"
+).read_text(encoding="utf-8")
 
 
 def _clean_text(value: Any, label: str) -> str:
@@ -367,10 +112,10 @@ def _test_files(value: Any, label: str) -> list[str]:
     return paths
 
 
-def _setup_command(base_commit: str) -> str:
+def _setup_command(base_commit: str, *, go_proxy: str | None = None) -> str:
     if not re.fullmatch(r"[0-9a-fA-F]{40}", base_commit):
         raise BenchFormatError(f"invalid base_commit {base_commit!r}")
-    return f"""\
+    command = f"""\
 set -euo pipefail
 git config --global --add safe.directory {WORKSPACE_CONTAINER_PATH}
 git reset --hard {base_commit}
@@ -379,8 +124,8 @@ git checkout {base_commit}
 git ls-files -z > /tmp/roller-swebench-tracked
 rm -rf .git
 git init -q
-git config user.name Roller
-git config user.email roller@localhost
+git config user.name zqy
+git config user.email zqy@localhost
 cat > .git/info/exclude <<'EOF'
 {OUTPUT_DIR_NAME}/
 {GRADE_DIR_NAME}/
@@ -400,6 +145,19 @@ git update-ref {BASELINE_REF} HEAD
 rm -f /tmp/roller-swebench-tracked
 mkdir -p {OUTPUT_DIR_NAME}
 """
+    if go_proxy:
+        command += f"""\
+if ! command -v go >/dev/null 2>&1 && [ -x /usr/local/go/bin/go ]; then
+    ln -sf /usr/local/go/bin/go /usr/local/bin/go
+    if [ -x /usr/local/go/bin/gofmt ] && ! command -v gofmt >/dev/null 2>&1; then
+        ln -sf /usr/local/go/bin/gofmt /usr/local/bin/gofmt
+    fi
+fi
+if command -v go >/dev/null 2>&1; then
+    go env -w GOPATH="$(go env GOPATH)" GOMODCACHE="$(go env GOMODCACHE)" GOPROXY={shlex.quote(go_proxy)}
+fi
+"""
+    return command
 
 
 def _dataset_path(root: Path) -> Path:
@@ -438,7 +196,7 @@ def _load_dataset(path: Path) -> list[dict[str, Any]]:
                 rows.append(row)
         return rows
     try:
-        from pyarrow import parquet
+        parquet = importlib.import_module("pyarrow.parquet")
     except ImportError as exc:
         raise BenchFormatError(
             "reading SWE-Bench Pro parquet requires `pip install -e "
@@ -486,116 +244,39 @@ def _materialize_test_patch(
     return destination
 
 
-def _image_id(runtime: Any, image: str) -> str:
-    inspected = runtime.run(
-        ["image", "inspect", image, "--format", "{{.Id}}"], timeout=60
-    )
-    if inspected.returncode != 0:
-        detail = ""
-        for attempt in range(1, IMAGE_PULL_ATTEMPTS + 1):
-            logger.info(
-                "pulling SWE-Bench Pro runtime image %s (attempt %s/%s)",
-                image,
-                attempt,
-                IMAGE_PULL_ATTEMPTS,
+
+def _test_fixture_patch(content: str) -> tuple[str, list[str]]:
+    """Extract non-executable test data that upstream omitted from test_patch."""
+    kept: list[str] = []
+    paths: list[str] = []
+    directories = {"testdata", "test_data", "fixtures", "__fixtures__"}
+    suffixes = {".json", ".yaml", ".yml", ".txt", ".csv", ".xml", ".toml"}
+    for section in re.split(r"(?=^diff --git )", content, flags=re.MULTILINE):
+        if not section.startswith("diff --git "):
+            continue
+        try:
+            header = shlex.split(section.splitlines()[0])
+        except ValueError:
+            continue
+        if len(header) != 4 or header[2][2:] != header[3][2:]:
+            continue
+        path = PurePosixPath(header[3][2:])
+        if (
+            path.is_absolute()
+            or ".." in path.parts
+            or not directories.intersection(path.parts[:-1])
+            or path.suffix.lower() not in suffixes
+            or re.search(
+                r"^(?:new file mode|new mode|old mode) 120000$",
+                section,
+                re.MULTILINE,
             )
-            try:
-                pulled = runtime.run(["pull", image], timeout=3600)
-            except subprocess.TimeoutExpired as exc:
-                detail = str(exc)
-            else:
-                detail = (pulled.stderr or pulled.stdout or "").strip()[-2000:]
-            inspected = runtime.run(
-                ["image", "inspect", image, "--format", "{{.Id}}"], timeout=60
-            )
-            if inspected.returncode == 0 and inspected.stdout.strip():
-                break
-            if attempt < IMAGE_PULL_ATTEMPTS:
-                delay = min(
-                    IMAGE_PULL_RETRY_SECONDS * (2 ** (attempt - 1)),
-                    120,
-                )
-                logger.warning(
-                    "Docker image pull failed for %s; retrying in %ss: %s",
-                    image,
-                    delay,
-                    detail,
-                )
-                time.sleep(delay)
-        else:
-            raise RuntimeError(f"could not pull Docker image {image}: {detail}")
-    if inspected.returncode != 0 or not inspected.stdout.strip():
-        detail = (inspected.stderr or inspected.stdout or "").strip()[-1000:]
-        raise RuntimeError(f"could not inspect Docker image {image}: {detail}")
-    return inspected.stdout.strip()
-
-
-def ensure_harness_image(
-    runtime: Any,
-    source_image: str,
-    harness_image: str,
-    harness_name: str,
-) -> str:
-    """Build an Agent image with one Harness and the official repository snapshot."""
-
-    for image in (source_image, harness_image):
-        if not _IMAGE_REF_RE.fullmatch(image):
-            raise ValueError(f"unsafe Docker image reference: {image!r}")
-    with _BUILD_LOCK:
-        source_id = _image_id(runtime, source_image)
-        harness_id = _image_id(runtime, harness_image)
-        key = (source_id, harness_id, harness_name)
-        cached = _DERIVED_IMAGES.get(key)
-        if cached is not None:
-            return cached
-        digest = hashlib.sha256("\0".join(key).encode()).hexdigest()[:20]
-        tag = f"roller-swebench-pro-{harness_name}:{digest}"
-        existing = runtime.run(
-            ["image", "inspect", tag, "--format", "{{.Id}}"], timeout=60
-        )
-        if existing.returncode == 0:
-            _DERIVED_IMAGES[key] = tag
-            return tag
-        if harness_name == "openclaw":
-            dockerfile = f"""\
-FROM {harness_image} AS harness
-FROM {source_image}
-USER root
-COPY --from=harness /usr/local/bin/node /usr/local/bin/node
-COPY --from=harness /app /opt/roller-openclaw
-RUN ln -sf /opt/roller-openclaw/openclaw.mjs /usr/local/bin/openclaw \\
-    && chmod 755 /opt/roller-openclaw/openclaw.mjs /usr/local/bin/node
-ENV PATH="/usr/local/bin:${{PATH}}"
-ENTRYPOINT []
-CMD ["/bin/bash"]
-"""
-        else:
-            dockerfile = f"""\
-FROM {source_image} AS instance
-FROM {harness_image}
-USER root
-COPY --from=instance /app /app
-ENTRYPOINT []
-CMD ["/bin/bash"]
-"""
-        with tempfile.TemporaryDirectory(prefix="roller-swebench-image-") as temporary:
-            context = Path(temporary)
-            (context / "Dockerfile").write_text(dockerfile, encoding="utf-8")
-            built = runtime.run(["build", "-t", tag, str(context)], timeout=3600)
-        if built.returncode != 0:
-            detail = (built.stderr or built.stdout or "").strip()[-4000:]
-            raise RuntimeError(
-                f"could not combine {harness_name} with SWE-Bench Pro image "
-                f"{source_image}: {detail}"
-            )
-        _DERIVED_IMAGES[key] = tag
-        return tag
-
-
-def ensure_openclaw_image(runtime: Any, source_image: str, openclaw_image: str) -> str:
-    """Compatibility helper retained for callers of the initial integration."""
-
-    return ensure_harness_image(runtime, source_image, openclaw_image, "openclaw")
+            or "GIT binary patch" in section
+        ):
+            continue
+        kept.append(section)
+        paths.append(str(path))
+    return "".join(kept), paths
 
 
 def _strip_binary_hunks(patch: str) -> str:
@@ -618,7 +299,7 @@ class SWEBenchProGradedHarness(GradedHarness):
             f"{BASELINE_REF} -- ."
         )
         try:
-            result = self.inner.runtime.run(
+            result = getattr(self.inner, "runtime").run(
                 [
                     "exec",
                     "-w",
@@ -673,8 +354,11 @@ class SWEBenchProGradedHarness(GradedHarness):
                 timeout=120,
             )
 
-    def _grade(self, session: Any, request: Any, status: str) -> GradeOutcome:
+    def _grade(self, session: Any, request: Any, status: str) -> GradeOutcome | None:
         started = time.monotonic()
+        spec = self.binding.grade
+        if spec is None:
+            return None
         if not getattr(session, "container_started", False):
             return super()._grade(session, request, status)
         patch, error = self._extract_patch(session)
@@ -685,7 +369,7 @@ class SWEBenchProGradedHarness(GradedHarness):
                 error,
             )
 
-        runtime = self.inner.runtime
+        runtime = getattr(self.inner, "runtime")
         source_image = self.binding.metadata["source_image"]
         base_commit = self.binding.metadata["base_commit"]
         _image_id(runtime, source_image)
@@ -720,7 +404,9 @@ class SWEBenchProGradedHarness(GradedHarness):
                     grader_container,
                     "/bin/bash",
                     "-lc",
-                    _setup_command(base_commit),
+                    _setup_command(
+                        base_commit, go_proxy=self.binding.metadata.get("go_proxy")
+                    ),
                 ],
                 timeout=300,
             )
@@ -760,7 +446,7 @@ class SWEBenchProGradedHarness(GradedHarness):
                     raise RuntimeError(
                         f"model patch did not apply in fresh grader: {detail}"
                     )
-            outcome = ContainerGrader(self.binding.grade).grade(
+            outcome = ContainerGrader(spec).grade(
                 runtime,
                 grader_container,
                 task_id=request.task.id,
@@ -799,10 +485,20 @@ class SWEBenchProAdapter(BenchAdapter):
     name = "swebench-pro"
     description = "SWE-Bench Pro public split with official instance-image tests"
 
-    def __init__(self, cache_root: Path | None = None) -> None:
+    def __init__(
+        self,
+        cache_root: Path | None = None,
+        *,
+        repair_test_fixtures: bool = False,
+        exclude_agent_tests: bool = False,
+        go_proxy: str | None = None,
+    ) -> None:
         self.cache_root = (
             cache_root.expanduser().resolve() if cache_root else _default_cache_root()
         )
+        self.repair_test_fixtures = repair_test_fixtures
+        self.exclude_agent_tests = exclude_agent_tests
+        self.go_proxy = go_proxy
 
     def load(
         self,
@@ -855,6 +551,19 @@ class SWEBenchProAdapter(BenchAdapter):
             test_patch_path = _materialize_test_patch(
                 root, self.cache_root, instance_id, test_patch
             )
+            fixture_paths: list[str] = []
+            fixture_stage: tuple[tuple[str, str], ...] = ()
+            if self.repair_test_fixtures:
+                fixture_patch, fixture_paths = _test_fixture_patch(
+                    record.get("patch") or ""
+                )
+                if fixture_paths:
+                    fixture_path = _materialize_test_patch(
+                        root, self.cache_root, f"{instance_id}.fixtures", fixture_patch
+                    )
+                    fixture_stage = (
+                        (str(fixture_path), f"{GRADE_DIR_NAME}/test-fixtures.patch"),
+                    )
             fail_to_pass = _string_list(
                 record.get("fail_to_pass"), f"{instance_id}.fail_to_pass"
             )
@@ -888,6 +597,12 @@ class SWEBenchProAdapter(BenchAdapter):
                     ),
                     "base_commit": base_commit,
                     "source_image": source_image,
+                    "go_proxy": self.go_proxy,
+                    "evaluation_protocol": {
+                        "revision": EVALUATION_PROTOCOL_REVISION,
+                        "repair_test_fixtures": self.repair_test_fixtures,
+                        "exclude_agent_tests": self.exclude_agent_tests,
+                    },
                     "issue_specificity": _string_list(
                         record.get("issue_specificity"),
                         f"{instance_id}.issue_specificity",
@@ -906,6 +621,9 @@ class SWEBenchProAdapter(BenchAdapter):
                         "selected_test_files": selected,
                         "test_files": restore_files,
                         "test_timeout_seconds": TEST_TIMEOUT_SECONDS,
+                        "exclude_agent_tests": self.exclude_agent_tests,
+                        "supplemental_test_fixtures": fixture_paths,
+                        "prepare_go_dependencies": bool(self.go_proxy),
                     },
                     timeout_seconds=GRADE_TIMEOUT_SECONDS,
                     needs_transcript=False,
@@ -914,7 +632,7 @@ class SWEBenchProAdapter(BenchAdapter):
                         (str(test_patch_path), f"{GRADE_DIR_NAME}/test.patch"),
                         (str(run_script.resolve()), f"{GRADE_DIR_NAME}/run_script.sh"),
                         (str(parser.resolve()), f"{GRADE_DIR_NAME}/parser.py"),
-                    ),
+                    ) + fixture_stage,
                 ),
             )
             rows.append(
@@ -925,7 +643,9 @@ class SWEBenchProAdapter(BenchAdapter):
                     "prompt": prompt,
                     "timeout_seconds": DEFAULT_TIMEOUT_SECONDS,
                     "files": {"output_dir": OUTPUT_DIR_NAME},
-                    "runtime": {"setup": [_setup_command(base_commit)]},
+                    "runtime": {
+                        "setup": [_setup_command(base_commit, go_proxy=self.go_proxy)]
+                    },
                     "bench": binding.as_dict(),
                 }
             )
@@ -973,5 +693,4 @@ __all__ = [
     "SWEBenchProAdapter",
     "SWEBenchProGradedHarness",
     "ensure_harness_image",
-    "ensure_openclaw_image",
 ]
