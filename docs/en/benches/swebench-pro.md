@@ -2,6 +2,9 @@
 
 [Documentation home](../index.md) · [Bench integration and scoring](bench-format.md) · [CLI reference](../start/cli-reference.md)
 
+Evaluation report:
+[DeepSeek V4 Pro fixed-first-100 results (2026-09-19)](swebench-pro-evaluation-2026-09-19.md).
+
 Roller supports all 731 tasks and 11 repositories in the public SWE-Bench Pro
 test split. It reuses the official Docker images, `run_script.sh`, `parser.py`,
 F2P/P2P sets, and resolved criterion.

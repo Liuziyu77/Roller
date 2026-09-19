@@ -2,6 +2,9 @@
 
 [文档中心](../index.md) · [Bench 接入与评分](bench-format.md) · [CLI 参数参考](../start/cli-reference.md)
 
+评测报告：
+[DeepSeek V4 Pro 固定前 100 题结果（2026-09-19）](swebench-pro-evaluation-2026-09-19.md)。
+
 Roller 支持 SWE-Bench Pro 公共 test split 的 731 个任务、11 个仓库，并复用官方
 Docker 镜像、`run_script.sh`、`parser.py`、F2P/P2P 集合和 resolved 判定。
 上游：<https://github.com/scaleapi/SWE-bench_Pro-os>。
