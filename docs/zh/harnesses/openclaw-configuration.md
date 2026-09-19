@@ -1,7 +1,5 @@
 # OpenClaw Harness 指南
 
-[文档中心](../index.md) · [快速上手](../start/getting-started.md) · [Codex](codex-configuration.md) · [Claude Code](claude-code-configuration.md) · [CLI 参数](../start/cli-reference.md)
-
 本页介绍 OpenClaw 专属的镜像、模型 provider、API adapter、thinking、搜索、gateway 和排错。Task 字段见 [Task 格式参考](../tasks/task-format.md)，各 Harness 的产物说明见 [轨迹产出文件指南](../traces/trajectory-outputs.md)。
 
 > 快速定位：镜像与 Docker（第 1 节）· provider JSON（第 2–4 节）· reasoning/wire（第 5 节）· 并行端口（第 7 节）· 参数速查与排错（第 8–10 节）

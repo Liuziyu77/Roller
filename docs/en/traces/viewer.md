@@ -1,7 +1,5 @@
 # Trajectory Viewer
 
-[Documentation home](../index.md) · [Getting started](../start/getting-started.md#8-open-the-viewer) · [Trajectory outputs](trajectory-outputs.md) · [SFT format](sft-format.md)
-
 Roller includes a read-only Web Viewer that needs no extra dependencies. It groups
 a run by task and displays model rollouts, reasoning, tool calls, tool results,
 and final replies. The Viewer reads existing Roller artifacts directly.

@@ -1,7 +1,5 @@
 # Bench integration and scoring
 
-[Documentation home](../index.md) · [Task format reference](../tasks/task-format.md) · [CLI reference](../start/cli-reference.md) · [Trajectory output file guide](../traces/trajectory-outputs.md)
-
 Roller destroys the container after a task finishes. The bench layer adds
 task export and scoring before that teardown:
 

@@ -1,7 +1,5 @@
 # SFT data format
 
-[Documentation home](../index.md) · [Trajectory outputs](trajectory-outputs.md) · [Task format](../tasks/task-format.md)
-
 Roller generates a training file, `trace_SFT.json`, for each successful trajectory,
 alongside the raw trace and ACTF. Run-root `sft.jsonl` aggregates
 every successful sample in request-index order. Each line is identical to the

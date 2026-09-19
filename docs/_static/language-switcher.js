@@ -5,9 +5,8 @@
   }
 
   function currentRelPath(root) {
-    const rootHref = root.href.endsWith("/") ? root.href : root.href + "/";
-    let rel = window.location.href.slice(rootHref.length);
-    rel = rel.split("#")[0].split("?")[0];
+    const rootPath = root.pathname.endsWith("/") ? root.pathname : root.pathname + "/";
+    const rel = window.location.pathname.slice(rootPath.length);
     return rel || "index.html";
   }
 
@@ -15,19 +14,28 @@
     const root = contentRoot();
     const rel = currentRelPath(root);
     const isZh = (document.documentElement.lang || "").toLowerCase().startsWith("zh");
-    return isZh ? new URL("../" + rel, root).href : new URL("zh/" + rel, root).href;
+    const target = isZh ? new URL("../" + rel, root) : new URL("zh/" + rel, root);
+    target.search = window.location.search;
+    return target.href;
+  }
+
+  function uiCopy() {
+    const locales = window.DOCS_UI_LOCALES || {};
+    const isZh = (document.documentElement.lang || "").toLowerCase().startsWith("zh");
+    return locales[isZh ? "zh" : "en"] || locales.en || {};
   }
 
   function mount() {
     const isZh = (document.documentElement.lang || "").toLowerCase().startsWith("zh");
     const other = counterpartUrl();
+    const copy = uiCopy();
     const box = document.createElement("div");
     box.className = "lang-switcher";
     box.setAttribute("role", "navigation");
-    box.setAttribute("aria-label", "Language");
+    box.setAttribute("aria-label", copy.langNav || "Language");
 
     const en = document.createElement("a");
-    en.textContent = "EN";
+    en.textContent = copy.langEn || "EN";
     en.href = isZh ? other : window.location.href;
     if (!isZh) {
       en.className = "is-active";
@@ -35,7 +43,7 @@
     }
 
     const zh = document.createElement("a");
-    zh.textContent = "中文";
+    zh.textContent = copy.langZh || "中文";
     zh.href = isZh ? window.location.href : other;
     if (isZh) {
       zh.className = "is-active";

@@ -1,7 +1,5 @@
 # Codex Harness guide
 
-[Documentation home](../index.md) · [Getting started](../start/getting-started.md) · [OpenClaw](openclaw-configuration.md) · [Claude Code](claude-code-configuration.md) · [CLI reference](../start/cli-reference.md)
-
 This guide covers Codex-specific images, the Responses API, reasoning, native session, and troubleshooting. For Task fields, see [Task format reference](../tasks/task-format.md). For the outputs shared by all Harnesses, see [Trajectory output file guide](../traces/trajectory-outputs.md).
 
 > Jump to: supported scope (section 1) · image (section 2) · API (section 3) · reasoning (section 4) · native/ACTF/SFT/wire (sections 7 to 8) · troubleshooting (section 9)
