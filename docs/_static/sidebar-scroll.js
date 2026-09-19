@@ -68,15 +68,13 @@
   // Re-apply it to the current branch on every page load so that following a
   // cross-page sidebar link keeps the tree expanded instead of collapsing.
   function expandCurrentBranch() {
-    ["toctree-l1", "toctree-l2", "toctree-l3"].forEach(function (level) {
-      document
-        .querySelectorAll(".wy-menu-vertical li." + level + ".current")
-        .forEach(function (item) {
-          item.classList.add("roller-expanded");
-          const button = item.querySelector(":scope > a > button.toctree-expand");
-          if (button) syncNavButton(button);
-        });
-    });
+    document
+      .querySelectorAll(".wy-menu-vertical li.toctree-l1.current")
+      .forEach(function (item) {
+        item.classList.add("roller-expanded");
+        const button = item.querySelector(":scope > a > button.toctree-expand");
+        if (button) syncNavButton(button);
+      });
   }
 
   function fitCurrentGroup(sidebar, group) {

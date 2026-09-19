@@ -14,16 +14,12 @@ body,
     overflow-anchor: none;
 }
 
-/* Keep page headings closed until their own toggle is used. */
-.wy-menu-vertical li.toctree-l1:not(.roller-expanded) > ul,
-.wy-menu-vertical li.toctree-l2:not(.roller-expanded) > ul,
-.wy-menu-vertical .toctree-l1.current .toctree-l2:not(.roller-expanded) > ul {
+/* Keep a page's chapter list closed until its toggle is used. */
+.wy-menu-vertical li.toctree-l1:not(.roller-expanded) > ul {
     display: none;
 }
 
-.wy-menu-vertical li.toctree-l1.roller-expanded > ul,
-.wy-menu-vertical li.toctree-l2.roller-expanded > ul,
-.wy-menu-vertical .toctree-l1.current .toctree-l2.roller-expanded > ul {
+.wy-menu-vertical li.toctree-l1.roller-expanded > ul {
     display: block;
 }
 
@@ -52,6 +48,11 @@ body,
     color: #1f1f1f;
     opacity: 1;
     background: transparent;
+}
+
+/* Keep second-level chapters aligned when their page becomes current. */
+.wy-menu-vertical li.toctree-l1 > ul > li.toctree-l2 > a {
+    padding-inline: 1.618em;
 }
 
 .wy-menu-vertical li.roller-expanded ul a:hover {

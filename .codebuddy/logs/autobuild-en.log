@@ -1,0 +1,825 @@
+[32m[sphinx-autobuild] [36mStarting initial build[0m
+[32m[sphinx-autobuild] [34m> python -m sphinx build -b html -c . -D language=en en _build/html[0m
+Running Sphinx v9.0.4
+loading translations [en]... done
+myst v5.1.0: MdParserConfig(commonmark_only=False, gfm_only=False, enable_extensions={'deflist', 'colon_fence'}, disable_syntax=[], all_links_external=False, links_external_new_tab=False, url_schemes=('http', 'https', 'mailto', 'ftp'), ref_domains=None, fence_as_directive=set(), number_code_blocks=[], title_to_header=False, heading_anchors=3, heading_slug_func=None, html_meta={}, footnote_sort=True, footnote_transition=True, words_per_minute=200, substitutions={}, linkify_fuzzy_links=True, dmath_allow_labels=True, dmath_allow_space=True, dmath_allow_digits=True, dmath_double_inline=False, update_mathjax=True, mathjax_classes='tex2jax_process|mathjax_process|math|output_area', enable_checkboxes=False, strikethrough_single_tilde=False, colon_fence_exact_match=False, suppress_warnings=[], highlight_code_blocks=True)
+building [mo]: targets for 0 po files that are out of date
+writing output... 
+building [html]: targets for 19 source files that are out of date
+updating environment: [new config] 19 added, 0 changed, 0 removed
+reading sources... [  5%] benches/bench-format
+reading sources... [ 11%] benches/wildclawbench
+reading sources... [ 16%] harnesses/claude-code-configuration
+reading sources... [ 21%] harnesses/codex-configuration
+reading sources... [ 26%] harnesses/deepseek-configuration
+reading sources... [ 32%] harnesses/hermes-configuration
+reading sources... [ 37%] harnesses/openclaw-configuration
+reading sources... [ 42%] harnesses/opencode-configuration
+reading sources... [ 47%] harnesses/pi-configuration
+reading sources... [ 53%] index
+reading sources... [ 58%] start/cli-reference
+reading sources... [ 63%] start/examples
+reading sources... [ 68%] start/getting-started
+reading sources... [ 74%] tasks/task-bundle-and-storage
+reading sources... [ 79%] tasks/task-format
+reading sources... [ 84%] tasks/user-simulator
+reading sources... [ 89%] traces/sft-format
+reading sources... [ 95%] traces/trajectory-outputs
+reading sources... [100%] traces/viewer
+
+looking for now-outdated files... none found
+pickling environment... done
+checking consistency... done
+preparing documents... done
+copying assets... 
+copying downloadable files... [ 11%] ../../../docker/claude-code/Dockerfile
+copying downloadable files... [ 22%] ../../../docker/codex/Dockerfile
+copying downloadable files... [ 33%] ../../../examples/config/openclaw/models.json
+copying downloadable files... [ 44%] ../../../examples/config/openclaw/models-reasoning.json
+copying downloadable files... [ 56%] ../../../examples/config/openclaw/models-multimodal.json
+copying downloadable files... [ 67%] ../../../examples/coverage/README.en.md
+copying downloadable files... [ 78%] ../../../examples/tasks/tasks.jsonl
+copying downloadable files... [ 89%] ../../../schemas/task.schema.json
+copying downloadable files... [100%] ../../../examples/tasks/user-simulator.jsonl
+
+copying static files... 
+Writing evaluated template result to /hpc2hdd/home/yhuang767/Roller/docs/_build/html/_static/documentation_options.js
+Writing evaluated template result to /hpc2hdd/home/yhuang767/Roller/docs/_build/html/_static/basic.css
+Writing evaluated template result to /hpc2hdd/home/yhuang767/Roller/docs/_build/html/_static/language_data.js
+Writing evaluated template result to /hpc2hdd/home/yhuang767/Roller/docs/_build/html/_static/js/versions.js
+copying static files: done
+copying extra files... 
+copying extra files: done
+copying assets: done
+writing output... [  5%] benches/bench-format
+writing output... [ 11%] benches/wildclawbench
+writing output... [ 16%] harnesses/claude-code-configuration
+writing output... [ 21%] harnesses/codex-configuration
+writing output... [ 26%] harnesses/deepseek-configuration
+writing output... [ 32%] harnesses/hermes-configuration
+writing output... [ 37%] harnesses/openclaw-configuration
+writing output... [ 42%] harnesses/opencode-configuration
+writing output... [ 47%] harnesses/pi-configuration
+writing output... [ 53%] index
+writing output... [ 58%] start/cli-reference
+writing output... [ 63%] start/examples
+writing output... [ 68%] start/getting-started
+writing output... [ 74%] tasks/task-bundle-and-storage
+writing output... [ 79%] tasks/task-format
+writing output... [ 84%] tasks/user-simulator
+writing output... [ 89%] traces/sft-format
+writing output... [ 95%] traces/trajectory-outputs
+writing output... [100%] traces/viewer
+
+/hpc2hdd/home/yhuang767/Roller/docs/en/harnesses/hermes-configuration.md:82: WARNING: Unknown source document '/hpc2hdd/home/yhuang767/Roller/examples/coverage/README.en' [myst.xref_missing]
+/hpc2hdd/home/yhuang767/Roller/docs/en/start/examples.md:66: WARNING: local id not found in doc 'harnesses/openclaw-configuration': 'model-config-file' [myst.xref_missing]
+/hpc2hdd/home/yhuang767/Roller/docs/en/start/getting-started.md:72: WARNING: local id not found in doc 'harnesses/codex-configuration': 'build-a-pinned-image' [myst.xref_missing]
+/hpc2hdd/home/yhuang767/Roller/docs/en/start/getting-started.md:83: WARNING: local id not found in doc 'harnesses/claude-code-configuration': 'build-a-pinned-image' [myst.xref_missing]
+/hpc2hdd/home/yhuang767/Roller/docs/en/start/getting-started.md:310: WARNING: local id not found in doc 'harnesses/openclaw-configuration': 'thinking-system-prompt-and-wire-trace' [myst.xref_missing]
+/hpc2hdd/home/yhuang767/Roller/docs/en/start/getting-started.md:310: WARNING: local id not found in doc 'harnesses/codex-configuration': 'reasoning-configuration' [myst.xref_missing]
+/hpc2hdd/home/yhuang767/Roller/docs/en/start/getting-started.md:310: WARNING: local id not found in doc 'harnesses/claude-code-configuration': 'thinking-and-effort' [myst.xref_missing]
+/hpc2hdd/home/yhuang767/Roller/docs/en/traces/trajectory-outputs.md:569: WARNING: local id not found in doc 'harnesses/openclaw-configuration': 'thinking-system-prompt-and-wire-trace' [myst.xref_missing]
+/hpc2hdd/home/yhuang767/Roller/docs/en/traces/trajectory-outputs.md:569: WARNING: local id not found in doc 'harnesses/claude-code-configuration': 'thinking-and-effort' [myst.xref_missing]
+generating indices... genindex done
+writing additional pages... search done
+dumping search index in English (code: en)... done
+dumping object inventory... done
+build succeeded, 9 warnings.
+
+The HTML pages are in _build/html.
+[32m[sphinx-autobuild] [36mServing on http://0.0.0.0:8001[0m
+[32m[sphinx-autobuild] [36mWaiting to detect changes...[0m
+[32m[sphinx-autobuild] [36mDetected changes (en/benches/wildclawbench.md, _static/custom.css, en/harnesses/pi-configuration.md, en/tasks/user-simulator.md, conf.py)[0m
+[32m[sphinx-autobuild] [36mRebuilding...[0m
+[32m[sphinx-autobuild] [34m> python -m sphinx build -b html -c . -D language=en en _build/html[0m
+Running Sphinx v9.0.4
+loading translations [en]... done
+loading pickled environment... The configuration has changed (4 options: 'html_css_files', 'html_js_files', 'html_permalinks_icon', 'jquery_use_sri')
+done
+myst v5.1.0: MdParserConfig(commonmark_only=False, gfm_only=False, enable_extensions={'colon_fence', 'deflist'}, disable_syntax=[], all_links_external=False, links_external_new_tab=False, url_schemes=('http', 'https', 'mailto', 'ftp'), ref_domains=None, fence_as_directive=set(), number_code_blocks=[], title_to_header=False, heading_anchors=3, heading_slug_func=None, html_meta={}, footnote_sort=True, footnote_transition=True, words_per_minute=200, substitutions={}, linkify_fuzzy_links=True, dmath_allow_labels=True, dmath_allow_space=True, dmath_allow_digits=True, dmath_double_inline=False, update_mathjax=True, mathjax_classes='tex2jax_process|mathjax_process|math|output_area', enable_checkboxes=False, strikethrough_single_tilde=False, colon_fence_exact_match=False, suppress_warnings=[], highlight_code_blocks=True)
+building [mo]: targets for 0 po files that are out of date
+writing output... 
+building [html]: targets for 19 source files that are out of date
+updating environment: 1 added, 19 changed, 0 removed
+reading sources... [  5%] benches/bench-format
+reading sources... [ 10%] benches/wildclawbench
+reading sources... [ 15%] harnesses/claude-code-configuration
+reading sources... [ 20%] harnesses/codex-configuration
+reading sources... [ 25%] harnesses/deepseek-configuration
+reading sources... [ 30%] harnesses/hermes-configuration
+reading sources... [ 35%] harnesses/openclaw-configuration
+reading sources... [ 40%] harnesses/opencode-configuration
+reading sources... [ 45%] harnesses/pi-configuration
+reading sources... [ 50%] index
+reading sources... [ 55%] start/cli-reference
+reading sources... [ 60%] start/examples
+reading sources... [ 65%] start/getting-started
+reading sources... [ 70%] tasks/task-bundle-and-storage
+reading sources... [ 75%] tasks/task-format
+reading sources... [ 80%] tasks/user-simulator
+reading sources... [ 85%] traces/external-thinking
+reading sources... [ 90%] traces/sft-format
+reading sources... [ 95%] traces/trajectory-outputs
+reading sources... [100%] traces/viewer
+
+looking for now-outdated files... none found
+pickling environment... done
+checking consistency... /hpc2hdd/home/yhuang767/Roller/docs/en/traces/external-thinking.md: WARNING: document isn't included in any toctree [toc.not_included]
+done
+preparing documents... done
+copying assets... 
+copying downloadable files... [ 11%] ../../../examples/config/openclaw/models.json
+copying downloadable files... [ 22%] ../../../docker/claude-code/Dockerfile
+copying downloadable files... [ 33%] ../../../docker/codex/Dockerfile
+copying downloadable files... [ 44%] ../../../examples/config/openclaw/models-reasoning.json
+copying downloadable files... [ 56%] ../../../examples/config/openclaw/models-multimodal.json
+copying downloadable files... [ 67%] ../../../examples/coverage/README.en.md
+copying downloadable files... [ 78%] ../../../examples/tasks/tasks.jsonl
+copying downloadable files... [ 89%] ../../../schemas/task.schema.json
+copying downloadable files... [100%] ../../../examples/tasks/user-simulator.jsonl
+
+copying static files... 
+Writing evaluated template result to /hpc2hdd/home/yhuang767/Roller/docs/_build/html/_static/documentation_options.js
+Writing evaluated template result to /hpc2hdd/home/yhuang767/Roller/docs/_build/html/_static/basic.css
+Writing evaluated template result to /hpc2hdd/home/yhuang767/Roller/docs/_build/html/_static/language_data.js
+Writing evaluated template result to /hpc2hdd/home/yhuang767/Roller/docs/_build/html/_static/js/versions.js
+copying static files: done
+copying extra files... 
+copying extra files: done
+copying assets: done
+writing output... [  5%] benches/bench-format
+writing output... [ 10%] benches/wildclawbench
+writing output... [ 15%] harnesses/claude-code-configuration
+writing output... [ 20%] harnesses/codex-configuration
+writing output... [ 25%] harnesses/deepseek-configuration
+writing output... [ 30%] harnesses/hermes-configuration
+writing output... [ 35%] harnesses/openclaw-configuration
+writing output... [ 40%] harnesses/opencode-configuration
+writing output... [ 45%] harnesses/pi-configuration
+writing output... [ 50%] index
+writing output... [ 55%] start/cli-reference
+writing output... [ 60%] start/examples
+writing output... [ 65%] start/getting-started
+writing output... [ 70%] tasks/task-bundle-and-storage
+writing output... [ 75%] tasks/task-format
+writing output... [ 80%] tasks/user-simulator
+writing output... [ 85%] traces/external-thinking
+writing output... [ 90%] traces/sft-format
+writing output... [ 95%] traces/trajectory-outputs
+writing output... [100%] traces/viewer
+
+/hpc2hdd/home/yhuang767/Roller/docs/en/harnesses/hermes-configuration.md:3: WARNING: Unknown source document '/hpc2hdd/home/yhuang767/Roller/examples/coverage/README.en' [myst.xref_missing]
+/hpc2hdd/home/yhuang767/Roller/docs/en/start/examples.md:66: WARNING: local id not found in doc 'harnesses/openclaw-configuration': 'model-config-file' [myst.xref_missing]
+/hpc2hdd/home/yhuang767/Roller/docs/en/start/getting-started.md:72: WARNING: local id not found in doc 'harnesses/codex-configuration': 'build-a-pinned-image' [myst.xref_missing]
+/hpc2hdd/home/yhuang767/Roller/docs/en/start/getting-started.md:83: WARNING: local id not found in doc 'harnesses/claude-code-configuration': 'build-a-pinned-image' [myst.xref_missing]
+/hpc2hdd/home/yhuang767/Roller/docs/en/start/getting-started.md:310: WARNING: local id not found in doc 'harnesses/openclaw-configuration': 'thinking-system-prompt-and-wire-trace' [myst.xref_missing]
+/hpc2hdd/home/yhuang767/Roller/docs/en/start/getting-started.md:310: WARNING: local id not found in doc 'harnesses/codex-configuration': 'reasoning-configuration' [myst.xref_missing]
+/hpc2hdd/home/yhuang767/Roller/docs/en/start/getting-started.md:310: WARNING: local id not found in doc 'harnesses/claude-code-configuration': 'thinking-and-effort' [myst.xref_missing]
+/hpc2hdd/home/yhuang767/Roller/docs/en/traces/trajectory-outputs.md:569: WARNING: local id not found in doc 'harnesses/openclaw-configuration': 'thinking-system-prompt-and-wire-trace' [myst.xref_missing]
+/hpc2hdd/home/yhuang767/Roller/docs/en/traces/trajectory-outputs.md:569: WARNING: local id not found in doc 'harnesses/claude-code-configuration': 'thinking-and-effort' [myst.xref_missing]
+generating indices... genindex done
+writing additional pages... search done
+dumping search index in English (code: en)... done
+dumping object inventory... done
+build succeeded, 10 warnings.
+
+The HTML pages are in _build/html.
+[32m[sphinx-autobuild] [36mServing on http://0.0.0.0:8001[0m
+[32m[sphinx-autobuild] [36mDetected changes (en/benches/wildclawbench.md, _static/custom.css, en/harnesses/pi-configuration.md, en/tasks/user-simulator.md, en/traces/sft-format.md)[0m
+[32m[sphinx-autobuild] [36mRebuilding...[0m
+[32m[sphinx-autobuild] [34m> python -m sphinx build -b html -c . -D language=en en _build/html[0m
+Running Sphinx v9.0.4
+loading translations [en]... done
+loading pickled environment... The configuration has changed (4 options: 'html_css_files', 'html_js_files', 'html_permalinks_icon', 'jquery_use_sri')
+done
+myst v5.1.0: MdParserConfig(commonmark_only=False, gfm_only=False, enable_extensions={'deflist', 'colon_fence'}, disable_syntax=[], all_links_external=False, links_external_new_tab=False, url_schemes=('http', 'https', 'mailto', 'ftp'), ref_domains=None, fence_as_directive=set(), number_code_blocks=[], title_to_header=False, heading_anchors=3, heading_slug_func=None, html_meta={}, footnote_sort=True, footnote_transition=True, words_per_minute=200, substitutions={}, linkify_fuzzy_links=True, dmath_allow_labels=True, dmath_allow_space=True, dmath_allow_digits=True, dmath_double_inline=False, update_mathjax=True, mathjax_classes='tex2jax_process|mathjax_process|math|output_area', enable_checkboxes=False, strikethrough_single_tilde=False, colon_fence_exact_match=False, suppress_warnings=[], highlight_code_blocks=True)
+building [mo]: targets for 0 po files that are out of date
+writing output... 
+building [html]: targets for 0 source files that are out of date
+updating environment: 0 added, 0 changed, 0 removed
+reading sources... 
+looking for now-outdated files... none found
+no targets are out of date.
+preparing documents... done
+copying assets... 
+copying downloadable files... [ 11%] ../../../examples/config/openclaw/models.json
+copying downloadable files... [ 22%] ../../../docker/claude-code/Dockerfile
+copying downloadable files... [ 33%] ../../../docker/codex/Dockerfile
+copying downloadable files... [ 44%] ../../../examples/config/openclaw/models-reasoning.json
+copying downloadable files... [ 56%] ../../../examples/config/openclaw/models-multimodal.json
+copying downloadable files... [ 67%] ../../../examples/coverage/README.en.md
+copying downloadable files... [ 78%] ../../../examples/tasks/tasks.jsonl
+copying downloadable files... [ 89%] ../../../schemas/task.schema.json
+copying downloadable files... [100%] ../../../examples/tasks/user-simulator.jsonl
+
+copying static files... 
+Writing evaluated template result to /hpc2hdd/home/yhuang767/Roller/docs/_build/html/_static/documentation_options.js
+Writing evaluated template result to /hpc2hdd/home/yhuang767/Roller/docs/_build/html/_static/basic.css
+Writing evaluated template result to /hpc2hdd/home/yhuang767/Roller/docs/_build/html/_static/language_data.js
+Writing evaluated template result to /hpc2hdd/home/yhuang767/Roller/docs/_build/html/_static/js/versions.js
+copying static files: done
+copying extra files... 
+copying extra files: done
+copying assets: done
+generating indices... genindex done
+writing additional pages... search done
+dumping search index in English (code: en)... done
+dumping object inventory... done
+build succeeded.
+
+The HTML pages are in _build/html.
+[32m[sphinx-autobuild] [36mServing on http://0.0.0.0:8001[0m
+[32m[sphinx-autobuild] [36mDetected changes (en/harnesses/claude-code-configuration.md, en/traces/sft-format.md, en/traces/sft-format.md, en/harnesses/claude-code-configuration.md)[0m
+[32m[sphinx-autobuild] [36mRebuilding...[0m
+[32m[sphinx-autobuild] [34m> python -m sphinx build -b html -c . -D language=en en _build/html[0m
+Running Sphinx v9.0.4
+loading translations [en]... done
+loading pickled environment... The configuration has changed (4 options: 'html_css_files', 'html_js_files', 'html_permalinks_icon', 'jquery_use_sri')
+done
+myst v5.1.0: MdParserConfig(commonmark_only=False, gfm_only=False, enable_extensions={'colon_fence', 'deflist'}, disable_syntax=[], all_links_external=False, links_external_new_tab=False, url_schemes=('http', 'https', 'mailto', 'ftp'), ref_domains=None, fence_as_directive=set(), number_code_blocks=[], title_to_header=False, heading_anchors=3, heading_slug_func=None, html_meta={}, footnote_sort=True, footnote_transition=True, words_per_minute=200, substitutions={}, linkify_fuzzy_links=True, dmath_allow_labels=True, dmath_allow_space=True, dmath_allow_digits=True, dmath_double_inline=False, update_mathjax=True, mathjax_classes='tex2jax_process|mathjax_process|math|output_area', enable_checkboxes=False, strikethrough_single_tilde=False, colon_fence_exact_match=False, suppress_warnings=[], highlight_code_blocks=True)
+building [mo]: targets for 0 po files that are out of date
+writing output... 
+building [html]: targets for 2 source files that are out of date
+updating environment: 0 added, 2 changed, 1 removed
+reading sources... [ 50%] harnesses/claude-code-configuration
+reading sources... [100%] traces/sft-format
+
+looking for now-outdated files... none found
+pickling environment... done
+checking consistency... done
+preparing documents... done
+copying assets... 
+copying downloadable files... [ 11%] ../../../examples/config/openclaw/models.json
+copying downloadable files... [ 22%] ../../../docker/codex/Dockerfile
+copying downloadable files... [ 33%] ../../../examples/config/openclaw/models-reasoning.json
+copying downloadable files... [ 44%] ../../../examples/config/openclaw/models-multimodal.json
+copying downloadable files... [ 56%] ../../../examples/coverage/README.en.md
+copying downloadable files... [ 67%] ../../../examples/tasks/tasks.jsonl
+copying downloadable files... [ 78%] ../../../schemas/task.schema.json
+copying downloadable files... [ 89%] ../../../examples/tasks/user-simulator.jsonl
+copying downloadable files... [100%] ../../../docker/claude-code/Dockerfile
+
+copying static files... 
+Writing evaluated template result to /hpc2hdd/home/yhuang767/Roller/docs/_build/html/_static/documentation_options.js
+Writing evaluated template result to /hpc2hdd/home/yhuang767/Roller/docs/_build/html/_static/basic.css
+Writing evaluated template result to /hpc2hdd/home/yhuang767/Roller/docs/_build/html/_static/language_data.js
+Writing evaluated template result to /hpc2hdd/home/yhuang767/Roller/docs/_build/html/_static/js/versions.js
+copying static files: done
+copying extra files... 
+copying extra files: done
+copying assets: done
+writing output... [ 33%] harnesses/claude-code-configuration
+writing output... [ 67%] index
+writing output... [100%] traces/sft-format
+
+generating indices... genindex done
+writing additional pages... search done
+dumping search index in English (code: en)... done
+dumping object inventory... done
+build succeeded.
+
+The HTML pages are in _build/html.
+[32m[sphinx-autobuild] [36mServing on http://0.0.0.0:8001[0m
+[32m[sphinx-autobuild] [36mDetected changes (en/harnesses/pi-configuration.md, en/harnesses/hermes-configuration.md, en/harnesses/deepseek-configuration.md, en/harnesses/opencode-configuration.md, en/harnesses/opencode-configuration.md)[0m
+[32m[sphinx-autobuild] [36mRebuilding...[0m
+[32m[sphinx-autobuild] [34m> python -m sphinx build -b html -c . -D language=en en _build/html[0m
+Running Sphinx v9.0.4
+loading translations [en]... done
+loading pickled environment... The configuration has changed (4 options: 'html_css_files', 'html_js_files', 'html_permalinks_icon', 'jquery_use_sri')
+done
+myst v5.1.0: MdParserConfig(commonmark_only=False, gfm_only=False, enable_extensions={'deflist', 'colon_fence'}, disable_syntax=[], all_links_external=False, links_external_new_tab=False, url_schemes=('http', 'https', 'mailto', 'ftp'), ref_domains=None, fence_as_directive=set(), number_code_blocks=[], title_to_header=False, heading_anchors=3, heading_slug_func=None, html_meta={}, footnote_sort=True, footnote_transition=True, words_per_minute=200, substitutions={}, linkify_fuzzy_links=True, dmath_allow_labels=True, dmath_allow_space=True, dmath_allow_digits=True, dmath_double_inline=False, update_mathjax=True, mathjax_classes='tex2jax_process|mathjax_process|math|output_area', enable_checkboxes=False, strikethrough_single_tilde=False, colon_fence_exact_match=False, suppress_warnings=[], highlight_code_blocks=True)
+building [mo]: targets for 0 po files that are out of date
+writing output... 
+building [html]: targets for 4 source files that are out of date
+updating environment: 0 added, 4 changed, 0 removed
+reading sources... [ 25%] harnesses/deepseek-configuration
+reading sources... [ 50%] harnesses/hermes-configuration
+reading sources... [ 75%] harnesses/opencode-configuration
+reading sources... [100%] harnesses/pi-configuration
+
+looking for now-outdated files... none found
+pickling environment... done
+checking consistency... done
+preparing documents... done
+copying assets... 
+copying downloadable files... [ 11%] ../../../examples/config/openclaw/models.json
+copying downloadable files... [ 22%] ../../../docker/codex/Dockerfile
+copying downloadable files... [ 33%] ../../../examples/config/openclaw/models-reasoning.json
+copying downloadable files... [ 44%] ../../../examples/config/openclaw/models-multimodal.json
+copying downloadable files... [ 56%] ../../../examples/tasks/tasks.jsonl
+copying downloadable files... [ 67%] ../../../schemas/task.schema.json
+copying downloadable files... [ 78%] ../../../examples/tasks/user-simulator.jsonl
+copying downloadable files... [ 89%] ../../../docker/claude-code/Dockerfile
+copying downloadable files... [100%] ../../../examples/coverage/README.en.md
+
+copying static files... 
+Writing evaluated template result to /hpc2hdd/home/yhuang767/Roller/docs/_build/html/_static/documentation_options.js
+Writing evaluated template result to /hpc2hdd/home/yhuang767/Roller/docs/_build/html/_static/basic.css
+Writing evaluated template result to /hpc2hdd/home/yhuang767/Roller/docs/_build/html/_static/language_data.js
+Writing evaluated template result to /hpc2hdd/home/yhuang767/Roller/docs/_build/html/_static/js/versions.js
+copying static files: done
+copying extra files... 
+copying extra files: done
+copying assets: done
+writing output... [ 20%] harnesses/deepseek-configuration
+writing output... [ 40%] harnesses/hermes-configuration
+writing output... [ 60%] harnesses/opencode-configuration
+writing output... [ 80%] harnesses/pi-configuration
+writing output... [100%] index
+
+/hpc2hdd/home/yhuang767/Roller/docs/en/harnesses/hermes-configuration.md:82: WARNING: Unknown source document '/hpc2hdd/home/yhuang767/Roller/examples/coverage/README.en' [myst.xref_missing]
+generating indices... genindex done
+writing additional pages... search done
+dumping search index in English (code: en)... done
+dumping object inventory... done
+build succeeded, 1 warning.
+
+The HTML pages are in _build/html.
+[32m[sphinx-autobuild] [36mServing on http://0.0.0.0:8001[0m
+[32m[sphinx-autobuild] [36mDetected changes (en/harnesses/pi-configuration.md, en/harnesses/hermes-configuration.md, en/harnesses/deepseek-configuration.md, en/harnesses/opencode-configuration.md, en/harnesses/opencode-configuration.md)[0m
+[32m[sphinx-autobuild] [36mRebuilding...[0m
+[32m[sphinx-autobuild] [34m> python -m sphinx build -b html -c . -D language=en en _build/html[0m
+Running Sphinx v9.0.4
+loading translations [en]... done
+loading pickled environment... The configuration has changed (4 options: 'html_css_files', 'html_js_files', 'html_permalinks_icon', 'jquery_use_sri')
+done
+myst v5.1.0: MdParserConfig(commonmark_only=False, gfm_only=False, enable_extensions={'colon_fence', 'deflist'}, disable_syntax=[], all_links_external=False, links_external_new_tab=False, url_schemes=('http', 'https', 'mailto', 'ftp'), ref_domains=None, fence_as_directive=set(), number_code_blocks=[], title_to_header=False, heading_anchors=3, heading_slug_func=None, html_meta={}, footnote_sort=True, footnote_transition=True, words_per_minute=200, substitutions={}, linkify_fuzzy_links=True, dmath_allow_labels=True, dmath_allow_space=True, dmath_allow_digits=True, dmath_double_inline=False, update_mathjax=True, mathjax_classes='tex2jax_process|mathjax_process|math|output_area', enable_checkboxes=False, strikethrough_single_tilde=False, colon_fence_exact_match=False, suppress_warnings=[], highlight_code_blocks=True)
+building [mo]: targets for 0 po files that are out of date
+writing output... 
+building [html]: targets for 4 source files that are out of date
+updating environment: 0 added, 4 changed, 0 removed
+reading sources... [ 25%] harnesses/deepseek-configuration
+reading sources... [ 50%] harnesses/hermes-configuration
+reading sources... [ 75%] harnesses/opencode-configuration
+reading sources... [100%] harnesses/pi-configuration
+
+looking for now-outdated files... none found
+pickling environment... done
+checking consistency... done
+preparing documents... done
+copying assets... 
+copying downloadable files... [ 11%] ../../../examples/config/openclaw/models.json
+copying downloadable files... [ 22%] ../../../docker/codex/Dockerfile
+copying downloadable files... [ 33%] ../../../examples/config/openclaw/models-reasoning.json
+copying downloadable files... [ 44%] ../../../examples/config/openclaw/models-multimodal.json
+copying downloadable files... [ 56%] ../../../examples/tasks/tasks.jsonl
+copying downloadable files... [ 67%] ../../../schemas/task.schema.json
+copying downloadable files... [ 78%] ../../../examples/tasks/user-simulator.jsonl
+copying downloadable files... [ 89%] ../../../docker/claude-code/Dockerfile
+copying downloadable files... [100%] ../../../examples/coverage/README.en.md
+
+copying static files... 
+Writing evaluated template result to /hpc2hdd/home/yhuang767/Roller/docs/_build/html/_static/documentation_options.js
+Writing evaluated template result to /hpc2hdd/home/yhuang767/Roller/docs/_build/html/_static/basic.css
+Writing evaluated template result to /hpc2hdd/home/yhuang767/Roller/docs/_build/html/_static/language_data.js
+Writing evaluated template result to /hpc2hdd/home/yhuang767/Roller/docs/_build/html/_static/js/versions.js
+copying static files: done
+copying extra files... 
+copying extra files: done
+copying assets: done
+writing output... [ 20%] harnesses/deepseek-configuration
+writing output... [ 40%] harnesses/hermes-configuration
+writing output... [ 60%] harnesses/opencode-configuration
+writing output... [ 80%] harnesses/pi-configuration
+writing output... [100%] index
+
+/hpc2hdd/home/yhuang767/Roller/docs/en/harnesses/hermes-configuration.md:3: WARNING: Unknown source document '/hpc2hdd/home/yhuang767/Roller/examples/coverage/README.en' [myst.xref_missing]
+generating indices... genindex done
+writing additional pages... search done
+dumping search index in English (code: en)... done
+dumping object inventory... done
+build succeeded, 1 warning.
+
+The HTML pages are in _build/html.
+[32m[sphinx-autobuild] [36mServing on http://0.0.0.0:8001[0m
+[32m[sphinx-autobuild] [36mDetected changes (en/harnesses/pi-configuration.md, en/harnesses/hermes-configuration.md, en/harnesses/deepseek-configuration.md, en/harnesses/opencode-configuration.md, en/harnesses/opencode-configuration.md)[0m
+[32m[sphinx-autobuild] [36mRebuilding...[0m
+[32m[sphinx-autobuild] [34m> python -m sphinx build -b html -c . -D language=en en _build/html[0m
+Running Sphinx v9.0.4
+loading translations [en]... done
+loading pickled environment... The configuration has changed (4 options: 'html_css_files', 'html_js_files', 'html_permalinks_icon', 'jquery_use_sri')
+done
+myst v5.1.0: MdParserConfig(commonmark_only=False, gfm_only=False, enable_extensions={'colon_fence', 'deflist'}, disable_syntax=[], all_links_external=False, links_external_new_tab=False, url_schemes=('http', 'https', 'mailto', 'ftp'), ref_domains=None, fence_as_directive=set(), number_code_blocks=[], title_to_header=False, heading_anchors=3, heading_slug_func=None, html_meta={}, footnote_sort=True, footnote_transition=True, words_per_minute=200, substitutions={}, linkify_fuzzy_links=True, dmath_allow_labels=True, dmath_allow_space=True, dmath_allow_digits=True, dmath_double_inline=False, update_mathjax=True, mathjax_classes='tex2jax_process|mathjax_process|math|output_area', enable_checkboxes=False, strikethrough_single_tilde=False, colon_fence_exact_match=False, suppress_warnings=[], highlight_code_blocks=True)
+building [mo]: targets for 0 po files that are out of date
+writing output... 
+building [html]: targets for 4 source files that are out of date
+updating environment: 0 added, 4 changed, 0 removed
+reading sources... [ 25%] harnesses/deepseek-configuration
+reading sources... [ 50%] harnesses/hermes-configuration
+reading sources... [ 75%] harnesses/opencode-configuration
+reading sources... [100%] harnesses/pi-configuration
+
+looking for now-outdated files... none found
+pickling environment... done
+checking consistency... done
+preparing documents... done
+copying assets... 
+copying downloadable files... [ 11%] ../../../examples/config/openclaw/models.json
+copying downloadable files... [ 22%] ../../../docker/codex/Dockerfile
+copying downloadable files... [ 33%] ../../../examples/config/openclaw/models-reasoning.json
+copying downloadable files... [ 44%] ../../../examples/config/openclaw/models-multimodal.json
+copying downloadable files... [ 56%] ../../../examples/tasks/tasks.jsonl
+copying downloadable files... [ 67%] ../../../schemas/task.schema.json
+copying downloadable files... [ 78%] ../../../examples/tasks/user-simulator.jsonl
+copying downloadable files... [ 89%] ../../../docker/claude-code/Dockerfile
+copying downloadable files... [100%] ../../../examples/coverage/README.en.md
+
+copying static files... 
+Writing evaluated template result to /hpc2hdd/home/yhuang767/Roller/docs/_build/html/_static/documentation_options.js
+Writing evaluated template result to /hpc2hdd/home/yhuang767/Roller/docs/_build/html/_static/basic.css
+Writing evaluated template result to /hpc2hdd/home/yhuang767/Roller/docs/_build/html/_static/language_data.js
+Writing evaluated template result to /hpc2hdd/home/yhuang767/Roller/docs/_build/html/_static/js/versions.js
+copying static files: done
+copying extra files... 
+copying extra files: done
+copying assets: done
+writing output... [ 20%] harnesses/deepseek-configuration
+writing output... [ 40%] harnesses/hermes-configuration
+writing output... [ 60%] harnesses/opencode-configuration
+writing output... [ 80%] harnesses/pi-configuration
+writing output... [100%] index
+
+/hpc2hdd/home/yhuang767/Roller/docs/en/harnesses/hermes-configuration.md:82: WARNING: Unknown source document '/hpc2hdd/home/yhuang767/Roller/examples/coverage/README.en' [myst.xref_missing]
+generating indices... genindex done
+writing additional pages... search done
+dumping search index in English (code: en)... done
+dumping object inventory... done
+build succeeded, 1 warning.
+
+The HTML pages are in _build/html.
+[32m[sphinx-autobuild] [36mServing on http://0.0.0.0:8001[0m
+[32m[sphinx-autobuild] [36mDetected changes (en/harnesses/pi-configuration.md, en/harnesses/hermes-configuration.md, en/harnesses/deepseek-configuration.md, en/harnesses/opencode-configuration.md, en/harnesses/opencode-configuration.md)[0m
+[32m[sphinx-autobuild] [36mRebuilding...[0m
+[32m[sphinx-autobuild] [34m> python -m sphinx build -b html -c . -D language=en en _build/html[0m
+Running Sphinx v9.0.4
+loading translations [en]... done
+loading pickled environment... The configuration has changed (4 options: 'html_css_files', 'html_js_files', 'html_permalinks_icon', 'jquery_use_sri')
+done
+myst v5.1.0: MdParserConfig(commonmark_only=False, gfm_only=False, enable_extensions={'colon_fence', 'deflist'}, disable_syntax=[], all_links_external=False, links_external_new_tab=False, url_schemes=('http', 'https', 'mailto', 'ftp'), ref_domains=None, fence_as_directive=set(), number_code_blocks=[], title_to_header=False, heading_anchors=3, heading_slug_func=None, html_meta={}, footnote_sort=True, footnote_transition=True, words_per_minute=200, substitutions={}, linkify_fuzzy_links=True, dmath_allow_labels=True, dmath_allow_space=True, dmath_allow_digits=True, dmath_double_inline=False, update_mathjax=True, mathjax_classes='tex2jax_process|mathjax_process|math|output_area', enable_checkboxes=False, strikethrough_single_tilde=False, colon_fence_exact_match=False, suppress_warnings=[], highlight_code_blocks=True)
+building [mo]: targets for 0 po files that are out of date
+writing output... 
+building [html]: targets for 4 source files that are out of date
+updating environment: 0 added, 4 changed, 0 removed
+reading sources... [ 25%] harnesses/deepseek-configuration
+reading sources... [ 50%] harnesses/hermes-configuration
+reading sources... [ 75%] harnesses/opencode-configuration
+reading sources... [100%] harnesses/pi-configuration
+
+looking for now-outdated files... none found
+pickling environment... done
+checking consistency... done
+preparing documents... done
+copying assets... 
+copying downloadable files... [ 11%] ../../../examples/config/openclaw/models.json
+copying downloadable files... [ 22%] ../../../docker/codex/Dockerfile
+copying downloadable files... [ 33%] ../../../examples/config/openclaw/models-reasoning.json
+copying downloadable files... [ 44%] ../../../examples/config/openclaw/models-multimodal.json
+copying downloadable files... [ 56%] ../../../examples/tasks/tasks.jsonl
+copying downloadable files... [ 67%] ../../../schemas/task.schema.json
+copying downloadable files... [ 78%] ../../../examples/tasks/user-simulator.jsonl
+copying downloadable files... [ 89%] ../../../docker/claude-code/Dockerfile
+copying downloadable files... [100%] ../../../examples/coverage/README.en.md
+
+copying static files... 
+Writing evaluated template result to /hpc2hdd/home/yhuang767/Roller/docs/_build/html/_static/documentation_options.js
+Writing evaluated template result to /hpc2hdd/home/yhuang767/Roller/docs/_build/html/_static/basic.css
+Writing evaluated template result to /hpc2hdd/home/yhuang767/Roller/docs/_build/html/_static/language_data.js
+Writing evaluated template result to /hpc2hdd/home/yhuang767/Roller/docs/_build/html/_static/js/versions.js
+copying static files: done
+copying extra files... 
+copying extra files: done
+copying assets: done
+writing output... [ 20%] harnesses/deepseek-configuration
+writing output... [ 40%] harnesses/hermes-configuration
+writing output... [ 60%] harnesses/opencode-configuration
+writing output... [ 80%] harnesses/pi-configuration
+writing output... [100%] index
+
+/hpc2hdd/home/yhuang767/Roller/docs/en/harnesses/hermes-configuration.md:3: WARNING: Unknown source document '/hpc2hdd/home/yhuang767/Roller/examples/coverage/README.en' [myst.xref_missing]
+generating indices... genindex done
+writing additional pages... search done
+dumping search index in English (code: en)... done
+dumping object inventory... done
+build succeeded, 1 warning.
+
+The HTML pages are in _build/html.
+[32m[sphinx-autobuild] [36mServing on http://0.0.0.0:8001[0m
+[32m[sphinx-autobuild] [36mDetected changes (en/harnesses/pi-configuration.md, en/harnesses/hermes-configuration.md, en/harnesses/deepseek-configuration.md, en/harnesses/opencode-configuration.md, en/harnesses/opencode-configuration.md)[0m
+[32m[sphinx-autobuild] [36mRebuilding...[0m
+[32m[sphinx-autobuild] [34m> python -m sphinx build -b html -c . -D language=en en _build/html[0m
+Running Sphinx v9.0.4
+loading translations [en]... done
+loading pickled environment... The configuration has changed (4 options: 'html_css_files', 'html_js_files', 'html_permalinks_icon', 'jquery_use_sri')
+done
+myst v5.1.0: MdParserConfig(commonmark_only=False, gfm_only=False, enable_extensions={'colon_fence', 'deflist'}, disable_syntax=[], all_links_external=False, links_external_new_tab=False, url_schemes=('http', 'https', 'mailto', 'ftp'), ref_domains=None, fence_as_directive=set(), number_code_blocks=[], title_to_header=False, heading_anchors=3, heading_slug_func=None, html_meta={}, footnote_sort=True, footnote_transition=True, words_per_minute=200, substitutions={}, linkify_fuzzy_links=True, dmath_allow_labels=True, dmath_allow_space=True, dmath_allow_digits=True, dmath_double_inline=False, update_mathjax=True, mathjax_classes='tex2jax_process|mathjax_process|math|output_area', enable_checkboxes=False, strikethrough_single_tilde=False, colon_fence_exact_match=False, suppress_warnings=[], highlight_code_blocks=True)
+building [mo]: targets for 0 po files that are out of date
+writing output... 
+building [html]: targets for 4 source files that are out of date
+updating environment: 0 added, 4 changed, 0 removed
+reading sources... [ 25%] harnesses/deepseek-configuration
+reading sources... [ 50%] harnesses/hermes-configuration
+reading sources... [ 75%] harnesses/opencode-configuration
+reading sources... [100%] harnesses/pi-configuration
+
+looking for now-outdated files... none found
+pickling environment... done
+checking consistency... done
+preparing documents... done
+copying assets... 
+copying downloadable files... [ 11%] ../../../examples/config/openclaw/models.json
+copying downloadable files... [ 22%] ../../../docker/codex/Dockerfile
+copying downloadable files... [ 33%] ../../../examples/config/openclaw/models-reasoning.json
+copying downloadable files... [ 44%] ../../../examples/config/openclaw/models-multimodal.json
+copying downloadable files... [ 56%] ../../../examples/tasks/tasks.jsonl
+copying downloadable files... [ 67%] ../../../schemas/task.schema.json
+copying downloadable files... [ 78%] ../../../examples/tasks/user-simulator.jsonl
+copying downloadable files... [ 89%] ../../../docker/claude-code/Dockerfile
+copying downloadable files... [100%] ../../../examples/coverage/README.en.md
+
+copying static files... 
+Writing evaluated template result to /hpc2hdd/home/yhuang767/Roller/docs/_build/html/_static/documentation_options.js
+Writing evaluated template result to /hpc2hdd/home/yhuang767/Roller/docs/_build/html/_static/basic.css
+Writing evaluated template result to /hpc2hdd/home/yhuang767/Roller/docs/_build/html/_static/language_data.js
+Writing evaluated template result to /hpc2hdd/home/yhuang767/Roller/docs/_build/html/_static/js/versions.js
+copying static files: done
+copying extra files... 
+copying extra files: done
+copying assets: done
+writing output... [ 20%] harnesses/deepseek-configuration
+writing output... [ 40%] harnesses/hermes-configuration
+writing output... [ 60%] harnesses/opencode-configuration
+writing output... [ 80%] harnesses/pi-configuration
+writing output... [100%] index
+
+/hpc2hdd/home/yhuang767/Roller/docs/en/harnesses/hermes-configuration.md:82: WARNING: Unknown source document '/hpc2hdd/home/yhuang767/Roller/examples/coverage/README.en' [myst.xref_missing]
+generating indices... genindex done
+writing additional pages... search done
+dumping search index in English (code: en)... done
+dumping object inventory... done
+build succeeded, 1 warning.
+
+The HTML pages are in _build/html.
+[32m[sphinx-autobuild] [36mServing on http://0.0.0.0:8001[0m
+[32m[sphinx-autobuild] [36mDetected changes (en/benches/wildclawbench.md, _static/custom.css, en/harnesses/pi-configuration.md, en/start/getting-started.md, en/harnesses/hermes-configuration.md)[0m
+[32m[sphinx-autobuild] [36mRebuilding...[0m
+[32m[sphinx-autobuild] [34m> python -m sphinx build -b html -c . -D language=en en _build/html[0m
+Running Sphinx v9.0.4
+loading translations [en]... done
+loading pickled environment... The configuration has changed (4 options: 'html_css_files', 'html_js_files', 'html_permalinks_icon', 'jquery_use_sri')
+done
+myst v5.1.0: MdParserConfig(commonmark_only=False, gfm_only=False, enable_extensions={'colon_fence', 'deflist'}, disable_syntax=[], all_links_external=False, links_external_new_tab=False, url_schemes=('http', 'https', 'mailto', 'ftp'), ref_domains=None, fence_as_directive=set(), number_code_blocks=[], title_to_header=False, heading_anchors=3, heading_slug_func=None, html_meta={}, footnote_sort=True, footnote_transition=True, words_per_minute=200, substitutions={}, linkify_fuzzy_links=True, dmath_allow_labels=True, dmath_allow_space=True, dmath_allow_digits=True, dmath_double_inline=False, update_mathjax=True, mathjax_classes='tex2jax_process|mathjax_process|math|output_area', enable_checkboxes=False, strikethrough_single_tilde=False, colon_fence_exact_match=False, suppress_warnings=[], highlight_code_blocks=True)
+building [mo]: targets for 0 po files that are out of date
+writing output... 
+building [html]: targets for 19 source files that are out of date
+updating environment: 3 added, 19 changed, 0 removed
+reading sources... [  5%] benches/bench-format
+reading sources... [  9%] benches/pinchbench
+reading sources... [ 14%] benches/skillsbench
+reading sources... [ 18%] benches/wildclawbench
+reading sources... [ 23%] harnesses/claude-code-configuration
+reading sources... [ 27%] harnesses/codex-configuration
+reading sources... [ 32%] harnesses/deepseek-configuration
+reading sources... [ 36%] harnesses/hermes-configuration
+reading sources... [ 41%] harnesses/openclaw-configuration
+reading sources... [ 45%] harnesses/opencode-configuration
+reading sources... [ 50%] harnesses/pi-configuration
+reading sources... [ 55%] index
+reading sources... [ 59%] start/cli-reference
+reading sources... [ 64%] start/docker-builds
+reading sources... [ 68%] start/examples
+reading sources... [ 73%] start/getting-started
+reading sources... [ 77%] tasks/task-bundle-and-storage
+reading sources... [ 82%] tasks/task-format
+reading sources... [ 86%] tasks/user-simulator
+reading sources... [ 91%] traces/sft-format
+reading sources... [ 95%] traces/trajectory-outputs
+reading sources... [100%] traces/viewer
+
+looking for now-outdated files... none found
+pickling environment... done
+checking consistency... done
+preparing documents... done
+copying assets... 
+copying downloadable files... [ 11%] ../../../examples/config/openclaw/models.json
+copying downloadable files... [ 22%] ../../../docker/claude-code/Dockerfile
+copying downloadable files... [ 33%] ../../../docker/codex/Dockerfile
+copying downloadable files... [ 44%] ../../../examples/config/openclaw/models-reasoning.json
+copying downloadable files... [ 56%] ../../../examples/config/openclaw/models-multimodal.json
+copying downloadable files... [ 67%] ../../../examples/coverage/README.en.md
+copying downloadable files... [ 78%] ../../../examples/tasks/tasks.jsonl
+copying downloadable files... [ 89%] ../../../schemas/task.schema.json
+copying downloadable files... [100%] ../../../examples/tasks/user-simulator.jsonl
+
+copying static files... 
+Writing evaluated template result to /hpc2hdd/home/yhuang767/Roller/docs/_build/html/_static/documentation_options.js
+Writing evaluated template result to /hpc2hdd/home/yhuang767/Roller/docs/_build/html/_static/basic.css
+Writing evaluated template result to /hpc2hdd/home/yhuang767/Roller/docs/_build/html/_static/language_data.js
+Writing evaluated template result to /hpc2hdd/home/yhuang767/Roller/docs/_build/html/_static/js/versions.js
+copying static files: done
+copying extra files... 
+copying extra files: done
+copying assets: done
+writing output... [  5%] benches/bench-format
+writing output... [  9%] benches/pinchbench
+writing output... [ 14%] benches/skillsbench
+writing output... [ 18%] benches/wildclawbench
+writing output... [ 23%] harnesses/claude-code-configuration
+writing output... [ 27%] harnesses/codex-configuration
+writing output... [ 32%] harnesses/deepseek-configuration
+writing output... [ 36%] harnesses/hermes-configuration
+writing output... [ 41%] harnesses/openclaw-configuration
+writing output... [ 45%] harnesses/opencode-configuration
+writing output... [ 50%] harnesses/pi-configuration
+writing output... [ 55%] index
+writing output... [ 59%] start/cli-reference
+writing output... [ 64%] start/docker-builds
+writing output... [ 68%] start/examples
+writing output... [ 73%] start/getting-started
+writing output... [ 77%] tasks/task-bundle-and-storage
+writing output... [ 82%] tasks/task-format
+writing output... [ 86%] tasks/user-simulator
+writing output... [ 91%] traces/sft-format
+writing output... [ 95%] traces/trajectory-outputs
+writing output... [100%] traces/viewer
+
+/hpc2hdd/home/yhuang767/Roller/docs/en/harnesses/hermes-configuration.md:82: WARNING: Unknown source document '/hpc2hdd/home/yhuang767/Roller/examples/coverage/README.en' [myst.xref_missing]
+/hpc2hdd/home/yhuang767/Roller/docs/en/start/examples.md:66: WARNING: local id not found in doc 'harnesses/openclaw-configuration': 'model-config-file' [myst.xref_missing]
+/hpc2hdd/home/yhuang767/Roller/docs/en/start/getting-started.md:72: WARNING: local id not found in doc 'harnesses/codex-configuration': 'build-a-pinned-image' [myst.xref_missing]
+/hpc2hdd/home/yhuang767/Roller/docs/en/start/getting-started.md:83: WARNING: local id not found in doc 'harnesses/claude-code-configuration': 'build-a-pinned-image' [myst.xref_missing]
+/hpc2hdd/home/yhuang767/Roller/docs/en/start/getting-started.md:312: WARNING: local id not found in doc 'harnesses/openclaw-configuration': 'thinking-system-prompt-and-wire-trace' [myst.xref_missing]
+/hpc2hdd/home/yhuang767/Roller/docs/en/start/getting-started.md:312: WARNING: local id not found in doc 'harnesses/codex-configuration': 'reasoning-configuration' [myst.xref_missing]
+/hpc2hdd/home/yhuang767/Roller/docs/en/start/getting-started.md:312: WARNING: local id not found in doc 'harnesses/claude-code-configuration': 'thinking-and-effort' [myst.xref_missing]
+/hpc2hdd/home/yhuang767/Roller/docs/en/traces/trajectory-outputs.md:575: WARNING: local id not found in doc 'harnesses/openclaw-configuration': 'thinking-system-prompt-and-wire-trace' [myst.xref_missing]
+/hpc2hdd/home/yhuang767/Roller/docs/en/traces/trajectory-outputs.md:575: WARNING: local id not found in doc 'harnesses/claude-code-configuration': 'thinking-and-effort' [myst.xref_missing]
+generating indices... genindex done
+writing additional pages... search done
+dumping search index in English (code: en)... done
+dumping object inventory... done
+build succeeded, 9 warnings.
+
+The HTML pages are in _build/html.
+[32m[sphinx-autobuild] [36mServing on http://0.0.0.0:8001[0m
+[32m[sphinx-autobuild] [36mDetected changes (en/traces/viewer.md, en/tasks/task-bundle-and-storage.md, en/traces/sft-format.md, en/tasks/user-simulator.md, en/traces/trajectory-outputs.md)[0m
+[32m[sphinx-autobuild] [36mRebuilding...[0m
+[32m[sphinx-autobuild] [34m> python -m sphinx build -b html -c . -D language=en en _build/html[0m
+Running Sphinx v9.0.4
+loading translations [en]... done
+loading pickled environment... The configuration has changed (4 options: 'html_css_files', 'html_js_files', 'html_permalinks_icon', 'jquery_use_sri')
+done
+myst v5.1.0: MdParserConfig(commonmark_only=False, gfm_only=False, enable_extensions={'colon_fence', 'deflist'}, disable_syntax=[], all_links_external=False, links_external_new_tab=False, url_schemes=('http', 'https', 'mailto', 'ftp'), ref_domains=None, fence_as_directive=set(), number_code_blocks=[], title_to_header=False, heading_anchors=3, heading_slug_func=None, html_meta={}, footnote_sort=True, footnote_transition=True, words_per_minute=200, substitutions={}, linkify_fuzzy_links=True, dmath_allow_labels=True, dmath_allow_space=True, dmath_allow_digits=True, dmath_double_inline=False, update_mathjax=True, mathjax_classes='tex2jax_process|mathjax_process|math|output_area', enable_checkboxes=False, strikethrough_single_tilde=False, colon_fence_exact_match=False, suppress_warnings=[], highlight_code_blocks=True)
+building [mo]: targets for 0 po files that are out of date
+writing output... 
+building [html]: targets for 0 source files that are out of date
+updating environment: 0 added, 0 changed, 0 removed
+reading sources... 
+looking for now-outdated files... none found
+no targets are out of date.
+preparing documents... done
+copying assets... 
+copying downloadable files... [ 11%] ../../../examples/config/openclaw/models.json
+copying downloadable files... [ 22%] ../../../docker/claude-code/Dockerfile
+copying downloadable files... [ 33%] ../../../docker/codex/Dockerfile
+copying downloadable files... [ 44%] ../../../examples/config/openclaw/models-reasoning.json
+copying downloadable files... [ 56%] ../../../examples/config/openclaw/models-multimodal.json
+copying downloadable files... [ 67%] ../../../examples/coverage/README.en.md
+copying downloadable files... [ 78%] ../../../examples/tasks/tasks.jsonl
+copying downloadable files... [ 89%] ../../../schemas/task.schema.json
+copying downloadable files... [100%] ../../../examples/tasks/user-simulator.jsonl
+
+copying static files... 
+Writing evaluated template result to /hpc2hdd/home/yhuang767/Roller/docs/_build/html/_static/documentation_options.js
+Writing evaluated template result to /hpc2hdd/home/yhuang767/Roller/docs/_build/html/_static/basic.css
+Writing evaluated template result to /hpc2hdd/home/yhuang767/Roller/docs/_build/html/_static/language_data.js
+Writing evaluated template result to /hpc2hdd/home/yhuang767/Roller/docs/_build/html/_static/js/versions.js
+copying static files: done
+copying extra files... 
+copying extra files: done
+copying assets: done
+generating indices... genindex done
+writing additional pages... search done
+dumping search index in English (code: en)... done
+dumping object inventory... done
+build succeeded.
+
+The HTML pages are in _build/html.
+[32m[sphinx-autobuild] [36mServing on http://0.0.0.0:8001[0m
+[32m[sphinx-autobuild] [36mDetected changes (_static/custom.css, _static/custom.css, _static/sidebar-scroll.js, _static/sidebar-scroll.js)[0m
+[32m[sphinx-autobuild] [36mRebuilding...[0m
+[32m[sphinx-autobuild] [34m> python -m sphinx build -b html -c . -D language=en en _build/html[0m
+Running Sphinx v9.0.4
+loading translations [en]... done
+loading pickled environment... The configuration has changed (5 options: 'html_css_files', 'html_js_files', 'html_permalinks_icon', 'html_theme_options', 'jquery_use_sri')
+done
+myst v5.1.0: MdParserConfig(commonmark_only=False, gfm_only=False, enable_extensions={'deflist', 'colon_fence'}, disable_syntax=[], all_links_external=False, links_external_new_tab=False, url_schemes=('http', 'https', 'mailto', 'ftp'), ref_domains=None, fence_as_directive=set(), number_code_blocks=[], title_to_header=False, heading_anchors=3, heading_slug_func=None, html_meta={}, footnote_sort=True, footnote_transition=True, words_per_minute=200, substitutions={}, linkify_fuzzy_links=True, dmath_allow_labels=True, dmath_allow_space=True, dmath_allow_digits=True, dmath_double_inline=False, update_mathjax=True, mathjax_classes='tex2jax_process|mathjax_process|math|output_area', enable_checkboxes=False, strikethrough_single_tilde=False, colon_fence_exact_match=False, suppress_warnings=[], highlight_code_blocks=True)
+building [mo]: targets for 0 po files that are out of date
+writing output... 
+building [html]: build_info mismatch, copying .buildinfo to .buildinfo.bak
+building [html]: targets for 22 source files that are out of date
+updating environment: 0 added, 0 changed, 0 removed
+reading sources... 
+looking for now-outdated files... none found
+preparing documents... done
+copying assets... 
+copying downloadable files... [ 11%] ../../../examples/config/openclaw/models.json
+copying downloadable files... [ 22%] ../../../docker/claude-code/Dockerfile
+copying downloadable files... [ 33%] ../../../docker/codex/Dockerfile
+copying downloadable files... [ 44%] ../../../examples/config/openclaw/models-reasoning.json
+copying downloadable files... [ 56%] ../../../examples/config/openclaw/models-multimodal.json
+copying downloadable files... [ 67%] ../../../examples/coverage/README.en.md
+copying downloadable files... [ 78%] ../../../examples/tasks/tasks.jsonl
+copying downloadable files... [ 89%] ../../../schemas/task.schema.json
+copying downloadable files... [100%] ../../../examples/tasks/user-simulator.jsonl
+
+copying static files... 
+Writing evaluated template result to /hpc2hdd/home/yhuang767/Roller/docs/_build/html/_static/documentation_options.js
+Writing evaluated template result to /hpc2hdd/home/yhuang767/Roller/docs/_build/html/_static/basic.css
+Writing evaluated template result to /hpc2hdd/home/yhuang767/Roller/docs/_build/html/_static/language_data.js
+Writing evaluated template result to /hpc2hdd/home/yhuang767/Roller/docs/_build/html/_static/js/versions.js
+copying static files: done
+copying extra files... 
+copying extra files: done
+copying assets: done
+writing output... [  5%] benches/bench-format
+writing output... [  9%] benches/pinchbench
+writing output... [ 14%] benches/skillsbench
+writing output... [ 18%] benches/wildclawbench
+writing output... [ 23%] harnesses/claude-code-configuration
+writing output... [ 27%] harnesses/codex-configuration
+writing output... [ 32%] harnesses/deepseek-configuration
+writing output... [ 36%] harnesses/hermes-configuration
+writing output... [ 41%] harnesses/openclaw-configuration
+writing output... [ 45%] harnesses/opencode-configuration
+writing output... [ 50%] harnesses/pi-configuration
+writing output... [ 55%] index
+writing output... [ 59%] start/cli-reference
+writing output... [ 64%] start/docker-builds
+writing output... [ 68%] start/examples
+writing output... [ 73%] start/getting-started
+writing output... [ 77%] tasks/task-bundle-and-storage
+writing output... [ 82%] tasks/task-format
+writing output... [ 86%] tasks/user-simulator
+writing output... [ 91%] traces/sft-format
+writing output... [ 95%] traces/trajectory-outputs
+writing output... [100%] traces/viewer
+
+/hpc2hdd/home/yhuang767/Roller/docs/en/harnesses/hermes-configuration.md:82: WARNING: Unknown source document '/hpc2hdd/home/yhuang767/Roller/examples/coverage/README.en' [myst.xref_missing]
+/hpc2hdd/home/yhuang767/Roller/docs/en/start/examples.md:66: WARNING: local id not found in doc 'harnesses/openclaw-configuration': 'model-config-file' [myst.xref_missing]
+/hpc2hdd/home/yhuang767/Roller/docs/en/start/getting-started.md:72: WARNING: local id not found in doc 'harnesses/codex-configuration': 'build-a-pinned-image' [myst.xref_missing]
+/hpc2hdd/home/yhuang767/Roller/docs/en/start/getting-started.md:83: WARNING: local id not found in doc 'harnesses/claude-code-configuration': 'build-a-pinned-image' [myst.xref_missing]
+/hpc2hdd/home/yhuang767/Roller/docs/en/start/getting-started.md:312: WARNING: local id not found in doc 'harnesses/openclaw-configuration': 'thinking-system-prompt-and-wire-trace' [myst.xref_missing]
+/hpc2hdd/home/yhuang767/Roller/docs/en/start/getting-started.md:312: WARNING: local id not found in doc 'harnesses/codex-configuration': 'reasoning-configuration' [myst.xref_missing]
+/hpc2hdd/home/yhuang767/Roller/docs/en/start/getting-started.md:312: WARNING: local id not found in doc 'harnesses/claude-code-configuration': 'thinking-and-effort' [myst.xref_missing]
+/hpc2hdd/home/yhuang767/Roller/docs/en/traces/trajectory-outputs.md:575: WARNING: local id not found in doc 'harnesses/openclaw-configuration': 'thinking-system-prompt-and-wire-trace' [myst.xref_missing]
+/hpc2hdd/home/yhuang767/Roller/docs/en/traces/trajectory-outputs.md:575: WARNING: local id not found in doc 'harnesses/claude-code-configuration': 'thinking-and-effort' [myst.xref_missing]
+generating indices... genindex done
+writing additional pages... search done
+dumping search index in English (code: en)... done
+dumping object inventory... done
+build succeeded, 9 warnings.
+
+The HTML pages are in _build/html.
+[32m[sphinx-autobuild] [36mServing on http://0.0.0.0:8001[0m
+[32m[sphinx-autobuild] [36mDetected changes (_static/sidebar-scroll.js)[0m
+[32m[sphinx-autobuild] [36mRebuilding...[0m
+[32m[sphinx-autobuild] [34m> python -m sphinx build -b html -c . -D language=en en _build/html[0m
+Running Sphinx v9.0.4
+loading translations [en]... done
+loading pickled environment... The configuration has changed (4 options: 'html_css_files', 'html_js_files', 'html_permalinks_icon', 'jquery_use_sri')
+done
+myst v5.1.0: MdParserConfig(commonmark_only=False, gfm_only=False, enable_extensions={'colon_fence', 'deflist'}, disable_syntax=[], all_links_external=False, links_external_new_tab=False, url_schemes=('http', 'https', 'mailto', 'ftp'), ref_domains=None, fence_as_directive=set(), number_code_blocks=[], title_to_header=False, heading_anchors=3, heading_slug_func=None, html_meta={}, footnote_sort=True, footnote_transition=True, words_per_minute=200, substitutions={}, linkify_fuzzy_links=True, dmath_allow_labels=True, dmath_allow_space=True, dmath_allow_digits=True, dmath_double_inline=False, update_mathjax=True, mathjax_classes='tex2jax_process|mathjax_process|math|output_area', enable_checkboxes=False, strikethrough_single_tilde=False, colon_fence_exact_match=False, suppress_warnings=[], highlight_code_blocks=True)
+building [mo]: targets for 0 po files that are out of date
+writing output... 
+building [html]: targets for 0 source files that are out of date
+updating environment: 0 added, 0 changed, 0 removed
+reading sources... 
+looking for now-outdated files... none found
+no targets are out of date.
+preparing documents... done
+copying assets... 
+copying downloadable files... [ 11%] ../../../docker/claude-code/Dockerfile
+copying downloadable files... [ 22%] ../../../docker/codex/Dockerfile
+copying downloadable files... [ 33%] ../../../examples/config/openclaw/models.json
+copying downloadable files... [ 44%] ../../../examples/config/openclaw/models-reasoning.json
+copying downloadable files... [ 56%] ../../../examples/config/openclaw/models-multimodal.json
+copying downloadable files... [ 67%] ../../../examples/coverage/README.en.md
+copying downloadable files... [ 78%] ../../../examples/tasks/tasks.jsonl
+copying downloadable files... [ 89%] ../../../schemas/task.schema.json
+copying downloadable files... [100%] ../../../examples/tasks/user-simulator.jsonl
+
+copying static files... 
+Writing evaluated template result to /hpc2hdd/home/yhuang767/Roller/docs/_build/html/_static/documentation_options.js
+Writing evaluated template result to /hpc2hdd/home/yhuang767/Roller/docs/_build/html/_static/basic.css
+Writing evaluated template result to /hpc2hdd/home/yhuang767/Roller/docs/_build/html/_static/language_data.js
+Writing evaluated template result to /hpc2hdd/home/yhuang767/Roller/docs/_build/html/_static/js/versions.js
+copying static files: done
+copying extra files... 
+copying extra files: done
+copying assets: done
+generating indices... genindex done
+writing additional pages... search done
+dumping search index in English (code: en)... done
+dumping object inventory... done
+build succeeded.
+
+The HTML pages are in _build/html.
+[32m[sphinx-autobuild] [36mServing on http://0.0.0.0:8001[0m

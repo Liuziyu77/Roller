@@ -53,9 +53,9 @@ html_js_files = ["ui-locales.js", "language-switcher.js", "sidebar-scroll.js"]
 
 html_theme = "sphinx_rtd_theme"
 html_theme_options = {
-    # Keep EN/ZH identical: nested sections with "+" expand controls.
+    # Keep EN/ZH identical: pages expand once to show second-level chapters.
     # collapse_navigation=False avoids the sidebar shrinking when switching pages.
-    "navigation_depth": 3,
+    "navigation_depth": 2,
     "collapse_navigation": False,
     "sticky_navigation": False,
     "style_external_links": True,
