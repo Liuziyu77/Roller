@@ -46,6 +46,7 @@ python -m roller collect \
 
 Debian 镜像参数 `DEBIAN_MIRROR`、`DEBIAN_SECURITY_MIRROR` 的用法见 [Docker 构建与镜像源](../start/docker-builds.md)。npm 下载可通过 `NPM_REGISTRY` 指定镜像；未设置时沿用 npm 原有配置。
 
+(pi-cli-flags)=
 ## 3. 配置
 
 | 参数 | 默认值与行为 |

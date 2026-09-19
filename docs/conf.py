@@ -66,10 +66,11 @@ html_show_sphinx = False
 
 suppress_warnings = ["myst.header"]
 
-# Keep old flat URLs working after files moved into topic folders.
+# Keep old URLs working after files are moved or consolidated.
 _HTML_REDIRECTS = {
     "getting-started.html": "start/getting-started.html",
-    "examples.html": "start/examples.html",
+    "examples.html": "start/getting-started.html",
+    "start/examples.html": "getting-started.html",
     "cli-reference.html": "start/cli-reference.html",
     "openclaw-configuration.html": "harnesses/openclaw-configuration.html",
     "codex-configuration.html": "harnesses/codex-configuration.html",

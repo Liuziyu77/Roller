@@ -44,6 +44,7 @@ The image also prepares native plugin dependencies at build time. Each isolated 
 
 For `DEBIAN_MIRROR` and `DEBIAN_SECURITY_MIRROR`, see [Docker builds and package mirrors](../start/docker-builds.md).
 
+(opencode-cli-flags)=
 ## 3. Configuration
 
 | Option | Default / behavior |
@@ -51,9 +52,9 @@ For `DEBIAN_MIRROR` and `DEBIAN_SECURITY_MIRROR`, see [Docker builds and package
 | `--opencode-image` | Overrides `--docker-image`, then `ROLLER_OPENCODE_IMAGE`, then `roller-opencode:1.18.30` |
 | `--opencode-api-base` | Falls back to `--api-base`, `OPENAI_BASE_URL`, then `https://api.openai.com/v1` |
 | `--opencode-api-key-env` | Key variable name; falls back to `--api-key-env`, then `OPENAI_API_KEY` |
-| `--opencode-max-steps` | 12 native model steps per user turn; also bounded by the rollout timeout |
-| `--opencode-context-length` | 134200 tokens by default, minimum 1024; match the actual model |
-| `--opencode-output-tokens` | 8192 by default, positive and smaller than the context window |
+| `--opencode-max-steps` | 100 for SkillsBench and 12 otherwise, also bounded by the rollout timeout |
+| `--opencode-context-length` | 128000 tokens by default, minimum 1024, match the actual model |
+| `--opencode-output-tokens` | 32768 for SkillsBench and 8192 otherwise, positive and smaller than the context window |
 | `--opencode-vision` / `--no-opencode-vision` | Declares image-input support to OpenCode; enabled by default and explicitly disableable for text-only models |
 | `--thinking` / `runtime.thinking` | `off/minimal/low/medium/high/xhigh`; `off` maps to `none`; provider support is required |
 | `--wire-trace` | Native requests and schemas are captured in every mode; `full` adds HTTP records and requires an explicit API base and host networking |

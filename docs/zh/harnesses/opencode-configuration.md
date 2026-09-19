@@ -45,6 +45,7 @@ Dockerfile 默认基础镜像为 `python:3.12-slim-bookworm`。可以通过 `--b
 
 Debian 镜像参数 `DEBIAN_MIRROR`、`DEBIAN_SECURITY_MIRROR` 的用法见 [Docker 构建与镜像源](../start/docker-builds.md)。
 
+(opencode-cli-flags)=
 ## 3. 配置
 
 | 参数 | 默认值与行为 |
@@ -52,9 +53,9 @@ Debian 镜像参数 `DEBIAN_MIRROR`、`DEBIAN_SECURITY_MIRROR` 的用法见 [Doc
 | `--opencode-image` | 优先于 `--docker-image`；否则使用 `ROLLER_OPENCODE_IMAGE` 或 `roller-opencode:1.18.30` |
 | `--opencode-api-base` | 回退到 `--api-base`、`OPENAI_BASE_URL`、`https://api.openai.com/v1` |
 | `--opencode-api-key-env` | 回退到 `--api-key-env`、`OPENAI_API_KEY`；传变量名，不传密钥值 |
-| `--opencode-max-steps` | 每条用户消息最多 12 个原生模型步骤，另受整个 rollout 超时约束 |
-| `--opencode-context-length` | 模型上下文窗口，默认 134200，至少 1024；按服务真实能力设置 |
-| `--opencode-output-tokens` | 最大输出 tokens，默认 8192，必须小于上下文窗口 |
+| `--opencode-max-steps` | SkillsBench 默认为 100，其他任务默认为 12，另受整个 rollout 超时约束 |
+| `--opencode-context-length` | 模型上下文窗口，默认 128000，至少 1024，按服务真实能力设置 |
+| `--opencode-output-tokens` | SkillsBench 默认为 32768，其他任务默认为 8192，必须小于上下文窗口 |
 | `--opencode-vision` / `--no-opencode-vision` | 是否向 OpenCode 声明模型支持图片输入；默认开启，纯文本模型可显式关闭 |
 | `--thinking` / `runtime.thinking` | 支持 `off/minimal/low/medium/high/xhigh`；传给兼容服务的 reasoning effort，`off` 映射为 `none`，仍需服务支持 |
 | `--wire-trace` | 默认 `actf`；各模式均通过插件保留原生请求和 schema；`full` 额外保存 HTTP 记录，要求显式 API base 与 host 网络 |

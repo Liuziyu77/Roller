@@ -43,6 +43,7 @@ The endpoint must support streaming Chat Completions, tools, and DeepSeek thinki
 
 For `DEBIAN_MIRROR` and `DEBIAN_SECURITY_MIRROR`, see [Docker builds and package mirrors](../start/docker-builds.md).
 
+(deepseek-cli-flags)=
 ## 3. Configuration
 
 | Option | Default / behavior |
@@ -51,7 +52,7 @@ For `DEBIAN_MIRROR` and `DEBIAN_SECURITY_MIRROR`, see [Docker builds and package
 | `--deepseek-api-base` | Falls back to `--api-base`, `DEEPSEEK_BASE_URL`, then `https://api.deepseek.com` |
 | `--deepseek-api-key-env` | Falls back to `--api-key-env`, then `DEEPSEEK_API_KEY`; pass a variable name |
 | `--deepseek-max-steps` | 12 model requests per user turn; task and conversation deadlines also apply |
-| `--deepseek-context-length` | 134200 tokens, minimum 1024; match the endpoint |
+| `--deepseek-context-length` | 128000 tokens, minimum 1024, match the endpoint |
 | `--deepseek-output-tokens` | 8192, positive and smaller than the context window |
 | `--thinking` / `runtime.thinking` | Native `off/low/high/max`; `none` aliases `off`; omission uses the native adapter default |
 | `--wire-trace` | All modes retain native requests and schemas; `full` adds HTTP capture and requires an explicit base URL and host networking |

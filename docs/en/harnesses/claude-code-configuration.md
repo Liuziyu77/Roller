@@ -81,7 +81,23 @@ export ROLLER_CLAUDE_CODE_IMAGE=roller-claude-code:2.1.222
 Production datasets should pin the Claude Code version. Native session fields, permission modes, and effort lists evolve
 with the CLI. Roller writes the actual `claude_code_version`, image tag, and image ID into run/sample info.
 
-## 3. Anthropic API and Key
+(claude-code-cli-flags)=
+## 3. Harness-specific CLI flags, Anthropic API, and Key
+
+This table collects the Claude Code-specific entry points. Generic forms are convenient for a Claude Code-only run, while mixed-Harness runs should use the Claude Code-specific forms.
+
+| Flag | Default | Purpose |
+| --- | --- | --- |
+| `--docker-image` / `--claude-code-image` | `ROLLER_CLAUDE_CODE_IMAGE` or `roller-claude-code:2.1.222` | Overrides the Claude Code image |
+| `--api-base` / `--anthropic-base-url` / `--claude-api-base` | `ANTHROPIC_BASE_URL` | Anthropic API address or full `/v1/messages` endpoint |
+| `--api-key-env` / `--claude-api-key-env` | `ANTHROPIC_API_KEY` | Host environment variable containing the API key |
+| `--claude-settings` | None | Injects a native `settings.json` into the isolated container |
+| `--claude-max-turns` | None | Agent-turn limit for each predefined user message |
+| `--claude-max-thinking-tokens` | None | Passes `MAX_THINKING_TOKENS` to Claude Code |
+| `--claude-permission-mode` | `bypassPermissions` | Claude Code permission mode |
+
+The retired `--claude-signature-recovery*` flags are no longer accepted. Delete them from old commands.
+
 
 Claude Code uses the Anthropic Messages API. Put the key in a custom host environment variable, then map it with
 `--api-key-env` to `ANTHROPIC_API_KEY` inside the one-shot container:
