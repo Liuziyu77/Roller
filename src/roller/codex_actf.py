@@ -143,14 +143,15 @@ def _is_output_content_block_list(value: Any) -> bool:
         return False
     # A fully discriminated list is a content-block list even when one block
     # has malformed fields. An explicit image discriminator is also decisive:
-    # keep the media semantics so an unrepresentable sibling fails loudly
-    # instead of downgrading the whole result to JSON text.
+    # keep the media semantics while losslessly normalizing ordinary siblings,
+    # and let malformed known blocks fail validation instead of downgrading the
+    # whole result to JSON text.
     return all(_is_output_content_block(item) for item in value) or any(
         _is_output_image_block(item) for item in value
     )
 
 
-def _output_content_blocks(value: Any) -> list[Any]:
+def _output_content_blocks(value: Any) -> list[dict[str, Any]]:
     if isinstance(value, str):
         return [{"type": "text", "text": value}]
     if isinstance(value, list):
@@ -163,7 +164,7 @@ def _output_content_blocks(value: Any) -> list[Any]:
                     "text": json.dumps(value, ensure_ascii=False),
                 }
             ]
-        blocks: list[Any] = []
+        blocks: list[dict[str, Any]] = []
         for item in value:
             # The list check recognizes block shapes but intentionally leaves
             # field validation to the ACTF-to-SFT converter.
@@ -171,13 +172,16 @@ def _output_content_blocks(value: Any) -> list[Any]:
                 blocks.append({"type": "text", "text": item})
                 continue
             if not isinstance(item, Mapping):
-                blocks.append(deepcopy(item))
+                blocks.append(
+                    {
+                        "type": "text",
+                        "text": json.dumps(item, ensure_ascii=False),
+                    }
+                )
                 continue
             block_type = item.get("type")
             if block_type in {"text", "input_text", "output_text"}:
-                text = deepcopy(dict(item))
-                text["type"] = "text"
-                blocks.append(text)
+                blocks.append({"type": "text", "text": deepcopy(item.get("text"))})
             elif block_type in {"image", "input_image"}:
                 image = deepcopy(dict(item))
                 image["type"] = "image"
@@ -186,7 +190,12 @@ def _output_content_blocks(value: Any) -> list[Any]:
                     image["data"] = image_url
                 blocks.append(image)
             else:
-                blocks.append(deepcopy(dict(item)))
+                blocks.append(
+                    {
+                        "type": "text",
+                        "text": json.dumps(item, ensure_ascii=False),
+                    }
+                )
         return blocks
     if value is None:
         return [{"type": "text", "text": ""}]
@@ -204,7 +213,7 @@ def _output_content_blocks(value: Any) -> list[Any]:
 
 def _output_content(
     value: Any,
-) -> tuple[list[Any], dict[str, Any] | None]:
+) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
     parsed = value
     parsed_from_string = False
     if isinstance(value, str):

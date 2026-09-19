@@ -319,7 +319,9 @@ class CodexActfTests(unittest.TestCase):
 
     def test_rejects_malformed_typed_text_block(self) -> None:
         events = _events()
-        events[6]["payload"]["output"] = [{"type": "text", "text": 7}]
+        events[6]["payload"]["output"] = [
+            {"type": "text", "text": 7, "metadata": "not ACTF content"}
+        ]
 
         trajectory = codex_events_to_actf(events, user_messages=["Read values"])
 
@@ -367,6 +369,25 @@ class CodexActfTests(unittest.TestCase):
                     {"type": "image"},
                 ],
             ),
+            (
+                "JSON wrapper with valid and missing images",
+                json.dumps(
+                    {
+                        "output": [
+                            {
+                                "type": "input_image",
+                                "image_url": "data:image/png;base64,AA==",
+                            },
+                            {"type": "input_image"},
+                        ],
+                        "metadata": {"exit_code": 0},
+                    }
+                ),
+                [
+                    {"type": "image", "data": "data:image/png;base64,AA=="},
+                    {"type": "image"},
+                ],
+            ),
         )
         for label, native_output, expected_content in cases:
             with self.subTest(label=label):
@@ -387,30 +408,46 @@ class CodexActfTests(unittest.TestCase):
                 ):
                     actf_to_sft(trajectory)
 
-    def test_rejects_unknown_sibling_without_downgrading_valid_image(self) -> None:
-        events = _events()
-        events[4]["payload"]["name"] = "view_image"
-        events[6]["payload"]["output"] = [
-            {
-                "type": "input_image",
-                "image_url": "data:image/png;base64,AA==",
-            },
-            {"value": "not a content block"},
-        ]
-
-        trajectory = codex_events_to_actf(
-            events, user_messages=["Inspect images"]
+    def test_preserves_image_with_losslessly_serialized_unknown_sibling(self) -> None:
+        image = {
+            "type": "input_image",
+            "image_url": "data:image/png;base64,AA==",
+        }
+        cases = (
+            (
+                [image, {"value": "not a content block"}],
+                '{"value": "not a content block"}',
+            ),
+            (json.dumps([image, {"value": 7}]), '{"value": 7}'),
+            ([image, 7], "7"),
         )
+        for native_output, expected_text in cases:
+            with self.subTest(native_output=native_output):
+                events = _events()
+                events[4]["payload"]["name"] = "view_image"
+                events[6]["payload"]["output"] = native_output
 
-        self.assertEqual(
-            trajectory["steps"][0]["observation"][0]["content"],
-            [
-                {"type": "image", "data": "data:image/png;base64,AA=="},
-                {"value": "not a content block"},
-            ],
-        )
-        with self.assertRaisesRegex(SFTConversionError, "non-text"):
-            actf_to_sft(trajectory)
+                trajectory = codex_events_to_actf(
+                    events, user_messages=["Inspect images"]
+                )
+
+                self.assertEqual(
+                    trajectory["steps"][0]["observation"][0]["content"],
+                    [
+                        {"type": "image", "data": "data:image/png;base64,AA=="},
+                        {"type": "text", "text": expected_text},
+                    ],
+                )
+                record = actf_to_sft(trajectory)
+                tool_result = next(
+                    message
+                    for message in record["messages"]
+                    if message["role"] == "tool"
+                )
+                self.assertEqual(tool_result["content"], f"<image>\n{expected_text}")
+                self.assertEqual(
+                    record["images"], ["data:image/png;base64,AA=="]
+                )
 
     def test_preserves_ordinary_json_object_tool_output(self) -> None:
         events = _events()
