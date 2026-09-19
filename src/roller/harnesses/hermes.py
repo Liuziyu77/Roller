@@ -55,6 +55,7 @@ class HermesConfig:
     reasoning_effort: str | None = None
     max_iterations: int = 12
     context_length: int | None = None
+    vision: bool = True
     wire_trace_mode: str = "actf"
     keep_thinking: bool = True
     keep_container_on_error: bool = False
@@ -233,7 +234,7 @@ class HermesSession(InteractiveSession):
             "session_id": self.container, "model": self.request.model, "message": message,
             "thinking": hermes_effort(resolve_thinking(self.request.task.thinking, config.reasoning_effort)),
             "max_iterations": config.max_iterations, "timeout_seconds": timeout,
-            "context_length": config.context_length,
+            "context_length": config.context_length, "vision": config.vision,
             "system_prompt": f"You are running a Roller task. Work in {config.workspace_container_path}. "
                 f"Task inputs are in the workspace. Save deliverables under {self.request.task.output_dir}. "
                 f"Task context files (read when relevant): {context or '(none)'}. "
@@ -349,6 +350,6 @@ class HermesSession(InteractiveSession):
             metadata={"raw_trace_schema": "roller.hermes-events/v1", "hermes_version": self.hermes_version,
                 "provenance": provenance, "output_collection": output_metadata, "turn_count": self.turns,
                 "retained_container": self.container if retained else None,
-                "settings": {"reasoning_effort": resolve_thinking(self.request.task.thinking, config.reasoning_effort), "max_iterations": config.max_iterations, "context_length": config.context_length, "toolsets": ["terminal", "file"], "keep_thinking": config.keep_thinking}},
+                "settings": {"reasoning_effort": resolve_thinking(self.request.task.thinking, config.reasoning_effort), "max_iterations": config.max_iterations, "context_length": config.context_length, "vision": config.vision, "toolsets": ["terminal", "file", *(["vision"] if config.vision else [])], "keep_thinking": config.keep_thinking}},
         )
         return self._result

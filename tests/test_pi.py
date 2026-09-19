@@ -84,6 +84,36 @@ class PiTraceTests(unittest.TestCase):
             self.assertEqual([m["content"] for m in sft["messages"] if m["role"] == "user"], ["Read token", "Again\u2028中文\u2029"])
             self.assertEqual(sum(m.get("content") == "TOKEN" and m["role"] == "assistant" for m in sft["messages"]), 2)
 
+    def test_image_tool_result_survives_actf_and_sft(self):
+        events = sample_events()
+        events[4]["event"]["message"]["content"].append({
+            "type": "image", "data": "iVBORw0KGgo=", "mimeType": "image/png",
+        })
+        actf = pi_events_to_actf(events)
+        image = actf["steps"][0]["observation"][0]["content"][1]
+        self.assertEqual(image["type"], "image")
+        sft = actf_to_sft(actf)
+        self.assertEqual(sft["messages"][3]["content"], "TOKEN\n<image>")
+        self.assertEqual(sft["images"], ["data:image/png;base64,iVBORw0KGgo="])
+
+    def test_pure_and_multiple_image_tool_results_survive_in_order(self):
+        image1 = {"type": "image", "data": "AA==", "mimeType": "image/png"}
+        image2 = {"type": "image", "data": "AQ==", "mimeType": "image/jpeg"}
+        for content, expected_text, expected_images in (
+            ([image1], "<image>", ["data:image/png;base64,AA=="]),
+            (
+                [{"type": "text", "text": "two frames"}, image1, image2],
+                "two frames\n<image>\n<image>",
+                ["data:image/png;base64,AA==", "data:image/jpeg;base64,AQ=="],
+            ),
+        ):
+            with self.subTest(expected_text=expected_text):
+                events = sample_events()
+                events[4]["event"]["message"]["content"] = deepcopy(content)
+                sft = actf_to_sft(pi_events_to_actf(events))
+                self.assertEqual(sft["messages"][3]["content"], expected_text)
+                self.assertEqual(sft["images"], expected_images)
+
     def test_incomplete_or_lossy_data_rejected(self):
         for case in ("schema", "schema-change", "system-change", "arguments", "duplicate", "unpaired", "wrong-tool", "image", "runner", "length", "error", "no-end", "open-next-turn", "missing-request", "request-pending", "empty", "orphan", "compaction", "custom"):
             with self.subTest(case=case):
@@ -139,6 +169,11 @@ class FakeRuntime:
 
 
 class PiHarnessTests(unittest.TestCase):
+    def test_sdk_runner_resolves_key_from_environment_and_enables_images(self):
+        source = RUNNER_PATH.with_name("runner.mjs").read_text(encoding="utf-8")
+        self.assertIn('apiKey: "$PI_API_KEY"', source)
+        self.assertIn('input: ["text", "image"]', source)
+
     def test_session_outputs_cleanup_and_redaction(self):
         runtime = FakeRuntime()
         harness = PiHarness(PiConfig(api_key_env="LOCAL_TEST_KEY", wire_trace_mode="off"), 0, runtime)

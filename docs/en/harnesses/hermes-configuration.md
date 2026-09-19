@@ -35,6 +35,7 @@ For `DEBIAN_MIRROR` and `DEBIAN_SECURITY_MIRROR`, see [Docker builds and package
 | `--hermes-api-key-env` | Shared `--api-key-env`, then `OPENAI_API_KEY`; provide a variable name, not a key |
 | `--hermes-context-length` | Optional context window override, at least 64000 tokens |
 | `--hermes-max-iterations` | `12` model iterations per user turn; total rollout timeout also applies |
+| `--hermes-vision` / `--no-hermes-vision` | Enable `vision_analyze` and declare that the selected model accepts image input (enabled by default) |
 | `--thinking` / `runtime.thinking` | Optional native reasoning hint: `off/minimal/low/medium/high/xhigh`; actual support and normalization depend on Hermes and the provider/model |
 | `--wire-trace` | Native request snapshots always preserve schemas and assembled prompts. `full` also records HTTP traffic; requires an explicit API base and `--network host` |
 | `--no-keep-thinking` | Removes reasoning from ACTF/SFT export; raw/native history remains available |
@@ -43,13 +44,13 @@ Hermes API and image settings apply whether Hermes runs as the Task Agent or the
 
 ## Execution and traces
 
-Each participant gets its own disposable container. Hermes uses its `local` terminal backend inside that container, with the `terminal` and `file` toolsets. Immutable inputs, context files, setup commands, task environment variables, output directories, and container-based grading use Roller's shared workspace handling.
+Each participant gets its own disposable container. Hermes uses its `local` terminal backend inside that container, with the `terminal`, `file`, and (by default) `vision` toolsets. Immutable inputs, context files, setup commands, task environment variables, output directories, and container-based grading use Roller's shared workspace handling.
 
 Context files of all roles are copied to their declared workspace paths and listed in the task system prompt. Tasks may explicitly read them. The bridge disables implicit profile/context discovery, persistent memory, SOUL identity loading, checkpoints, background review, and automatic dependency installation during rollouts. This supports file-based context and skill fixtures; it does not enable Hermes' skill discovery/learning service.
 
 Each user turn starts a Python agent and restores Hermes' native message history in the same container. Workspace files and conversation history persist across turns. Python process state, including background process handles, does not. Models should finish terminal work within each turn. Sessions are isolated across Agent/Simulator, workers, and retry attempts.
 
-The append-only `rollout/trace.jsonl` journal records actual request messages/tool schemas, model responses/usage, and tool results observed at native persistence hooks before compression. Full request snapshots remain in raw data; ACTF/SFT represent the logical executed conversation. Context summaries in subsequent API requests do not replace earlier executed tools in the exported trajectory. This is a Roller bridge journal, not Hermes' optional ShareGPT export or an OpenClaw trace.
+The append-only `rollout/trace.jsonl` journal records actual request messages/tool schemas, model responses/usage, and tool results observed at native persistence hooks before compression. Full request snapshots remain in raw data; ACTF/SFT represent the logical executed conversation. Native `vision_analyze` results retain image bytes. For OpenAI-compatible gateways that reject images on the `tool` role, the bridge sends the same bytes in a following `user` media message while preserving the original tool result in the journal. Context summaries in subsequent API requests do not replace earlier executed tools in the exported trajectory. This is a Roller bridge journal, not Hermes' optional ShareGPT export or an OpenClaw trace.
 
 The usual outputs are `trace_ACTF.json`, `trace_SFT.json`, results, provenance, and usage. The bridge rejects incomplete turns, empty final replies, malformed tool arguments, missing schemas, and corrupt JSONL. Timeouts stop execution and retain available partial artifacts. Hermes emits no OpenClaw cache trace, so Resume does not require one; `--wire-trace full` still requires the wire trace. Context with `capture: none` still prevents reuse.
 
@@ -65,7 +66,7 @@ python examples/coverage/suite.py check --case data/txt/hermes
 
 The matrix contains 204 Hermes input tasks and 28 additional mixed Simulator tasks (seven new pairings, four cases each). Tasks include text, files, context, setup/environment, binary inspection, output collection, grading, and short conversations. The complete project matrix is 1368 positive tasks and 20 isolated negative cases.
 
-The initial adapter supports Chat Completions and text-oriented terminal/file execution. Vision tools, direct multimodal messages, provider-specific authentication flows, Hermes gateways, remote terminal backends, persistent memory, and skill learning are outside this scope. The optional Hermes vision group documents unsupported visual inputs and is excluded from the required passing set. Binary file access is tested separately from media understanding.
+The adapter supports Chat Completions, terminal/file execution, and local-image loading through `vision_analyze` when `--hermes-vision` is enabled and the selected model is actually vision-capable. Image tool results are preserved in raw, ACTF, and multimodal SFT (`<image>` plus top-level `images`). Direct user-message attachments, video, provider-specific authentication flows, Hermes gateways, remote terminal backends, persistent memory, and skill learning remain outside this scope.
 
 `PIP_INDEX_URL` controls pip installation of uv; prefer an HTTPS index with a valid certificate. A trusted internal HTTP index on a non-loopback host requires an explicit `PIP_TRUSTED_HOST`. `PYPI_DOWNLOAD_BASE` changes only the download prefix in `uv.lock`; the mirror must preserve the `/packages/` layout, versions, and SHA-256 hashes. uv connection trust uses the separate `UV_INSECURE_HOST` argument; pip settings do not apply to uv. Hermes source still needs to be fetched from GitHub.
 

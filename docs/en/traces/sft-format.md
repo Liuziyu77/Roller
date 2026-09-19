@@ -174,10 +174,22 @@ calling the model again. Roller never silently drops content. The converter itse
 or networks: a harness whose image tool only leaves a path must materialize
 the bytes into the ACTF layer while the file is still accessible.
 
-These are accepted SFT block shapes, not a claim that every Harness supports
-image export. OpenClaw and Claude Code retain image tool results. Pi/OpenCode
-reject images at the ACTF boundary. Codex still serializes image result blocks
-as text and does not produce `images`; that output is not lossless multimodal SFT.
+These are accepted SFT block shapes, not a claim that every Harness can invoke
+vision at runtime. Image tool results are handled as follows:
+
+| Harness | Runtime image path | ACTF/SFT image preservation |
+| --- | --- | --- |
+| OpenClaw | Image-capable model and image tool | Preserved |
+| Codex | `view_image` through Responses | Preserved |
+| Claude Code | `Read` image result | Preserved |
+| OpenCode | `read` attachment with an inline data URL | Preserved; non-image attachments retain bounded audit metadata |
+| Hermes | Roller enables the pinned profile's `vision_analyze` toolset | Preserved |
+| DeepSeek | Text-oriented Bash profile | Image content is rejected explicitly |
+| Pi | Native `read` image result with image-capable model registration | Preserved |
+
+An OpenCode image attachment that only carries a remote URL or path remains in
+ACTF but cannot form multimodal SFT, because export never reads files or
+networks. The sample therefore retains raw/ACTF and records SFT as unavailable.
 
 ## 5. File locations
 

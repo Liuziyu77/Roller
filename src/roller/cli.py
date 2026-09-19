@@ -381,6 +381,12 @@ def _build_parser() -> argparse.ArgumentParser:
     hermes = collect.add_argument_group("Hermes")
     hermes.add_argument("--hermes-max-iterations", type=int, default=12, help="maximum model iterations per Hermes user turn (default: 12)")
     hermes.add_argument("--hermes-context-length", type=int, help="override Hermes model context window (at least 64000 tokens)")
+    hermes.add_argument(
+        "--hermes-vision",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="enable Hermes vision_analyze and declare native image support (default: enabled)",
+    )
 
     opencode = collect.add_argument_group("OpenCode")
     opencode.add_argument(
@@ -875,7 +881,7 @@ def _collect(args: argparse.Namespace) -> int:
             network=args.network, api_base=hermes_api_base, api_key_env=hermes_api_key_env,
             pass_env=_deduplicate((*HERMES_COMMON_ENV_NAMES, *args.pass_env)),
             reasoning_effort=args.thinking, max_iterations=args.hermes_max_iterations,
-            context_length=args.hermes_context_length,
+            context_length=args.hermes_context_length, vision=args.hermes_vision,
             wire_trace_mode=args.wire_trace, keep_thinking=args.keep_thinking,
             keep_container_on_error=args.keep_container_on_error, docker_binary=args.docker_binary,
         )
@@ -1068,8 +1074,8 @@ def _collect(args: argparse.Namespace) -> int:
             "network": args.network, "api_base": hermes_api_base or "https://api.openai.com/v1",
             "api_key_env": hermes_api_key_env, "reasoning_effort": args.thinking,
             "max_iterations": args.hermes_max_iterations, "hermes_revision": HERMES_REVISION,
-            "context_length": args.hermes_context_length,
-            "toolsets": ["terminal", "file"], "api_mode": "chat_completions",
+            "context_length": args.hermes_context_length, "vision": args.hermes_vision,
+            "toolsets": ["terminal", "file", *(["vision"] if args.hermes_vision else [])], "api_mode": "chat_completions",
             "wire_trace": args.wire_trace,
             "keep_thinking": args.keep_thinking, "pass_env_names": list(hermes_config.pass_env),
         }

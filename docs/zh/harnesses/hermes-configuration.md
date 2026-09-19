@@ -33,6 +33,7 @@ Debian 镜像参数 `DEBIAN_MIRROR`、`DEBIAN_SECURITY_MIRROR` 的用法见 [Doc
 | `--hermes-api-key-env` | 依次回退到 `--api-key-env`、`OPENAI_API_KEY`；参数值是变量名，不是 Key |
 | `--hermes-context-length` | 可选上下文窗口覆盖，至少 64000 tokens |
 | `--hermes-max-iterations` | 每条 user message 最多 12 次模型迭代；仍受整个 rollout 的 timeout 约束 |
+| `--hermes-vision` / `--no-hermes-vision` | 启用 `vision_analyze`，并声明所选模型支持图片输入（默认启用） |
 | `--thinking` / `runtime.thinking` | 可选原生 reasoning 提示：`off/minimal/low/medium/high/xhigh`；实际支持及归一化由 Hermes、模型和服务共同决定 |
 | `--wire-trace` | 所有模式均保留原生请求中的 schema/system prompt；`full` 额外保存 HTTP 轨迹，要求显式 API base 和 host 网络 |
 | `--no-keep-thinking` | 只从 ACTF/SFT 导出中移除 reasoning，保留 raw 与原生续聊历史 |
@@ -41,13 +42,13 @@ Hermes 的专属 API/镜像参数同时适用于 Agent 和 Simulator。Run lock 
 
 ## 会话、文件与轨迹
 
-每个参与者使用独立的一次性容器。Hermes 的 `local` terminal backend 在这个容器内执行，只启用 `terminal`、`file` 工具集。输入只读挂载、Context 文件、setup、任务环境变量、输出回收和容器内评分使用 Roller 的统一工作区。
+每个参与者使用独立的一次性容器。Hermes 的 `local` terminal backend 在这个容器内执行，启用 `terminal`、`file`，并默认启用 `vision` 工具集。输入只读挂载、Context 文件、setup、任务环境变量、输出回收和容器内评分使用 Roller 的统一工作区。
 
 所有 Context 角色的文件会复制到声明路径，并在任务 system prompt 中列出，任务可显式读取。桥接关闭隐式 profile/context 搜索、持久 Memory、SOUL identity、checkpoint、后台 review 和 rollout 期间的自动依赖安装。Context/skill 测试检查这些文件能否读取，不会启用 Hermes 自动发现或学习 skill 的服务。
 
 每轮启动 Python agent，在同一个容器里恢复原生消息历史。对话与文件会保留，Python 进程内状态（例如后台进程句柄）不会恢复，终端操作应在本轮完成。Agent、Simulator、并行任务和重试之间相互隔离。
 
-`rollout/trace.jsonl` 是追加式桥接日志，记录实际请求、完整工具 schema、模型响应和 usage，以及原生 persistence hook 在压缩前观察到的工具结果。Raw 保留完整请求快照；ACTF/SFT 展示实际执行的逻辑对话，后续压缩摘要不会覆盖先前工具步骤。此格式不是 Hermes 自带 ShareGPT 导出，也不是 OpenClaw raw。
+`rollout/trace.jsonl` 是追加式桥接日志，记录实际请求、完整工具 schema、模型响应和 usage，以及原生 persistence hook 在压缩前观察到的工具结果。Raw 保留完整请求快照；ACTF/SFT 展示实际执行的逻辑对话。原生 `vision_analyze` 结果会保留图片字节；若 OpenAI-compatible 网关拒绝在 `tool` 角色携带图片，桥接只在发往模型时把相同图片移到紧随其后的 `user` media message，并在 journal 中保留原始工具结果。后续压缩摘要不会覆盖先前工具步骤。此格式不是 Hermes 自带 ShareGPT 导出，也不是 OpenClaw raw。
 
 Hermes 也会输出 ACTF、SFT、结果文件、provenance 和 usage。未完成轮次、空回复、损坏的工具参数/schema 或 JSONL 不会算作成功。超时会停止执行并回收已有轨迹。Hermes 不生成 OpenClaw cache trace，Resume 不要求该文件；`full` 模式仍要求 wire trace，`capture: none` 仍禁止复用。
 
@@ -65,7 +66,7 @@ python examples/coverage/suite.py check --case data/txt/hermes
 
 矩阵新增 204 条 Hermes 输入任务和 28 条 Simulator 配对任务，覆盖文本、文件、Context、setup/env、二进制检查、产物、评分和短对话。完整矩阵为 1368 条正向任务、20 条隔离负例。
 
-首版支持 Chat Completions 与文本/文件工具执行。视觉工具、直接多模态消息、厂商专属认证、Hermes gateway、远程 terminal backend、持久 Memory 和 skill learning 暂不支持。Hermes 可选视觉组记录尚未支持的视觉输入，不纳入要求全部通过的验收范围；二进制文件传输与媒体理解分开验证。
+当前适配支持 Chat Completions、文本/文件工具，以及在启用 `--hermes-vision` 且所选模型确实支持视觉时通过 `vision_analyze` 加载本地图片。图片工具结果会保留到 raw、ACTF 和多模态 SFT（`<image>` 与顶层 `images`）。直接 user-message 附件、视频、厂商专属认证、Hermes gateway、远程 terminal backend、持久 Memory 和 skill learning 暂不支持。
 
 `PIP_INDEX_URL` 用于 pip 安装 uv，优先使用证书有效的 HTTPS 索引。非回环地址的可信内部 HTTP 索引需显式设置 `PIP_TRUSTED_HOST`。`PYPI_DOWNLOAD_BASE` 只替换 `uv.lock` 中的下载前缀，镜像需兼容 `/packages/` 布局，版本与 SHA-256 校验不变。uv 的连接信任由独立参数 `UV_INSECURE_HOST` 控制；pip 设置不会自动传给 uv。Hermes 源码仍需从 GitHub 拉取。
 

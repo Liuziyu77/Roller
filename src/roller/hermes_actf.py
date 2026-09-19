@@ -11,6 +11,21 @@ from roller.storage import atomic_write_json
 from roller.usage import ZERO_USAGE
 
 
+def _normalize_tool_content(value: Any) -> Any:
+    """Normalize OpenAI image_url blocks to ACTF's canonical image block."""
+    if not isinstance(value, list):
+        return value
+    normalized = []
+    for block in value:
+        if isinstance(block, dict) and block.get("type") == "image_url":
+            image_url = block.get("image_url")
+            url = image_url.get("url") if isinstance(image_url, dict) else image_url
+            normalized.append({"type": "image", "data": url})
+        else:
+            normalized.append(block)
+    return normalized
+
+
 def _text(value: Any) -> str:
     if value is None:
         return ""
@@ -90,7 +105,7 @@ def hermes_events_to_actf(events: Iterable[dict[str, Any]], *, keep_thinking: bo
             if call_id not in call_names:
                 raise ValueError(f"Hermes tool result has no preceding call: {call_id}")
             # Preserve typed blocks; the shared SFT exporter rejects unsupported media.
-            message = {"role": "toolResult", "toolCallId": call_id, "toolName": call_names[call_id], "content": message.get("content", ""), "isError": bool(message.get("is_error", False))}
+            message = {"role": "toolResult", "toolCallId": call_id, "toolName": call_names[call_id], "content": _normalize_tool_content(message.get("content", "")), "isError": bool(message.get("is_error", False))}
         elif role == "user":
             message["content"] = _text(message.get("content"))
         else:

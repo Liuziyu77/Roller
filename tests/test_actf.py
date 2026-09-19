@@ -125,6 +125,35 @@ class ActfConversionTests(unittest.TestCase):
         kept = openclaw_events_to_actf(_events(), keep_thinking=True)
         self.assertEqual(kept["steps"][0]["assistant_content"]["reasoning_content"], "inspect")
 
+    def test_preserves_image_tool_result_and_exports_multimodal_sft(self) -> None:
+        events = _events()
+        data_url = "data:image/png;base64,AA=="
+        events[3]["message"]["content"] = [
+            {"type": "text", "text": "image"},
+            {"type": "image", "data": data_url},
+        ]
+        trajectory = openclaw_events_to_actf(
+            events,
+            tools=[
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "read",
+                        "parameters": {"type": "object"},
+                    },
+                }
+            ],
+        )
+
+        self.assertEqual(
+            trajectory["steps"][0]["observation"][0]["content"][1],
+            {"type": "image", "data": data_url},
+        )
+        sft = actf_to_sft(trajectory)
+        tool_result = next(m for m in sft["messages"] if m["role"] == "tool")
+        self.assertEqual(tool_result["content"], "image\n<image>")
+        self.assertEqual(sft["images"], [data_url])
+
     def test_tool_call_ids_are_namespaced_across_sessions(self) -> None:
         first = _events()[:4]
         second = [
@@ -183,6 +212,32 @@ class ActfConversionTests(unittest.TestCase):
                 if message["role"] == "tool"
             ],
             call_ids,
+        )
+
+    def test_empty_assistant_event_after_tool_result_is_not_exported(self) -> None:
+        events = _events()
+        events.insert(
+            4,
+            {
+                "type": "message",
+                "message": {
+                    "role": "assistant",
+                    "content": [],
+                    "timestamp": 1300,
+                },
+            },
+        )
+
+        trajectory = openclaw_events_to_actf(
+            events,
+            user_messages=("clean first", "clean second"),
+            tools=[{"type": "function", "function": {"name": "read"}}],
+        )
+
+        self.assertEqual(len(trajectory["steps"]), 2)
+        self.assertEqual(
+            [message["role"] for message in actf_to_sft(trajectory)["messages"]],
+            ["system", "user", "assistant", "tool", "user", "assistant"],
         )
 
     def test_cli_delivery_copy_excluded_from_steps_and_sft(self) -> None:

@@ -110,26 +110,69 @@ def _arguments(payload: Mapping[str, Any]) -> tuple[dict[str, Any], Any]:
     return {"value": deepcopy(parsed)}, raw
 
 
-def _output_text(value: Any) -> tuple[str, dict[str, Any] | None]:
+def _output_content_blocks(value: Any) -> list[dict[str, Any]]:
+    if isinstance(value, str):
+        return [{"type": "text", "text": value}]
+    if isinstance(value, list):
+        blocks: list[dict[str, Any]] = []
+        for item in value:
+            if isinstance(item, str):
+                blocks.append({"type": "text", "text": item})
+                continue
+            if not isinstance(item, Mapping):
+                blocks.append(
+                    {
+                        "type": "text",
+                        "text": json.dumps(item, ensure_ascii=False),
+                    }
+                )
+                continue
+            block_type = item.get("type")
+            if block_type in {"text", "input_text", "output_text"} and isinstance(
+                item.get("text"), str
+            ):
+                blocks.append({"type": "text", "text": item["text"]})
+            elif block_type in {"image", "input_image"}:
+                image = deepcopy(dict(item))
+                image["type"] = "image"
+                image_url = image.pop("image_url", None)
+                if "data" not in image and image_url is not None:
+                    image["data"] = image_url
+                blocks.append(image)
+            else:
+                blocks.append(
+                    {
+                        "type": "text",
+                        "text": json.dumps(item, ensure_ascii=False),
+                    }
+                )
+        return blocks
+    if value is None:
+        return [{"type": "text", "text": ""}]
+    if isinstance(value, Mapping):
+        return _output_content_blocks([value])
+    return [{"type": "text", "text": json.dumps(value, ensure_ascii=False)}]
+
+
+def _output_content(
+    value: Any,
+) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
     parsed = value
     if isinstance(value, str):
         try:
             parsed = json.loads(value)
         except json.JSONDecodeError:
-            return value, None
+            return _output_content_blocks(value), None
     if isinstance(parsed, Mapping):
-        output = parsed.get("output")
+        output = parsed.get("output") if "output" in parsed else parsed
         metadata = parsed.get("metadata")
         if output is None:
             output = json.dumps(parsed, ensure_ascii=False)
-        elif not isinstance(output, str):
-            output = json.dumps(output, ensure_ascii=False)
-        return output, deepcopy(metadata) if isinstance(metadata, dict) else None
-    if parsed is None:
-        return "", None
-    if isinstance(parsed, str):
-        return parsed, None
-    return json.dumps(parsed, ensure_ascii=False), None
+        return (
+            _output_content_blocks(output),
+            deepcopy(metadata) if isinstance(metadata, dict) else None,
+        )
+    return _output_content_blocks(parsed), None
 
 
 def _usage_number(value: Any) -> int:
@@ -385,7 +428,7 @@ def codex_events_to_actf(
             call = calls_by_id.get(call_id) if isinstance(call_id, str) else None
             if call is None:
                 continue
-            output, metadata = _output_text(payload.get("output"))
+            output, metadata = _output_content(payload.get("output"))
             call["output"] = output
             call["output_time"] = timestamp
             call["metadata"] = metadata
@@ -414,21 +457,23 @@ def codex_events_to_actf(
             )
             output = raw_call.get("output")
             missing = output is None
+            if missing:
+                content = [
+                    {
+                        "type": "text",
+                        "text": "[Codex trace ended before this tool returned]",
+                    }
+                ]
+            elif isinstance(output, list):
+                content = deepcopy(output)
+            else:
+                content = _output_content_blocks(output)
             observations.append(
                 {
                     "role": "toolResult",
                     "toolCallId": raw_call["id"],
                     "toolName": raw_call["name"],
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": (
-                                "[Codex trace ended before this tool returned]"
-                                if missing
-                                else str(output)
-                            ),
-                        }
-                    ],
+                    "content": content,
                     "isError": bool(raw_call.get("is_error")) or missing,
                     **(
                         {"timestamp": raw_call["output_time"]}

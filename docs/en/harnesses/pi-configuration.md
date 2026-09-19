@@ -44,7 +44,7 @@ Pi-specific flags configure both participant roles. Mixed runs can specify separ
 
 Each participant has its own container and `PI_CODING_AGENT_DIR`, retaining one native `AgentSession` across turns. Conversation history and workspace files persist. Pi starts a separate Shell for each Bash call: `export` and `cd` do not persist across calls. Store persistent state in files or combine related operations in a single command.
 
-Seven native tools are enabled: `read`, `bash`, `edit`, `write`, `grep`, `find`, and `ls`. Inputs are mounted read-only. Context is copied to its declared paths; non-skill Context is added to the native system prompt through the official loader. Skill files remain accessible but are not automatically registered as Pi skills. Setup, explicit environment variables, custom output directories, artifact collection, and grading before container teardown are supported.
+Seven native tools are enabled: `read`, `bash`, `edit`, `write`, `grep`, `find`, and `ls`. Inputs are mounted read-only. For an image-capable model, native `read` image results are passed to the model and preserved in raw, ACTF, and multimodal SFT. Context is copied to its declared paths; non-skill Context is added to the native system prompt through the official loader. Skill files remain accessible but are not automatically registered as Pi skills. Setup, explicit environment variables, custom output directories, artifact collection, and grading before container teardown are supported.
 
 Automatic compaction, session/provider retries, telemetry, remote model catalog updates, and extension discovery are disabled. Roller preserves Pi's native system prompt and appends workspace, output, and Context guidance.
 
@@ -54,19 +54,18 @@ Automatic compaction, session/provider retries, telemetry, remote model catalog 
 
 Empty replies, truncation, API errors, step limits, and unmatched tool calls do not produce successful trajectories. Conversion rejects changes to the system prompt/tool schemas and non-text content that would be lost. Timeouts stop the container and recover existing output files. Pi does not require an OpenClaw cache trace.
 
-The adapter supports Pi text and file tasks. Visual acceptance, interactive login, other Pi provider protocols, custom extensions/plugins, and automatic compaction are not yet supported.
+The adapter supports Pi text and file tasks, including local images opened with `read` when the selected model and OpenAI-compatible endpoint accept image input. Direct user-message attachments, video, interactive login, other Pi provider protocols, custom extensions/plugins, and automatic compaction are not yet supported.
 
 ## Reusable verification
 
 ```bash
 python examples/coverage/suite.py validate --case '*/pi'
-python examples/coverage/suite.py run --case '*/pi' \
-  --exclude-case 'vision/*' --dry-run
+python examples/coverage/suite.py run --case '*/pi' --dry-run
 ROLLER_PI_DOCKER_TEST=1 PYTHONPATH=src \
   python -m unittest discover -s tests -p test_pi_docker.py -v
 ```
 
-Docker tests use a deterministic local streaming endpoint and a fake key with the real Pi SDK and tools, consuming no model quota. Public input coverage has 204 tasks, including 200 nonvisual tasks. The 13 Agent × Simulator pairings involving Pi add 52 tasks; select them with `--case 'simulators/pair/pi--*' --case 'simulators/pair/*--pi'`. The vision group documents visual inputs not yet supported by this adapter.
+Docker tests use a deterministic local streaming endpoint and a fake key with the real Pi SDK and tools, consuming no model quota. Public input coverage has 204 tasks, including four vision tasks. The 13 Agent × Simulator pairings involving Pi add 52 tasks; select them with `--case 'simulators/pair/pi--*' --case 'simulators/pair/*--pi'`. External-model vision runs additionally require an image-capable model and endpoint.
 
 With a DeepSeek image available, also set `ROLLER_PI_MIXED_DOCKER_TEST=1` to verify Pi ↔ DeepSeek pairings and Resume in both directions.
 

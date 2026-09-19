@@ -212,6 +212,59 @@ class CodexActfTests(unittest.TestCase):
             self.assertEqual(usage["total_tokens"], 238)
             self.assertEqual(usage["request_count"], 2)
 
+    def test_preserves_view_image_output_for_multimodal_sft(self) -> None:
+        events = _events()
+        events[4]["payload"]["name"] = "view_image"
+        events[4]["payload"]["arguments"] = '{"path":"/workspace/image.png"}'
+        events[6]["payload"]["output"] = [
+            {
+                "type": "input_image",
+                "image_url": "data:image/png;base64,AA==",
+                "detail": "high",
+            }
+        ]
+
+        trajectory = codex_events_to_actf(events, user_messages=["inspect image.png"])
+
+        self.assertEqual(
+            trajectory["steps"][0]["observation"][0]["content"],
+            [
+                {
+                    "type": "image",
+                    "data": "data:image/png;base64,AA==",
+                    "detail": "high",
+                }
+            ],
+        )
+        sft = actf_to_sft(trajectory)
+        self.assertEqual(sft["images"], ["data:image/png;base64,AA=="])
+        tool_result = next(
+            message for message in sft["messages"] if message["role"] == "tool"
+        )
+        self.assertEqual(tool_result["content"], "<image>")
+
+    def test_preserves_text_and_multiple_view_images_in_order(self) -> None:
+        events = _events()
+        events[4]["payload"]["name"] = "view_image"
+        events[4]["payload"]["arguments"] = '{"path":"/workspace/images"}'
+        events[6]["payload"]["output"] = [
+            {"type": "text", "text": "two frames"},
+            {"type": "input_image", "image_url": "data:image/png;base64,AA=="},
+            {"type": "input_image", "image_url": "data:image/jpeg;base64,AQ=="},
+        ]
+
+        record = actf_to_sft(
+            codex_events_to_actf(events, user_messages=["inspect images"])
+        )
+        tool_result = next(
+            message for message in record["messages"] if message["role"] == "tool"
+        )
+        self.assertEqual(tool_result["content"], "two frames\n<image>\n<image>")
+        self.assertEqual(
+            record["images"],
+            ["data:image/png;base64,AA==", "data:image/jpeg;base64,AQ=="],
+        )
+
     def test_prefers_visible_reasoning_content_and_filters_codex_context(self) -> None:
         events = _events()
         events.insert(
