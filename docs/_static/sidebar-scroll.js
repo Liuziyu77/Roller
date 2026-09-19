@@ -55,6 +55,7 @@
     syncNavButton(button);
     if (sidebar) {
       sidebar.scrollTop += button.getBoundingClientRect().top - buttonTop;
+      fitCurrentGroup(sidebar, item.parentElement);
     }
   }
 
@@ -79,8 +80,26 @@
   }
 
   function fitCurrentGroup(sidebar, group) {
+    const current = group.querySelector(":scope > li.current.roller-expanded");
+    const submenu = current?.querySelector(":scope > ul");
+
+    if (submenu) {
+      submenu.classList.remove("roller-scrollable-submenu");
+      submenu.style.removeProperty("max-height");
+    }
+
     const sidebarRect = sidebar.getBoundingClientRect();
-    const groupRect = group.getBoundingClientRect();
+    let groupRect = group.getBoundingClientRect();
+    if (groupRect.height > sidebar.clientHeight && submenu) {
+      const fixedHeight = groupRect.height - submenu.getBoundingClientRect().height;
+      const availableHeight = Math.floor(sidebar.clientHeight - fixedHeight - 16);
+      if (availableHeight >= 96 && submenu.scrollHeight > availableHeight) {
+        submenu.style.maxHeight = availableHeight + "px";
+        submenu.classList.add("roller-scrollable-submenu");
+        groupRect = group.getBoundingClientRect();
+      }
+    }
+
     if (groupRect.height > sidebar.clientHeight) return;
     if (groupRect.top < sidebarRect.top) {
       sidebar.scrollTop += Math.floor(groupRect.top - sidebarRect.top);
@@ -89,11 +108,17 @@
     }
   }
 
-  function restoreInitialScroll() {
+  function currentGroup() {
     const sidebar = document.querySelector(".wy-side-scroll");
     const current = document.querySelector(".wy-menu-vertical li.toctree-l1.current");
-    if (!sidebar || !current) return;
-    const group = current.parentElement;
+    if (!sidebar || !current) return null;
+    return { sidebar: sidebar, group: current.parentElement };
+  }
+
+  function restoreInitialScroll() {
+    const active = currentGroup();
+    if (!active) return;
+    const { sidebar, group } = active;
     const saved = JSON.parse(sessionStorage.getItem(navPositionKey) || "null");
     sessionStorage.removeItem(navPositionKey);
     if (saved && saved.pathname === location.pathname) {
@@ -101,6 +126,13 @@
     }
     fitCurrentGroup(sidebar, group);
     syncNavButtons();
+  }
+
+  function refitCurrentGroup() {
+    const active = currentGroup();
+    if (active) {
+      fitCurrentGroup(active.sidebar, active.group);
+    }
   }
 
   let scrollTopBeforeHash = null;
@@ -169,11 +201,14 @@
         initialScrollRestored = true;
         restoreInitialScroll();
         window.addEventListener("hashchange", restoreHashScroll);
+      } else if (initialScrollRestored) {
+        refitCurrentGroup();
       }
     }).observe(nav, {
       childList: true,
       subtree: true,
     });
+    window.addEventListener("resize", refitCurrentGroup);
     const sideNav = document.querySelector(".wy-nav-side");
     if (sideNav) {
       new MutationObserver(syncMobileMenu).observe(sideNav, {
