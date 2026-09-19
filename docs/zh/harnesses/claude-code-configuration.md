@@ -1,7 +1,5 @@
 # Claude Code Harness 指南
 
-[文档中心](../index.md) · [快速上手](../start/getting-started.md) · [OpenClaw](openclaw-configuration.md) · [Codex](codex-configuration.md) · [CLI 参数](../start/cli-reference.md)
-
 本页介绍 Claude Code 专属的镜像、Anthropic Messages API、thinking、native session 和排错。Task 字段见 [Task 格式参考](../tasks/task-format.md)，各 Harness 的产物说明见 [轨迹产出文件指南](../traces/trajectory-outputs.md)。
 
 > 快速定位：支持范围（第 1 节）· 镜像（第 2 节）· API（第 3 节）· thinking（第 4–5 节）· native/ACTF/SFT/wire（第 8–9 节）· 排错（第 10 节）

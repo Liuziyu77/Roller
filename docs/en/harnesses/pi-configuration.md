@@ -1,8 +1,33 @@
-# Pi Agent Harness
+# Pi Agent Harness guide
 
-Roller runs the official [Pi Coding Agent SDK](https://pi.dev/docs/latest/sdk), pinning `@earendil-works/pi-coding-agent`, `pi-agent-core`, and `pi-ai` to 0.85.1. Its native `AgentSession` calls the model and executes tools. Both Task Agent and User Simulator accept `"harness": "pi"`.
+This page covers only Pi-specific images, the API, the native session, and troubleshooting. Roller runs the official [Pi Coding Agent SDK](https://pi.dev/docs/latest/sdk), pinning `@earendil-works/pi-coding-agent`, `pi-agent-core`, and `pi-ai` to **0.85.1**. Its native `AgentSession` owns the model loop and tools. For Task fields see [Task format reference](../tasks/task-format.md). For output semantics shared by all Harnesses see [Trajectory output file guide](../traces/trajectory-outputs.md).
 
-## Build and run
+> Jump to: supported scope (section 1) · image and run (section 2) · configuration (section 3) · session and tools (section 4) · trace outputs (section 5) · verification (section 6) · troubleshooting (section 7)
+
+## 1. Current supported scope
+
+The Pi Harness supports:
+
+- single-turn `prompt` and predefined multi-turn `messages` (one native `AgentSession` per participant across turns);
+- Task Agent and User Simulator, both accepting `"harness": "pi"`;
+- Task Bundle, read-only inputs, Context, setup, explicit environment variables, custom `output_dir`, artifact collection, and grading before container teardown;
+- streaming **OpenAI Chat Completions** with tool calls;
+- seven native tools: `read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`;
+- local images opened through `read` when the model and endpoint accept image input;
+- ACTF, SFT, reasoning export, and usage (cache tokens counted separately);
+- `--wire-trace actf|full|off`;
+- `--thinking off/minimal/low/medium/high/xhigh/max` (sent as `reasoning_effort`).
+
+Not currently supported:
+
+- direct multimodal task messages and video;
+- interactive login;
+- other Pi provider protocols;
+- custom extensions/plugins;
+- automatic compaction;
+- the OpenClaw cache trace (Resume does not require it).
+
+## 2. Build and run
 
 ```bash
 docker build -t roller-pi:0.85.1 docker/pi
@@ -22,7 +47,7 @@ The image also installs the official `fd 10.2.0` binary with SHA-256 verificatio
 
 For `DEBIAN_MIRROR` and `DEBIAN_SECURITY_MIRROR`, see [Docker builds and package mirrors](../start/docker-builds.md). Set `NPM_REGISTRY` to override npm downloads, or leave it unset to keep the existing npm configuration.
 
-## Configuration
+## 3. Configuration
 
 | Flag | Default and behavior |
 | --- | --- |
@@ -38,9 +63,9 @@ For `DEBIAN_MIRROR` and `DEBIAN_SECURITY_MIRROR`, see [Docker builds and package
 
 Thinking is sent as `reasoning_effort`: `off` becomes `none`, and other levels retain their names. The endpoint must support the selected value. Vendor-specific thinking protocols are not translated automatically.
 
-Pi-specific flags configure both participant roles. Mixed runs can specify separate API settings and images for other Harnesses. Run locks record versions, image digests, tools, connection settings, and execution limits. Resume validates each participant's artifacts.
+Pi-specific flags configure both participant roles. Mixed runs can specify separate API settings and images for other Harnesses. Run locks record versions, image digests, tools, connection settings, and execution bounds. Resume validates each participant's artifacts.
 
-## Sessions, Context, and tools
+## 4. Sessions, Context, and tools
 
 Each participant has its own container and `PI_CODING_AGENT_DIR`, retaining one native `AgentSession` across turns. Conversation history and workspace files persist. Pi starts a separate Shell for each Bash call: `export` and `cd` do not persist across calls. Store persistent state in files or combine related operations in a single command.
 
@@ -48,7 +73,7 @@ Seven native tools are enabled: `read`, `bash`, `edit`, `write`, `grep`, `find`,
 
 Automatic compaction, session/provider retries, telemetry, remote model catalog updates, and extension discovery are disabled. Roller preserves Pi's native system prompt and appends workspace, output, and Context guidance.
 
-## Traces and scope
+## 5. Trace outputs
 
 `trace.jsonl` uses `roller.pi-events/v1`, containing native events, model contexts, actual requests, and Roller turn boundaries. ACTF/SFT use the captured system prompt and tool schemas and preserve text, reasoning, tool arguments, and results. Cache tokens are counted separately.
 
@@ -56,7 +81,7 @@ Empty replies, truncation, API errors, step limits, and unmatched tool calls do 
 
 The adapter supports Pi text and file tasks, including local images opened with `read` when the selected model and OpenAI-compatible endpoint accept image input. Direct user-message attachments, video, interactive login, other Pi provider protocols, custom extensions/plugins, and automatic compaction are not yet supported.
 
-## Reusable verification
+## 6. Reusable verification
 
 ```bash
 python examples/coverage/suite.py validate --case '*/pi'
@@ -69,4 +94,15 @@ Docker tests use a deterministic local streaming endpoint and a fake key with th
 
 With a DeepSeek image available, also set `ROLLER_PI_MIXED_DOCKER_TEST=1` to verify Pi ↔ DeepSeek pairings and Resume in both directions.
 
-See [Coverage](https://github.com/Liuziyu77/Roller/blob/main/examples/coverage/README.en.md). Offline checks validate configuration; container tests exercise the SDK and tools; external model tests check service compatibility.
+See [Coverage](https://github.com/Liuziyu77/Roller/blob/main/examples/coverage/README.en.md). Offline configuration validation, real-container tests, and external model acceptance are distinct verification layers.
+
+## 7. Troubleshooting
+
+Common errors:
+
+- a trajectory is not counted as successful: empty replies, truncation, API errors, step limits, and unmatched tool calls all fail; inspect `trace.jsonl` to locate the cause;
+- the converter rejects a trajectory: changes to the system prompt or tool schemas, and non-text content that would be lost, are rejected;
+- Bash state disappears: Pi starts a separate Shell per Bash call, so `export`/`cd` do not persist; store persistent state in files or complete the work in a single command;
+- long tasks exceed the context window: automatic compaction is disabled; raise `--pi-context-length` to match the real model service;
+- rollout timeout: the container is stopped and existing output files recovered; adjust `--timeout` or `--pi-max-steps` as needed;
+- `--wire-trace full` fails to start: an explicit API base and `--network host` are required.

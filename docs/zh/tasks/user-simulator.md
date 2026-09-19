@@ -1,7 +1,5 @@
 # User Simulator 与动态对话
 
-[文档中心](../index.md) · [Task 格式](task-format.md) · [示例](../start/examples.md#动态-user-simulator) · [产物说明](../traces/trajectory-outputs.md)
-
 User Simulator 在独立的 Harness 中用模型扮演用户。任务 Agent 完成当前指令后，它读取截至当前轮的完整对话，再决定提出新要求或结束任务。对话随任务进展逐轮生成。
 
 当任务需要逐步补充需求或根据回复修改要求时，可以使用这种模式，例如撰写招聘广告、需求访谈、客服对话、教学辅导和交互式代码评审。

@@ -1,7 +1,5 @@
 # CLI reference
 
-[Documentation home](../index.md) · [Getting started](getting-started.md) · [Task format](../tasks/task-format.md) · [Trajectory outputs](../traces/trajectory-outputs.md)
-
 This page lists Roller CLI flags by scope. For the flags in your installed version, trust the command output:
 
 ```bash

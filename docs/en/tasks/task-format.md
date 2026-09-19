@@ -1,7 +1,5 @@
 # Task format reference
 
-[Documentation home](../index.md) · [Getting started](../start/getting-started.md) · [File lifecycle](task-bundle-and-storage.md) · [Machine-readable schema](../../../schemas/task.schema.json)
-
 Roller uses `roller.task/v1` to describe the conversation, files, Context, and runtime settings needed for one rollout. A Task list can be JSONL or JSON:
 
 - `.jsonl`: each non-empty line is one task.

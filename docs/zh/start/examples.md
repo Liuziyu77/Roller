@@ -1,7 +1,5 @@
 # Examples
 
-[文档中心](../index.md) · [快速上手](getting-started.md) · [Task 格式](../tasks/task-format.md) · [产物说明](../traces/trajectory-outputs.md)
-
 仓库的 [`examples/`](https://github.com/Liuziyu77/Roller/tree/main/examples) 目录包含配置模板、task 和运行命令。安装步骤、task 字段和轨迹格式见对应指南。
 
 ## 目录内容

@@ -1,7 +1,5 @@
 # CLI 参数参考
 
-[文档中心](../index.md) · [快速上手](getting-started.md) · [Task 格式](../tasks/task-format.md) · [产物说明](../traces/trajectory-outputs.md)
-
 本页按适用范围列出 Roller CLI 参数。当前安装版本的参数以命令输出为准：
 
 ```bash

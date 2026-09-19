@@ -1,7 +1,5 @@
 # Claude Code Harness guide
 
-[Documentation home](../index.md) · [Getting started](../start/getting-started.md) · [OpenClaw](openclaw-configuration.md) · [Codex](codex-configuration.md) · [CLI reference](../start/cli-reference.md)
-
 This guide covers Claude Code-specific images, the Anthropic Messages API, thinking, native session, and troubleshooting. For Task fields, see [Task format reference](../tasks/task-format.md). For the outputs shared by all Harnesses, see [Trajectory output file guide](../traces/trajectory-outputs.md).
 
 > Jump to: supported scope (section 1) · image (section 2) · API (section 3) · thinking (section 4) · native/ACTF/SFT/wire (sections 8 to 9) · troubleshooting (section 10)

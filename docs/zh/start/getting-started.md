@@ -1,7 +1,5 @@
 # 快速上手：从安装到第一条轨迹
 
-[文档中心](../index.md) · [示例目录](examples.md) · [CLI 参数](cli-reference.md) · [产物说明](../traces/trajectory-outputs.md)
-
 按本页步骤准备环境和 API，执行 dry-run 与采集，再检查结果或打开 Viewer。每次 run 保存 native raw、ACTF、SFT 与运行信息。
 
 ## 1. 准备运行环境

@@ -1,7 +1,5 @@
 # WildClawBench
 
-[文档中心](../index.md) · [Bench 接入与评分](bench-format.md) · [CLI 参数参考](../start/cli-reference.md)
-
 60 个真实场景 OpenClaw 任务，6 个类别。上游：<https://github.com/InternLM/WildClawBench>。
 
 本页介绍 WildClawBench 的上游参数、对应的 Roller 配置，以及尚未支持的设置。

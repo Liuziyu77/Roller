@@ -1,7 +1,5 @@
 # 轨迹产出文件指南
 
-[文档中心](../index.md) · [快速上手](../start/getting-started.md) · [SFT 格式](sft-format.md) · [Viewer](viewer.md)
-
 `roller collect` 会保存轨迹、训练数据、运行信息和任务输出。本页列出各文件的内容、
 生成与保留条件，以及训练、分析和调试时的用途。
 

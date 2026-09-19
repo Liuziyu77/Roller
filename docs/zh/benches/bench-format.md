@@ -1,7 +1,5 @@
 # Bench 接入与评分
 
-[文档中心](../index.md) · [Task 格式参考](../tasks/task-format.md) · [CLI 参数参考](../start/cli-reference.md) · [轨迹产出文件指南](../traces/trajectory-outputs.md)
-
 Roller 在 task 结束后销毁容器。Bench 层为采集流程增加任务导出和容器内评分：
 
 1. 把已 checkout 的 benchmark 转换为 `roller.task/v1` 任务清单（`roller bench export`）；
