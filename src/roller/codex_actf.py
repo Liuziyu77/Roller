@@ -111,28 +111,46 @@ def _arguments(payload: Mapping[str, Any]) -> tuple[dict[str, Any], Any]:
 
 
 def _is_output_content_block(value: Any) -> bool:
-    if not isinstance(value, Mapping):
-        return False
-    block_type = value.get("type")
-    if block_type in {"text", "input_text", "output_text"}:
-        return isinstance(value.get("text"), str)
-    if block_type in {"image", "input_image"}:
-        return isinstance(value.get("data", value.get("image_url")), str)
-    return False
+    """Return whether *value* declares a content-block shape.
+
+    This deliberately checks only the type discriminator. Field validation
+    belongs to the ACTF-to-SFT converter, which can report malformed text or
+    image data without silently turning a recognizable media result into JSON
+    text.
+    """
+
+    return isinstance(value, Mapping) and value.get("type") in {
+        "text",
+        "input_text",
+        "output_text",
+        "image",
+        "input_image",
+    }
+
+
+def _is_output_image_block(value: Any) -> bool:
+    return isinstance(value, Mapping) and value.get("type") in {
+        "image",
+        "input_image",
+    }
 
 
 def _is_output_content_block_list(value: Any) -> bool:
     # An empty JSON array has no structural evidence that it is a typed block
     # list. The caller handles a native list object separately so a genuine
     # empty content-block list can still remain empty.
-    return (
-        isinstance(value, list)
-        and bool(value)
-        and all(_is_output_content_block(item) for item in value)
+    if not isinstance(value, list) or not value:
+        return False
+    # A fully discriminated list is a content-block list even when one block
+    # has malformed fields. An explicit image discriminator is also decisive:
+    # keep the media semantics so an unrepresentable sibling fails loudly
+    # instead of downgrading the whole result to JSON text.
+    return all(_is_output_content_block(item) for item in value) or any(
+        _is_output_image_block(item) for item in value
     )
 
 
-def _output_content_blocks(value: Any) -> list[dict[str, Any]]:
+def _output_content_blocks(value: Any) -> list[Any]:
     if isinstance(value, str):
         return [{"type": "text", "text": value}]
     if isinstance(value, list):
@@ -145,15 +163,21 @@ def _output_content_blocks(value: Any) -> list[dict[str, Any]]:
                     "text": json.dumps(value, ensure_ascii=False),
                 }
             ]
-        blocks: list[dict[str, Any]] = []
+        blocks: list[Any] = []
         for item in value:
-            # _is_output_content_block_list has already validated every item.
-            assert isinstance(item, Mapping)
+            # The list check recognizes block shapes but intentionally leaves
+            # field validation to the ACTF-to-SFT converter.
+            if isinstance(item, str):
+                blocks.append({"type": "text", "text": item})
+                continue
+            if not isinstance(item, Mapping):
+                blocks.append(deepcopy(item))
+                continue
             block_type = item.get("type")
-            if block_type in {"text", "input_text", "output_text"} and isinstance(
-                item.get("text"), str
-            ):
-                blocks.append({"type": "text", "text": item["text"]})
+            if block_type in {"text", "input_text", "output_text"}:
+                text = deepcopy(dict(item))
+                text["type"] = "text"
+                blocks.append(text)
             elif block_type in {"image", "input_image"}:
                 image = deepcopy(dict(item))
                 image["type"] = "image"
@@ -161,6 +185,8 @@ def _output_content_blocks(value: Any) -> list[dict[str, Any]]:
                 if "data" not in image and image_url is not None:
                     image["data"] = image_url
                 blocks.append(image)
+            else:
+                blocks.append(deepcopy(dict(item)))
         return blocks
     if value is None:
         return [{"type": "text", "text": ""}]
@@ -178,7 +204,7 @@ def _output_content_blocks(value: Any) -> list[dict[str, Any]]:
 
 def _output_content(
     value: Any,
-) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
+) -> tuple[list[Any], dict[str, Any] | None]:
     parsed = value
     parsed_from_string = False
     if isinstance(value, str):

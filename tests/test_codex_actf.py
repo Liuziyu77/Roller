@@ -9,7 +9,7 @@ from roller.codex_actf import (
     codex_events_to_actf,
     convert_codex_trace,
 )
-from roller.sft import actf_to_sft
+from roller.sft import SFTConversionError, actf_to_sft
 from roller.usage import extract_codex_usage
 
 
@@ -294,17 +294,13 @@ class CodexActfTests(unittest.TestCase):
                 )
                 self.assertEqual(tool_result["content"], expected)
 
-    def test_only_expands_fully_typed_content_block_arrays(self) -> None:
+    def test_preserves_ordinary_non_content_block_arrays(self) -> None:
         cases = (
             ([1, 2], "[1, 2]"),
             (["left", "right"], '["left", "right"]'),
             (
                 [{"type": "text", "text": "left"}, {"value": "right"}],
                 '[{"type": "text", "text": "left"}, {"value": "right"}]',
-            ),
-            (
-                [{"type": "text", "text": 7}],
-                '[{"type": "text", "text": 7}]',
             ),
         )
         for native_output, expected in cases:
@@ -320,6 +316,101 @@ class CodexActfTests(unittest.TestCase):
                     if message["role"] == "tool"
                 )
                 self.assertEqual(tool_result["content"], expected)
+
+    def test_rejects_malformed_typed_text_block(self) -> None:
+        events = _events()
+        events[6]["payload"]["output"] = [{"type": "text", "text": 7}]
+
+        trajectory = codex_events_to_actf(events, user_messages=["Read values"])
+
+        self.assertEqual(
+            trajectory["steps"][0]["observation"][0]["content"],
+            [{"type": "text", "text": 7}],
+        )
+        with self.assertRaisesRegex(SFTConversionError, "text must be a string"):
+            actf_to_sft(trajectory)
+
+    def test_rejects_missing_image_data_without_downgrading_media(self) -> None:
+        cases = (
+            (
+                "native missing image",
+                [{"type": "input_image"}],
+                [{"type": "image"}],
+            ),
+            (
+                "native valid and missing images",
+                [
+                    {
+                        "type": "input_image",
+                        "image_url": "data:image/png;base64,AA==",
+                    },
+                    {"type": "input_image"},
+                ],
+                [
+                    {"type": "image", "data": "data:image/png;base64,AA=="},
+                    {"type": "image"},
+                ],
+            ),
+            (
+                "JSON encoded valid and missing images",
+                json.dumps(
+                    [
+                        {
+                            "type": "input_image",
+                            "image_url": "data:image/png;base64,AA==",
+                        },
+                        {"type": "input_image"},
+                    ]
+                ),
+                [
+                    {"type": "image", "data": "data:image/png;base64,AA=="},
+                    {"type": "image"},
+                ],
+            ),
+        )
+        for label, native_output, expected_content in cases:
+            with self.subTest(label=label):
+                events = _events()
+                events[4]["payload"]["name"] = "view_image"
+                events[6]["payload"]["output"] = native_output
+
+                trajectory = codex_events_to_actf(
+                    events, user_messages=["Inspect images"]
+                )
+
+                self.assertEqual(
+                    trajectory["steps"][0]["observation"][0]["content"],
+                    expected_content,
+                )
+                with self.assertRaisesRegex(
+                    SFTConversionError, "base64 image bytes"
+                ):
+                    actf_to_sft(trajectory)
+
+    def test_rejects_unknown_sibling_without_downgrading_valid_image(self) -> None:
+        events = _events()
+        events[4]["payload"]["name"] = "view_image"
+        events[6]["payload"]["output"] = [
+            {
+                "type": "input_image",
+                "image_url": "data:image/png;base64,AA==",
+            },
+            {"value": "not a content block"},
+        ]
+
+        trajectory = codex_events_to_actf(
+            events, user_messages=["Inspect images"]
+        )
+
+        self.assertEqual(
+            trajectory["steps"][0]["observation"][0]["content"],
+            [
+                {"type": "image", "data": "data:image/png;base64,AA=="},
+                {"value": "not a content block"},
+            ],
+        )
+        with self.assertRaisesRegex(SFTConversionError, "non-text"):
+            actf_to_sft(trajectory)
 
     def test_preserves_ordinary_json_object_tool_output(self) -> None:
         events = _events()
