@@ -62,6 +62,22 @@
     document.querySelectorAll(".wy-menu-vertical button.toctree-expand").forEach(syncNavButton);
   }
 
+  // The custom stylesheet only reveals a submenu when its <li> carries the
+  // "roller-expanded" class, which is normally added by clicking the toggle.
+  // Re-apply it to the current branch on every page load so that following a
+  // cross-page sidebar link keeps the tree expanded instead of collapsing.
+  function expandCurrentBranch() {
+    ["toctree-l1", "toctree-l2", "toctree-l3"].forEach(function (level) {
+      document
+        .querySelectorAll(".wy-menu-vertical li." + level + ".current")
+        .forEach(function (item) {
+          item.classList.add("roller-expanded");
+          const button = item.querySelector(":scope > a > button.toctree-expand");
+          if (button) syncNavButton(button);
+        });
+    });
+  }
+
   function fitCurrentGroup(sidebar, group) {
     const sidebarRect = sidebar.getBoundingClientRect();
     const groupRect = group.getBoundingClientRect();
@@ -141,9 +157,13 @@
     const nav = document.querySelector(".wy-menu-vertical");
     if (!nav) return;
 
+    expandCurrentBranch();
     syncNavButtons();
     let initialScrollRestored = false;
     new MutationObserver(function () {
+      // The theme injects/rewrites nav nodes after load; re-assert the
+      // expanded state of the current branch after every nav change.
+      expandCurrentBranch();
       syncNavButtons();
       if (!initialScrollRestored && nav.querySelector("button.toctree-expand")) {
         initialScrollRestored = true;
