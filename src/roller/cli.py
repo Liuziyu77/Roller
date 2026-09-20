@@ -1295,9 +1295,17 @@ def _collect(args: argparse.Namespace) -> int:
                 )
                 binding = binding_from_task_row(getattr(request.task, "raw", None) or {})
                 if binding is not None and binding.grade is not None:
-                    # Grading has to read the container the agent just wrote to,
-                    # so it runs inside the session rather than after teardown.
-                    return GradedHarness(
+                    # Registered benches may adapt the live Harness (for example,
+                    # to combine it with a task-specific official image).
+                    try:
+                        adapter = get_bench(binding.name)
+                    except KeyError:
+                        return GradedHarness(
+                            agent,
+                            binding,
+                            grading_semaphore=grading_semaphore,
+                        )
+                    return adapter.wrap_harness(
                         agent,
                         binding,
                         grading_semaphore=grading_semaphore,

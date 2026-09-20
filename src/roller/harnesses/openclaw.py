@@ -376,6 +376,10 @@ process.stdout.write(JSON.stringify({ event_count: events.length }));
 """.strip()
 
     _OPENCLAW_NODE_EVAL_SCRIPT = """
+if [ -x /opt/roller-node/bin/node ] && [ -f /opt/roller-openclaw/openclaw.mjs ]; then
+    cd /opt/roller-openclaw
+    exec /opt/roller-node/bin/node --input-type=module -e "$1"
+fi
 runtime_dir=$(dirname "$(readlink -f "$(command -v openclaw)")")
 cd "$runtime_dir"
 exec node --input-type=module -e "$1"

@@ -184,5 +184,6 @@ automatically honors each benchmark task's timeout. `--bench-category` and
 `--timeout-multiplier` must be finite and positive and scales each task's own timeout at export time.
 For the manual export + collect workflow, remember `--task-timeouts` on collect. Both
 workflows use `--pass-env` to pass through variables the grader needs.
+`swebench-pro` keeps export offline; the first collection of an instance pulls its official image and builds a local Harness-derived image.
 
 Field semantics, scoring timeline, `stage` leak-prevention rules, and aggregation rules are in [Bench integration and scoring](../benches/bench-format.md).
