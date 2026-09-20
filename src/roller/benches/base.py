@@ -268,6 +268,25 @@ class BenchAdapter(ABC):
                 seen.setdefault(binding.category, None)
         return list(seen)
 
+    def wrap_harness(
+        self,
+        harness: Any,
+        binding: BenchBinding,
+        *,
+        grading_semaphore: Any = None,
+    ) -> Any:
+        """Attach this bench's live-container grader to a harness."""
+
+        if binding.grade is None:
+            return harness
+        from roller.benches.grading import GradedHarness
+
+        return GradedHarness(
+            harness,
+            binding,
+            grading_semaphore=grading_semaphore,
+        )
+
     def aggregate(self, samples: Iterable[dict[str, Any]]) -> dict[str, Any]:
         """Summarize per-sample scores; override to match upstream reporting."""
 
