@@ -14,15 +14,21 @@
 - OpenClaw 镜像。
 - 支持 OpenAI Responses 或 Chat Completions 的模型 API。
 
-在仓库根目录安装 Roller：
+建议使用独立的 Python 环境。下面以 Conda 和 Python 3.11 为例，在仓库根目录执行：
 
 ```bash
-python3 -m pip install -e .
+conda create -n roller python=3.11 -y
+conda activate roller
+
+python --version
+python -m pip install -e .
 roller --version
 docker version
 ```
 
-`docker version` 必须同时返回 Client 和 Server 信息。只有 Docker CLI、没有可连接的 daemon 时，Roller 无法启动 rollout。
+`python --version` 必须显示 3.10 或更高版本。如果已经存在名为 `roller` 的旧环境，并且版本低于 3.10，请把上面的环境名改为 `roller-py311`，创建新环境后再安装。不要继续在旧环境中执行 `pip install`。
+
+这里使用 `python -m pip`，确保 pip 属于刚刚激活的 Python 环境。`docker version` 必须同时返回 Client 和 Server 信息。只有 Docker CLI、没有可连接的 daemon 时，Roller 无法启动 rollout。
 
 ## 2. 准备 OpenClaw 镜像
 

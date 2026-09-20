@@ -67,10 +67,14 @@ Docker 中的 Agent Harness
 
 ### 1. 安装 Roller 与镜像
 
-需要 Python 3.10+、Docker CLI 和可用的 Docker daemon。
+需要 Python 3.10+、Docker CLI 和可用的 Docker daemon。下面使用 Conda 创建独立环境。
 
 ```bash
-python3 -m pip install -e .
+conda create -n roller python=3.11 -y
+conda activate roller
+
+python --version
+python -m pip install -e .
 roller --version
 docker version
 
