@@ -208,3 +208,14 @@ footer [role="contentinfo"] p {
     overflow-wrap: normal;
     word-break: normal;
 }
+
+@media (max-width: 768px) {
+    .rst-content .wy-table-responsive {
+        overflow-x: auto;
+        overscroll-behavior-x: contain;
+    }
+
+    .rst-content .wy-table-responsive table.docutils {
+        min-width: 40rem;
+    }
+}

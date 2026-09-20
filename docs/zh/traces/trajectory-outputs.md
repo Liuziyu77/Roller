@@ -398,11 +398,7 @@ Claude Code 2.1.222 追加的 transport-only `beta=true` query 和 `anthropic-be
   连续，并结合 sample usage/request count 与运行日志确认完整性；
 - 多轮请求会重复历史，文件体积接近 O(N²)，只适合审计和调试。
 
-### 5.6 历史 CoT 辅助产物
-
-新采集不再生成 `signature_recovery.jsonl`。已有文件仍可作为历史诊断材料保留，升级不会批量删除或改写已有轨迹。
-
-### 5.7 如何审计 context 压缩或改写
+### 5.6 如何审计 context 压缩或改写
 
 1. 使用 `--wire-trace full` 运行最小可复现 task；OpenClaw 同时保留默认
    `--cache-trace`。不要用默认 `actf` 代替 full，因为它不保存 messages/input。
@@ -421,7 +417,7 @@ Claude Code 2.1.222 追加的 transport-only `beta=true` query 和 `anthropic-be
 审计完成后应单独保护或删除 cache/wire 文件。它们可能包含重复的用户输入、system
 prompt、tool result、reasoning、文件内容和运行时注入信息。
 
-### 5.8 `results/`
+### 5.7 `results/`
 
 只有 task 输出目录中存在普通文件或目录时才创建。Roller：
 
@@ -433,7 +429,7 @@ prompt、tool result、reasoning、文件内容和运行时注入信息。
 
 `results/` 是 Agent 交付物，不属于对话训练数据，也不会写入 `sft.jsonl`。
 
-### 5.9 `conversation.json`
+### 5.8 `conversation.json`
 
 仅 User Simulator task 生成。它保存双方可见的 user/assistant 轮次、终止原因、待发送但
 未交付的 instruction、参与模型和时间，不复制双方隐藏 reasoning、tool call 或 tool
@@ -468,29 +464,23 @@ OpenClaw 的 `off` 或 `actf` 降级后，如果轨迹实际调用了工具，SF
 `--thinking LEVEL` 设置 Harness/模型请求的推理档位；能否保存 reasoning 文本取决于服务的返回内容。GPT 原生
 effort、开源模型 profile 和 OpenClaw 镜像限制见
 [Thinking 配置](../harnesses/openclaw-configuration.md#5-thinkingsystem-prompt-与-wire-trace)；Claude Code
-映射见 [Thinking 与 effort](../harnesses/claude-code-configuration.md#4-thinking-与-effort)。
+映射见 [Thinking 与 effort](../harnesses/claude-code-configuration.md#5-thinking-与-effort)。
 后端只报告 reasoning token、却不返回 reasoning summary/content 时，ACTF/SFT 没有可保存
 的 `reasoning_content`。GPT 的压缩 summary 会原样进入该字段，encrypted reasoning
 不会进入 SFT。
 
 模型类别对应的推荐路径：
 
-- GPT reasoning 系列：保存服务返回的可见 summary/content，不扩写 summary；
-- Claude 系列：保存可见 thinking/summary，不还原签名或密文；
-- 返回明文 reasoning 的 Qwen、GLM 等开源模型：保持默认 `--keep-thinking`，CoT 直接进入
+- GPT reasoning 系列：保存服务返回的可见 summary/content，不扩写 summary。
+- Claude 系列：保存服务返回的可见 thinking 或 summary。
+- 返回明文 reasoning 的 Qwen、GLM 等开源模型：保持默认 `--keep-thinking`，明文 reasoning 直接进入
   ACTF/SFT `reasoning_content`。
 
 `--no-keep-thinking` 即使配合 `--wire-trace off`，也必须启动代理来剥离请求历史，因此
 OpenClaw 仍要求 `--model-config` 中存在可代理 `baseUrl`；Codex 和 Claude Code 不做
 该 history 剥离。
 
-### 6.3 已下线的 CoT 获取方式
-
-`external` / `external_always` 和 Claude signature recovery 已下线：不再注入思考工具、改写 THINK/ACT 阶段、调用签名恢复 API，或把工具参数折叠为 reasoning。普通同名工具仍按工具调用导出。
-
-旧 CLI 参数会报错，包括 `off`，需要从命令中删除。旧锁中明确为 `off` 的已下线字段及已关闭 recovery 的附属参数只在比较时忽略，原锁不会被重写；其余配置和样本完整性检查仍严格执行，原生采集可继续 Resume。启用了旧模式的运行不能混用新配置，应使用新 run 目录。CLI 会在写入锁或运行元数据之前检查目标 Agent/Simulator sample，直接调用 Collector 时也执行同一检查。旧 raw/ACTF/SFT 可继续离线查看；重新导出 ACTF 时，工具调用不再享有特殊折叠规则。
-
-### 6.4 Cache trace（OpenClaw）
+### 6.3 Cache trace（OpenClaw）
 
 | 参数 | ACTF/SFT system | `cache_trace.jsonl` |
 | --- | --- | --- |

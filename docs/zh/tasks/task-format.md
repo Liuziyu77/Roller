@@ -299,7 +299,7 @@ OpenClaw adapter 会把 Context 注入 `/root/<target>` 与 `/tmp_workspace/<tar
 | --- | --- |
 | `env` | Task 强制依赖的宿主机环境变量名；缺失或为空时 task 失败 |
 | `setup` | Agent 启动前在 `/tmp_workspace` 执行的 shell 命令 |
-| `thinking` | 覆盖本 task 的 Harness reasoning/thinking 设置；OpenClaw 见 [Thinking 配置](../harnesses/openclaw-configuration.md#5-thinkingsystem-prompt-与-wire-trace)，Codex 见 [Reasoning 配置](../harnesses/codex-configuration.md#4-reasoning-配置)，Claude Code 见 [Thinking 与 effort](../harnesses/claude-code-configuration.md#4-thinking-与-effort) |
+| `thinking` | 覆盖本 task 的 Harness reasoning/thinking 设置；OpenClaw 见 [Thinking 配置](../harnesses/openclaw-configuration.md#5-thinkingsystem-prompt-与-wire-trace)，Codex 见 [Reasoning 配置](../harnesses/codex-configuration.md#5-reasoning-配置)，Claude Code 见 [Thinking 与 effort](../harnesses/claude-code-configuration.md#5-thinking-与-effort) |
 | `image` | 覆盖该 task 使用的容器镜像；主要供 bench adapter 生成 |
 | `workspace_path` | 覆盖该 task 在容器内的绝对工作目录 |
 | `image_build` | 可复现的 task 镜像构建定义；Roller 在 collect 前构建缺失镜像 |
