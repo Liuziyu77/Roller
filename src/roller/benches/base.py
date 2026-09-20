@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import threading
 from abc import ABC, abstractmethod
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
@@ -267,6 +268,25 @@ class BenchAdapter(ABC):
             if binding is not None and binding.category:
                 seen.setdefault(binding.category, None)
         return list(seen)
+
+    def wrap_harness(
+        self,
+        harness: Any,
+        binding: BenchBinding,
+        *,
+        grading_semaphore: threading.Semaphore | None = None,
+    ) -> Any:
+        """Attach grading, optionally adapting execution for this Bench."""
+
+        if binding.grade is None:
+            return harness
+        from roller.benches.grading import GradedHarness
+
+        return GradedHarness(
+            harness,
+            binding,
+            grading_semaphore=grading_semaphore,
+        )
 
     def aggregate(self, samples: Iterable[dict[str, Any]]) -> dict[str, Any]:
         """Summarize per-sample scores; override to match upstream reporting."""

@@ -288,6 +288,7 @@ See each bench's README for its configuration (see §6.1):
 | `wildclawbench` | `openclaw` | [WildClawBench](wildclawbench.md) | 60 real-scenario tasks in 6 categories; the grader runs in the container; `gt/` for 26 tasks goes through `stage` |
 | `skillsbench` | `opencode` | [SkillsBench](skillsbench.md) | Builds each task environment; supports `with-skill` / `no-skill` and official verifiers |
 | `pinchbench` | `openclaw` | [PinchBench](pinchbench.md) | Manifest-driven export with automated, LLM-judge, hybrid, and multi-session tasks |
+| `swebench-pro` | `openclaw` | [SWE-Bench Pro](swebench-pro.md) | 731 software-engineering tasks across 11 repositories; official instance images, hidden tests, and resolved scoring |
 
 Before running, check the README's parameter mappings and unsupported options.
 Missing configuration may change evaluation conditions without raising an

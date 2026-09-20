@@ -183,5 +183,6 @@ run 目录保存 `tasks.jsonl` 与 `bench-report.json`。它自动采用每条 b
 `--timeout-multiplier` 必须是有限正数，并在导出时缩放每条任务自己的超时。
 手工采用 export + collect 流程时记得给 collect 加 `--task-timeouts`。两种流程都用
 `--pass-env` 透传 grader 需要的变量。
+`swebench-pro` 的导出保持离线；首次采集某个实例时会拉取官方镜像并构建本地 Harness 派生镜像。
 
 字段语义、评分时序、`stage` 防泄漏规则和聚合口径见 [Bench 接入与评分](../benches/bench-format.md)。
