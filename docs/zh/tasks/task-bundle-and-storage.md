@@ -136,9 +136,6 @@ results/
 └── assets/chart.png
 ```
 
-任意层级的生成型 `node_modules/` 目录都会被排除。包清单和 lockfile 仍会被回收，
-依赖树及其常规 `.bin` 符号链接不会放大产物或触发符号链接安全校验。
-
 每个结果文件会在 sample `info.json` 中记录：
 
 - 相对路径

@@ -136,10 +136,6 @@ results/
 └── assets/chart.png
 ```
 
-Generated `node_modules/` directories are excluded at any depth. Package
-manifests and lockfiles remain collectable, while dependency trees and their
-normal `.bin` symlinks do not inflate artifacts or fail the symlink check.
-
 Each result file is recorded in the sample `info.json` with:
 
 - Relative path
