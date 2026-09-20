@@ -1,5 +1,42 @@
 (function () {
   const navPositionKey = "roller-docs-nav-position";
+  const navExpansionKey = "roller-docs-nav-expanded";
+
+  function navItemPath(item) {
+    const link = item.querySelector(":scope > a[href]");
+    return link ? new URL(link.href, location.href).pathname : null;
+  }
+
+  function savedExpandedPaths() {
+    try {
+      const saved = JSON.parse(sessionStorage.getItem(navExpansionKey) || "[]");
+      return new Set(Array.isArray(saved) ? saved : []);
+    } catch (error) {
+      return new Set();
+    }
+  }
+
+  function rememberExpandedItem(item, expanded) {
+    const path = navItemPath(item);
+    if (!path) return;
+    const saved = savedExpandedPaths();
+    if (expanded) {
+      saved.add(path);
+    } else {
+      saved.delete(path);
+    }
+    sessionStorage.setItem(navExpansionKey, JSON.stringify(Array.from(saved)));
+  }
+
+  function restoreExpandedItems() {
+    const saved = savedExpandedPaths();
+    document.querySelectorAll(".wy-menu-vertical li.toctree-l1").forEach(function (item) {
+      const path = navItemPath(item);
+      if (path && saved.has(path)) {
+        item.classList.add("roller-expanded");
+      }
+    });
+  }
 
   function uiCopy() {
     const locales = window.DOCS_UI_LOCALES || {};
@@ -41,17 +78,8 @@
     const buttonTop = button.getBoundingClientRect().top;
     const willExpand = !item.classList.contains("roller-expanded");
 
-    if (willExpand) {
-      Array.from(item.parentElement.children).forEach(function (sibling) {
-        if (sibling !== item && sibling.classList.contains("roller-expanded")) {
-          sibling.classList.remove("roller-expanded");
-          const siblingButton = sibling.querySelector(":scope > a > button.toctree-expand");
-          if (siblingButton) syncNavButton(siblingButton);
-        }
-      });
-    }
-
     item.classList.toggle("roller-expanded", willExpand);
+    rememberExpandedItem(item, willExpand);
     syncNavButton(button);
     if (sidebar) {
       sidebar.scrollTop += button.getBoundingClientRect().top - buttonTop;
@@ -187,12 +215,14 @@
     const nav = document.querySelector(".wy-menu-vertical");
     if (!nav) return;
 
+    restoreExpandedItems();
     expandCurrentBranch();
     syncNavButtons();
     let initialScrollRestored = false;
     new MutationObserver(function () {
       // The theme injects/rewrites nav nodes after load; re-assert the
       // expanded state of the current branch after every nav change.
+      restoreExpandedItems();
       expandCurrentBranch();
       syncNavButtons();
       if (!initialScrollRestored && nav.querySelector("button.toctree-expand")) {

@@ -494,11 +494,7 @@ Limits:
 - Multi-turn requests repeat history, so file size is close to O(N²). Use it
   only for audit and debugging.
 
-### 5.6 Historical CoT artifacts
-
-New runs no longer generate `signature_recovery.jsonl`. Existing files remain historical diagnostics; upgrading does not bulk-delete or rewrite saved trajectories.
-
-### 5.7 How to audit context compaction or rewriting
+### 5.6 How to audit context compaction or rewriting
 
 1. Run a minimal reproducible task with `--wire-trace full`. For OpenClaw, also
    keep the default `--cache-trace`. Do not use default `actf` as a substitute
@@ -522,7 +518,7 @@ After the audit, protect or delete cache/wire files separately. They may contain
 repeated user input, system prompts, tool results, reasoning, file contents, and
 runtime injections.
 
-### 5.8 `results/`
+### 5.7 `results/`
 
 Created only when the task output directory contains ordinary files or
 directories. Roller:
@@ -537,7 +533,7 @@ directories. Roller:
 `results/` is Agent deliverable output. It is not conversation training data and
 is not written into `sft.jsonl`.
 
-### 5.9 `conversation.json`
+### 5.8 `conversation.json`
 
 Created only for User Simulator tasks. It stores the user/assistant turns both
 sides can see, the termination reason, instructions that were pending but not
@@ -574,27 +570,21 @@ schema does not contain the full tool interface definition.
 
 `--thinking LEVEL` sets the reasoning level in the Harness/model request.
 Whether reasoning text can be saved depends on the service response. See
-[Thinking configuration](../harnesses/openclaw-configuration.md#thinking-system-prompt-and-wire-trace)
+[Thinking configuration](../harnesses/openclaw-configuration.md#5-thinking-system-prompt-and-wire-trace)
 for GPT native effort, open-model profiles, and OpenClaw image limits, and
-[Thinking and effort](../harnesses/claude-code-configuration.md#thinking-and-effort)
+[Thinking and effort](../harnesses/claude-code-configuration.md#5-thinking-and-effort)
 for the Claude Code mapping. When the backend reports only reasoning tokens and
 does not return a reasoning summary/content, ACTF/SFT have no
 `reasoning_content` to save. A GPT compacted summary enters that field as-is;
 encrypted reasoning does not enter SFT.
 
-Native reasoning is retained with the default `--keep-thinking`. This applies to GPT summaries, Claude visible thinking, and plaintext reasoning returned by open models.
+The default `--keep-thinking` retains visible reasoning returned by the service. This includes GPT summaries, Claude visible thinking, and plaintext reasoning returned by open models.
 
 Even with `--wire-trace off`, `--no-keep-thinking` must still start a proxy to
 strip request history, so OpenClaw still requires a proxyable `baseUrl` in
 `--model-config`. Codex and Claude Code do not perform that history stripping.
 
-### 6.3 Retired CoT acquisition modes
-
-`external` / `external_always` and Claude signature recovery are retired. Roller no longer injects thinking tools, rewrites THINK/ACT stages, calls signature recovery APIs, or folds tool arguments into reasoning. Ordinary tools with the same names remain tool calls.
-
-Old CLI flags are errors, including `off`; remove them from commands. Retired lock fields explicitly set to `off`, and the auxiliary parameters of disabled recovery, are ignored only during comparison. The saved lock is not rewritten. All other configuration and sample-integrity checks remain strict, so native runs can still resume. Runs that enabled retired modes require a new run directory. The CLI checks target Agent/Simulator samples before writing any lock or run metadata; direct Collector calls perform the same check. Existing raw/ACTF/SFT remain available for offline inspection; re-exporting ACTF no longer applies special tool-folding rules.
-
-### 6.4 Cache trace (OpenClaw)
+### 6.3 Cache trace (OpenClaw)
 
 | Flag | ACTF/SFT system | `cache_trace.jsonl` |
 | --- | --- | --- |
