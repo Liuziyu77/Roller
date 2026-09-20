@@ -9,8 +9,7 @@
 需要：
 
 - Python 3.10+。
-- Docker CLI。
-- CLI 能连接的 Docker daemon。
+- Docker（用户自行安装）。
 - OpenClaw 镜像。
 - 支持 OpenAI Responses 或 Chat Completions 的模型 API。
 
@@ -20,24 +19,28 @@
 conda create -n roller python=3.11 -y
 conda activate roller
 
-python --version
 python -m pip install -e .
 roller --version
 docker version
 ```
 
-`python --version` 必须显示 3.10 或更高版本。如果已经存在名为 `roller` 的旧环境，并且版本低于 3.10，请把上面的环境名改为 `roller-py311`，创建新环境后再安装。不要继续在旧环境中执行 `pip install`。
+这里使用 `python -m pip`，确保 pip 属于刚刚激活的 Python 环境。安装并启动 Docker 后，`docker version` 会显示 Client 和 Server 信息。
 
-这里使用 `python -m pip`，确保 pip 属于刚刚激活的 Python 环境。`docker version` 必须同时返回 Client 和 Server 信息。只有 Docker CLI、没有可连接的 daemon 时，Roller 无法启动 rollout。
+在 macOS 上使用 Docker Desktop 时，还需要在 **Settings → Resources → Network** 中打开 **Enable host networking**，然后重启 Docker Desktop。Roller 默认通过 host network 让 OpenClaw 访问本地请求代理。
 
 ## 2. 准备 OpenClaw 镜像
 
-OpenClaw 同时支持 OpenAI Responses 和 Chat Completions。你可以在线拉取固定版本镜像，也可以加载已有归档：
+OpenClaw 同时支持 OpenAI Responses 和 Chat Completions。
+
+在线拉取固定版本镜像：
 
 ```bash
-docker pull --platform linux/amd64 ghcr.io/openclaw/openclaw:2026.7.1-2
+docker pull ghcr.io/openclaw/openclaw:2026.7.1-2
+```
 
-# 或
+也可以加载已有归档：
+
+```bash
 docker load -i /path/to/openclaw-2026.7.1-2-linux-amd64.tar.gz
 ```
 
@@ -53,7 +56,9 @@ docker load -i /path/to/openclaw-2026.7.1-2-linux-amd64.tar.gz
 cp examples/env/api.env.example examples/env/api.env
 ```
 
-编辑后加载到当前 shell：
+在 `examples/env/api.env` 中，将 `MY_PROXY_BASE_URL` 和 `MY_PROXY_API_KEY` 改成实际模型服务的地址和 Key。本页不使用其他 Harness 或 Web Search，其他变量暂时留空。
+
+保存后，将变量加载到当前 shell：
 
 ```bash
 set -a
@@ -61,31 +66,8 @@ source examples/env/api.env
 set +a
 ```
 
-`examples/env/*.env` 已被 Git 忽略。真实 Key 不应写入 shell 历史、task、模型 JSON 或文档。
 
-OpenClaw 通过 `--model-config` 读取 provider 与 model：
-
-```json
-{
-  "mode": "merge",
-  "providers": {
-    "my-openai-proxy": {
-      "baseUrl": "${MY_PROXY_BASE_URL}",
-      "apiKey": "${MY_PROXY_API_KEY}",
-      "api": "openai-responses",
-      "models": [{"id": "my-model", "name": "My model"}]
-    }
-  }
-}
-```
-
-- `mode: "merge"` 表示把这里声明的 provider 合并进 OpenClaw 现有模型配置，而不是用这份文件替换整个配置集合。
-- `--model` 使用 `provider/model-id`，上例对应 `my-openai-proxy/my-model`。
-- `${ENV_NAME}` 由 Roller 在宿主机展开，缺失或空值会在 rollout 前报错。
-- Responses 服务使用 `openai-responses`。只有 `/v1/chat/completions` 的服务使用 `openai-completions`。
-- `baseUrl` 通常写到 `/v1`，不要把 `/chat/completions` 当作 base URL。
-
-仓库模板位于 [`examples/config/openclaw/models.json`](../../../examples/config/openclaw/models.json)。
+打开仓库提供的 [`examples/config/openclaw/models.json`](../../../examples/config/openclaw/models.json)，将其中的 model `id` 改为实际使用的模型名。后续命令中 provider 后面的 model ID 必须与这里的 `id` 完全一致。例如，如果把 `id` 改为 `qwen3.8-flash`，后续命令就要使用 `--model my-openai-proxy/qwen3.8-flash`。
 
 ## 4. 认识示例 Task
 
@@ -97,14 +79,6 @@ OpenClaw 通过 `--model-config` 读取 provider 与 model：
 | `02_local_markdown` | 读取输入文件并写入 `outputs/` |
 | `03_user_memory_context` | 注入 `USER.md` 与 `MEMORY.md` |
 | `04_multi_turn` | 两条预定义 user message 共用一个 session |
-
-最小 task 只有三个字段：
-
-```json
-{"schema_version":"roller.task/v1","id":"01_text_only","prompt":"计算 2+3，只回复数字。"}
-```
-
-`--model` 可以在命令行统一指定。若未传，则每条 task 必须有自己的 `model` 字段。详细 schema 见 [Task 格式参考](../tasks/task-format.md)。
 
 ## 5. Dry-run
 
@@ -119,15 +93,7 @@ roller collect \
   --dry-run
 ```
 
-Dry-run 会：
-
-- 读取并规范化 JSON/JSONL task。
-- 检查重复 ID、对话模式和 Harness 限制。
-- 解析 input、Context 与 output 路径。
-- 执行路径冲突、符号链接、文件大小和内容摘要检查。
-- 打印 task × model 展开的 rollout 计划。
-
-它不会检查 Docker daemon、镜像是否存在或模型 API 是否可用，也不会创建 run 目录。
+Dry-run 用于在正式采集前检查 task 和参数是否能被 Roller 正确读取，并预览即将执行的 rollout。它不会启动容器、调用模型 API 或生成 run 结果。确认没有报错后，再进行正式采集。
 
 ## 6. 正式采集
 
@@ -180,13 +146,13 @@ info.json
 
 验收顺序：
 
-1. run `info.json.status` 是否为 `completed`，成功/失败数量是否符合预期。
-2. sample `info.json.status` 是否为 `ok`，`usage` 和版本字段是否存在。
-3. `trace_ACTF.json` 中 reasoning、工具调用与结果是否正确配对。
+1. 本次运行目录下的 `info.json` 中，`state` 是否为 `finished`，`summary.failed` 是否为 `0`，`summary.completed` 是否等于预期执行数量。
+2. 每个 sample `info.json` 中的 `status` 是否为 `ok`，`usage.request_count` 是否大于 `0`。
+3. `trace_ACTF.json` 是否包含完整的用户输入和模型输出。若存在工具调用，调用与结果是否正确配对。
 4. `trace_SFT.json` 顶层是否只有 `messages` 和 `tools`（含图片的样本会额外带
    `images`，且 `<image>` 占位符数量与之一致）。
-5. 需要文件交付的 task，其 sample `results/` 是否包含预期文件。
-6. run `sft.jsonl` 行数是否等于可纳入训练的成功 sample 数。
+5. 需要文件交付的 task，其 sample `results/` 中是否包含预期文件。
+6. run `sft.jsonl` 行数是否等于成功生成 `trace_SFT.json` 的 sample 数。
 
 各文件何时生成、失败时会保留哪些内容，见 [轨迹产出文件指南](../traces/trajectory-outputs.md)。
 
@@ -196,11 +162,7 @@ info.json
 roller view runs/quickstart
 ```
 
-默认监听 `127.0.0.1:8765`。远程运行时保持本地回环地址，并从本机建立 SSH 端口转发：
-
-```bash
-ssh -L 8765:127.0.0.1:8765 your-host
-```
+默认监听 `127.0.0.1:8765`。命令启动后，在浏览器中打开 <http://127.0.0.1:8765>。
 
 Viewer 会展示 ACTF 时间线。Inspector 用于查看 system prompt、tools schema、运行信息和原始内容。详见 [Viewer 指南](../traces/viewer.md)。
 

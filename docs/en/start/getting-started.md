@@ -9,8 +9,7 @@ By the end, you will have checked the configuration with a dry-run, completed a 
 You need:
 
 - Python 3.10+.
-- Docker CLI.
-- a Docker daemon the CLI can reach.
+- Docker (install separately).
 - the OpenClaw image.
 - a model API that supports OpenAI Responses or Chat Completions.
 
@@ -20,24 +19,28 @@ Use an isolated Python environment. This example uses Conda and Python 3.11. Run
 conda create -n roller python=3.11 -y
 conda activate roller
 
-python --version
 python -m pip install -e .
 roller --version
 docker version
 ```
 
-`python --version` must report 3.10 or newer. If an older environment named `roller` already exists, use a new name such as `roller-py311` in the commands above and install Roller there. Do not continue installing into the older environment.
+Using `python -m pip` ensures that pip belongs to the activated Python environment. After Docker is installed and started, `docker version` shows both Client and Server information.
 
-Using `python -m pip` ensures that pip belongs to the activated Python environment. `docker version` must return both Client and Server information. With only the Docker CLI and no reachable daemon, Roller cannot start a rollout.
+On macOS, open **Docker Desktop → Settings → Resources → Network**, enable **Enable host networking**, and restart Docker Desktop. Roller uses host networking so OpenClaw can reach its local request proxy.
 
 ## 2. Prepare the OpenClaw image
 
-OpenClaw supports both OpenAI Responses and Chat Completions. Pull the pinned image online or load an existing archive:
+OpenClaw supports both OpenAI Responses and Chat Completions.
+
+Pull the pinned image online:
 
 ```bash
-docker pull --platform linux/amd64 ghcr.io/openclaw/openclaw:2026.7.1-2
+docker pull ghcr.io/openclaw/openclaw:2026.7.1-2
+```
 
-# Or
+Alternatively, load an existing archive:
+
+```bash
 docker load -i /path/to/openclaw-2026.7.1-2-linux-amd64.tar.gz
 ```
 
@@ -53,7 +56,9 @@ Copy the local environment template:
 cp examples/env/api.env.example examples/env/api.env
 ```
 
-Then load it into the current shell:
+In `examples/env/api.env`, set `MY_PROXY_BASE_URL` and `MY_PROXY_API_KEY` to the actual model service URL and API key. This guide does not use the other Harnesses or Web Search, so leave the remaining variables empty.
+
+Save the file, then load the variables into the current shell:
 
 ```bash
 set -a
@@ -61,31 +66,8 @@ source examples/env/api.env
 set +a
 ```
 
-`examples/env/*.env` is Git-ignored. Keep real keys out of shell history, tasks, model JSON files, and documentation.
 
-OpenClaw reads the provider and model from `--model-config`:
-
-```json
-{
-  "mode": "merge",
-  "providers": {
-    "my-openai-proxy": {
-      "baseUrl": "${MY_PROXY_BASE_URL}",
-      "apiKey": "${MY_PROXY_API_KEY}",
-      "api": "openai-responses",
-      "models": [{"id": "my-model", "name": "My model"}]
-    }
-  }
-}
-```
-
-- `mode: "merge"` means the providers declared here are merged into OpenClaw's existing model config, instead of replacing the whole config set.
-- `--model` uses `provider/model-id`. The example above is `my-openai-proxy/my-model`.
-- `${ENV_NAME}` is expanded by Roller on the host. A missing or empty value fails before the rollout starts.
-- Responses services use `openai-responses`. Services that only expose `/v1/chat/completions` use `openai-completions`.
-- `baseUrl` usually ends at `/v1`. Do not treat `/chat/completions` as the base URL.
-
-The repository template is [`examples/config/openclaw/models.json`](../../../examples/config/openclaw/models.json).
+Open the repository template at [`examples/config/openclaw/models.json`](../../../examples/config/openclaw/models.json) and change the model `id` to the name of the model being used. In later commands, the model ID after the provider name must exactly match this `id`. For example, if you set `id` to `qwen3.8-flash`, use `--model my-openai-proxy/qwen3.8-flash` in the commands that follow.
 
 ## 4. Meet the example Task
 
@@ -97,14 +79,6 @@ The repository template is [`examples/config/openclaw/models.json`](../../../exa
 | `02_local_markdown` | Read an input file and write to `outputs/` |
 | `03_user_memory_context` | Inject `USER.md` and `MEMORY.md` |
 | `04_multi_turn` | Two predefined user messages share one session |
-
-A minimal task has only three fields:
-
-```json
-{"schema_version":"roller.task/v1","id":"01_text_only","prompt":"计算 2+3，只回复数字。"}
-```
-
-`--model` can be set once on the command line. If omitted, each task must have its own `model` field. Full schema: [Task format](../tasks/task-format.md).
 
 ## 5. Dry-run
 
@@ -119,15 +93,7 @@ roller collect \
   --dry-run
 ```
 
-A dry-run will:
-
-- read and normalize JSON/JSONL tasks.
-- check duplicate IDs, conversation modes, and Harness limits.
-- resolve input, Context, and output paths.
-- run path-conflict, symlink, file-size, and content-digest checks.
-- print the expanded task × model rollout plan.
-
-It does not check the Docker daemon, whether images exist, or whether the model API is reachable, and it does not create a run directory.
+A dry-run checks that Roller can read the tasks and options before real collection, then previews the rollouts it would run. It does not start containers, call the model API, or create run results. Continue to real collection after it finishes without errors.
 
 ## 6. Collect for real
 
@@ -180,14 +146,14 @@ info.json
 
 Check in this order:
 
-1. Whether run `info.json.status` is `completed`, and whether success/failure counts match expectations.
-2. Whether sample `info.json.status` is `ok`, and whether `usage` and version fields exist.
-3. Whether reasoning, tool calls, and results are paired correctly in `trace_ACTF.json`.
+1. Whether `state` in the top-level `info.json` for the run is `finished`, `summary.failed` is `0`, and `summary.completed` matches the expected number of executions.
+2. Whether `status` in every sample `info.json` is `ok` and `usage.request_count` is greater than `0`.
+3. Whether `trace_ACTF.json` contains the complete user input and model output. If tools were called, verify that each call is paired with its result.
 4. Whether the top level of `trace_SFT.json` contains only `messages` and
    `tools` (image-bearing samples additionally carry `images`, with one
    `<image>` placeholder per entry).
 5. For tasks that must deliver files, whether the sample `results/` contains the expected files.
-6. Whether the number of lines in run `sft.jsonl` equals the number of successful samples that can be used for training.
+6. Whether the number of lines in run `sft.jsonl` equals the number of samples that successfully produced `trace_SFT.json`.
 
 For when each file is written and what is retained on failure, see [Trajectory outputs](../traces/trajectory-outputs.md).
 
@@ -197,11 +163,7 @@ For when each file is written and what is retained on failure, see [Trajectory o
 roller view runs/quickstart
 ```
 
-It listens on `127.0.0.1:8765` by default. For remote runs, keep the loopback address and forward the port over SSH from your machine:
-
-```bash
-ssh -L 8765:127.0.0.1:8765 your-host
-```
+It listens on `127.0.0.1:8765` by default. After the command starts, open <http://127.0.0.1:8765> in a browser.
 
 The Viewer shows the ACTF timeline. Inspector is for the system prompt, tools schema, run info, and raw content. See the [Viewer guide](../traces/viewer.md).
 
