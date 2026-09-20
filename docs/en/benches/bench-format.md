@@ -252,8 +252,6 @@ roller collect --bench wildclawbench --bench-root /path/to/WildClawBench \
 roller bench export wildclawbench /path/to/WildClawBench --output tasks/wcb.jsonl
 roller bench export wildclawbench /path/to/WildClawBench -o /tmp/one.jsonl \
     --category 03_Social_Interaction --task-id 03_Social_Interaction_task_2_group_chat_zh
-roller bench export qwenclawbench /path/to/QwenClawBench -o /tmp/qcb.jsonl \
-    --runs-per-task 3
 
 # Collect and grade; --task-timeouts honors each row's timeout_seconds
 roller collect --tasks tasks/wcb.jsonl --model <provider>/<model> \
@@ -290,7 +288,6 @@ See each bench's README for its configuration (see §6.1):
 | `wildclawbench` | `openclaw` | [WildClawBench](wildclawbench.md) | 60 real-scenario tasks in 6 categories; the grader runs in the container; `gt/` for 26 tasks goes through `stage` |
 | `skillsbench` | `opencode` | [SkillsBench](skillsbench.md) | Builds each task environment; supports `with-skill` / `no-skill` and official verifiers |
 | `pinchbench` | `openclaw` | [PinchBench](pinchbench.md) | Manifest-driven export with automated, LLM-judge, hybrid, and multi-session tasks |
-| `qwenclawbench` | `openclaw` | [QwenClawBench](qwenclawbench.md) | 100 tasks in 8 domains; automated/hybrid grading, penalized scores, and repeated runs |
 
 Before running, check the README's parameter mappings and unsupported options.
 Missing configuration may change evaluation conditions without raising an

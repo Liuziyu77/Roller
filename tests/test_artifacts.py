@@ -56,27 +56,6 @@ class ArtifactCollectionTests(unittest.TestCase):
             self.assertEqual(error_types, {"unsafe_symlink"})
             self.assertTrue((root / "sample" / "results" / "large.bin").is_file())
 
-    def test_excludes_generated_node_modules_tree(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            staging = root / "staging"
-            sample = root / "sample"
-            (staging / "app" / "node_modules" / ".bin").mkdir(parents=True)
-            (staging / "app" / "node_modules" / "mime").mkdir()
-            (staging / "app" / "node_modules" / "mime" / "cli.js").write_text(
-                "module", encoding="utf-8"
-            )
-            (staging / "app" / "node_modules" / ".bin" / "mime").symlink_to(
-                "../mime/cli.js"
-            )
-            (staging / "app" / "index.js").write_text("source", encoding="utf-8")
-
-            result = collect_output_directory(staging, sample)
-
-            self.assertTrue(result.passed)
-            self.assertEqual([row["path"] for row in result.files], ["app/index.js"])
-            self.assertFalse((sample / "results" / "app" / "node_modules").exists())
-
 
 if __name__ == "__main__":
     unittest.main()

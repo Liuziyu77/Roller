@@ -8,8 +8,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-IGNORED_OUTPUT_DIRECTORIES = frozenset({"node_modules"})
-
 
 @dataclass(frozen=True)
 class ArtifactCollectionResult:
@@ -51,8 +49,6 @@ def _walk_outputs(
         current_path = Path(current)
         retained_dirs: list[str] = []
         for name in sorted(dir_names):
-            if name in IGNORED_OUTPUT_DIRECTORIES:
-                continue
             directory = current_path / name
             relative = directory.relative_to(root).as_posix()
             if directory.is_symlink():

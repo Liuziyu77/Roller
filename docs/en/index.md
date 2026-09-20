@@ -104,5 +104,4 @@ benches/bench-format
 benches/wildclawbench
 benches/skillsbench
 benches/pinchbench
-benches/qwenclawbench
 ~~~
