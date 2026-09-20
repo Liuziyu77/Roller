@@ -1,17 +1,50 @@
 # Docker builds and package mirrors
 
-The Codex, Claude Code, Hermes, OpenCode, DeepSeek, and Pi Dockerfiles accept the build arguments below. OpenClaw uses an upstream image; see the [OpenClaw guide](../harnesses/openclaw-configuration.md). Pass these settings with `docker build --build-arg`, not to `roller collect`.
+This page answers one specific question: when building a Roller-provided Harness image locally, how should you select package repositories, base images, and proxies?
 
-## 1. Debian repositories
+If you are following the quickstart with OpenClaw, you usually do not need the build arguments below. Roller uses a pinned official OpenClaw image directly. See the [OpenClaw Harness guide](../harnesses/openclaw-configuration.md) for image preparation and overrides.
 
-All six Dockerfiles support:
+Codex, Claude Code, Hermes, OpenCode, DeepSeek, and Pi use Dockerfiles in this repository. When the public package services are reachable, follow the default build command in the corresponding Harness guide. Continue with this page only when downloads are slow, an internal package service is required, a different base image is needed, or the build must use a proxy.
+
+## 1. Identify the image source first
+
+| Harness | How the image is prepared | Relevant parts of this page |
+| --- | --- | --- |
+| [OpenClaw](../harnesses/openclaw-configuration.md) | Uses a pinned upstream official image | The Roller Dockerfile arguments below do not apply |
+| [Codex](../harnesses/codex-configuration.md) | Build locally with [`docker/codex/Dockerfile`](../../../docker/codex/Dockerfile) | Debian repositories and npm registry |
+| [Claude Code](../harnesses/claude-code-configuration.md) | Build locally with [`docker/claude-code/Dockerfile`](../../../docker/claude-code/Dockerfile) | Debian repositories and npm registry |
+| [Hermes](../harnesses/hermes-configuration.md) | Build locally with [`docker/hermes/Dockerfile`](../../../docker/hermes/Dockerfile) | Debian repositories, Hermes Python sources, base image, and proxies |
+| [OpenCode](../harnesses/opencode-configuration.md) | Build locally with [`docker/opencode/Dockerfile`](../../../docker/opencode/Dockerfile) | Debian repositories, npm registry, base image, and proxies |
+| [DeepSeek](../harnesses/deepseek-configuration.md) | Build locally with [`docker/deepseek/Dockerfile`](../../../docker/deepseek/Dockerfile) | Debian repositories, base image, and proxies |
+| [Pi](../harnesses/pi-configuration.md) | Build locally with [`docker/pi/Dockerfile`](../../../docker/pi/Dockerfile) | Debian repositories, npm registry, base image, and proxies |
+
+The corresponding Harness guide linked in the table provides the default image name, pinned version, and complete build command. This page covers download sources used during the build. Pass these settings to `docker build` with `--build-arg`. They are not `roller collect` options.
+
+## 2. Choose settings by the failing download step
+
+The arguments below have different scopes. Do not pass every argument to every Harness.
+
+| Build step that cannot download | Applicable Harnesses | Settings |
+| --- | --- | --- |
+| Debian packages downloaded by `apt-get` | All six locally built Harnesses | `DEBIAN_MIRROR` and `DEBIAN_SECURITY_MIRROR` |
+| Agent or plugin dependencies downloaded from npm | Codex, Claude Code, OpenCode, and Pi | `NPM_REGISTRY` |
+| uv installed by pip | Hermes only | `PIP_INDEX_URL` and `PIP_TRUSTED_HOST` |
+| Hermes dependencies downloaded from `uv.lock` | Hermes only | `PYPI_DOWNLOAD_BASE` and `UV_INSECURE_HOST` |
+| A prepared base image | Hermes, OpenCode, DeepSeek, and Pi | `BASE_IMAGE` |
+| Base-image pulls, GitHub access, or other downloads | Any affected Harness | Docker proxy and Docker daemon network settings |
+
+## 3. Debian repositories
+
+All six local Dockerfiles support these arguments:
 
 | Argument | Purpose | When unset or empty |
 | --- | --- | --- |
 | `DEBIAN_MIRROR` | Debian main repository URL | Keep the base image's main repository settings |
 | `DEBIAN_SECURITY_MIRROR` | Debian security repository URL | Keep the base image's security repository settings |
 
-The URLs are independent. Setting only the main mirror leaves the security mirror unchanged; the security URL need not be the main URL plus `-security`. This Pi example uses two different proxy paths. Replace the example addresses with working endpoints:
+The two URLs work independently. Setting the main repository does not change the security repository. The security URL does not need to be the main URL with `-security` appended.
+
+This Pi example configures the Debian main repository, security repository, and npm registry together. Replace the example addresses with working endpoints:
 
 ```bash
 docker build \
@@ -21,35 +54,44 @@ docker build \
   -t roller-pi:0.85.1 docker/pi
 ```
 
-The build checks `/etc/apt/sources.list` and `.list`/`.sources` files under `/etc/apt/sources.list.d/`. It replaces complete official repository URLs only: `deb.debian.org/debian` for main, and `deb.debian.org/debian-security` or `security.debian.org/debian-security` for security. HTTP, HTTPS, and trailing slashes are supported. Distribution suites, components, and signature settings remain unchanged.
+The build checks `/etc/apt/sources.list` and the `.list` and `.sources` files under `/etc/apt/sources.list.d/`. It replaces complete official Debian repository URLs only. Distribution suites, components, and signature settings remain unchanged.
 
-Repositories already configured with other URLs in a custom base image, Ubuntu repositories, and third-party repositories remain unchanged. Missing source files are skipped. OpenCode, Pi, and DeepSeek still run apt only when their tool checks require it; Hermes, Codex, and Claude Code still run apt installation.
+Custom repositories that already use other URLs, Ubuntu repositories, and third-party repositories remain unchanged. A missing source file is skipped. OpenCode, Pi, and DeepSeek run apt only when the base image lacks required tools. Hermes, Codex, and Claude Code run apt installation.
 
-The Node slim bases used by Pi, Codex, and Claude Code may lack a system CA bundle. Before rewriting repositories or running apt, the build checks `/etc/ssl/certs/ca-certificates.crt`. If it is missing or empty, the build initializes it from [Node's bundled Mozilla root certificates](https://nodejs.org/docs/latest-v22.x/api/tls.html#tlsrootcertificates). This step needs no network and preserves an existing non-empty bundle. The later apt installation still includes Debian's `ca-certificates` package. HTTPS certificate verification and apt repository signature checks remain enabled.
+The Node slim base images used by Pi, Codex, and Claude Code may lack a system CA bundle. Before the first HTTPS apt request, the build checks `/etc/ssl/certs/ca-certificates.crt`. If the file is missing or empty, the build initializes it from [Node's bundled Mozilla root certificates](https://nodejs.org/docs/latest-v22.x/api/tls.html#tlsrootcertificates). An existing non-empty file is preserved. HTTPS certificate verification and apt repository signature checks remain enabled.
 
-For an internal HTTPS mirror using a private CA, install that CA into the base image's system trust store first. Node's bundled roots do not include private enterprise CAs.
+## 4. npm registry
 
-## 2. npm registry
+Only the four Harnesses that download content from npm use `NPM_REGISTRY`:
 
-| Harness | Argument | Default behavior |
-| --- | --- | --- |
-| Codex, Claude Code, Pi | `NPM_REGISTRY` | When unset or empty, use the existing npm configuration, including the base image's `.npmrc` |
-| OpenCode | `NPM_REGISTRY` | Defaults to `https://registry.npmjs.org` for binary package downloads and plugin dependency installation |
+| Harness | Behavior when unset or empty |
+| --- | --- |
+| Codex | Use the existing npm configuration, including the base image's `.npmrc` |
+| Claude Code | Use the existing npm configuration, including the base image's `.npmrc` |
+| Pi | Use the existing npm configuration, including the base image's `.npmrc` |
+| OpenCode | Use `https://registry.npmjs.org` |
 
-Codex, Claude Code, and Pi pass a non-empty argument through `npm_config_registry` during installation. It is not stored as a runtime `ENV` setting in the image. Version pins and existing integrity checks are unchanged.
+Codex, Claude Code, and Pi use a non-empty `NPM_REGISTRY` during installation only. The value is not saved as a runtime environment variable in the image.
 
-An OpenCode mirror must serve npm package metadata and tarballs. Pi still downloads `fd` from GitHub Releases; changing the npm registry does not redirect that download.
+An OpenCode mirror must serve both npm package metadata and tarballs. Pi still downloads `fd` from GitHub Releases. Changing the npm registry does not redirect that download.
 
-## 3. Hermes Python dependencies
+## 5. Python package sources for Hermes
+
+This section applies only to Hermes. The Hermes image has two separate Python dependency steps, so it exposes two groups of settings:
+
+1. pip installs the pinned uv version.
+2. uv downloads the locked Hermes dependencies from `uv.lock`.
 
 | Argument | Step controlled | Default |
 | --- | --- | --- |
 | `PIP_INDEX_URL` | pip installation of the pinned uv version | `https://pypi.org/simple` |
-| `PIP_TRUSTED_HOST` | Host or host:port explicitly trusted by pip | Unset |
-| `PYPI_DOWNLOAD_BASE` | Prefix of `files.pythonhosted.org` download URLs in `uv.lock` | `https://files.pythonhosted.org` |
+| `PIP_TRUSTED_HOST` | Host or host and port explicitly trusted by pip | Unset |
+| `PYPI_DOWNLOAD_BASE` | Replaces the `files.pythonhosted.org` prefix in `uv.lock` | `https://files.pythonhosted.org` |
 | `UV_INSECURE_HOST` | Host where uv explicitly permits an insecure connection | Unset |
 
-Prefer an HTTPS index with a valid certificate. By default, pip ignores plain HTTP indexes on non-loopback hosts, which can produce an error saying the pinned uv version was not found. For a trusted internal HTTP index, explicitly name its host:
+`PIP_INDEX_URL` affects the uv installation only. It does not redirect dependency URLs already locked in `uv.lock`. `PYPI_DOWNLOAD_BASE` replaces only the download prefix in the lock file. The mirror must preserve the `/packages/` path layout. Dependency versions and SHA-256 checks remain unchanged. Hermes source is still fetched from GitHub.
+
+Prefer an HTTPS index with a valid certificate. If a trusted internal HTTP index is required, explicitly configure its host:
 
 ```bash
 docker build \
@@ -58,29 +100,34 @@ docker build \
   -t roller-hermes:d15ed4445207 docker/hermes
 ```
 
-`PIP_TRUSTED_HOST` affects pip only. If the uv download host also needs relaxed connection checks, set `UV_INSECURE_HOST` separately and name only the host you intend to trust. Neither option is enabled by default. See [pip trusted-host](https://pip.pypa.io/en/stable/cli/pip/#cmdoption-trusted-host) and [uv insecure host](https://docs.astral.sh/uv/reference/environment/#uv_insecure_host) for details.
+`PIP_TRUSTED_HOST` affects pip only. If the uv download host also needs relaxed connection checks, set `UV_INSECURE_HOST` separately. Neither option is enabled by default. See [pip trusted-host](https://pip.pypa.io/en/stable/cli/pip/#cmdoption-trusted-host) and [uv insecure host](https://docs.astral.sh/uv/reference/environment/#uv_insecure_host) for details.
 
-`PIP_INDEX_URL` does not redirect Hermes' locked dependency downloads. `uv sync --frozen` still uses `uv.lock`; `PYPI_DOWNLOAD_BASE` changes only the download prefix. The mirror must preserve the `/packages/` path layout. Versions and SHA-256 checks remain unchanged. Hermes source is still fetched from GitHub.
+The DeepSeek and OpenCode Dockerfiles also install Python components, but they do not currently expose these four Hermes-specific build arguments. They use the normal network and proxy settings, so the arguments in this section should not be copied to those builds. See their Harness guides for image requirements and default build commands.
 
-## 4. Other downloads and proxies
+## 6. Base images, proxies, and private CAs
 
-These settings control apt, npm, or specific Python installation steps. They do not make the entire build work offline. Base images, GitHub downloads, and other dependencies still need network access:
+The settings above control apt, npm, or the Hermes Python download steps. They do not make the entire build work offline. Base images, GitHub downloads, and other dependencies still require network access or an internal proxy.
 
-- `BASE_IMAGE` selects a prepared base image for Hermes, OpenCode, DeepSeek, and Pi.
-- Other build downloads can use Docker's `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY` build arguments. Internal mirrors usually belong in `NO_PROXY`.
-- The Docker daemon pulls base images and needs its own network configuration.
+- Hermes, OpenCode, DeepSeek, and Pi accept `BASE_IMAGE` to select a prepared base image.
+- HTTP requests during the build can use Docker's `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY` build arguments.
+- Internal mirror addresses usually belong in `NO_PROXY`.
+- The Docker daemon pulls base images and needs its own network and registry configuration.
 
 See [Docker build variables](https://docs.docker.com/build/building/variables/#proxy-arguments) for proxy settings.
 
-## 5. Build configuration regression tests
+If an internal HTTPS package service uses a private CA, install that CA in the base image's system trust store first. Node's bundled roots do not include private enterprise CAs.
 
-Run the configuration tests from the repository root. CA bootstrap tests require Node, and npm configuration tests require npm:
+## 7. Maintainer build tests
+
+This section is for regression checks after changing a Dockerfile or mirror behavior. Users who only need to build a Harness image can skip it.
+
+Run the configuration tests from the repository root. CA initialization tests require Node, and npm configuration tests require npm:
 
 ```bash
 python -m unittest discover -s tests -p test_docker_build_config.py -v
 ```
 
-The real HTTPS test is skipped by default and requires Docker and network access to `deb.debian.org`. It uses the three Node Harnesses' default base images, executes the Dockerfile CA bootstrap and mirror configuration steps, downloads apt indexes over HTTPS, installs `ca-certificates`, and simulates installation of each Harness's apt packages. It does not install Harness npm dependencies or call a model API:
+The real HTTPS test is skipped by default. It requires Docker and network access to `deb.debian.org`:
 
 ```bash
 docker pull node:22.22.0-bookworm-slim
@@ -89,4 +136,6 @@ ROLLER_DOCKER_BUILD_NETWORK_TEST=1 python -m unittest discover \
   -s tests -p test_docker_build_https.py -v
 ```
 
-The test forwards `http_proxy`, `https_proxy`, `no_proxy`, and their uppercase equivalents to the container. For a proxy on the host's loopback address on Linux, also set `ROLLER_DOCKER_TEST_NETWORK=host`. This selects the test container's network without changing Docker daemon configuration.
+The test uses the three Node Harnesses' default base images and checks CA initialization, repository rewriting, and apt installation. It does not install the Harness npm dependencies or call a model API.
+
+The test passes `http_proxy`, `https_proxy`, `no_proxy`, and their uppercase forms to the container. If a proxy uses the host loopback address on Linux, set `ROLLER_DOCKER_TEST_NETWORK=host`. This changes the test container network only and does not modify Docker daemon configuration.

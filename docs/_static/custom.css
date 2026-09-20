@@ -189,3 +189,22 @@ footer [role="contentinfo"] p {
         padding: 5px 10px;
     }
 }
+
+/* Give compact identifier columns the space they need and wrap descriptions. */
+.rst-content .wy-table-responsive table.docutils th,
+.rst-content .wy-table-responsive table.docutils td {
+    white-space: normal;
+}
+
+.rst-content table.docutils th:first-child,
+.rst-content table.docutils td:first-child {
+    width: 1%;
+    white-space: nowrap;
+}
+
+.rst-content table.docutils tbody td:first-child code.literal,
+.rst-content table.docutils tbody td:first-child tt.literal {
+    white-space: nowrap;
+    overflow-wrap: normal;
+    word-break: normal;
+}
