@@ -67,6 +67,7 @@ python -m http.server -d _build/html 8000
 | --- | --- |
 | 把一个 benchmark 跑成带分数的 run | [Bench 接入与评分](zh/benches/bench-format.md#7-cli) |
 | 跑 WildClawBench（上游旋钮对应、search shim、已知坑） | [WildClawBench](zh/benches/wildclawbench.md) |
+| 跑 QwenClawBench（本地 Qwen、judge API、每题重复运行） | [QwenClawBench](zh/benches/qwenclawbench.md) |
 | 跑 SWE-Bench Pro（官方镜像、隐藏测试、补丁评分） | [SWE-Bench Pro](zh/benches/swebench-pro.md) |
 | 接入一个新 bench | [Bench 接入与评分](zh/benches/bench-format.md#6-加一个新-bench) |
 | 看懂 `score.json` 与聚合口径 | [Bench 接入与评分](zh/benches/bench-format.md#5-聚合口径) |

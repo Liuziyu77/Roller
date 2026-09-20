@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import re
 from copy import deepcopy
@@ -97,26 +99,115 @@ def _normalize_tool_call(call: Any, field: str) -> dict[str, Any]:
     }
 
 
-def _tool_result_content(value: Any, field: str) -> str:
+def _infer_completed_tool_schemas(
+    steps: list[Any], known_names: set[str]
+) -> list[dict[str, Any]]:
+    """Infer a permissive schema only for calls proven by matching results."""
+
+    inferred: list[dict[str, Any]] = []
+    for step in steps:
+        if not isinstance(step, dict):
+            continue
+        observations = step.get("observation")
+        if not isinstance(observations, list):
+            continue
+        completed: dict[str, str] = {}
+        for observation in observations:
+            if not isinstance(observation, dict):
+                continue
+            call_id = observation.get(
+                "toolCallId", observation.get("tool_call_id")
+            )
+            name = observation.get("toolName")
+            if isinstance(call_id, str) and call_id and isinstance(name, str) and name:
+                completed[call_id] = name
+
+        assistant = step.get("assistant_content")
+        raw_calls = assistant.get("tool_calls") if isinstance(assistant, dict) else None
+        if not isinstance(raw_calls, list):
+            continue
+        for call in raw_calls:
+            if not isinstance(call, dict):
+                continue
+            call_id = call.get("id")
+            function = call.get("function")
+            name = (
+                function.get("name")
+                if isinstance(function, dict)
+                else call.get("name")
+            )
+            if (
+                isinstance(call_id, str)
+                and isinstance(name, str)
+                and name
+                and completed.get(call_id) == name
+                and name not in known_names
+            ):
+                known_names.add(name)
+                inferred.append(
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": name,
+                            "description": (
+                                "Schema inferred from a completed runtime tool call; "
+                                "the original wire schema was unavailable."
+                            ),
+                            "parameters": {
+                                "type": "object",
+                                "additionalProperties": True,
+                            },
+                        },
+                    }
+                )
+    return inferred
+
+
+def _tool_result_content(value: Any, field: str) -> str | list[dict[str, Any]]:
     if isinstance(value, str):
         return value
     if not isinstance(value, list):
-        raise SFTConversionError(f"{field} must be a string or text-block list")
+        raise SFTConversionError(f"{field} must be a string or content-block list")
 
-    parts: list[str] = []
+    parts: list[dict[str, Any]] = []
+    has_image = False
     for index, block in enumerate(value):
         if isinstance(block, str):
-            parts.append(block)
+            parts.append({"type": "text", "text": block})
             continue
         if not isinstance(block, dict) or block.get("type") != "text":
+            if isinstance(block, dict) and block.get("type") == "image":
+                data = block.get("data")
+                mime = block.get("mimeType")
+                if (
+                    not isinstance(data, str)
+                    or not data
+                    or not isinstance(mime, str)
+                    or re.fullmatch(r"image/[A-Za-z0-9.+-]+", mime) is None
+                ):
+                    raise SFTConversionError(
+                        f"{field}[{index}] image requires base64 data and an image MIME type"
+                    )
+                try:
+                    base64.b64decode(data, validate=True)
+                except (binascii.Error, ValueError) as exc:
+                    raise SFTConversionError(
+                        f"{field}[{index}] image data is not valid base64"
+                    ) from exc
+                parts.append({
+                    "type": "image_url",
+                    "image_url": {"url": f"data:{mime};base64,{data}"},
+                })
+                has_image = True
+                continue
             raise SFTConversionError(
-                f"{field}[{index}] is non-text; text-only SFT export would lose data"
+                f"{field}[{index}] has unsupported non-text content; SFT export would lose data"
             )
         text = block.get("text")
         if not isinstance(text, str):
             raise SFTConversionError(f"{field}[{index}].text must be a string")
-        parts.append(text)
-    return "\n".join(parts)
+        parts.append({"type": "text", "text": text})
+    return parts if has_image else "\n".join(part["text"] for part in parts)
 
 
 def _deep_think_content(call: Mapping[str, Any], field: str) -> str:
@@ -164,12 +255,12 @@ def actf_to_sft(
         raise SFTConversionError("system_prompt must be a string")
     if fold_deep_think:
         system_prompt = _strip_deep_think_tool_listing(system_prompt)
-    tools = _normalize_tools(trajectory.get("tools"))
-    tool_names = {tool["function"]["name"] for tool in tools}
-
     steps = trajectory.get("steps")
     if not isinstance(steps, list):
         raise SFTConversionError("steps must be a list")
+    tools = _normalize_tools(trajectory.get("tools"))
+    tool_names = {tool["function"]["name"] for tool in tools}
+    tools.extend(_infer_completed_tool_schemas(steps, tool_names))
 
     messages: list[dict[str, Any]] = [{"role": "system", "content": system_prompt}]
     seen_call_ids: set[str] = set()

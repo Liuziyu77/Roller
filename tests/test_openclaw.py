@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -231,6 +232,79 @@ class OpenClawHelpersTests(unittest.TestCase):
             OPENCLAW_STATE_CONTAINER_PATH,
         )
 
+    def test_latest_assistant_rejects_tool_only_or_empty_turn(self) -> None:
+        runtime = mock.Mock()
+        runtime.run.return_value = subprocess.CompletedProcess(
+            [],
+            0,
+            stdout='{"content":"","assistant_count":3}\n',
+            stderr="",
+        )
+        harness = OpenClawHarness(OpenClawConfig(), worker_slot=0, runtime=runtime)
+
+        with self.assertRaisesRegex(RuntimeError, "no visible assistant response"):
+            harness._latest_assistant_content("container")
+
+    def test_sdk_reader_never_substitutes_earlier_text_for_empty_last_event(self) -> None:
+        node = shutil.which("node")
+        if node is None:
+            self.skipTest("Node.js 18+ is required for the OpenClaw SDK reader")
+        version = subprocess.check_output([node, "--version"], text=True).strip()
+        if int(version.lstrip("v").split(".")[0]) < 18:
+            self.skipTest("Node.js 18+ is required for the OpenClaw SDK reader")
+        for stop_reason in ("aborted", "error", "length", "stop"):
+            with self.subTest(stop_reason=stop_reason):
+                final_text = "final reply" if stop_reason == "stop" else ""
+                events = [
+                    {"message": {"role": "assistant", "content": "stale reply"}},
+                    {"message": {"role": "assistant", "content": [
+                        {"type": "text", "text": final_text}
+                    ], "stopReason": stop_reason}},
+                ]
+                source = (
+                    "process.env.ROLLER_SESSION_SCOPE = '{}';\n"
+                    "const fixture = " + json.dumps(events) + ";\n"
+                    + OpenClawHarness._SDK_LAST_ASSISTANT_SCRIPT.replace(
+                        "await import('openclaw/plugin-sdk/session-transcript-runtime')",
+                        "({readSessionTranscriptEvents: async () => fixture, "
+                        "readLatestAssistantTextByIdentity: async () => ({text: 'stale reply'})})",
+                    )
+                )
+                result = subprocess.run(
+                    [node, "--input-type=module"], input=source,
+                    text=True, capture_output=True, check=True, timeout=10,
+                )
+                payload = json.loads(result.stdout)
+                self.assertEqual(payload["content"], final_text)
+                self.assertEqual(payload["assistant_count"], 2)
+                self.assertEqual(payload["stop_reason"], stop_reason)
+
+    def test_terminal_failure_cannot_reuse_partial_response(self) -> None:
+        for stop_reason in ("aborted", "error"):
+            with self.subTest(stop_reason=stop_reason):
+                runtime = mock.Mock()
+                runtime.run.return_value = subprocess.CompletedProcess(
+                    [], 0, stdout=json.dumps({
+                        "content": "Let me inspect the workspace.",
+                        "assistant_count": 3,
+                        "stop_reason": stop_reason,
+                        "error": "LLM idle timeout (300s): no response from model",
+                    }), stderr="",
+                )
+                harness = OpenClawHarness(OpenClawConfig(), 0, runtime=runtime)
+                with self.assertRaisesRegex(RuntimeError, "LLM idle timeout"):
+                    harness._latest_assistant_content("container")
+
+    def test_successful_final_reply_after_failed_attempt_is_retained(self) -> None:
+        runtime = mock.Mock()
+        runtime.run.return_value = subprocess.CompletedProcess(
+            [], 0, stdout=json.dumps({
+                "content": "done", "assistant_count": 3, "stop_reason": "stop",
+            }), stderr="",
+        )
+        harness = OpenClawHarness(OpenClawConfig(), 0, runtime=runtime)
+        self.assertEqual(harness._latest_assistant_content("container"), ("done", 3))
+
     def test_expands_model_config_environment(self) -> None:
         value = {"providers": {"proxy": {"apiKey": "${API_KEY}", "other": 1}}}
         expanded = expand_env_placeholders(value, {"API_KEY": "secret"})
@@ -268,6 +342,45 @@ class OpenClawHelpersTests(unittest.TestCase):
         self.assertNotIn("tags", models[1])
         self.assertNotIn("reasoning", config["providers"]["proxy"]["models"][1])
         self.assertEqual(config["providers"]["proxy"]["models"][1]["tags"], ["reasoning"])
+
+    def test_prepares_selected_model_limits_without_mutating_source(self) -> None:
+        config = {
+            "providers": {
+                "proxy": {
+                    "baseUrl": "http://example.test/v1",
+                    "models": [
+                        {"id": "plain", "name": "Plain"},
+                        {"id": "other", "maxTokens": 4096},
+                    ],
+                }
+            }
+        }
+
+        prepared = prepare_model_config(
+            config,
+            "proxy/plain",
+            request_timeout_seconds=300,
+            max_tokens=32768,
+        )
+
+        self.assertEqual(prepared["providers"]["proxy"]["timeoutSeconds"], 300)
+        self.assertEqual(prepared["providers"]["proxy"]["models"][0]["maxTokens"], 32768)
+        self.assertEqual(prepared["providers"]["proxy"]["models"][1]["maxTokens"], 4096)
+        self.assertNotIn("timeoutSeconds", config["providers"]["proxy"])
+        self.assertNotIn("maxTokens", config["providers"]["proxy"]["models"][0])
+        self.assertEqual(config["providers"]["proxy"]["models"][1]["maxTokens"], 4096)
+
+    def test_rejects_non_positive_model_request_timeout(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError, "model_request_timeout_seconds must be positive"
+        ):
+            OpenClawConfig(model_request_timeout_seconds=0)
+
+    def test_rejects_non_positive_model_max_tokens(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError, "model_max_tokens must be positive"
+        ):
+            OpenClawConfig(model_max_tokens=0)
 
     def test_external_thinking_disables_selected_model_native_reasoning(self) -> None:
         config = {

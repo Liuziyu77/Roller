@@ -208,6 +208,50 @@ class ExtractWireToolsTests(unittest.TestCase):
             tools = extract_wire_tools(path)
         self.assertEqual(tools[0]["function"]["name"], "exec")
 
+    def test_merges_dynamic_tool_schemas_across_requests(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "wire.jsonl"
+            entries = [
+                {
+                    "kind": "tools",
+                    "tools": [
+                        {"type": "function", "function": {"name": "read"}}
+                    ],
+                },
+                {
+                    "kind": "tools",
+                    "tools": [
+                        {
+                            "type": "function",
+                            "function": {
+                                "name": "read",
+                                "description": "latest read schema",
+                            },
+                        },
+                        {
+                            "type": "function",
+                            "function": {
+                                "name": "gateway",
+                                "parameters": {"type": "object"},
+                            },
+                        },
+                    ],
+                },
+            ]
+            path.write_text(
+                "\n".join(json.dumps(entry) for entry in entries),
+                encoding="utf-8",
+            )
+
+            tools = extract_wire_tools(path)
+
+        self.assertEqual(
+            [tool["function"]["name"] for tool in tools or []],
+            ["read", "gateway"],
+        )
+        assert tools is not None
+        self.assertEqual(tools[0]["function"]["description"], "latest read schema")
+
     def test_returns_none_when_missing_or_unreadable(self) -> None:
         self.assertIsNone(extract_wire_tools(Path("/nonexistent/wire.jsonl")))
         with tempfile.TemporaryDirectory() as tmp:

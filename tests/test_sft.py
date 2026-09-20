@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+from copy import deepcopy
 import json
 import tempfile
 import unittest
@@ -282,21 +284,67 @@ class SFTConversionTests(unittest.TestCase):
     def test_rejects_missing_tool_schema_or_result(self) -> None:
         missing_schema = _trajectory()
         missing_schema["tools"] = None
-        with self.assertRaisesRegex(SFTConversionError, "missing schema"):
-            actf_to_sft(missing_schema)
+        record = actf_to_sft(missing_schema)
+        inferred = record["tools"][0]["function"]
+        self.assertEqual(inferred["name"], "read")
+        self.assertTrue(inferred["parameters"]["additionalProperties"])
+        self.assertIn("inferred", inferred["description"])
 
         missing_result = _trajectory()
+        missing_result["tools"] = None
         missing_result["steps"][0]["observation"] = []
-        with self.assertRaisesRegex(SFTConversionError, "missing results"):
+        with self.assertRaisesRegex(SFTConversionError, "missing schema"):
             actf_to_sft(missing_result)
+
+    def test_does_not_infer_schema_from_mismatched_tool_result(self) -> None:
+        trajectory = _trajectory()
+        trajectory["tools"] = None
+        trajectory["steps"][0]["observation"][0]["toolName"] = "write"
+
+        with self.assertRaisesRegex(SFTConversionError, "missing schema"):
+            actf_to_sft(trajectory)
 
     def test_rejects_non_text_tool_results(self) -> None:
         trajectory = _trajectory()
         trajectory["steps"][0]["observation"][0]["content"] = [
-            {"type": "image", "data": "..."}
+            {"type": "audio", "data": "..."}
         ]
         with self.assertRaisesRegex(SFTConversionError, "non-text"):
             actf_to_sft(trajectory)
+
+    def test_preserves_inline_image_bytes_and_content_order(self) -> None:
+        trajectory = _trajectory()
+        image = base64.b64encode(b"\x89PNG\r\n\x1a\nfixture").decode()
+        trajectory["steps"][0]["observation"][0]["content"] = [
+            {"type": "text", "text": "before"},
+            {"type": "image", "data": image, "mimeType": "image/png"},
+            "after",
+        ]
+        original = deepcopy(trajectory)
+        record = actf_to_sft(trajectory)
+        message = record["messages"][3]
+        self.assertEqual(message["tool_call_id"], "call-1")
+        self.assertEqual(message["content"], [
+            {"type": "text", "text": "before"},
+            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image}"}},
+            {"type": "text", "text": "after"},
+        ])
+        self.assertEqual(trajectory, original)
+        self.assertEqual(json.loads(json.dumps(record)), record)
+
+    def test_rejects_malformed_inline_images(self) -> None:
+        for block in (
+            {"type": "image", "data": "aGk="},
+            {"type": "image", "data": "", "mimeType": "image/png"},
+            {"type": "image", "data": "***", "mimeType": "image/png"},
+            {"type": "image", "data": "aGk=", "mimeType": "text/html"},
+            {"type": "image", "data": "aGk=", "mimeType": "image/png;bad"},
+        ):
+            with self.subTest(block=block):
+                trajectory = _trajectory()
+                trajectory["steps"][0]["observation"][0]["content"] = [block]
+                with self.assertRaisesRegex(SFTConversionError, "image"):
+                    actf_to_sft(trajectory)
 
 
 if __name__ == "__main__":
