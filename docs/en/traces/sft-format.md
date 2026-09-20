@@ -70,7 +70,9 @@ the adjacent `info.json` and `trace_ACTF.json`.
   values are `""`, `""`, and `[]` respectively.
 - `tool_calls[*]` uses the function-call structure. `function.arguments` is a
   compact JSON string.
-- `tool` contains only `role`, `tool_call_id`, and string `content`.
+- `tool` contains only `role`, `tool_call_id`, and `content`. Text-only results
+  use a string; results containing inline images use an ordered list of `text`
+  and `image_url` blocks, as defined below.
 - The assistant after a tool call follows the matching tool message directly.
   No empty user message is inserted.
 - `tools` keeps the function schema the model actually saw. It is `[]` when no
@@ -140,11 +142,24 @@ The exporter requires:
 - Every call has exactly one matching tool result in the same step;
 - The call's tool name exists in the top-level tools schema;
 - Arguments can be encoded as a JSON object;
-- Tool results contain only strings or text blocks.
+- Tool results contain text or valid inline image blocks.
 
-When Roller encounters a non-text tool result such as an image, it does not
-silently delete the content. The sample is marked as a trajectory conversion
-error. Multimodal SFT needs a separately defined content-block schema.
+For image observations, ACTF's `{"type":"image","data":"<base64>","mimeType":"image/png"}`
+becomes an `image_url` block containing the same bytes in a data URL:
+
+```json
+{"role":"tool","tool_call_id":"call-1","content":[
+  {"type":"text","text":"Image preview"},
+  {"type":"image_url","image_url":{"url":"data:image/png;base64,<base64>"}}
+]}
+```
+
+The exporter validates base64 and the image MIME type, preserves block order,
+and does not fetch or drop image data. Pure text results keep their existing
+string format. Multimodal training consumers must support content-block lists
+in tool messages; this normalized training format is not a guarantee of API
+replay compatibility. Unsupported non-text blocks (such as audio) and malformed
+images still cause a conversion error rather than silent data loss.
 
 ## 5. File locations
 

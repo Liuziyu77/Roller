@@ -141,11 +141,13 @@ def prepare_model_config(
     proxy: WireTraceProxy | None = None,
     enable_reasoning: bool = False,
     disable_reasoning: bool = False,
+    request_timeout_seconds: int | None = None,
+    max_tokens: int | None = None,
 ) -> dict[str, Any]:
     """Copy a model config and apply rollout-local transport/model settings."""
     if enable_reasoning and disable_reasoning:
         raise ValueError("enable_reasoning and disable_reasoning are mutually exclusive")
-    prepared = rewrite_model_config(config, proxy) if proxy is not None else deepcopy(config)
+    prepared = rewrite_model_config(config, proxy) if proxy is not None else deepcopy(dict(config))
     providers = prepared.get("providers")
     if not isinstance(providers, dict):
         return prepared
@@ -161,14 +163,19 @@ def prepare_model_config(
             tags = model.pop("tags", None)
             if isinstance(tags, list) and "reasoning" in tags:
                 model.setdefault("reasoning", True)
-    if (enable_reasoning or disable_reasoning) and "/" in model_name:
+    if "/" in model_name:
         provider_name, model_id = model_name.split("/", 1)
         provider = providers.get(provider_name)
         models = provider.get("models") if isinstance(provider, dict) else None
+        if isinstance(provider, dict) and request_timeout_seconds is not None:
+            provider["timeoutSeconds"] = request_timeout_seconds
         if isinstance(models, list):
             for model in models:
                 if isinstance(model, dict) and model.get("id") == model_id:
-                    model["reasoning"] = not disable_reasoning
+                    if enable_reasoning or disable_reasoning:
+                        model["reasoning"] = not disable_reasoning
+                    if max_tokens is not None:
+                        model["maxTokens"] = max_tokens
                     break
     return prepared
 
@@ -212,6 +219,8 @@ class OpenClawConfig:
     workspace_container_path: str = "/tmp_workspace"
     session_id: str = "roller"
     model_config: Mapping[str, Any] | None = None
+    model_request_timeout_seconds: int | None = None
+    model_max_tokens: int | None = None
     pass_env: tuple[str, ...] = COMMON_ENV_NAMES
     search_provider: str | None = None
     thinking: str | None = None
@@ -239,6 +248,13 @@ class OpenClawConfig:
             raise ValueError("workspace_container_path must be absolute")
         if not self.session_id or "/" in self.session_id:
             raise ValueError("session_id must be a non-empty path-safe value")
+        if (
+            self.model_request_timeout_seconds is not None
+            and self.model_request_timeout_seconds <= 0
+        ):
+            raise ValueError("model_request_timeout_seconds must be positive")
+        if self.model_max_tokens is not None and self.model_max_tokens <= 0:
+            raise ValueError("model_max_tokens must be positive")
         for path in self.collect_paths:
             if not path.startswith("/"):
                 raise ValueError(f"collected container path must be absolute: {path}")
@@ -351,6 +367,8 @@ if not files:
     )
 content = ''
 assistant_count = 0
+stop_reason = ''
+error_message = ''
 if files:
     rows = []
     for line in files[0].read_text(errors='replace').splitlines():
@@ -368,6 +386,8 @@ if files:
         message = row.get('message') if isinstance(row, dict) else None
         if not isinstance(message, dict) or message.get('role') != 'assistant':
             continue
+        stop_reason = message.get('stopReason', message.get('stop_reason', ''))
+        error_message = message.get('errorMessage', message.get('error_message', ''))
         value = message.get('content')
         if isinstance(value, str):
             content = value
@@ -380,7 +400,12 @@ if files:
         elif isinstance(value, dict) and isinstance(value.get('text'), str):
             content = value['text']
         break
-print(json.dumps({'content': content, 'assistant_count': assistant_count}, ensure_ascii=False))
+print(json.dumps({
+    'content': content,
+    'assistant_count': assistant_count,
+    'stop_reason': stop_reason,
+    'error': error_message,
+}, ensure_ascii=False))
 """.strip()
 
     _SDK_LAST_ASSISTANT_SCRIPT = """
@@ -390,13 +415,28 @@ const { readLatestAssistantTextByIdentity, readSessionTranscriptEvents } =
   await import('openclaw/plugin-sdk/session-transcript-runtime');
 const events = await readSessionTranscriptEvents(scope);
 const latest = await readLatestAssistantTextByIdentity(scope);
-const assistantCount = events.filter((event) =>
+const assistants = events.filter((event) =>
   event && typeof event === 'object' && event.message &&
   typeof event.message === 'object' && event.message.role === 'assistant'
-).length;
+);
+const last = assistants.length ? assistants[assistants.length - 1].message : {};
+const blocks = last?.content;
+let content = '';
+if (typeof blocks === 'string') {
+  content = blocks;
+} else if (Array.isArray(blocks)) {
+  content = blocks
+    .filter((block) => block && typeof block === 'object' && block.type === 'text')
+    .map((block) => typeof block.text === 'string' ? block.text : '')
+    .join('\\n');
+} else if (blocks && typeof blocks === 'object' && typeof blocks.text === 'string') {
+  content = blocks.text;
+}
 process.stdout.write(JSON.stringify({
-  content: typeof latest?.text === 'string' ? latest.text : '',
-  assistant_count: assistantCount,
+  content,
+  assistant_count: assistants.length,
+  stop_reason: last?.stopReason ?? last?.stop_reason ?? '',
+  error: last?.errorMessage ?? last?.error_message ?? '',
 }));
 """.strip()
 
@@ -413,6 +453,10 @@ process.stdout.write(JSON.stringify({ event_count: events.length }));
 """.strip()
 
     _OPENCLAW_NODE_EVAL_SCRIPT = """
+if [ -x /opt/roller-node/bin/node ] && [ -f /opt/roller-openclaw/openclaw.mjs ]; then
+    cd /opt/roller-openclaw
+    exec /opt/roller-node/bin/node --input-type=module -e "$1"
+fi
 runtime_dir=$(dirname "$(readlink -f "$(command -v openclaw)")")
 cd "$runtime_dir"
 exec node --input-type=module -e "$1"
@@ -717,6 +761,8 @@ exec node --input-type=module -e "$1"
             proxy=self._wire_proxy,
             enable_reasoning=thinking not in (None, "off"),
             disable_reasoning=self.config.external_thinking != "off",
+            request_timeout_seconds=self.config.model_request_timeout_seconds,
+            max_tokens=self.config.model_max_tokens,
         )
         temporary_path: Path | None = None
         try:
@@ -1009,6 +1055,12 @@ exec node --input-type=module -e "$1"
         assistant_count = (
             payload.get("assistant_count") if isinstance(payload, dict) else None
         )
+        stop_reason = payload.get("stop_reason") if isinstance(payload, dict) else None
+        if stop_reason in {"aborted", "error"}:
+            detail = payload.get("error") if isinstance(payload, dict) else None
+            raise RuntimeError(
+                detail if isinstance(detail, str) and detail else f"OpenClaw {stop_reason}"
+            )
         if not isinstance(content, str) or not content.strip():
             raise RuntimeError("OpenClaw turn produced no visible assistant response")
         if isinstance(assistant_count, bool) or not isinstance(assistant_count, int):

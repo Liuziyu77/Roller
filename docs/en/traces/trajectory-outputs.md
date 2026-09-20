@@ -296,7 +296,9 @@ OpenClaw can also combine it with the full cache trace.
 
 As long as raw exists, Roller attempts conversion, including samples whose
 Harness already failed or timed out. A failed sample may therefore still have
-ACTF. A conversion failure sets the sample status to `error`.
+ACTF. OpenClaw no-op attempts with an `aborted`, `error`, or `length` stop
+reason remain in raw but are omitted from ACTF. Other conversion failures set
+the sample status to `error`.
 
 ### 4.3 `trace_SFT.json`: one minimal training sample
 

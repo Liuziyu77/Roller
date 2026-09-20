@@ -163,6 +163,22 @@ class NormalizeReasoningReplayTests(unittest.TestCase):
             payload["choices"][0]["delta"]["reasoning_content"], "chain"
         )
 
+    def test_client_disconnect_during_stream_write_is_not_raised(self) -> None:
+        class DisconnectedWriter:
+            def write(self, payload: bytes) -> None:
+                del payload
+                raise BrokenPipeError
+
+            def flush(self) -> None:
+                raise AssertionError("flush must not run after a failed write")
+
+        handler = object.__new__(_ProxyHandler)
+        handler.wfile = DisconnectedWriter()
+        handler.close_connection = False
+
+        self.assertFalse(handler._write_client(b"chunk"))
+        self.assertTrue(handler.close_connection)
+
 
 class ExtractWireToolsTests(unittest.TestCase):
     def test_extracts_from_tools_entry(self) -> None:
@@ -191,6 +207,50 @@ class ExtractWireToolsTests(unittest.TestCase):
             path.write_text(json.dumps(entry), encoding="utf-8")
             tools = extract_wire_tools(path)
         self.assertEqual(tools[0]["function"]["name"], "exec")
+
+    def test_merges_dynamic_tool_schemas_across_requests(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "wire.jsonl"
+            entries = [
+                {
+                    "kind": "tools",
+                    "tools": [
+                        {"type": "function", "function": {"name": "read"}}
+                    ],
+                },
+                {
+                    "kind": "tools",
+                    "tools": [
+                        {
+                            "type": "function",
+                            "function": {
+                                "name": "read",
+                                "description": "latest read schema",
+                            },
+                        },
+                        {
+                            "type": "function",
+                            "function": {
+                                "name": "gateway",
+                                "parameters": {"type": "object"},
+                            },
+                        },
+                    ],
+                },
+            ]
+            path.write_text(
+                "\n".join(json.dumps(entry) for entry in entries),
+                encoding="utf-8",
+            )
+
+            tools = extract_wire_tools(path)
+
+        self.assertEqual(
+            [tool["function"]["name"] for tool in tools or []],
+            ["read", "gateway"],
+        )
+        assert tools is not None
+        self.assertEqual(tools[0]["function"]["description"], "latest read schema")
 
     def test_returns_none_when_missing_or_unreadable(self) -> None:
         self.assertIsNone(extract_wire_tools(Path("/nonexistent/wire.jsonl")))

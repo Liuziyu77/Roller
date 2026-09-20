@@ -65,7 +65,8 @@ SFT record 不包含 schema version、task/model、usage、时间戳、step ID�
 - `assistant` 始终包含 `role`、`reasoning_content`、`content` 和 `tool_calls`；
   没有 reasoning、可见文本或工具调用时分别使用 `""`、`""`、`[]`。
 - `tool_calls[*]` 使用 function-call 结构，`function.arguments` 是紧凑 JSON 字符串。
-- `tool` 只包含 `role`、`tool_call_id` 和字符串 `content`。
+- `tool` 只包含 `role`、`tool_call_id` 和 `content`；纯文本结果使用字符串，
+  包含内嵌图片时使用有序的 `text` / `image_url` blocks，格式见下文。
 - 工具调用后的 assistant 直接跟在对应 tool message 后，不插入空 user message。
 - `tools` 保留模型实际看到的 function schema；没有可用 schema 且轨迹未调用工具时为 `[]`。
 
@@ -126,10 +127,21 @@ canonical `deep_think`，之后与 OpenClaw 共用同一套 SFT 折叠逻辑。�
 - 每个 call 在同一 step 内恰好有一个匹配的 tool result；
 - call 的工具名存在于顶层 tools schema；
 - arguments 可以编码为 JSON object；
-- 工具结果只包含字符串或 text blocks。
+- 工具结果包含文本或有效的内嵌 image blocks。
 
-遇到 image 等非文本工具结果时，Roller 不会静默删除内容，而是将该 sample 标记为
-trajectory conversion error。多模态 SFT 需要单独定义 content-block schema。
+ACTF 的 `{"type":"image","data":"<base64>","mimeType":"image/png"}` 图片结果
+转换为含同一份图像字节的 data URL：
+
+```json
+{"role":"tool","tool_call_id":"call-1","content":[
+  {"type":"text","text":"Image preview"},
+  {"type":"image_url","image_url":{"url":"data:image/png;base64,<base64>"}}
+]}
+```
+
+导出器校验 base64 和图片 MIME type，保留 block 顺序，不下载或丢弃图片。纯文本结果仍
+使用字符串。训练端需要支持 tool message 的 content-block 列表；这一训练格式不保证可
+直接回放到所有模型 API。音频等尚不支持的非文本块及无效图片仍报转换错误，避免静默丢失。
 
 ## 5. 文件位置
 

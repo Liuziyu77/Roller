@@ -118,6 +118,8 @@ off | minimal | low | medium | high | xhigh | adaptive | max | ultra
 | 参数 | 默认值 | 说明 |
 | --- | --- | --- |
 | `--model-config PATH` | 无 | OpenClaw providers/models JSON，支持 `${ENV_NAME}` |
+| `--openclaw-model-request-timeout SEC` | 无 | 覆盖所选 provider 的 HTTP 与流式空闲超时；要求同时设置 `--model-config` |
+| `--openclaw-max-tokens TOKENS` | 无 | 覆盖所选模型的 `maxTokens`；要求同时设置 `--model-config` |
 | `--gateway-port N` | `18789` | worker 0 的 gateway 起始端口 |
 | `--gateway-port-step N` | `10` | worker slot 之间的端口间隔 |
 | `--gateway-startup-timeout SEC` | `30` | 等待 gateway 就绪的时间 |
@@ -225,6 +227,8 @@ roller bench report RUN_DIR [--output REPORT.json]
 
 `bench export` 只做翻译，不执行任何任务、不联网、不启容器。
 采集时记得加 `--task-timeouts`，并用 `--pass-env` 透传 grader 需要的变量。
+`swebench-pro` 是例外的运行期镜像适配：导出仍然离线，但 `collect` 首次处理每个实例时
+会拉取官方镜像并构建带 OpenClaw 的本地派生镜像。
 
 字段语义、评分时序、`stage` 防泄漏规则和聚合口径见 [Bench 接入与评分](../benches/bench-format.md)。
 

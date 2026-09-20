@@ -170,11 +170,12 @@ def redact_jsonl_file(path: Path) -> None:
 
 
 def extract_wire_tools(path: Path) -> list[Any] | None:
-    """Return the tools schema recorded in a wire trace file, if any."""
+    """Merge every tools schema recorded across wire-trace requests."""
     try:
         lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
     except OSError:
         return None
+    merged: dict[str, Any] = {}
     for line in lines:
         try:
             entry = json.loads(line)
@@ -187,9 +188,17 @@ def extract_wire_tools(path: Path) -> list[Any] | None:
         else:
             body = entry.get("body")
             tools = body.get("tools") if isinstance(body, dict) else None
-        if isinstance(tools, list) and tools:
-            return tools
-    return None
+        if not isinstance(tools, list):
+            continue
+        for tool in tools:
+            if not isinstance(tool, dict):
+                continue
+            function = tool.get("function")
+            source = function if isinstance(function, dict) else tool
+            name = source.get("name")
+            if isinstance(name, str) and name:
+                merged[name] = tool
+    return list(merged.values()) or None
 
 
 class _ProxyHandler(BaseHTTPRequestHandler):
@@ -197,6 +206,15 @@ class _ProxyHandler(BaseHTTPRequestHandler):
 
     def log_message(self, format: str, *args: Any) -> None:  # noqa: A002 - stdlib signature
         return
+
+    def _write_client(self, payload: bytes) -> bool:
+        try:
+            self.wfile.write(payload)
+            self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError):
+            self.close_connection = True
+            return False
+        return True
 
     def _record(
         self,
@@ -242,11 +260,18 @@ class _ProxyHandler(BaseHTTPRequestHandler):
                 if isinstance(messages, list):
                     entry["n_messages"] = len(messages)
                 tools = parsed.get("tools")
-                if isinstance(tools, list) and not proxy.tools_logged and tools:
-                    proxy.tools_logged = True
-                    entry["kind"] = "tools"
-                    entry["tools"] = tools
-                    entry["n_tools"] = len(tools)
+                if isinstance(tools, list) and tools:
+                    fingerprint = json.dumps(
+                        tools,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    )
+                    if fingerprint not in proxy.tool_schema_fingerprints:
+                        proxy.tool_schema_fingerprints.add(fingerprint)
+                        entry["kind"] = "tools"
+                        entry["tools"] = tools
+                        entry["n_tools"] = len(tools)
         proxy.write(entry)
 
     def _handle(self) -> None:
@@ -310,9 +335,12 @@ class _ProxyHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(payload)))
             self.end_headers()
-            self.wfile.write(payload)
+            self._write_client(payload)
             return
-        self.send_response(response.status if hasattr(response, "status") else response.code)
+        status = getattr(response, "status", None)
+        if not isinstance(status, int):
+            status = getattr(response, "code", None)
+        self.send_response(status if isinstance(status, int) else 502)
         for key, value in response.headers.items():
             if key.lower() not in HOP_BY_HOP_HEADERS:
                 self.send_header(key, value)
@@ -330,8 +358,8 @@ class _ProxyHandler(BaseHTTPRequestHandler):
                 line = response.readline()
                 if not line:
                     break
-                self.wfile.write(self._normalize_sse_reasoning_line(line))
-                self.wfile.flush()
+                if not self._write_client(self._normalize_sse_reasoning_line(line)):
+                    break
             return
         if normalize_reasoning and "json" in content_type:
             payload = response.read()
@@ -343,15 +371,14 @@ class _ProxyHandler(BaseHTTPRequestHandler):
                 ).encode("utf-8")
             except (json.JSONDecodeError, UnicodeDecodeError):
                 pass
-            self.wfile.write(payload)
-            self.wfile.flush()
+            self._write_client(payload)
             return
         while True:
             chunk = response.read(65536)
             if not chunk:
                 break
-            self.wfile.write(chunk)
-            self.wfile.flush()
+            if not self._write_client(chunk):
+                break
 
     @staticmethod
     def _normalize_sse_reasoning_line(line: bytes) -> bytes:
@@ -428,7 +455,7 @@ class WireTraceProxy:
         self.timeout_seconds = timeout_seconds
         self._lock = threading.Lock()
         self._seq = 0
-        self.tools_logged = False
+        self.tool_schema_fingerprints: set[str] = set()
         self._server: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
         self._host = host

@@ -345,9 +345,12 @@ OpenClaw session 文件与模型请求 context 不是同一层：session 保存�
 处理以及 provider 协议适配。因此 `trace.jsonl` 中存在的消息不保证逐字进入每次请求；
 ACTF/SFT 又是从该 session 文件投影，也不能证明模型当时看到了哪些完整历史。
 
-若上游连接中断后仅留下末尾 `aborted/error` 的空 assistant 占位事件，ACTF 会丢弃该
-无语义终止 step，使此前完整步骤仍可导出 SFT。原始事件继续保留在 `trace.jsonl`，
-sample 也继续保留原始 Agent 错误；非末尾空消息不会被静默忽略。
+若上游请求留下 `aborted`、`error` 或 `length` 的空 assistant 尝试，ACTF 会忽略这个
+无语义尝试，但原始事件与 usage 仍保留在 `trace.jsonl`。若 OpenClaw 随后恢复，待处理的
+user 消息会继续关联到下一条真实 assistant action；若空尝试位于末尾且没有可见回复，
+Harness 仍保留原始 Agent 错误。
+回复提取以最后一条 assistant 事件为准，包括空失败事件，不会回退为更早的可见文本。
+末尾的 `aborted/error` 即使包含部分文本，也仍然判为执行失败。
 
 需要审计真实请求 context 时使用 `full`。代理位于 OpenClaw provider adapter 和真实模型
 API 之间；对合法 JSON，它在可选的历史 thinking 剥离之后记录与转发同一 request body。
@@ -410,6 +413,8 @@ roller collect ... --gateway-port 22000 --gateway-port-step 10
 | `--external-thinking` | `off` | `external` 或 `external_always` 启用显式 `deep_think` CoT |
 | `--docker-binary` | `docker` | Docker CLI 名称或路径 |
 | `--model-config` | 无 | 自定义 provider/model JSON |
+| `--openclaw-model-request-timeout` | 无 | 覆盖所选 provider 的 HTTP 与流式空闲超时秒数 |
+| `--openclaw-max-tokens` | 无 | 覆盖所选模型的 `maxTokens` |
 | `--network` | `host` | 容器网络模式 |
 | `--gateway-port` | `18789` | gateway 起始端口 |
 | `--gateway-port-step` | `10` | worker 之间的端口间隔 |

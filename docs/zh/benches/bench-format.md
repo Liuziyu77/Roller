@@ -215,6 +215,8 @@ roller bench list
 roller bench export wildclawbench /path/to/WildClawBench --output tasks/wcb.jsonl
 roller bench export wildclawbench /path/to/WildClawBench -o /tmp/one.jsonl \
     --category 03_Social_Interaction --task-id 03_Social_Interaction_task_2_group_chat_zh
+roller bench export qwenclawbench /path/to/QwenClawBench -o /tmp/qcb.jsonl \
+    --runs-per-task 3
 
 # 采集并评分。--task-timeouts 让每行用自己的 timeout_seconds
 roller collect --tasks tasks/wcb.jsonl --model <provider>/<model> \
@@ -244,6 +246,8 @@ grader 需要的环境变量要用 `--pass-env` 透传（哪些变量由 bench �
 | Bench | `--harness` | README | 一句话 |
 | --- | --- | --- | --- |
 | `wildclawbench` | `openclaw` | [WildClawBench](wildclawbench.md) | 60 个真实场景任务，6 类；grader 在容器里跑，26 个任务的 `gt/` 走 `stage` |
+| `qwenclawbench` | `openclaw` | [QwenClawBench](qwenclawbench.md) | 100 个任务，8 类；支持 automated/hybrid、惩罚式评分和每题重复运行 |
+| `swebench-pro` | `openclaw` | [SWE-Bench Pro](swebench-pro.md) | 731 个软件工程任务，11 个仓库；官方实例镜像、隐藏测试和 resolved 评分 |
 
 接入前先读对应 README 的"上游旋钮 → Roller 对应"表和"未搬"清单 ——
 少一个旋钮不会报错，只会让分数不可比。

@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 
 from roller.actf import openclaw_events_to_actf
-from roller.sft import SFTConversionError, actf_to_sft
+from roller.sft import actf_to_sft
 
 
 def _events() -> list[dict]:
@@ -156,7 +156,7 @@ class ActfConversionTests(unittest.TestCase):
             ["system", "user", "assistant", "tool", "user", "assistant"],
         )
 
-    def test_keeps_nonterminal_empty_assistant_for_validation(self) -> None:
+    def test_drops_nonterminal_aborted_empty_assistant(self) -> None:
         events = [
             *_events()[:4],
             {
@@ -181,12 +181,11 @@ class ActfConversionTests(unittest.TestCase):
             ],
         )
 
-        self.assertEqual(len(trajectory["steps"]), 3)
-        with self.assertRaisesRegex(
-            SFTConversionError,
-            "empty assistant message",
-        ):
-            actf_to_sft(trajectory)
+        self.assertEqual(len(trajectory["steps"]), 2)
+        self.assertEqual(
+            [message["role"] for message in actf_to_sft(trajectory)["messages"]],
+            ["system", "user", "assistant", "tool", "user", "assistant"],
+        )
 
     def test_cli_delivery_copy_excluded_from_steps_and_sft(self) -> None:
         reply_usage = {"input": 15, "output": 1}
