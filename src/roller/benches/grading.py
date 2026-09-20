@@ -536,6 +536,7 @@ class GradedHarness(Harness):
         payload = {
             "bench": self.binding.name,
             "category": self.binding.category,
+            "metadata": dict(self.binding.metadata),
             "task_id": request.task.id,
             "model": request.model,
             "score_key": spec.score_key if spec is not None else "overall_score",

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import os
 import subprocess
@@ -28,6 +30,7 @@ from roller.benches.qwenclaw import (
     workspace_compatibility_script,
 )
 from roller.benches.transcripts import grader_messages
+from roller.cli import _bench, _bench_report, _build_parser
 from roller.harnesses.hermes import HermesConfig, HermesHarness
 
 
@@ -92,6 +95,7 @@ def _write_dataset(
 
 class _JudgeHandler(BaseHTTPRequestHandler):
     requests: ClassVar[list[dict[str, Any]]] = []
+    responses: ClassVar[list[str]] = []
     judge_score = 0.8
 
     def do_POST(self) -> None:
@@ -103,12 +107,16 @@ class _JudgeHandler(BaseHTTPRequestHandler):
                 "body": body,
             }
         )
-        content = json.dumps(
-            {
-                "scores": {"completion": self.__class__.judge_score},
-                "total": self.__class__.judge_score,
-                "notes": "fake judge",
-            }
+        content = (
+            self.__class__.responses.pop(0)
+            if self.__class__.responses
+            else json.dumps(
+                {
+                    "scores": {"completion": self.__class__.judge_score},
+                    "total": self.__class__.judge_score,
+                    "notes": "fake judge",
+                }
+            )
         )
         payload = json.dumps(
             {"choices": [{"message": {"role": "assistant", "content": content}}]}
@@ -217,6 +225,63 @@ class QwenClawWorkspaceTests(unittest.TestCase):
             self.assertEqual(binding.metadata["upstream_task_id"], "task_00001_demo")
             self.assertEqual(binding.grade.workspace_path, "/home/node/workspace")
 
+    def test_cli_export_accepts_common_options_and_repeats_tasks(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _write_dataset(root)
+            output = root / "exported.jsonl"
+            args = _build_parser().parse_args(
+                [
+                    "bench",
+                    "export",
+                    "qwenclawbench",
+                    str(root),
+                    "--output",
+                    str(output),
+                    "--timeout-multiplier",
+                    "1.5",
+                    "--runs-per-task",
+                    "3",
+                ]
+            )
+
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(_bench(args), 0)
+            rows = [
+                json.loads(line)
+                for line in output.read_text(encoding="utf-8").splitlines()
+            ]
+
+        self.assertEqual(
+            [row["id"] for row in rows],
+            [
+                "task_00001_demo__run_01",
+                "task_00001_demo__run_02",
+                "task_00001_demo__run_03",
+            ],
+        )
+        self.assertEqual([row["timeout_seconds"] for row in rows], [90, 90, 90])
+        self.assertEqual(
+            [row["bench"]["metadata"]["run_index"] for row in rows], [1, 2, 3]
+        )
+        self.assertTrue(
+            all(
+                row["bench"]["metadata"]["upstream_task_id"]
+                == "task_00001_demo"
+                for row in rows
+            )
+        )
+
+    def test_rejects_unsupported_variant(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _write_dataset(root)
+
+            with self.assertRaisesRegex(BenchFormatError, "has no variants"):
+                QwenClawBenchAdapter(cache_root=root / "cache").load(
+                    root, variant="unknown"
+                )
+
     def test_rejects_destination_that_escapes_workspace(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -248,6 +313,7 @@ class QwenClawWorkspaceTests(unittest.TestCase):
 class QwenClawGraderTests(unittest.TestCase):
     def setUp(self) -> None:
         _JudgeHandler.requests = []
+        _JudgeHandler.responses = []
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), _JudgeHandler)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
@@ -392,8 +458,127 @@ class QwenClawGraderTests(unittest.TestCase):
             self.assertAlmostEqual(scores["score_simple"], 0.68)
             self.assertAlmostEqual(scores["overall_score"], 0.2)
 
+    def test_invalid_judge_response_is_retried_instead_of_scored_as_zero(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            task_path = _write_dataset(root)
+            task = parse_task_markdown(
+                task_path.read_text(encoding="utf-8"),
+                str(task_path),
+                source_path=task_path,
+            )
+            workspace = root / "workspace"
+            workspace.mkdir()
+            namespace: dict[str, Any] = {}
+            exec(build_grader_source(task), namespace)  # noqa: S102
+            _JudgeHandler.responses = [
+                "The result is unavailable.",
+                json.dumps(
+                    {
+                        "scores": {"completion": 0.8},
+                        "notes": "valid retry",
+                    }
+                ),
+            ]
+            environment = {
+                **self._judge_env(),
+                "QWENCLAW_JUDGE_MAX_RETRIES": "2",
+            }
+
+            with (
+                patch.dict(os.environ, environment),
+                patch.object(namespace["_roller_time"], "sleep") as sleep,
+            ):
+                scores = namespace["roller_grade"]([], str(workspace))
+
+        self.assertEqual(len(_JudgeHandler.requests), 2)
+        sleep.assert_called_once_with(5)
+        self.assertNotIn("error", scores)
+        self.assertAlmostEqual(scores["llm_judge_score"], 0.8)
+
 
 class QwenClawAggregateTests(unittest.TestCase):
+    def test_score_payload_preserves_bench_metadata(self) -> None:
+        runtime = Mock()
+        inner = HermesHarness(
+            HermesConfig(docker_image="registry.example/hermes:test"),
+            0,
+            runtime,
+        )
+        binding = BenchBinding(
+            name="qwenclawbench",
+            metadata={"upstream_task_id": "task_a", "run_index": 2},
+            grade=GradeSpec(
+                code="def roller_grade(transcript, workspace_path): return {}"
+            ),
+        )
+        harness = QwenClawGradedHarness(
+            inner,
+            binding,
+            write_score_file=False,
+        )
+        result = SimpleNamespace(metadata={})
+        request = SimpleNamespace(
+            task=SimpleNamespace(id="task_a__run_02"),
+            model="provider/model",
+        )
+
+        harness._attach(
+            result,
+            request,
+            Path("/unused"),
+            GradeOutcome({"overall_score": 1.0}, 0.1),
+        )
+
+        self.assertEqual(
+            result.metadata["bench"]["metadata"],
+            {"upstream_task_id": "task_a", "run_index": 2},
+        )
+
+    def test_bench_report_groups_repeated_rows_by_upstream_task(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            run_dir = Path(temporary)
+            for index, score in enumerate((1.0, 0.5), start=1):
+                sample = run_dir / "samples" / "model" / f"sample-{index}"
+                sample.mkdir(parents=True)
+                (sample / "info.json").write_text(
+                    json.dumps(
+                        {
+                            "task_id": f"task_a__run_{index:02d}",
+                            "model": "provider/model",
+                            "status": "ok",
+                            "runtime": {
+                                "bench": {
+                                    "bench": "qwenclawbench",
+                                    "metadata": {"upstream_task_id": "task_a"},
+                                    "score_key": "overall_score",
+                                    "scores": {"overall_score": score},
+                                }
+                            },
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+            report_path = run_dir / "report.json"
+
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(
+                    _bench_report(
+                        SimpleNamespace(
+                            run_dir=str(run_dir),
+                            output=str(report_path),
+                        )
+                    ),
+                    0,
+                )
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(report["upstream_task_count"], 1)
+        self.assertEqual(report["runs_per_task"], {"task_a": 2})
+        self.assertEqual(report["average"], 0.75)
+
     def test_aggregate_counts_failed_rollouts_and_weights_upstream_tasks(self) -> None:
         rows = [
             {

@@ -172,6 +172,10 @@ def _roller_parse_judge(text):
                 scores[str(key)] = float(value)
     total = parsed.get("total", parsed.get("score"))
     if not isinstance(total, (int, float)) or isinstance(total, bool):
+        if not scores:
+            raise ValueError(
+                "judge response did not contain a numeric total or criterion score"
+            )
         total = _roller_average(scores)
     return scores, max(0.0, min(1.0, float(total))), str(
         parsed.get("notes", parsed.get("justification", parsed.get("reasoning", "")))

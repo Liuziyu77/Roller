@@ -141,6 +141,12 @@ def _build_parser() -> argparse.ArgumentParser:
         default=1.0,
         help="multiply every exported task timeout (default: 1.0)",
     )
+    bench_export.add_argument(
+        "--runs-per-task",
+        type=int,
+        default=1,
+        help="duplicate each selected task for repeated benchmark runs (default: 1)",
+    )
 
     bench_report = bench_sub.add_parser(
         "report", help="aggregate bench scores from a finished run"
@@ -1408,6 +1414,41 @@ def _bench(args: argparse.Namespace) -> int:
         )
         if not rows:
             raise TaskFormatError(f"{adapter.name}: selection matched no tasks")
+        if args.runs_per_task < 1:
+            raise TaskFormatError("--runs-per-task must be positive")
+        if args.runs_per_task > 1:
+            repeated: list[dict[str, Any]] = []
+            width = max(2, len(str(args.runs_per_task)))
+            for row in rows:
+                task_id = row.get("id")
+                bench = row.get("bench")
+                if not isinstance(task_id, str) or not task_id:
+                    raise TaskFormatError(
+                        f"{adapter.name}: exported task has no valid id"
+                    )
+                if not isinstance(bench, dict):
+                    raise TaskFormatError(
+                        f"{adapter.name}: exported task {task_id!r} has no bench block"
+                    )
+                metadata = bench.get("metadata", {})
+                if not isinstance(metadata, dict):
+                    raise TaskFormatError(
+                        f"{adapter.name}: exported task {task_id!r} has invalid metadata"
+                    )
+                upstream_task_id = metadata.get("upstream_task_id") or task_id
+                for run_index in range(1, args.runs_per_task + 1):
+                    clone = json.loads(json.dumps(row))
+                    clone["id"] = f"{task_id}__run_{run_index:0{width}d}"
+                    clone_metadata = clone["bench"].setdefault("metadata", {})
+                    clone_metadata.update(
+                        {
+                            "upstream_task_id": upstream_task_id,
+                            "run_index": run_index,
+                            "runs_per_task": args.runs_per_task,
+                        }
+                    )
+                    repeated.append(clone)
+            rows = repeated
         output = Path(args.output).expanduser().resolve()
         output.parent.mkdir(parents=True, exist_ok=True)
         with output.open("w", encoding="utf-8") as handle:
@@ -1454,6 +1495,7 @@ def _bench_report(args: argparse.Namespace) -> int:
                 "bench_scores": payload.get("scores"),
                 "bench_score_key": payload.get("score_key"),
                 "bench_category": payload.get("category"),
+                "bench_metadata": payload.get("metadata"),
                 "bench_error": payload.get("error"),
             }
         )

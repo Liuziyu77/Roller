@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Iterable, Sequence
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-from roller.benches.base import BenchAdapter, BenchBinding, BenchFormatError, GradeSpec
+from roller.benches.base import (
+    BenchAdapter,
+    BenchBinding,
+    BenchFormatError,
+    GradeSpec,
+    validate_timeout_multiplier,
+)
 from roller.benches.qwenclaw.grader_runtime import (
     GRADE_TIMEOUT_SECONDS,
     JUDGE_ENV_NAMES,
@@ -37,7 +44,12 @@ class QwenClawBenchAdapter(BenchAdapter):
         *,
         categories: Sequence[str] | None = None,
         task_ids: Sequence[str] | None = None,
+        variant: str | None = None,
+        timeout_multiplier: float = 1.0,
     ) -> list[dict[str, Any]]:
+        if variant is not None:
+            raise BenchFormatError(f"{self.name}: this bench has no variants")
+        multiplier = validate_timeout_multiplier(timeout_multiplier)
         dataset = self._dataset_root(root)
         tasks_root = dataset / "tasks"
         assets_root = dataset / "assets"
@@ -101,7 +113,9 @@ class QwenClawBenchAdapter(BenchAdapter):
                     "prompt": task.prompt,
                     "workspace": str(workspace),
                     "files": {"output_dir": OUTPUT_DIR_NAME},
-                    "timeout_seconds": task.timeout_seconds,
+                    "timeout_seconds": max(
+                        1, math.ceil(task.timeout_seconds * multiplier)
+                    ),
                     "bench": binding.as_dict(),
                 }
             )
