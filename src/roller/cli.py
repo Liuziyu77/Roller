@@ -1320,7 +1320,15 @@ def _collect(args: argparse.Namespace) -> int:
                 if binding is not None and binding.grade is not None:
                     # Grading has to read the container the agent just wrote to,
                     # so it runs inside the session rather than after teardown.
-                    return GradedHarness(
+                    try:
+                        adapter = get_bench(binding.name)
+                    except KeyError:
+                        return GradedHarness(
+                            agent,
+                            binding,
+                            grading_semaphore=grading_semaphore,
+                        )
+                    return adapter.wrap_harness(
                         agent,
                         binding,
                         grading_semaphore=grading_semaphore,

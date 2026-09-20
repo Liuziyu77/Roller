@@ -348,6 +348,49 @@ def workspace_container_path(session: InteractiveSession) -> str:
     return value if isinstance(value, str) and value else "/tmp_workspace"
 
 
+def prepare_benchmark_workspace(
+    session: InteractiveSession, spec: GradeSpec | None
+) -> None:
+    """Expose a bench's canonical workspace path before the agent runs."""
+
+    if spec is None or spec.workspace_path is None:
+        return
+    actual = workspace_container_path(session)
+    expected = spec.workspace_path
+    if actual == expected:
+        return
+    container = getattr(session, "container", None)
+    runtime = getattr(getattr(session, "harness", None), "runtime", None)
+    if (
+        not getattr(session, "container_started", False)
+        or not container
+        or runtime is None
+    ):
+        raise RuntimeError(
+            "cannot prepare benchmark workspace alias without a live container"
+        )
+    expected_path = PurePosixPath(expected)
+    script = (
+        f"mkdir -p {shlex.quote(str(expected_path.parent))}; "
+        f"if [ -L {shlex.quote(expected)} ]; then "
+        f'test "$(readlink -f {shlex.quote(expected)})" = '
+        f'"$(readlink -f {shlex.quote(actual)})"; '
+        f"elif [ -e {shlex.quote(expected)} ]; then "
+        f"echo 'benchmark workspace alias target already exists' >&2; exit 1; "
+        f"else ln -s {shlex.quote(actual)} {shlex.quote(expected)}; fi"
+    )
+    result = runtime.run(
+        ["exec", container, "/bin/sh", "-c", script],
+        timeout=30,
+    )
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "").strip()[-500:]
+        raise RuntimeError(
+            f"benchmark workspace alias {expected} -> {actual} failed"
+            + (f": {detail}" if detail else "")
+        )
+
+
 class GradedHarness(Harness):
     """Drive an interactive harness, then grade before the container dies.
 
@@ -384,6 +427,7 @@ class GradedHarness(Harness):
         started = time.monotonic()
         try:
             session.start()
+            self._prepare_session(session)
             for index, prompt in enumerate(self._prompts(request)):
                 remaining = request.timeout_seconds - (time.monotonic() - started)
                 if remaining <= 0:
@@ -407,6 +451,9 @@ class GradedHarness(Harness):
         if outcome is not None:
             self._attach(result, request, output_dir, outcome)
         return result
+
+    def _prepare_session(self, session: InteractiveSession) -> None:
+        prepare_benchmark_workspace(session, self.binding.grade)
 
     def _prompts(self, request: RunRequest) -> tuple[str, ...]:
         """Defer to the wrapped harness's own prompt expansion when it has one."""

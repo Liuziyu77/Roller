@@ -119,13 +119,17 @@ class QwenClawBenchAdapter(BenchAdapter):
             )
         return rows
 
-    def wrap_harness(self, harness, binding):
+    def wrap_harness(self, harness, binding, *, grading_semaphore=None):
         if binding.grade is None:
             return harness
         grade = replace(
             binding.grade, transcript_path="/tmp/roller-qwenclaw-transcript.json"
         )
-        return QwenClawGradedHarness(harness, replace(binding, grade=grade))
+        return QwenClawGradedHarness(
+            harness,
+            replace(binding, grade=grade),
+            grading_semaphore=grading_semaphore,
+        )
 
     def aggregate(self, samples: Iterable[dict[str, Any]]) -> dict[str, Any]:
         return aggregate_samples(samples)
