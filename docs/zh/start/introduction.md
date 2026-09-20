@@ -37,7 +37,7 @@ Task + 模型 + Harness
           └─ 生成文件与运行信息
 ~~~
 
-## 3. Handbook 中常见的五个词
+## 3. Handbook 中的常见词
 
 | 术语 | 含义 |
 | --- | --- |
@@ -46,6 +46,7 @@ Task + 模型 + Harness
 | **Rollout** | 使用一个模型执行一个 Task 的一次尝试。 |
 | **Run** | 一批有名称的 rollout。 |
 | **Trace** | 一次 rollout 中记录的对话、reasoning、工具调用和工具结果。 |
+| **Viewer** | Roller 内置的只读网页界面，用于查看一个 run 中的 Task、轨迹时间线、工具调用和运行信息。 |
 
 第一次运行前不需要记住所有文件格式。[快速上手](getting-started.md)会使用 OpenClaw 生成一条轨迹，并在 Viewer 中打开它。
 

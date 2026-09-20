@@ -37,7 +37,7 @@ Tasks + models + Harness
             └─ generated files and run metadata
 ~~~
 
-## 3. Five terms used throughout the handbook
+## 3. Common terms in the handbook
 
 | Term | Meaning |
 | --- | --- |
@@ -46,6 +46,7 @@ Tasks + models + Harness
 | **Rollout** | One attempt to run one Task with one model. |
 | **Run** | A named batch containing one or more rollouts. |
 | **Trace** | The recorded conversation, reasoning, tool calls, and tool results from a rollout. |
+| **Viewer** | Roller's built-in read-only web interface for inspecting Tasks, trace timelines, tool calls, and run information. |
 
 You do not need to memorize the file formats before your first run. The [Getting started](getting-started.md) guide uses OpenClaw to produce one trajectory and open it in the Viewer.
 
