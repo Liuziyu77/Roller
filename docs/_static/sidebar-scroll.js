@@ -106,25 +106,8 @@
   }
 
   function fitCurrentGroup(sidebar, group) {
-    const current = group.querySelector(":scope > li.current.roller-expanded");
-    const submenu = current?.querySelector(":scope > ul");
-
-    if (submenu) {
-      submenu.classList.remove("roller-scrollable-submenu");
-      submenu.style.removeProperty("max-height");
-    }
-
     const sidebarRect = sidebar.getBoundingClientRect();
-    let groupRect = group.getBoundingClientRect();
-    if (groupRect.height > sidebar.clientHeight && submenu) {
-      const fixedHeight = groupRect.height - submenu.getBoundingClientRect().height;
-      const availableHeight = Math.floor(sidebar.clientHeight - fixedHeight - 16);
-      if (availableHeight >= 96 && submenu.scrollHeight > availableHeight) {
-        submenu.style.maxHeight = availableHeight + "px";
-        submenu.classList.add("roller-scrollable-submenu");
-        groupRect = group.getBoundingClientRect();
-      }
-    }
+    const groupRect = group.getBoundingClientRect();
 
     if (groupRect.height > sidebar.clientHeight) return;
     if (groupRect.top < sidebarRect.top) {

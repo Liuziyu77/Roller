@@ -23,13 +23,6 @@ body,
     display: block;
 }
 
-/* Keep long current-page outlines scrollable without hiding sibling pages. */
-.wy-menu-vertical ul.roller-scrollable-submenu {
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    scrollbar-gutter: stable;
-}
-
 /* Expanded headings always use the same readable light panel. */
 .wy-menu-vertical li.current,
 .wy-menu-vertical li.roller-expanded {

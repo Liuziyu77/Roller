@@ -14,15 +14,21 @@ You need:
 - the OpenClaw image.
 - a model API that supports OpenAI Responses or Chat Completions.
 
-Install Roller from the repository root:
+Use an isolated Python environment. This example uses Conda and Python 3.11. Run it from the repository root:
 
 ```bash
-python3 -m pip install -e .
+conda create -n roller python=3.11 -y
+conda activate roller
+
+python --version
+python -m pip install -e .
 roller --version
 docker version
 ```
 
-`docker version` must return both Client and Server information. With only the Docker CLI and no reachable daemon, Roller cannot start a rollout.
+`python --version` must report 3.10 or newer. If an older environment named `roller` already exists, use a new name such as `roller-py311` in the commands above and install Roller there. Do not continue installing into the older environment.
+
+Using `python -m pip` ensures that pip belongs to the activated Python environment. `docker version` must return both Client and Server information. With only the Docker CLI and no reachable daemon, Roller cannot start a rollout.
 
 ## 2. Prepare the OpenClaw image
 
