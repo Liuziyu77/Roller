@@ -69,6 +69,18 @@ def _write_fixture(root: Path, record: dict[str, str] | None = None) -> dict[str
 
 
 class SWEBenchProAdapterTests(unittest.TestCase):
+    def test_package_facade_preserves_the_original_import_surface(self) -> None:
+        import roller.benches.swebench_pro as facade
+        from roller.benches.swebench_pro.adapter import SWEBenchProAdapter as Adapter
+        from roller.benches.swebench_pro.grader_runtime import (
+            SWEBenchProGradedHarness as GradedHarnessAdapter,
+        )
+
+        assert facade.__file__ is not None
+        self.assertEqual(Path(facade.__file__).name, "__init__.py")
+        self.assertIs(facade.SWEBenchProAdapter, Adapter)
+        self.assertIs(facade.SWEBenchProGradedHarness, GradedHarnessAdapter)
+
     def test_packaged_grader_source_matches_protocol_revision(self) -> None:
         self.assertEqual(
             hashlib.sha256(_GRADER_SOURCE.encode()).hexdigest(),
@@ -195,7 +207,7 @@ class _RetryingFakeDockerRuntime:
 
 
 class SWEBenchProImageTests(unittest.TestCase):
-    @patch("roller.benches.swebench_pro_images.time.sleep")
+    @patch("roller.benches.swebench_pro.images.time.sleep")
     def test_image_pull_retries_transient_failures(self, sleep) -> None:
         runtime = _RetryingFakeDockerRuntime()
 

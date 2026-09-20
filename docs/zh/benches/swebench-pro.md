@@ -115,3 +115,18 @@ Python API `SWEBenchProAdapter` 另提供三个默认关闭的选项，导出的
 - `exclude_agent_tests=True`：评分时排除模型对 Go/Python/JS 测试源码的改动，避免新增自测与隐藏测试重名。原始 `model.patch` 保留，实际用于评分的补丁另存为 `graded.patch`。
 
 这些选项不改变官方通过标准，仅调整运行环境与评分基础设施。实验报告应同时保留原始成绩和修正后成绩。仅重跑失败任务所得的累计结果不能当作独立 pass@1。
+
+## 7. 实现结构
+
+集成代码位于 `src/roller/benches/swebench_pro/`：
+
+- `adapter.py`：任务导出、Harness 包装及 BenchAdapter 入口；
+- `task_parser.py`：数据集发现和上游字段解析；
+- `workspace.py`：基线初始化、补丁缓存及 fixture 修复；
+- `grader_runtime.py`：模型补丁提取和全新容器评分；
+- `grader.py`：注入评分容器的自包含代码；
+- `images.py`：Harness 派生镜像构建；
+- `report.py`：分数聚合；
+- `__init__.py`：兼容 `roller.benches.swebench_pro` 的原有导入。
+
+后续 Bench 集成也应按解析、工作区准备、运行时、评分和报告等职责拆分，避免核心逻辑重新集中到单个大文件。

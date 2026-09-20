@@ -82,7 +82,7 @@ recomputation mismatch, or SFT artifact issue. It verified 71 baseline
 
 Repository validation on the PR branch:
 
-- 317 unit tests passed; 17 external-environment tests skipped;
+- 318 unit tests passed; 17 external-environment tests skipped;
 - `compileall` passed;
 - `git diff --check` passed;
 - the built wheel contains the adapter, grader, and image modules;

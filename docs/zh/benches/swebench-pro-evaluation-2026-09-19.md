@@ -74,7 +74,7 @@ FAIL_TO_PASS/PASS_TO_PASS 集合；只有全部必要测试均为 `PASSED` 才�
 
 PR 分支仓库验证：
 
-- 317 项单元测试通过，17 项外部环境测试跳过；
+- 318 项单元测试通过，17 项外部环境测试跳过；
 - `compileall` 通过；
 - `git diff --check` 通过；
 - 构建的 wheel 包含 adapter、grader 和镜像模块；

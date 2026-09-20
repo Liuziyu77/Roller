@@ -134,3 +134,19 @@ The Python `SWEBenchProAdapter` API offers three options, disabled by default an
 These options preserve the official pass criterion while changing runtime and
 grading infrastructure. Report both original and corrected scores. Cumulative
 recovery from rerunning failures is not an independent pass@1 measurement.
+
+## 7. Implementation layout
+
+The integration lives in `src/roller/benches/swebench_pro/`:
+
+- `adapter.py`: task export, Harness wrapping, and the BenchAdapter entry point;
+- `task_parser.py`: dataset discovery and upstream field parsing;
+- `workspace.py`: baseline setup, patch caching, and fixture repair;
+- `grader_runtime.py`: model patch extraction and fresh-container grading;
+- `grader.py`: self-contained code staged into the grading container;
+- `images.py`: derived Harness image construction;
+- `report.py`: score aggregation;
+- `__init__.py`: compatibility exports for `roller.benches.swebench_pro`.
+
+Keep new Bench integrations similarly scoped so parsing, workspace preparation,
+runtime execution, grading, and reporting can evolve independently.
