@@ -4,13 +4,13 @@ import hashlib
 import json
 import os
 import subprocess
-import threading
 import tempfile
+import threading
 import unittest
 import uuid
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from roller.benches.base import BenchBinding, BenchFormatError, GradeSpec
 from roller.benches.grading import GradedHarness, GradeOutcome
@@ -24,6 +24,7 @@ from roller.benches.swebench_pro import (
 )
 from roller.harnesses.hermes import HermesConfig, HermesHarness
 from roller.harnesses.openclaw import OpenClawConfig, OpenClawHarness
+from roller.models import HarnessResult, RunRequest, Task
 
 
 def _record(instance_id: str = "instance_owner__repo-deadbeef-v1") -> dict[str, str]:
@@ -307,6 +308,116 @@ class SWEBenchProGraderTests(unittest.TestCase):
         return subprocess.run(
             ["git", *args], cwd=workspace, capture_output=True, text=True, check=True
         ).stdout
+
+    def test_image_precheck_failure_becomes_grade_error(self) -> None:
+        for failure in (
+            RuntimeError("could not pull Docker image"),
+            subprocess.TimeoutExpired(["image", "inspect"], 60),
+        ):
+            with self.subTest(failure=type(failure).__name__):
+                runtime = Mock()
+                runtime.run.return_value = subprocess.CompletedProcess([], 0, "", "")
+                inner = HermesHarness(HermesConfig(), 0, runtime)
+                binding = BenchBinding(
+                    "swebench-pro",
+                    metadata={"source_image": "source:test", "base_commit": "a" * 40},
+                    grade=GradeSpec("def grade(workspace_path): return {}"),
+                )
+                semaphore = threading.BoundedSemaphore(1)
+                harness = SWEBenchProGradedHarness(
+                    inner, binding, grading_semaphore=semaphore
+                )
+                session = SimpleNamespace(
+                    container_started=True, container="agent-container"
+                )
+                request = RunRequest(0, Task("demo", ("fix it",), 0), "model", 30)
+                with (
+                    patch.object(harness, "_extract_patch", return_value=("", None)),
+                    patch(
+                        "roller.benches.swebench_pro.grader_runtime._image_id",
+                        side_effect=failure,
+                    ),
+                ):
+                    outcome = harness._grade(session, request, "ok")
+
+                self.assertIsNotNone(outcome)
+                self.assertEqual(outcome.error, str(failure))
+                self.assertEqual(outcome.scores["error"], str(failure))
+                runtime.run.assert_not_called()
+                self.assertTrue(semaphore.acquire(blocking=False))
+                semaphore.release()
+
+    def test_grading_failures_preserve_agent_artifacts_and_cleanup(self) -> None:
+        for failure_stage in ("precheck", "extraction", "startup", "unexpected"):
+            with self.subTest(stage=failure_stage), tempfile.TemporaryDirectory() as tmp:
+                output_dir = Path(tmp)
+                runtime = Mock()
+                runtime.run.return_value = subprocess.CompletedProcess([], 0, "", "")
+                inner = HermesHarness(HermesConfig(), 0, runtime)
+                binding = BenchBinding(
+                    "swebench-pro",
+                    metadata={"source_image": "source:test", "base_commit": "a" * 40},
+                    grade=GradeSpec("def grade(workspace_path): return {}"),
+                )
+                harness = SWEBenchProGradedHarness(inner, binding)
+                session = Mock(container_started=True, container="agent-container")
+                trajectory = output_dir / "trace.json"
+
+                def finish(status, error):
+                    trajectory.write_text('{"saved": true}\n', encoding="utf-8")
+                    runtime.run(["rm", "-f", session.container], timeout=30)
+                    return HarnessResult(
+                        status, 0.1, error, trajectory_path=str(trajectory)
+                    )
+
+                session.finish.side_effect = finish
+                failure = RuntimeError(f"{failure_stage} failed")
+                request = RunRequest(0, Task("demo", ("fix it",), 0), "model", 30)
+                with (
+                    patch.object(inner, "create_session", return_value=session),
+                    patch.object(
+                        harness, "_extract_patch", return_value=("", None)
+                    ) as extract,
+                    patch(
+                        "roller.benches.swebench_pro.grader_runtime._image_id",
+                        return_value="sha256:source",
+                    ) as image,
+                    patch.object(harness, "_grade", wraps=harness._grade) as grade,
+                ):
+                    if failure_stage == "precheck":
+                        image.side_effect = failure
+                    elif failure_stage == "extraction":
+                        extract.side_effect = failure
+                    elif failure_stage == "startup":
+                        def run(args, timeout=None):
+                            del timeout
+                            if args[0] == "run":
+                                raise failure
+                            return subprocess.CompletedProcess(args, 0, "", "")
+
+                        runtime.run.side_effect = run
+                    else:
+                        grade.side_effect = failure
+                    result = harness.run(request, output_dir, 1)
+
+                session.finish.assert_called_once_with("ok", None)
+                self.assertEqual(result.status, "ok")
+                self.assertIsNone(result.error)
+                self.assertEqual(result.trajectory_path, str(trajectory))
+                self.assertEqual(json.loads(trajectory.read_text()), {"saved": True})
+                runtime.run.assert_any_call(["rm", "-f", "agent-container"], timeout=30)
+                score = json.loads((output_dir / "score.json").read_text())
+                self.assertEqual(score["error"], str(failure))
+                self.assertEqual(result.metadata["bench"]["error"], str(failure))
+                if failure_stage == "startup":
+                    calls = [c.args[0] for c in runtime.run.call_args_list]
+                    launch = next(c for c in calls if c[0] == "run")
+                    grader_container = launch[launch.index("--name") + 1]
+                    self.assertIn(["rm", "-f", grader_container], calls)
+                    self.assertLess(
+                        calls.index(["rm", "-f", grader_container]),
+                        calls.index(["rm", "-f", "agent-container"]),
+                    )
 
     def test_grader_extracts_committed_patch_and_restores_hidden_tests(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

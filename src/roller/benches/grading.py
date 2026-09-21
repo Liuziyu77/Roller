@@ -402,8 +402,19 @@ class GradedHarness(Harness):
             status = "error"
             error = str(exc)
 
-        outcome = self._grade(session, request, status)
-        result = session.finish(status, error)
+        grade_started = time.monotonic()
+        try:
+            outcome = self._grade(session, request, status)
+        except Exception as exc:
+            logger.exception("[%s] grading raised", request.task.id)
+            outcome = GradeOutcome(
+                _error_scores(str(exc)),
+                time.monotonic() - grade_started,
+                error=str(exc),
+            )
+        finally:
+            # Grader failures must not skip saving the agent's work and teardown.
+            result = session.finish(status, error)
         if outcome is not None:
             self._attach(result, request, output_dir, outcome)
         return result

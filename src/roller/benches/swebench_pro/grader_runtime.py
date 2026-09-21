@@ -118,20 +118,24 @@ class SWEBenchProGradedHarness(GradedHarness):
             return None
         if not getattr(session, "container_started", False):
             return super()._grade(session, request, status)
-        patch, error = self._extract_patch(session)
-        if error is not None:
-            return GradeOutcome(
-                {"overall_score": 0.0, "resolved": 0, "error": error},
-                time.monotonic() - started,
-                error,
-            )
 
-        runtime = getattr(self.inner, "runtime")
-        source_image = self.binding.metadata["source_image"]
-        base_commit = self.binding.metadata["base_commit"]
-        _image_id(runtime, source_image)
-        grader_container = f"roller-swebench-grade-{uuid.uuid4().hex[:12]}"
+        runtime: Any = getattr(self.inner, "runtime", None)
+        grader_container: str | None = None
         try:
+            if runtime is None:
+                raise RuntimeError("harness exposes no docker runtime")
+            patch, error = self._extract_patch(session)
+            if error is not None:
+                return GradeOutcome(
+                    {"overall_score": 0.0, "resolved": 0, "error": error},
+                    time.monotonic() - started,
+                    error,
+                )
+            source_image = self.binding.metadata["source_image"]
+            base_commit = self.binding.metadata["base_commit"]
+            _image_id(runtime, source_image)
+            # Record the name before launch so even a partial startup is cleaned up.
+            grader_container = f"roller-swebench-grade-{uuid.uuid4().hex[:12]}"
             launched = runtime.run(
                 [
                     "run",
@@ -219,20 +223,21 @@ class SWEBenchProGradedHarness(GradedHarness):
                 str(exc),
             )
         finally:
-            try:
-                cleanup = runtime.run(["rm", "-f", grader_container], timeout=30)
-                if cleanup.returncode:
-                    detail = (cleanup.stderr or cleanup.stdout or "").strip()[-500:]
+            if grader_container is not None and runtime is not None:
+                try:
+                    cleanup = runtime.run(["rm", "-f", grader_container], timeout=30)
+                    if cleanup.returncode:
+                        detail = (cleanup.stderr or cleanup.stdout or "").strip()[-500:]
+                        logger.warning(
+                            "[%s] grader container cleanup failed for %s%s",
+                            request.task.id,
+                            grader_container,
+                            f": {detail}" if detail else "",
+                        )
+                except Exception:  # noqa: BLE001 - cleanup must not mask grading
                     logger.warning(
-                        "[%s] grader container cleanup failed for %s%s",
+                        "[%s] grader container cleanup raised for %s",
                         request.task.id,
                         grader_container,
-                        f": {detail}" if detail else "",
+                        exc_info=True,
                     )
-            except Exception:  # noqa: BLE001 - cleanup must not mask grading
-                logger.warning(
-                    "[%s] grader container cleanup raised for %s",
-                    request.task.id,
-                    grader_container,
-                    exc_info=True,
-                )
