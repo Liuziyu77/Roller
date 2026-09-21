@@ -141,6 +141,12 @@ def _build_parser() -> argparse.ArgumentParser:
         default=1.0,
         help="multiply every exported task timeout (default: 1.0)",
     )
+    bench_export.add_argument(
+        "--runs-per-task",
+        type=int,
+        default=1,
+        help="duplicate each selected task for repeated benchmark runs (default: 1)",
+    )
 
     bench_report = bench_sub.add_parser(
         "report", help="aggregate bench scores from a finished run"
@@ -327,6 +333,21 @@ def _build_parser() -> argparse.ArgumentParser:
     openclaw.add_argument("--gateway-port", type=int, default=18789)
     openclaw.add_argument("--gateway-port-step", type=int, default=10)
     openclaw.add_argument("--gateway-startup-timeout", type=float, default=30.0)
+    openclaw.add_argument(
+        "--openclaw-model-request-timeout",
+        type=int,
+        metavar="SECONDS",
+        help=(
+            "per-provider model request and stream-idle timeout; overrides "
+            "models.providers.<id>.timeoutSeconds"
+        ),
+    )
+    openclaw.add_argument(
+        "--openclaw-max-tokens",
+        type=int,
+        metavar="TOKENS",
+        help="override maxTokens for the selected OpenClaw model",
+    )
     openclaw.add_argument("--session-id", default="roller")
     openclaw.add_argument("--search-provider")
     openclaw.add_argument(
@@ -765,6 +786,10 @@ def _collect(args: argparse.Namespace) -> int:
         if not model_config_path.is_file():
             raise FileNotFoundError(f"model config not found: {model_config_path}")
         model_config = load_model_config(model_config_path)
+    if args.openclaw_model_request_timeout is not None and model_config is None:
+        raise ValueError("--openclaw-model-request-timeout requires --model-config")
+    if args.openclaw_max_tokens is not None and model_config is None:
+        raise ValueError("--openclaw-max-tokens requires --model-config")
 
     codex_config_path: Path | None = None
     codex_config_digest: str | None = None
@@ -809,6 +834,8 @@ def _collect(args: argparse.Namespace) -> int:
             network=args.network,
             session_id=args.session_id,
             model_config=model_config,
+            model_request_timeout_seconds=args.openclaw_model_request_timeout,
+            model_max_tokens=args.openclaw_max_tokens,
             pass_env=_deduplicate((*OPENCLAW_COMMON_ENV_NAMES, *args.pass_env)),
             search_provider=args.search_provider,
             thinking=args.thinking,
@@ -1015,6 +1042,8 @@ def _collect(args: argparse.Namespace) -> int:
             "model_config_path": (
                 str(model_config_path) if model_config_path else None
             ),
+            "model_request_timeout_seconds": args.openclaw_model_request_timeout,
+            "model_max_tokens": args.openclaw_max_tokens,
             "gateway_port_start": args.gateway_port,
             "gateway_port_step": args.gateway_port_step,
             "network": args.network,
@@ -1297,7 +1326,15 @@ def _collect(args: argparse.Namespace) -> int:
                 if binding is not None and binding.grade is not None:
                     # Grading has to read the container the agent just wrote to,
                     # so it runs inside the session rather than after teardown.
-                    return GradedHarness(
+                    try:
+                        adapter = get_bench(binding.name)
+                    except KeyError:
+                        return GradedHarness(
+                            agent,
+                            binding,
+                            grading_semaphore=grading_semaphore,
+                        )
+                    return adapter.wrap_harness(
                         agent,
                         binding,
                         grading_semaphore=grading_semaphore,
@@ -1377,6 +1414,41 @@ def _bench(args: argparse.Namespace) -> int:
         )
         if not rows:
             raise TaskFormatError(f"{adapter.name}: selection matched no tasks")
+        if args.runs_per_task < 1:
+            raise TaskFormatError("--runs-per-task must be positive")
+        if args.runs_per_task > 1:
+            repeated: list[dict[str, Any]] = []
+            width = max(2, len(str(args.runs_per_task)))
+            for row in rows:
+                task_id = row.get("id")
+                bench = row.get("bench")
+                if not isinstance(task_id, str) or not task_id:
+                    raise TaskFormatError(
+                        f"{adapter.name}: exported task has no valid id"
+                    )
+                if not isinstance(bench, dict):
+                    raise TaskFormatError(
+                        f"{adapter.name}: exported task {task_id!r} has no bench block"
+                    )
+                metadata = bench.get("metadata", {})
+                if not isinstance(metadata, dict):
+                    raise TaskFormatError(
+                        f"{adapter.name}: exported task {task_id!r} has invalid metadata"
+                    )
+                upstream_task_id = metadata.get("upstream_task_id") or task_id
+                for run_index in range(1, args.runs_per_task + 1):
+                    clone = json.loads(json.dumps(row))
+                    clone["id"] = f"{task_id}__run_{run_index:0{width}d}"
+                    clone_metadata = clone["bench"].setdefault("metadata", {})
+                    clone_metadata.update(
+                        {
+                            "upstream_task_id": upstream_task_id,
+                            "run_index": run_index,
+                            "runs_per_task": args.runs_per_task,
+                        }
+                    )
+                    repeated.append(clone)
+            rows = repeated
         output = Path(args.output).expanduser().resolve()
         output.parent.mkdir(parents=True, exist_ok=True)
         with output.open("w", encoding="utf-8") as handle:
@@ -1423,6 +1495,7 @@ def _bench_report(args: argparse.Namespace) -> int:
                 "bench_scores": payload.get("scores"),
                 "bench_score_key": payload.get("score_key"),
                 "bench_category": payload.get("category"),
+                "bench_metadata": payload.get("metadata"),
                 "bench_error": payload.get("error"),
             }
         )
