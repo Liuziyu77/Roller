@@ -498,6 +498,84 @@ class QwenClawGraderTests(unittest.TestCase):
         self.assertNotIn("error", scores)
         self.assertAlmostEqual(scores["llm_judge_score"], 0.8)
 
+    def test_non_finite_judge_scores_are_rejected(self) -> None:
+        namespace: dict[str, Any] = {}
+        task = parse_task_markdown(_task_markdown(), "non-finite-judge.md")
+        exec(build_grader_source(task), namespace)  # noqa: S102
+        templates = (
+            '{"total": VALUE, "scores": {"completion": 0.8}}',
+            '{"score": VALUE, "criteria_scores": {"completion": 0.8}}',
+            '{"total": 0.8, "scores": {"completion": VALUE}}',
+            '{"total": 0.8, "scores": {"completion": {"score": VALUE}}}',
+            '{"criteria_scores": {"completion": VALUE}}',
+            '{"criteria_scores": {"completion": {"score": VALUE}}}',
+        )
+
+        for literal in ("NaN", "Infinity", "-Infinity", "1e999", "-1e999"):
+            for template in templates:
+                response = template.replace("VALUE", literal)
+                with self.subTest(response=response):
+                    with self.assertRaisesRegex(ValueError, "must be finite"):
+                        namespace["_roller_parse_judge"](response)
+
+        # Even finite criterion values can overflow while computing the total.
+        with self.assertRaisesRegex(ValueError, "must be finite"):
+            namespace["_roller_parse_judge"](
+                '{"scores": {"first": 1e308, "second": 1e308}}'
+            )
+
+    def test_finite_judge_scores_keep_existing_scoring(self) -> None:
+        namespace: dict[str, Any] = {}
+        task = parse_task_markdown(_task_markdown(), "finite-judge.md")
+        exec(build_grader_source(task), namespace)  # noqa: S102
+        cases = (
+            ('{"total": 0, "scores": {"completion": 0}}', 0.0),
+            ('{"score": 1, "criteria_scores": {"completion": 1}}', 1.0),
+            ('{"scores": {"first": 0.5, "second": {"score": 1}}}', 0.75),
+            ('{"total": 2}', 1.0),
+            ('{"total": -1}', 0.0),
+        )
+        for response, expected in cases:
+            with self.subTest(response=response):
+                _, total, _ = namespace["_roller_parse_judge"](response)
+                self.assertEqual(total, expected)
+
+    def test_non_finite_judge_responses_retry_and_propagate_exhaustion(self) -> None:
+        namespace: dict[str, Any] = {}
+        task = parse_task_markdown(_task_markdown(), "judge-retry.md")
+        exec(build_grader_source(task), namespace)  # noqa: S102
+        environment = {**self._judge_env(), "QWENCLAW_JUDGE_MAX_RETRIES": "2"}
+        valid_response = '{"scores": {"completion": 0.8}, "total": 0.8}'
+        for literal in ("NaN", "Infinity", "-Infinity", "1e999", "-1e999"):
+            for template in (
+                '{"total": VALUE, "scores": {"completion": 0.8}}',
+                '{"total": 0.8, "scores": {"completion": {"score": VALUE}}}',
+            ):
+                invalid_response = template.replace("VALUE", literal)
+                for recover in (True, False):
+                    with self.subTest(response=invalid_response, recover=recover):
+                        _JudgeHandler.requests = []
+                        _JudgeHandler.responses = [
+                            invalid_response,
+                            valid_response if recover else invalid_response,
+                        ]
+                        with (
+                            tempfile.TemporaryDirectory() as workspace,
+                            patch.dict(os.environ, environment),
+                            patch.object(namespace["_roller_time"], "sleep") as sleep,
+                        ):
+                            if recover:
+                                scores = namespace["roller_grade"]([], workspace)
+                                self.assertAlmostEqual(scores["llm_judge_score"], 0.8)
+                                self.assertAlmostEqual(scores["overall_score"], 0.88)
+                            else:
+                                with self.assertRaisesRegex(
+                                    RuntimeError, r"after 2 attempt\(s\).*must be finite"
+                                ):
+                                    namespace["roller_grade"]([], workspace)
+                        self.assertEqual(len(_JudgeHandler.requests), 2)
+                        sleep.assert_called_once_with(5)
+
 
 class QwenClawAggregateTests(unittest.TestCase):
     def test_score_payload_preserves_bench_metadata(self) -> None:

@@ -38,6 +38,7 @@ JUDGE_ENV_NAMES = (
 
 _GRADER_RUNTIME = r"""
 import json as _roller_json
+import math as _roller_math
 import os as _roller_os
 import re as _roller_re
 import shutil as _roller_shutil
@@ -169,6 +170,8 @@ def _roller_parse_judge(text):
             if isinstance(value, dict):
                 value = value.get("score")
             if isinstance(value, (int, float)) and not isinstance(value, bool):
+                if not _roller_math.isfinite(value):
+                    raise ValueError("judge criterion score must be finite: %s" % key)
                 scores[str(key)] = float(value)
     total = parsed.get("total", parsed.get("score"))
     if not isinstance(total, (int, float)) or isinstance(total, bool):
@@ -177,6 +180,8 @@ def _roller_parse_judge(text):
                 "judge response did not contain a numeric total or criterion score"
             )
         total = _roller_average(scores)
+    if not _roller_math.isfinite(total):
+        raise ValueError("judge total score must be finite")
     return scores, max(0.0, min(1.0, float(total))), str(
         parsed.get("notes", parsed.get("justification", parsed.get("reasoning", "")))
     )
