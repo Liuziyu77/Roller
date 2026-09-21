@@ -570,9 +570,9 @@ schema does not contain the full tool interface definition.
 
 `--thinking LEVEL` sets the reasoning level in the Harness/model request.
 Whether reasoning text can be saved depends on the service response. See
-[Thinking configuration](../harnesses/openclaw-configuration.md#5-thinking-system-prompt-and-wire-trace)
+[Thinking configuration](../harnesses/openclaw-configuration.md#6-thinking-configuration)
 for GPT native effort, open-model profiles, and OpenClaw image limits, and
-[Thinking and effort](../harnesses/claude-code-configuration.md#5-thinking-and-effort)
+[Thinking configuration](../harnesses/claude-code-configuration.md#6-thinking-configuration)
 for the Claude Code mapping. When the backend reports only reasoning tokens and
 does not return a reasoning summary/content, ACTF/SFT have no
 `reasoning_content` to save. A GPT compacted summary enters that field as-is;

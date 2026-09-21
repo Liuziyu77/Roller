@@ -14,5 +14,5 @@ clean:
 	rm -rf "$(BUILDDIR)"
 
 html:
-	DOCS_LANG=en $(SPHINXBUILD) -b html -c . -D language=en $(SPHINXOPTS) en "$(BUILDDIR)/html"
-	DOCS_LANG=zh $(SPHINXBUILD) -b html -c . -D language=zh_CN $(SPHINXOPTS) zh "$(BUILDDIR)/html/zh"
+	DOCS_LANG=en $(SPHINXBUILD) -E -a -b html -c . -D language=en $(SPHINXOPTS) en "$(BUILDDIR)/html"
+	DOCS_LANG=zh $(SPHINXBUILD) -E -a -b html -c . -D language=zh_CN $(SPHINXOPTS) zh "$(BUILDDIR)/html/zh"

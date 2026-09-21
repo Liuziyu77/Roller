@@ -9,7 +9,7 @@ For a first pass, remember four things:
 - `--output` and `--run-name` decide where results are saved.
 - `--dry-run` checks the configuration without starting containers.
 
-The command output for the current checkout is always authoritative:
+The command output from the Roller version currently in use is always authoritative:
 
 ```bash
 roller --help
@@ -129,15 +129,15 @@ These flags select the image, Docker runtime settings, and model-service connect
 
 ### Reasoning and traces
 
-These flags control reasoning levels and trace retention. Supported levels and wire-trace modes differ by Harness.
+`--thinking` sets the model's reasoning or thinking effort. The same setting can appear in a task as `runtime.thinking`. The task value takes precedence over the CLI. If both are omitted, Roller uses the Harness or model default.
+
+The Roller CLI recognizes the logical levels below, but each Harness supports only a subset and may use different defaults or mappings. See the matching Harness guide for the exact behavior.
 
 | Flag | Default | Purpose |
 | --- | --- | --- |
 | `--thinking LEVEL` | Unset | Sets the Harness reasoning or thinking level |
 | `--keep-thinking` / `--no-keep-thinking` | On | Decides whether ACTF and SFT export visible reasoning |
 | `--wire-trace MODE` | `actf` | Selects `off`, `actf`, or `full` request recording |
-
-The CLI can parse the following logical thinking values. Each Harness guide defines its supported subset, defaults, and mappings.
 
 ```text
 off | minimal | low | medium | high | xhigh | adaptive | max | ultra
@@ -175,7 +175,7 @@ When a flag belongs to one Harness, look it up in that Harness guide. Each guide
 | DeepSeek | {ref}`DeepSeek Harness guide <deepseek-cli-flags>` |
 | Pi Agent | {ref}`Pi Agent Harness guide <pi-cli-flags>` |
 
-To inspect the complete flag set for the current checkout, run:
+To inspect the complete flag set supported by the Roller version currently in use, run:
 
 ```bash
 roller collect --help

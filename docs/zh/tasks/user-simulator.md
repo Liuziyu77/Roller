@@ -42,7 +42,7 @@ User Simulator 在独立的 Harness 中用模型扮演用户。任务 Agent 完�
 | `harness` | 否 | `openclaw` | Simulator 使用的 Harness：`openclaw`、`codex`、`claude-code`、`hermes`、`opencode`、`deepseek` 或 `pi` |
 | `model` | 否 | 任务 Agent 模型 | Simulator 使用的 model ref |
 | `max_turns` | 否 | `6` | 最多发送给任务 Agent 的指令数，范围 `1–100` |
-| `thinking` | 否 | CLI 默认值 | 只覆盖 Simulator；使用与 [`--thinking`](../harnesses/openclaw-configuration.md#5-thinkingsystem-prompt-与-wire-trace) 相同的逻辑档位和校验 |
+| `thinking` | 否 | CLI 默认值 | 只覆盖 Simulator；使用与 [`--thinking`](../harnesses/openclaw-configuration.md#6-thinking-配置) 相同的逻辑档位和校验 |
 
 命令行 `--model` 只覆盖任务 Agent 的模型；`user_simulator.model` 仍按 task 配置。省略 Simulator model 时，它跟随本次实际使用的任务 Agent 模型。
 
@@ -150,7 +150,7 @@ roller collect \
   --run-name user_simulator_hr
 ```
 
-`--parallel N` 仍表示同时执行 N 条 rollout。每条动态 rollout 会同时占用两个容器，并产生两组模型调用和两份轨迹。端口规划见 [OpenClaw 配置](../harnesses/openclaw-configuration.md#7-并行容器与端口)。
+`--parallel N` 仍表示同时执行 N 条 rollout。每条动态 rollout 会同时占用两个容器，并产生两组模型调用和两份轨迹。如果 OpenClaw 报告端口冲突，参见 [OpenClaw 指南](../harnesses/openclaw-configuration.md)中的常见问题。
 
 ## 8. 保存与使用轨迹
 

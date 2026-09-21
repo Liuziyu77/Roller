@@ -2,7 +2,7 @@
 
 This guide covers Codex-specific images, the Responses API, reasoning, native session, and troubleshooting. For Task fields, see [Task format reference](../tasks/task-format.md). For the outputs shared by all Harnesses, see [Trajectory output file guide](../traces/trajectory-outputs.md).
 
-## 1. Supported scope
+## 1. Scope
 
 The Codex Harness supports:
 
@@ -12,6 +12,7 @@ The Codex Harness supports:
 - parallelism, retry, run lock, and Resume integrity checks.
 - Codex native session JSONL, `ACTF_v1.0`, one SFT record, and run-level `sft.jsonl`.
 - request-side `--wire-trace full`.
+- local-image viewing through the native `view_image` tool, with multimodal trajectory export.
 - dynamic User Simulator and Task Agent. The Simulator can be selected independently via `user_simulator.harness`
   and can use a different model.
 - Viewer display of visible reasoning, tool calls, tool results, and the final reply.
@@ -19,6 +20,7 @@ The Codex Harness supports:
 Not currently supported:
 
 - OpenClaw-specific cache trace.
+- image blocks embedded directly in Task `messages`.
 - internal reasoning that the API does not return as plaintext or a visible summary.
 - model services that only provide Chat Completions and lack the Responses interface Codex needs.
 
@@ -148,7 +150,13 @@ roller collect ... \
 
 The file is copied unchanged to `$CODEX_HOME/config.toml` in the rollout container. The Resume lock stores its SHA-256 instead of copying potentially sensitive TOML content into the run. Explicit CLI values for the API address, model, effort, summary, and web search still override matching runtime settings. The example includes `model_verbosity`, which Roller does not override, and a commented MCP server template. Do not store API keys in this file.
 
-## 5. Reasoning configuration
+## 5. Multimodal capabilities
+
+The Codex Harness supports both text-only models and vision-capable Responses models. Images enter the workspace through `files.inputs`, and Codex can open local images with its native `view_image` tool. Image tool results are preserved in raw, ACTF, and multimodal SFT, where SFT uses `<image>` placeholders and the top-level `images` field.
+
+Vision tasks also require the Codex version, selected model, and Responses API service to support image input. Task `messages[].content` currently accepts strings only and cannot contain image blocks directly. Text-only models can continue to process text and ordinary files, but they cannot complete tasks that require understanding image content.
+
+## 6. Thinking configuration
 
 In the Codex Harness, `--thinking LEVEL` maps to:
 
@@ -165,8 +173,7 @@ roller collect ... \
   --reasoning-summary detailed
 ```
 
-The task's `runtime.thinking` wins over the CLI. Roller forwards
-`minimal/low/medium/high/xhigh` to Codex. The model and API service then validate them. `xhigh` depends on
+Roller forwards `minimal/low/medium/high/xhigh` to Codex. The model and API service then validate them. `xhigh` depends on
 whether the model supports it. Codex CLI 0.149.0 does not accept `max`/`ultra`. Roller errors early. The OpenClaw-only
 `adaptive` is also rejected early. `off`/`none` are rejected as well, because the Codex Harness has no
 single switch that turns off reasoning for every reasoning model. To use the model/CLI default,
@@ -193,7 +200,7 @@ directly into ACTF/SFT `reasoning_content`.
 `trace.jsonl` stays as-is, and this option currently does not rewrite the context Codex itself uses for later `resume`.
 It is therefore an export control, not a raw-redaction or two-way context-stripping switch.
 
-## 6. Web Search
+## 7. Web Search
 
 To reduce unreproducible external dependencies, the Codex Harness defaults to:
 
@@ -205,7 +212,7 @@ You can set it explicitly to `cached` or `live`. When a native session contains 
 the query/action and recorded results into a `web_search` tool call/result for ACTF, SFT, and
 the Viewer.
 
-## 7. Context and workspace
+## 8. Sessions and workspace
 
 The Codex container working directory is `/roller/workspace`:
 
@@ -219,7 +226,13 @@ The first predefined `messages` call uses `codex exec`. Later messages use `code
 the same isolated `$CODEX_HOME`. Each rollout uses its own container and Codex home and does not read host
 `~/.codex` accounts, sessions, or global config.
 
-## 8. Trajectory outputs
+### User Simulator
+
+Codex can be the Task Agent or the User Simulator. Set
+`"harness": "codex"` at the task top level for the Task Agent, and set `user_simulator.harness` for the Simulator. The two
+`model` values can also be specified separately. Dynamic sessions keep context with Codex `resume --last`.
+
+## 9. Trajectories and request recording
 
 The default Codex sample layout matches OpenClaw:
 
@@ -257,7 +270,7 @@ As with OpenClaw, a single SFT record's top level is strictly `messages` and `to
 `reasoning_content`, `content`, and `tool_calls`. Tool results become `role=tool`. Run-level `sft.jsonl`
 only aggregates successful or trusted Resume samples.
 
-## 9. Native raw and wire trace
+### Native raw and wire trace
 
 Codex may insert instructions, compact history, selectively replay
 tool results, or convert internal events into Responses input between the native session and the real model request. `trace.jsonl` and the ACTF/SFT generated from it can only
@@ -274,23 +287,17 @@ you must pass `--wire-trace full` explicitly and pair it with sufficiently stric
 
 ## 10. Common issues
 
-### `Codex requires a non-empty API key`
+**(1) `Codex requires a non-empty API key`**
 
 The host variable pointed to by `--api-key-env` is missing or empty. Check the variable name. Do not put the key directly in the task.
 
-### `/responses` returns 404 or a protocol error
+**(2) `/responses` returns 404 or a protocol error**
 
 The API service only has Chat Completions, or its Responses streaming/tool protocol is incompatible. Switch to a
 Responses-capable service. The OpenClaw Harness can still be used for model services that only support Chat Completions.
 
-### `Codex native trace produced no assistant steps`
+**(3) `Codex native trace produced no assistant steps`**
 
 The CLI exited before producing a valid model event, or the native event schema of the Codex version in use has changed. First inspect
 the error kept on the sample and the `--keep-container-on-error` container, then check `codex_version`. When upgrading the CLI,
 update the converter tests as well.
-
-### User Simulator
-
-Codex can be the Task Agent or the User Simulator. Set
-`"harness": "codex"` at the task top level for the Task Agent, and set `user_simulator.harness` for the Simulator. The two
-`model` values can also be specified separately. Dynamic sessions keep context with Codex `resume --last`.

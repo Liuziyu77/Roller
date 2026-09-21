@@ -463,8 +463,8 @@ OpenClaw 的 `off` 或 `actf` 降级后，如果轨迹实际调用了工具，SF
 
 `--thinking LEVEL` 设置 Harness/模型请求的推理档位；能否保存 reasoning 文本取决于服务的返回内容。GPT 原生
 effort、开源模型 profile 和 OpenClaw 镜像限制见
-[Thinking 配置](../harnesses/openclaw-configuration.md#5-thinkingsystem-prompt-与-wire-trace)；Claude Code
-映射见 [Thinking 与 effort](../harnesses/claude-code-configuration.md#5-thinking-与-effort)。
+[Thinking 配置](../harnesses/openclaw-configuration.md#6-thinking-配置)；Claude Code
+映射见 [Thinking 配置](../harnesses/claude-code-configuration.md#6-thinking-配置)。
 后端只报告 reasoning token、却不返回 reasoning summary/content 时，ACTF/SFT 没有可保存
 的 `reasoning_content`。GPT 的压缩 summary 会原样进入该字段，encrypted reasoning
 不会进入 SFT。

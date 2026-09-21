@@ -23,7 +23,7 @@ DeepSeek Harness 支持：
 - 跨任务的长期记忆。
 - OpenClaw cache trace（Resume 不要求该文件）。
 
-## 2. 镜像准备与首次运行
+## 2. 镜像准备
 
 ```bash
 docker build -t roller-deepseek:0.1.5rc1 docker/deepseek
@@ -71,17 +71,27 @@ DeepSeek Harness 连接支持流式响应、工具调用和 DeepSeek thinking �
 
 专属参数同时适用于 Agent 和 Simulator。Run lock 记录镜像摘要、固定版本、profile、工具、API 地址、Key 变量名、步数和 token 上限。密钥通过执行环境读取。
 
-## 5. 会话、工作区与轨迹
+## 5. 多模态能力
+
+DeepSeek Harness 当前固定使用官方 `sdk-minimal` profile，只向模型提供持久化 `bash`，没有图片查看工具。因此当前适合文本和普通文件任务，不支持需要模型理解图片内容的任务。
+
+图片文件可以通过 `files.inputs` 放入工作区，但只会作为普通文件存在，不会作为图片内容发送给模型。Task 的 `messages[].content` 当前也只支持字符串，不能直接写入图片内容块。视觉任务应选择支持图片工具的其他 Harness。
+
+## 6. 会话与工作区
 
 每个参与者使用独立容器与 `DSH_HOME`。同一会话内复用 SDK/runtime 进程和原生 Bash PTY，多轮之间保留对话历史、工作区、shell 变量和工作目录。输入只读挂载。Context 复制到声明路径，system prompt 列出相关文件。支持 setup、环境变量、自定义输出目录、产物回收及容器评分。
 
-官方 `sdk-minimal` 只向模型提供持久化 `bash`。文件读写、搜索等任务通过它完成。该 profile 没有自动压缩、隐式工作区指令发现、skills、MCP、Web 或子 Agent。Context/skill 样例验证文件可访问性。Roller 的固定 patch 加入请求日志，关闭自动模型重试和官方 API 的 session/plugin 附加上传字段，设置当前模型的窗口与输出上限。
+## 7. 工具与能力限制
 
-`trace.jsonl` 使用 `roller.deepseek-events/v1`，保存实际序列化请求及 SDK 原生通知。ACTF/SFT 使用实际 system prompt、工具 schema、reasoning、调用参数和工具结果。失败、截断、空回复、未完成工具调用及无法无损表示的非文本内容会被拒绝。超时停止整个容器并回收已有文件，Resume 按参与者分别验证，DeepSeek 不要求 OpenClaw cache trace。
+官方 `sdk-minimal` 只向模型提供持久化 `bash`，文件读写和搜索等任务也通过它完成。该 profile 不提供自动压缩、隐式工作区指令发现、skills、MCP、Web 或子 Agent。Context/skill 样例只验证相应文件是否可访问。Roller 的固定 patch 加入请求日志，关闭自动模型重试和官方 API 的 session/plugin 附加上传字段，并设置当前模型的窗口与输出上限。
 
 关闭自动压缩的长任务应配置足够窗口。不同模型的 DeepSeek 协议兼容性仍需验证。
 
-## 6. 验证
+## 8. 轨迹与请求记录
+
+`trace.jsonl` 使用 `roller.deepseek-events/v1`，保存实际序列化请求及 SDK 原生通知。ACTF/SFT 使用实际 system prompt、工具 schema、reasoning、调用参数和工具结果。失败、截断、空回复、未完成工具调用及无法无损表示的非文本内容会被拒绝。超时停止整个容器并回收已有文件，Resume 按参与者分别验证，DeepSeek 不要求 OpenClaw cache trace。
+
+## 9. 验证
 
 ```bash
 python examples/coverage/suite.py validate --case '*/deepseek'
@@ -93,12 +103,24 @@ ROLLER_DEEPSEEK_DOCKER_TEST=1 PYTHONPATH=src \
 
 Docker 测试以本地确定性 API 和虚构 Key 运行真实 SDK、Bash 与文件操作。输入样例共 204 条，其中非视觉 200 条。涉及 DeepSeek 的 13 种配对共 52 条，可使用 `--case 'simulators/pair/deepseek--*' --case 'simulators/pair/*--deepseek'` 选择。完整矩阵与运行方式见 [Coverage](https://github.com/Liuziyu77/Roller/blob/main/examples/coverage/README.md)。
 
-## 7. 常见问题
+## 10. 常见问题
 
-常见错误：
+**(1) 轨迹被拒绝**
 
-- 轨迹被拒绝：失败、截断、空回复、未完成工具调用及无法无损表示的非文本内容都会被拒绝，检查 `trace.jsonl` 定位原因。
-- 长任务超窗：自动压缩已关闭，按实际服务调大 `--deepseek-context-length`。
-- rollout 超时：整个容器被停止并回收已有文件，按需调整 `--timeout` 或 `--deepseek-max-steps`。
-- Resume 被拒绝：run lock 中镜像摘要、固定版本、profile、工具、API、步数或 token 上限发生变化，应使用新的运行目录。
-- `--wire-trace full` 无法启动：需要显式 API base 和 host 网络。
+失败、截断、空回复、未完成工具调用及无法无损表示的非文本内容都会被拒绝，检查 `trace.jsonl` 定位原因。
+
+**(2) 长任务超窗**
+
+自动压缩已关闭，按实际服务调大 `--deepseek-context-length`。
+
+**(3) rollout 超时**
+
+整个容器被停止并回收已有文件，按需调整 `--timeout` 或 `--deepseek-max-steps`。
+
+**(4) Resume 被拒绝**
+
+run lock 中镜像摘要、固定版本、profile、工具、API、步数或 token 上限发生变化，应使用新的运行目录。
+
+**(5) `--wire-trace full` 无法启动**
+
+需要显式 API base 和 host 网络。
