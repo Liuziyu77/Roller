@@ -22,6 +22,7 @@ from roller.artifacts import ArtifactCollectionResult, collect_output_directory
 from roller.harnesses.base import InteractiveHarness, InteractiveSession, TurnResult
 from roller.harnesses.docker import DockerRuntime, remove_container
 from roller.models import HarnessResult, RunRequest
+from roller.sft import SFTConversionError, write_sft
 from roller.storage import safe_component
 from roller.thinking import normalize_thinking, resolve_thinking
 from roller.usage import ZERO_USAGE, extract_openclaw_usage
@@ -332,6 +333,7 @@ content = ''
 assistant_count = 0
 stop_reason = ''
 error_message = ''
+tool_names = []
 if files:
     rows = []
     for line in files[0].read_text(errors='replace').splitlines():
@@ -360,6 +362,13 @@ if files:
                 for block in value
                 if isinstance(block, dict) and block.get('type') == 'text'
             )
+            tool_names = [
+                block.get('name')
+                for block in value
+                if isinstance(block, dict)
+                and block.get('type') in {'toolCall', 'tool_call'}
+                and isinstance(block.get('name'), str)
+            ]
         elif isinstance(value, dict) and isinstance(value.get('text'), str):
             content = value['text']
         break
@@ -368,6 +377,7 @@ print(json.dumps({
     'assistant_count': assistant_count,
     'stop_reason': stop_reason,
     'error': error_message,
+    'tool_names': tool_names,
 }, ensure_ascii=False))
 """.strip()
 
@@ -385,6 +395,7 @@ const assistants = events.filter((event) =>
 const last = assistants.length ? assistants[assistants.length - 1].message : {};
 const blocks = last?.content;
 let content = '';
+let toolNames = [];
 if (typeof blocks === 'string') {
   content = blocks;
 } else if (Array.isArray(blocks)) {
@@ -392,6 +403,11 @@ if (typeof blocks === 'string') {
     .filter((block) => block && typeof block === 'object' && block.type === 'text')
     .map((block) => typeof block.text === 'string' ? block.text : '')
     .join('\\n');
+  toolNames = blocks
+    .filter((block) => block && typeof block === 'object' &&
+      (block.type === 'toolCall' || block.type === 'tool_call') &&
+      typeof block.name === 'string')
+    .map((block) => block.name);
 } else if (blocks && typeof blocks === 'object' && typeof blocks.text === 'string') {
   content = blocks.text;
 }
@@ -400,6 +416,7 @@ process.stdout.write(JSON.stringify({
   assistant_count: assistants.length,
   stop_reason: last?.stopReason ?? last?.stop_reason ?? '',
   error: last?.errorMessage ?? last?.error_message ?? '',
+  tool_names: toolNames,
 }));
 """.strip()
 
@@ -419,6 +436,51 @@ process.stdout.write(JSON.stringify({ event_count: events.length }));
 runtime_dir=$(dirname "$(readlink -f "$(command -v openclaw)")")
 cd "$runtime_dir"
 exec node --input-type=module -e "$1"
+""".strip()
+
+    _SUBAGENT_SESSIONS_SCRIPT = """
+import json
+import os
+from pathlib import Path
+
+state_dir = Path(os.environ['OPENCLAW_STATE_DIR'])
+parents = set(json.loads(os.environ['ROLLER_ROOT_SESSION_KEYS']))
+candidates = []
+for store in state_dir.glob('agents/*/sessions/sessions.json'):
+    try:
+        payload = json.loads(store.read_text())
+    except (OSError, json.JSONDecodeError):
+        continue
+    if not isinstance(payload, dict):
+        continue
+    agent_id = store.parent.parent.name
+    for session_key, entry in payload.items():
+        if not isinstance(session_key, str) or not isinstance(entry, dict):
+            continue
+        session_id = entry.get('sessionId')
+        spawned_by = entry.get('spawnedBy')
+        if isinstance(session_id, str) and isinstance(spawned_by, str):
+            candidates.append({
+                'agent_id': agent_id,
+                'session_key': session_key,
+                'session_id': session_id,
+                'spawned_by': spawned_by,
+                'status': entry.get('status'),
+                'started_at': entry.get('startedAt'),
+                'updated_at': entry.get('updatedAt'),
+            })
+descendants = []
+while True:
+    added = [
+        row for row in candidates
+        if row['spawned_by'] in parents and row['session_key'] not in parents
+    ]
+    if not added:
+        break
+    added.sort(key=lambda row: (row.get('started_at') or 0, row['session_key']))
+    descendants.extend(added)
+    parents.update(row['session_key'] for row in added)
+print(json.dumps(descendants, ensure_ascii=False))
 """.strip()
 
     def __init__(
@@ -880,12 +942,18 @@ exec node --input-type=module -e "$1"
     def _prompts(self, request: RunRequest) -> tuple[str, ...]:
         return request.task.prompts
 
-    def _session_scope(self, session_id: str | None = None) -> dict[str, str]:
+    def _session_scope(
+        self,
+        session_id: str | None = None,
+        *,
+        session_key: str | None = None,
+        agent_id: str = "main",
+    ) -> dict[str, str]:
         session_id = session_id or self.config.session_id
         return {
-            "agentId": "main",
+            "agentId": agent_id,
             "sessionId": session_id,
-            "sessionKey": f"agent:main:explicit:{session_id}",
+            "sessionKey": session_key or f"agent:{agent_id}:explicit:{session_id}",
         }
 
     def _run_transcript_sdk(
@@ -896,11 +964,19 @@ exec node --input-type=module -e "$1"
         output_path: str | None = None,
         state_dir: str | None = None,
         session_id: str | None = None,
+        session_key: str | None = None,
+        agent_id: str = "main",
     ) -> subprocess.CompletedProcess[str]:
         args = [
             "exec",
             "-e",
-            f"ROLLER_SESSION_SCOPE={json.dumps(self._session_scope(session_id), separators=(',', ':'))}",
+            "ROLLER_SESSION_SCOPE="
+            + json.dumps(
+                self._session_scope(
+                    session_id, session_key=session_key, agent_id=agent_id
+                ),
+                separators=(",", ":"),
+            ),
         ]
         if output_path is not None:
             args.extend(["-e", f"ROLLER_TRACE_OUTPUT={output_path}"])
@@ -927,7 +1003,7 @@ exec node --input-type=module -e "$1"
         *,
         state_dir: str | None = None,
         session_id: str | None = None,
-    ) -> tuple[str, int]:
+    ) -> tuple[str, int, tuple[str, ...]]:
         result = self._run_transcript_sdk(
             container,
             self._SDK_LAST_ASSISTANT_SCRIPT,
@@ -961,11 +1037,19 @@ exec node --input-type=module -e "$1"
             raise RuntimeError(
                 detail if isinstance(detail, str) and detail else f"OpenClaw {stop_reason}"
             )
-        if not isinstance(content, str) or not content.strip():
-            raise RuntimeError("OpenClaw turn produced no visible assistant response")
         if isinstance(assistant_count, bool) or not isinstance(assistant_count, int):
             raise RuntimeError("assistant response extraction returned invalid count")
-        return content.strip(), assistant_count
+        tool_names = payload.get("tool_names") if isinstance(payload, dict) else None
+        if not isinstance(tool_names, list):
+            tool_names = []
+        normalized_tool_names = tuple(
+            name for name in tool_names if isinstance(name, str) and name
+        )
+        return (
+            content.strip() if isinstance(content, str) else "",
+            assistant_count,
+            normalized_tool_names,
+        )
 
     def _collect_trace(
         self,
@@ -1052,6 +1136,151 @@ exec node --input-type=module -e "$1"
             timeout=60,
         )
         return TRANSCRIPT_EXPORT_CONTAINER_PATH if result.returncode == 0 else None
+
+    def _list_subagent_sessions(
+        self,
+        container: str,
+        root_session_ids: Sequence[str],
+        *,
+        state_dir: str,
+    ) -> list[dict[str, Any]]:
+        root_keys = [
+            self._session_scope(session_id)["sessionKey"]
+            for session_id in root_session_ids
+        ]
+        result = self.runtime.run(
+            [
+                "exec",
+                "-e",
+                f"OPENCLAW_STATE_DIR={state_dir}",
+                "-e",
+                "ROLLER_ROOT_SESSION_KEYS="
+                + json.dumps(root_keys, separators=(",", ":")),
+                container,
+                "python3",
+                "-c",
+                self._SUBAGENT_SESSIONS_SCRIPT,
+            ],
+            timeout=30,
+        )
+        if result.returncode != 0 or not result.stdout.strip():
+            return []
+        try:
+            payload = json.loads(result.stdout)
+        except json.JSONDecodeError:
+            logger.warning("OpenClaw subagent discovery returned invalid JSON")
+            return []
+        if not isinstance(payload, list):
+            return []
+        return [row for row in payload if isinstance(row, dict)]
+
+    def _collect_subagent_traces(
+        self,
+        container: str,
+        output_dir: Path,
+        root_session_ids: Sequence[str],
+        *,
+        state_dir: str,
+    ) -> list[dict[str, Any]]:
+        records: list[dict[str, Any]] = []
+        for index, row in enumerate(
+            self._list_subagent_sessions(
+                container, root_session_ids, state_dir=state_dir
+            )
+        ):
+            session_id = row.get("session_id")
+            session_key = row.get("session_key")
+            agent_id = row.get("agent_id")
+            if not all(
+                isinstance(value, str) and value
+                for value in (session_id, session_key, agent_id)
+            ):
+                continue
+            directory = output_dir / "subagents" / (
+                f"{index:03d}_{safe_component(session_key, 72)}"
+            )
+            directory.mkdir(parents=True, exist_ok=True)
+            container_path = f"/tmp/roller-subagent-trace-{index}.jsonl"
+            exported = self._run_transcript_sdk(
+                container,
+                self._SDK_EXPORT_TRANSCRIPT_SCRIPT,
+                output_path=container_path,
+                state_dir=state_dir,
+                session_id=session_id,
+                session_key=session_key,
+                agent_id=agent_id,
+            )
+            raw_path = directory / "trace.jsonl"
+            copied = (
+                self.runtime.run(
+                    ["cp", f"{container}:{container_path}", str(raw_path)]
+                )
+                if exported.returncode == 0
+                else subprocess.CompletedProcess([], 1, "", "")
+            )
+            record = {
+                **row,
+                "raw": (
+                    raw_path.relative_to(output_dir).as_posix()
+                    if copied.returncode == 0 and raw_path.is_file()
+                    else None
+                ),
+            }
+            if record["raw"] is None:
+                record["error"] = self._error_text(
+                    copied if exported.returncode == 0 else exported
+                )
+            records.append(record)
+        return records
+
+    def _convert_subagent_traces(
+        self,
+        output_dir: Path,
+        records: list[dict[str, Any]],
+        *,
+        cache_trace: Path | None,
+        wire_trace: Path | None,
+    ) -> list[dict[str, Any]]:
+        tools = extract_wire_tools(wire_trace) if wire_trace is not None else None
+        converted: list[dict[str, Any]] = []
+        for record in records:
+            item = dict(record)
+            raw = item.get("raw")
+            if not isinstance(raw, str):
+                converted.append(item)
+                continue
+            raw_path = output_dir / raw
+            directory = raw_path.parent
+            actf_path = directory / "trace_ACTF.json"
+            sft_path = directory / "trace_SFT.json"
+            try:
+                trajectory = convert_openclaw_trace(
+                    raw_path,
+                    actf_path,
+                    cache_trace=cache_trace,
+                    cache_session_key=(
+                        item.get("session_key")
+                        if isinstance(item.get("session_key"), str)
+                        else None
+                    ),
+                    wire_trace=wire_trace,
+                    tools=tools,
+                    keep_thinking=self.config.keep_thinking,
+                )
+                item["actf"] = actf_path.relative_to(output_dir).as_posix()
+                try:
+                    write_sft(sft_path, trajectory)
+                except SFTConversionError as exc:
+                    item["sft"] = None
+                    item["sft_error"] = str(exc)
+                else:
+                    item["sft"] = sft_path.relative_to(output_dir).as_posix()
+            except Exception as exc:
+                item["actf"] = None
+                item["sft"] = None
+                item["error"] = str(exc)
+            converted.append(item)
+        return converted
 
     def _collect_cache_trace(self, container: str, output_dir: Path) -> Path | None:
         """Copy the OpenClaw cache-trace file (system prompts per LLM call) into the sample."""
@@ -1332,13 +1561,29 @@ class OpenClawSession(InteractiveSession):
             raise RuntimeError(
                 f"OpenClaw agent turn exited with code {return_code}{suffix}"
             )
-        content, assistant_count = self.harness._latest_assistant_content(
-            self.container,
-            state_dir=self.state_dir,
-            session_id=self.session_id,
+        content, assistant_count, tool_names = (
+            self.harness._latest_assistant_content(
+                self.container,
+                state_dir=self.state_dir,
+                session_id=self.session_id,
+            )
         )
+        while not content and "sessions_yield" in tool_names:
+            remaining = timeout_seconds - (time.monotonic() - turn_started)
+            if remaining <= 0:
+                raise TimeoutError("OpenClaw subagent continuation timed out")
+            time.sleep(min(0.5, remaining))
+            content, assistant_count, tool_names = (
+                self.harness._latest_assistant_content(
+                    self.container,
+                    state_dir=self.state_dir,
+                    session_id=self.session_id,
+                )
+            )
         if assistant_count <= self._assistant_count:
             raise RuntimeError("OpenClaw turn produced no new assistant response")
+        if not content:
+            raise RuntimeError("OpenClaw turn produced no visible assistant response")
         self._assistant_count = assistant_count
         self.messages.append(message)
         return TurnResult(content, time.monotonic() - turn_started, return_code)
@@ -1366,6 +1611,7 @@ class OpenClawSession(InteractiveSession):
             return self._finished
         trace_path: Path | None = None
         trajectory_path: Path | None = None
+        subagent_records: list[dict[str, Any]] = []
         legacy_records: list[dict[str, Any]] = []
         artifact_result: ArtifactCollectionResult | None = None
         output_copy_error: str | None = None
@@ -1387,6 +1633,22 @@ class OpenClawSession(InteractiveSession):
             except Exception as exc:
                 logger.warning(
                     "[%s] cache trace collection failed: %s",
+                    self.request.task.id,
+                    exc,
+                )
+            try:
+                subagent_records = self.harness._collect_subagent_traces(
+                    self.container,
+                    self.output_dir,
+                    self.session_ids,
+                    state_dir=self.state_dir,
+                )
+            except Exception as exc:
+                warnings.append(
+                    "OpenClaw subagent trace collection failed: " + str(exc)
+                )
+                logger.warning(
+                    "[%s] subagent trace collection failed: %s",
                     self.request.task.id,
                     exc,
                 )
@@ -1418,10 +1680,10 @@ class OpenClawSession(InteractiveSession):
         finally:
             self.harness._stop_wire_proxy()
 
+        cache_trace_path = self.output_dir / "cache_trace.jsonl"
+        wire_trace_path = self.output_dir / "wire_trace.jsonl"
         if trace_path is not None:
             try:
-                cache_trace_path = self.output_dir / "cache_trace.jsonl"
-                wire_trace_path = self.output_dir / "wire_trace.jsonl"
                 trajectory_path = self.output_dir / "rollout" / "trace_ACTF.json"
                 convert_openclaw_trace(
                     trace_path,
@@ -1429,6 +1691,9 @@ class OpenClawSession(InteractiveSession):
                     user_messages=self.messages,
                     cache_trace=(
                         cache_trace_path if cache_trace_path.is_file() else None
+                    ),
+                    wire_trace=(
+                        wire_trace_path if wire_trace_path.is_file() else None
                     ),
                     tools=(
                         extract_wire_tools(wire_trace_path)
@@ -1448,6 +1713,18 @@ class OpenClawSession(InteractiveSession):
                     "target": "actf",
                     "error": conversion_error,
                 }
+
+        if subagent_records:
+            subagent_records = self.harness._convert_subagent_traces(
+                self.output_dir,
+                subagent_records,
+                cache_trace=(
+                    cache_trace_path if cache_trace_path.is_file() else None
+                ),
+                wire_trace=(
+                    wire_trace_path if wire_trace_path.is_file() else None
+                ),
+            )
 
         if status == "ok" and trace_path is None:
             status = "error"
@@ -1583,6 +1860,7 @@ class OpenClawSession(InteractiveSession):
                 "output_collection": output_metadata,
                 "output_copy_error": output_copy_error,
                 "legacy_artifacts": legacy_records,
+                "subagent_trajectories": subagent_records,
                 "warnings": warnings,
                 "trajectory_conversion": trajectory_conversion,
                 "attempt": self.attempt,

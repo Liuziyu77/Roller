@@ -381,6 +381,19 @@ roller collect ... --gateway-port 22000 --gateway-port-step 10
 roller collect --help
 ```
 
+### 多模态与子代理轨迹
+
+User message 中的原生 image block 会保留在 ACTF，并在 SFT 中转为按顺序对齐的
+`<image>` 与顶层 `images`。OpenClaw 的 `image` 工具会发起独立模型请求，主 session
+通常只记录文字答案。默认 `--wire-trace actf` 会仅暂存该辅助请求的图片输入，并把它们
+补到匹配的 tool result；不会保留无关请求正文。`full` 模式仍保留完整请求。
+`--wire-trace off` 无法恢复只存在于辅助请求中的图片字节。
+
+`sessions_spawn` 创建子 session 后，Roller 会把 `sessions_yield` 视为主动等待，而不是
+空回复错误。每个发现的子 session 都独立导出到 `subagents/<index>_<session>/`，包含
+raw、ACTF 和 SFT；父子关系记录在 `runtime.subagent_trajectories`。子代理记录不会被
+扁平拼入主 SFT 或 run 级 `sft.jsonl`，因为主模型并未直接看到子代理的完整对话。
+
 ## 9. 运行元数据与安全
 
 Sample provenance 会记录 OpenClaw 版本、镜像及 digest、model ref、使用过的环境变量名称，以及脱敏后的 API base。API base 中的用户名、密码、query 和 fragment 不会进入结果。环境变量值和展开后的 API Key 也不会保存。

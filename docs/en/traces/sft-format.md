@@ -60,8 +60,8 @@ the adjacent `info.json` and `trace_ACTF.json`.
 
 ### Multimodal records
 
-When a tool result carries an image that the ACTF layer captured losslessly as
-base64 bytes, the record additionally has a top-level `images` list. The image
+When a user message or tool result carries an image that the ACTF layer captured
+losslessly as base64 bytes, the record additionally has a top-level `images` list. The image
 does not stay inline: its position in the message text becomes the reserved
 placeholder `<image>`, and the normalized data URI is appended to `images`:
 
@@ -128,7 +128,7 @@ The contract is:
 | ACTF | SFT |
 | --- | --- |
 | `system_prompt` | First system message |
-| `steps[*].user_content` | user message (when non-empty) |
+| `steps[*].user_content` | user message (when non-empty); image blocks become `<image>` plus top-level `images` entries |
 | `steps[*].assistant_content` | assistant message |
 | `steps[*].observation` | tool message |
 | `steps[*].observation[*].content[*]` image block | `<image>` placeholder in the tool message plus one top-level `images` entry |
@@ -147,8 +147,8 @@ The exporter requires:
 - Every call has exactly one matching tool result in the same step;
 - The call's tool name exists in the top-level tools schema;
 - Arguments can be encoded as a JSON object;
-- Tool results contain only strings, text blocks, or image blocks with
-  embedded base64 bytes.
+- User content and tool results contain only strings, text blocks, or image
+  blocks with embedded base64 bytes.
 
 Image blocks are accepted in the base64 `source` form (Claude Code), the flat
 `data` + `mimeType` form (OpenClaw/Pi native), and the inline data-URI form.
@@ -177,7 +177,7 @@ vision at runtime. Image tool results are handled as follows:
 
 | Harness | Runtime image path | ACTF/SFT image preservation |
 | --- | --- | --- |
-| OpenClaw | Image-capable model and image tool | Preserved |
+| OpenClaw | Prompt attachment, `read`, or `image` auxiliary model call | Preserved; compact `actf` wire mode retains only required image inputs |
 | Codex | `view_image` through Responses | Preserved |
 | Claude Code | `Read` image result | Preserved |
 | OpenCode | `read` attachment with an inline data URL | Preserved; non-image attachments retain bounded audit metadata |
@@ -198,8 +198,19 @@ networks. The sample therefore retains raw/ACTF and records SFT as unavailable.
 └── samples/<model>/<index>_<task>/
     ├── trace.jsonl
     ├── trace_ACTF.json
-    └── trace_SFT.json
+    ├── trace_SFT.json
+    └── subagents/
+        └── <index>_<session>/
+            ├── trace.jsonl
+            ├── trace_ACTF.json
+            └── trace_SFT.json
 ```
+
+OpenClaw sub-agent sessions are exported independently with parent/session
+metadata in `info.json.runtime.subagent_trajectories`. They are not flattened
+into the main conversation and are not appended to run-level `sft.jsonl`; this
+keeps each model thread semantically valid while preserving child image inputs.
+An unfinished child can still have a partial raw/ACTF/SFT sidecar.
 
 For a User Simulator rollout, the Task Agent SFT is in the root sample. The
 simulated user's own SFT is at `user_simulator/trace_SFT.json`. Run-level

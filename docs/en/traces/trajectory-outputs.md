@@ -303,12 +303,12 @@ Generation conditions:
 - Every tool call has exactly one tool result in the same step;
 - The called tool exists in the top-level tools schema;
 - Arguments can be encoded as a JSON object;
-- The tool result is a string, text blocks, or image blocks with embedded
-  base64 bytes.
+- User content and tool results are strings, text blocks, or image blocks with
+  embedded base64 bytes.
 
 Both GPT Responses flat tools and Chat Completions nested tools are unified to
-a nested function schema. An image tool result is exported as an `<image>`
-placeholder plus a top-level `images` data-URI list; see
+a nested function schema. An image in a user message or tool result is exported
+as an `<image>` placeholder plus a top-level `images` data-URI list; see
 [SFT data format](sft-format.md) for the alignment contract. Anything that
 cannot be exported losslessly — audio or other unknown block types,
 unsupported media types, malformed base64, or an image block that only

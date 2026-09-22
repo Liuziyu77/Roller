@@ -59,12 +59,17 @@ def grader_messages(trajectory: dict[str, Any]) -> list[dict[str, Any]]:
     events = []
     for step in trajectory["steps"]:
         if step.get("user_content"):
+            user_content = step["user_content"]
             events.append(
                 {
                     "type": "message",
                     "message": {
                         "role": "user",
-                        "content": [{"type": "text", "text": step["user_content"]}],
+                        "content": (
+                            deepcopy(user_content)
+                            if isinstance(user_content, list)
+                            else [{"type": "text", "text": user_content}]
+                        ),
                     },
                 }
             )

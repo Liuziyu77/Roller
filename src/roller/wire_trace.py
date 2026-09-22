@@ -12,6 +12,7 @@ OpenAI-compatible HTTP layer, it works for harness versions that honour
 
 from __future__ import annotations
 
+from copy import deepcopy
 import json
 import threading
 import time
@@ -164,6 +165,100 @@ def redact_jsonl_file(path: Path) -> None:
         temporary.unlink(missing_ok=True)
 
 
+def _wire_image_block(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, Mapping):
+        return None
+    block_type = value.get("type")
+    if block_type in {"image_url", "input_image"}:
+        image_url = value.get("image_url", value.get("url"))
+        if isinstance(image_url, Mapping):
+            image_url = image_url.get("url")
+        if isinstance(image_url, str) and image_url:
+            return {"type": "image", "data": image_url}
+        return None
+    if block_type != "image":
+        return None
+    source = value.get("source")
+    if isinstance(source, Mapping):
+        return {"type": "image", "source": deepcopy(dict(source))}
+    data = value.get("data")
+    if not isinstance(data, str) or not data:
+        return None
+    block: dict[str, Any] = {"type": "image", "data": data}
+    mime_type = value.get("mimeType", value.get("mime_type"))
+    if isinstance(mime_type, str) and mime_type:
+        block["mimeType"] = mime_type
+    return block
+
+
+def _request_image_inputs(body: Any) -> list[dict[str, Any]]:
+    if not isinstance(body, Mapping):
+        return []
+    messages = body.get("messages", body.get("input"))
+    if not isinstance(messages, list):
+        return []
+    images: list[dict[str, Any]] = []
+    for message in messages:
+        if not isinstance(message, Mapping):
+            continue
+        direct = _wire_image_block(message)
+        if direct is not None:
+            images.append(direct)
+        content = message.get("content")
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            image = _wire_image_block(block)
+            if image is not None:
+                images.append(image)
+    return images
+
+
+def extract_wire_image_requests(path: Path) -> list[dict[str, Any]]:
+    """Return image-bearing model requests in wire order.
+
+    Full traces expose the original request body. Compact ACTF-mode traces only
+    retain ``image_inputs`` so image bytes survive long enough to enrich ACTF
+    without retaining unrelated prompt text.
+    """
+
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").split("\n")
+    except OSError:
+        return []
+    requests: list[dict[str, Any]] = []
+    for line in lines:
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(entry, Mapping):
+            continue
+        compact = entry.get("image_inputs")
+        images = (
+            [deepcopy(dict(item)) for item in compact if isinstance(item, Mapping)]
+            if isinstance(compact, list)
+            else _request_image_inputs(entry.get("body"))
+        )
+        if images:
+            body = entry.get("body")
+            body_tools = body.get("tools") if isinstance(body, Mapping) else None
+            tool_count = (
+                len(body_tools)
+                if isinstance(body_tools, list)
+                else entry.get("n_tools")
+            )
+            requests.append(
+                {
+                    "seq": entry.get("seq"),
+                    "ts": entry.get("ts"),
+                    "tool_count": tool_count,
+                    "images": images,
+                }
+            )
+    return requests
+
+
 def extract_wire_tools(path: Path) -> list[Any] | None:
     """Merge every tools schema recorded across wire-trace requests."""
     try:
@@ -237,6 +332,13 @@ class _ProxyHandler(BaseHTTPRequestHandler):
             else:
                 params = {k: v for k, v in parsed.items() if k not in BODY_KEYS}
                 entry["params"] = params
+                image_inputs = _request_image_inputs(parsed)
+                if image_inputs:
+                    entry["image_inputs"] = image_inputs
+                    raw_tools = parsed.get("tools")
+                    entry["n_tools"] = (
+                        len(raw_tools) if isinstance(raw_tools, list) else 0
+                    )
                 messages = parsed.get("messages")
                 if isinstance(messages, list):
                     entry["n_messages"] = len(messages)
