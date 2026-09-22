@@ -213,6 +213,7 @@ def grade(transcript, workspace_path):
         }
 
         self.assertIn("thinking", groups["Harness runtime and trajectory"])
+        self.assertIn("thinking_capabilities", groups["Harness runtime and trajectory"])
         self.assertIn("wire_trace", groups["Harness runtime and trajectory"])
         self.assertIn("model_config", groups["OpenClaw"])
         self.assertIn("openclaw_model_request_timeout", groups["OpenClaw"])
@@ -221,6 +222,56 @@ def grade(transcript, workspace_path):
         self.assertIn("api_base", groups["Harness API"])
         self.assertIn("api_key_env", groups["Harness API"])
         self.assertIn("pi_api_base", groups["Harness API"])
+
+    def test_thinking_capabilities_reject_unsupported_effort_before_rollout(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            tasks = root / "tasks.jsonl"
+            tasks.write_text(
+                json.dumps({"id": "hello", "prompt": "say hello"}) + "\n",
+                encoding="utf-8",
+            )
+            for harness in ("hermes", "opencode", "deepseek", "pi"):
+                with self.subTest(harness=harness):
+                    capabilities = root / f"{harness}-capabilities.json"
+                    capabilities.write_text(
+                        json.dumps(
+                            {
+                                "schema_version": "roller.thinking-capabilities/v1",
+                                "profiles": [
+                                    {
+                                        "harness": harness,
+                                        "model": "served-model",
+                                        "api_base": "http://gateway.test/v1",
+                                        "supported_efforts": ["low", "high"],
+                                    }
+                                ],
+                            }
+                        ),
+                        encoding="utf-8",
+                    )
+                    args = _build_parser().parse_args(
+                        [
+                            "collect",
+                            "--tasks",
+                            str(tasks),
+                            "--harness",
+                            harness,
+                            "--model",
+                            "served-model",
+                            "--api-base",
+                            "http://gateway.test/v1/",
+                            "--thinking",
+                            "off",
+                            "--thinking-capabilities",
+                            str(capabilities),
+                            "--dry-run",
+                        ]
+                    )
+                    with self.assertRaisesRegex(
+                        ValueError, "not declared supported"
+                    ):
+                        _collect(args)
 
     def test_parser_accepts_codex_harness_options(self) -> None:
         args = _build_parser().parse_args(

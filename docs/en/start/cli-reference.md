@@ -134,6 +134,7 @@ These flags control reasoning levels and trace retention. Supported levels and w
 | Flag | Default | Purpose |
 | --- | --- | --- |
 | `--thinking LEVEL` | Unset | Sets the Harness reasoning or thinking level |
+| `--thinking-capabilities PATH` | Unset | Loads versioned model/endpoint capability declarations for preflight validation |
 | `--keep-thinking` / `--no-keep-thinking` | On | Decides whether ACTF and SFT export visible reasoning |
 | `--wire-trace MODE` | `actf` | Selects `off`, `actf`, or `full` request recording |
 
@@ -144,6 +145,30 @@ off | minimal | low | medium | high | xhigh | adaptive | max | ultra
 ```
 
 Input `none` is normalized to `off`. Unsupported values fail before the rollout starts.
+
+For Hermes, OpenCode, DeepSeek, and Pi, provider/model support can be declared
+without adding model-name rules to Roller:
+
+```json
+{
+  "schema_version": "roller.thinking-capabilities/v1",
+  "profiles": [
+    {
+      "harness": "hermes",
+      "model": "served-model-id",
+      "api_base": "https://gateway.example/v1",
+      "supported_efforts": ["low", "medium", "high"]
+    }
+  ]
+}
+```
+
+Pass this file with `--thinking-capabilities`. Matching is exact on Harness and
+served model ID; `api_base` is optional, and an endpoint-specific entry takes
+precedence over a generic entry. A matched unsupported effort fails before any
+container or model request starts. Unmatched models retain provider-side
+validation, and Roller never silently substitutes another effort. The file's
+SHA-256 is included in the run lock.
 
 ### Wire trace modes
 
