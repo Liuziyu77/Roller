@@ -60,19 +60,6 @@ def redact_api_base(value: str) -> str:
     return urlunsplit((parsed.scheme, netloc, parsed.path, "", ""))
 
 
-def validate_codex_thinking(version: str, effort: str | None) -> None:
-    """Reject effort levels unsupported by the pinned default Codex CLI."""
-
-    if effort in {"max", "ultra"} and re.search(
-        r"(?:^|\s)0\.149\.0(?:\s|$)", version
-    ):
-        raise RuntimeError(
-            f"Codex {version!r} does not accept reasoning effort {effort!r}; "
-            "use minimal|low|medium|high|xhigh (xhigh is model-dependent), "
-            "or select a later image that explicitly supports the requested level"
-        )
-
-
 @dataclass(frozen=True)
 class CodexConfig:
     docker_image: str = DEFAULT_CODEX_IMAGE
@@ -563,9 +550,6 @@ class CodexHarness(InteractiveHarness):
                 ["exec", container, "codex", "--version"],
                 "Codex version check",
             ).stdout.strip()
-            validate_codex_thinking(
-                codex_version, self._effective_effort(request)
-            )
             for index, prompt in enumerate(request.task.prompts):
                 remaining = request.timeout_seconds - (time.monotonic() - started)
                 if remaining <= 0:
@@ -789,9 +773,6 @@ class CodexSession(InteractiveSession):
                 ["exec", self.container, "codex", "--version"],
                 "Codex version check",
             ).stdout.strip()
-            validate_codex_thinking(
-                self.codex_version, self.harness._effective_effort(self.request)
-            )
             self.started = True
         except Exception:
             # ``finish`` is still responsible for stopping the proxy/container.
