@@ -9,6 +9,27 @@ from roller.thinking_capabilities import load_thinking_capabilities
 
 
 class ThinkingCapabilitiesTests(unittest.TestCase):
+    def test_rejects_inert_or_misspelled_profiles(self) -> None:
+        for update in (
+            {"harness": "hermse"},
+            {"harness": "unknown-harness"},
+            {"model": " model "},
+            {"api_base": " http://gateway.test/v1"},
+        ):
+            with self.subTest(update=update), self.assertRaises(ValueError):
+                self._load({
+                    "schema_version": "roller.thinking-capabilities/v1",
+                    "profiles": [{
+                        "harness": "pi", "model": "model",
+                        "supported_efforts": ["low"], **update,
+                    }],
+                })
+        with self.assertRaisesRegex(ValueError, "unknown fields"):
+            self._load({
+                "schema_version": "roller.thinking-capabilities/v1",
+                "profiles": [], "profile": [],
+            })
+
     def _load(self, payload: object):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)

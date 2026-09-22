@@ -146,7 +146,7 @@ off | minimal | low | medium | high | xhigh | adaptive | max | ultra
 
 Input `none` is normalized to `off`. Unsupported values fail before the rollout starts.
 
-For Hermes, OpenCode, DeepSeek, and Pi, provider/model support can be declared
+For all seven Harnesses, provider/model support can be declared
 without adding model-name rules to Roller:
 
 ```json
@@ -169,6 +169,14 @@ precedence over a generic entry. A matched unsupported effort fails before any
 container or model request starts. Unmatched models retain provider-side
 validation, and Roller never silently substitutes another effort. The file's
 SHA-256 is included in the run lock.
+
+Profiles support all seven registered harnesses and validate both agent and
+simulator. Unknown harnesses/fields and surrounding whitespace are rejected.
+Use logical Roller effort names (Claude `ultra`, not its wire value `ultracode`).
+OpenClaw matches the full `provider/model` name and resolves the endpoint from
+that provider's model-config `baseUrl`. If the endpoint is unavailable, only
+generic profiles match. Declarations never override native effort restrictions
+or rewrite requests.
 
 ### Wire trace modes
 

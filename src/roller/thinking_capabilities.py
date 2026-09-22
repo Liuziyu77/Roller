@@ -6,9 +6,11 @@ from pathlib import Path
 from typing import Any
 
 from roller.thinking import THINKING_LEVELS
+from roller.harness_registry import HARNESS_NAMES
 
 
 SCHEMA_VERSION = "roller.thinking-capabilities/v1"
+PROFILE_HARNESSES = frozenset(HARNESS_NAMES)
 
 
 def _endpoint(value: str | None) -> str | None:
@@ -78,6 +80,9 @@ def load_thinking_capabilities(path: Path) -> ThinkingCapabilities:
         raise ValueError(f"invalid thinking capabilities JSON: {exc}") from exc
     if not isinstance(payload, dict):
         raise ValueError("thinking capabilities must be a JSON object")
+    unknown = set(payload) - {"schema_version", "profiles"}
+    if unknown:
+        raise ValueError(f"thinking capabilities has unknown fields: {sorted(unknown)}")
     if payload.get("schema_version") != SCHEMA_VERSION:
         raise ValueError(
             f"thinking capabilities schema_version must be {SCHEMA_VERSION!r}"
@@ -106,12 +111,18 @@ def load_thinking_capabilities(path: Path) -> ThinkingCapabilities:
         efforts = row.get("supported_efforts")
         if not isinstance(harness, str) or not harness.strip():
             raise ValueError(f"{label}.harness must be a non-empty string")
+        if harness not in PROFILE_HARNESSES:
+            raise ValueError(f"{label}.harness has no capability-profile integration: {harness!r}")
         if not isinstance(model, str) or not model.strip():
             raise ValueError(f"{label}.model must be a non-empty string")
+        if model != model.strip():
+            raise ValueError(f"{label}.model must not have surrounding whitespace")
         if api_base is not None and (
             not isinstance(api_base, str) or not api_base.strip()
         ):
             raise ValueError(f"{label}.api_base must be a non-empty string")
+        if api_base is not None and api_base != api_base.strip():
+            raise ValueError(f"{label}.api_base must not have surrounding whitespace")
         if not isinstance(efforts, list) or any(
             not isinstance(effort, str) or effort not in THINKING_LEVELS
             for effort in efforts

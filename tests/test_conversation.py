@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 from roller.actf import convert_openclaw_trace
@@ -110,6 +111,45 @@ class FakeInteractiveHarness(InteractiveHarness):
 
 
 class ConversationManagerTests(unittest.TestCase):
+    def test_simulator_archive_exception_removes_partial_sft(self) -> None:
+        agent = FakeInteractiveHarness(["answer"], [])
+        simulator = FakeInteractiveHarness([
+            '{"action":"message","content":"Say hello"}',
+            '{"action":"finish","reason":"done"}',
+        ], [])
+        task = Task(id="archive_error", prompts=(), source_index=0,
+                    user_simulator=UserSimulatorSpec(instruction="test", max_turns=1))
+        def fail_write(path, trajectory):
+            path.write_text('{"partial":true}')
+            raise OSError("simulated write failure")
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            with patch("roller.conversation.write_sft", side_effect=fail_write):
+                result = ConversationManager(agent, simulator).run(
+                    RunRequest(0, task, "model", 30), base, 1,
+                )
+            self.assertEqual(result.status, "error")
+            info = json.loads((base / "user_simulator/info.json").read_text())
+            self.assertIsNone(info["trajectory"]["sft"])
+            self.assertFalse((base / "user_simulator/trace_SFT.json").exists())
+            self.assertTrue((base / "user_simulator/trace_ACTF.json").is_file())
+
+    def test_failed_simulator_retains_evidence_without_sft(self) -> None:
+        for status in ("error", "timeout"):
+            with self.subTest(status=status), tempfile.TemporaryDirectory() as temporary:
+                base = Path(temporary)
+                raw = base / "native.jsonl"
+                actf = base / "native.json"
+                raw.write_text('{"type":"partial"}\n')
+                actf.write_text('{"schema_version":"ACTF_v1.0","steps":[]}')
+                (base / "trace_SFT.json").write_text('{"stale":true}')
+                result = HarnessResult(status=status, elapsed_seconds=0, trace_path=str(raw), trajectory_path=str(actf))
+                info = ConversationManager._archive_simulator(base, result, "model", "pi", keep_aux_traces=False)
+                self.assertEqual((base / "trace.jsonl").read_bytes(), raw.read_bytes())
+                self.assertEqual((base / "trace_ACTF.json").read_bytes(), actf.read_bytes())
+                self.assertIsNone(info["trajectory"]["sft"])
+                self.assertFalse((base / "trace_SFT.json").exists())
+
     def test_simulator_archive_rejects_success_without_raw_trace(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             result = HarnessResult(

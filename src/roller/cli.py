@@ -78,6 +78,7 @@ from roller.run_lock import (
 from roller.storage import atomic_write_json, safe_component
 from roller.tasks import TaskFormatError, build_requests, load_tasks
 from roller.thinking import THINKING_LEVELS, normalize_thinking, resolve_thinking
+from roller.trajectory_audit import training_summary
 from roller.thinking_capabilities import (
     ThinkingCapabilities,
     load_thinking_capabilities,
@@ -633,18 +634,19 @@ def _validate_thinking_requests(
     *,
     cli_harness: str | None,
     harness: str,
-    api_base: str,
+    api_base: str | None | Callable[[str], str | None],
     default_effort: str | None,
     effort_validator: Callable[[str | None], str | None],
     capabilities: ThinkingCapabilities | None,
 ) -> None:
     def validate(model: str, selected: str | None) -> None:
-        effort = effort_validator(resolve_thinking(selected, default_effort))
+        effort = resolve_thinking(selected, default_effort)
+        effort_validator(effort)
         if capabilities is not None:
             capabilities.validate(
                 harness=harness,
                 model=model,
-                api_base=api_base,
+                api_base=api_base(model) if callable(api_base) else api_base,
                 effort=effort,
             )
 
@@ -906,6 +908,17 @@ def _collect(args: argparse.Namespace) -> int:
             set_image_model=args.set_image_model,
             docker_binary=args.docker_binary,
         )
+        def openclaw_endpoint(model: str) -> str | None:
+            providers = (model_config or {}).get("providers", {})
+            provider = providers.get(model.split("/", 1)[0], {}) if isinstance(providers, dict) else {}
+            endpoint = provider.get("baseUrl") if isinstance(provider, dict) else None
+            return endpoint if isinstance(endpoint, str) else None
+
+        _validate_thinking_requests(
+            requests, cli_harness=cli_harness, harness="openclaw",
+            api_base=openclaw_endpoint, default_effort=args.thinking,
+            effort_validator=normalize_thinking, capabilities=thinking_capabilities,
+        )
     if "codex" in selected_harnesses:
         if args.collect_path and "openclaw" not in selected_harnesses:
             raise ValueError("--collect-path requires an OpenClaw participant")
@@ -927,6 +940,11 @@ def _collect(args: argparse.Namespace) -> int:
             keep_thinking=args.keep_thinking,
             keep_container_on_error=args.keep_container_on_error,
             docker_binary=args.docker_binary,
+        )
+        _validate_thinking_requests(
+            requests, cli_harness=cli_harness, harness="codex",
+            api_base=codex_api_base, default_effort=args.thinking,
+            effort_validator=normalize_thinking, capabilities=thinking_capabilities,
         )
     if "claude-code" in selected_harnesses:
         if args.collect_path and "openclaw" not in selected_harnesses:
@@ -953,12 +971,11 @@ def _collect(args: argparse.Namespace) -> int:
             keep_container_on_error=args.keep_container_on_error,
             docker_binary=args.docker_binary,
         )
-        for request in requests:
-            if (cli_harness or request.task.harness) == "claude-code":
-                claude_effort(resolve_thinking(request.task.thinking, claude_code_config.reasoning_effort))
-            spec = request.task.user_simulator
-            if spec is not None and spec.harness == "claude-code":
-                claude_effort(resolve_thinking(spec.thinking, claude_code_config.reasoning_effort))
+        _validate_thinking_requests(
+            requests, cli_harness=cli_harness, harness="claude-code",
+            api_base=claude_api_base, default_effort=args.thinking,
+            effort_validator=claude_effort, capabilities=thinking_capabilities,
+        )
 
     if "hermes" in selected_harnesses:
         hermes_config = HermesConfig(
@@ -1453,6 +1470,14 @@ def _collect(args: argparse.Namespace) -> int:
     assert results is not None
     failed = sum(result.get("status") in {"error", "timeout"} for result in results)
     print(f"Collected {len(results)} trajectories ({failed} failed).")
+    training = training_summary(results)
+    print(
+        f"SFT: {training['sft_included']} included, "
+        f"{training['sft_excluded']} excluded. "
+        f"Thinking audit: {training['thinking_mismatch']} mismatch; "
+        f"wire {training['wire_unverified']} unverified, "
+        f"{training['wire_not_observable']} not observable."
+    )
     print(f"Run directory: {run_dir}")
     print(f"Info: {run_dir / 'info.json'}")
     if bench_context is not None:

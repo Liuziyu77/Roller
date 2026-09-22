@@ -9,10 +9,35 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from roller.cli import _build_parser, _collect, _docker_preflight, _jsonl_equivalent
+from roller.cli import _build_parser, _collect, _docker_preflight, _jsonl_equivalent, _validate_thinking_requests
+from roller.models import RunRequest, Task, UserSimulatorSpec
+from roller.thinking_capabilities import ThinkingCapabilities, ThinkingCapability
 
 
 class CliTests(unittest.TestCase):
+    def test_capabilities_use_logical_effort_for_simulator_and_resolve_endpoint(self):
+        profiles = ThinkingCapabilities((ThinkingCapability(
+            harness="claude-code", model="sim-model", supported_efforts=frozenset({"ultra"}),
+            api_base="http://gateway.test",
+        ),))
+        task = Task(id="task", prompts=("hello",), source_index=0,
+                    user_simulator=UserSimulatorSpec(instruction="test", harness="claude-code", model="sim-model", thinking="ultra"))
+        request = RunRequest(0, task, "agent-model", 30)
+        _validate_thinking_requests(
+            [request], cli_harness="pi", harness="claude-code",
+            api_base=lambda model: "http://gateway.test/", default_effort="low",
+            effort_validator=lambda effort: "ultracode", capabilities=profiles,
+        )
+        denied = ThinkingCapabilities((ThinkingCapability(
+            harness="claude-code", model="sim-model", supported_efforts=frozenset({"low"}),
+        ),))
+        with self.assertRaisesRegex(ValueError, "not declared supported"):
+            _validate_thinking_requests(
+                [request], cli_harness="pi", harness="claude-code",
+                api_base=None, default_effort="low",
+                effort_validator=lambda effort: "ultracode", capabilities=denied,
+            )
+
     def test_retired_cot_flags_are_rejected(self) -> None:
         for flag, value in (
             ("--external-thinking", "external"),
@@ -231,8 +256,14 @@ def grade(transcript, workspace_path):
                 json.dumps({"id": "hello", "prompt": "say hello"}) + "\n",
                 encoding="utf-8",
             )
-            for harness in ("hermes", "opencode", "deepseek", "pi"):
+            model_config = root / "models.json"
+            model_config.write_text(json.dumps({"providers": {"test": {
+                "baseUrl": "http://gateway.test/v1", "api": "openai-completions",
+                "models": [{"id": "served-model", "name": "served-model"}],
+            }}}))
+            for harness in ("hermes", "opencode", "deepseek", "pi", "codex", "claude-code", "openclaw"):
                 with self.subTest(harness=harness):
+                    model = "test/served-model" if harness == "openclaw" else "served-model"
                     capabilities = root / f"{harness}-capabilities.json"
                     capabilities.write_text(
                         json.dumps(
@@ -241,9 +272,9 @@ def grade(transcript, workspace_path):
                                 "profiles": [
                                     {
                                         "harness": harness,
-                                        "model": "served-model",
+                                        "model": model,
                                         "api_base": "http://gateway.test/v1",
-                                        "supported_efforts": ["low", "high"],
+                                        "supported_efforts": ["low"],
                                     }
                                 ],
                             }
@@ -258,15 +289,15 @@ def grade(transcript, workspace_path):
                             "--harness",
                             harness,
                             "--model",
-                            "served-model",
+                            model,
                             "--api-base",
                             "http://gateway.test/v1/",
                             "--thinking",
-                            "off",
+                            "high",
                             "--thinking-capabilities",
                             str(capabilities),
                             "--dry-run",
-                        ]
+                        ] + (["--model-config", str(model_config)] if harness == "openclaw" else [])
                     )
                     with self.assertRaisesRegex(
                         ValueError, "not declared supported"

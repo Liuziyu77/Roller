@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 from urllib import request as urllib_request
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from roller.response_metadata import ResponseMetadata
 
 
 HOP_BY_HOP_HEADERS = {
@@ -204,7 +205,7 @@ class _ProxyHandler(BaseHTTPRequestHandler):
     def log_message(self, format: str, *args: Any) -> None:  # noqa: A002 - stdlib signature
         return
 
-    def _record(self, body: bytes | None) -> None:
+    def _record(self, body: bytes | None) -> int:
         proxy: WireTraceProxy = self.server.proxy  # type: ignore[attr-defined]
         entry: dict[str, Any] = {
             "seq": proxy.next_seq(),
@@ -254,6 +255,7 @@ class _ProxyHandler(BaseHTTPRequestHandler):
                         entry["tools"] = tools
                         entry["n_tools"] = len(tools)
         proxy.write(entry)
+        return entry["seq"]
 
     def _handle(self) -> None:
         proxy: WireTraceProxy = self.server.proxy  # type: ignore[attr-defined]
@@ -265,8 +267,9 @@ class _ProxyHandler(BaseHTTPRequestHandler):
                 body = json.dumps(parsed, ensure_ascii=False).encode("utf-8")
             except (json.JSONDecodeError, UnicodeDecodeError):
                 pass
+        request_seq = None
         try:
-            self._record(body)
+            request_seq = self._record(body)
         except Exception:
             pass
         self.close_connection = True
@@ -303,6 +306,16 @@ class _ProxyHandler(BaseHTTPRequestHandler):
         self.end_headers()
         content_type = response.headers.get("Content-Type", "").lower()
         content_encoding = response.headers.get("Content-Encoding", "").lower()
+        observer = ResponseMetadata(content_type, content_encoding)
+
+        def record_response() -> None:
+            # Diagnostics must never prevent delivery of the original response.
+            if isinstance(request_seq, int):
+                try:
+                    proxy.write({"kind": "response_metadata", "request_seq": request_seq,
+                                 "http_status": status, **observer.finish()})
+                except Exception:
+                    pass
         normalize_reasoning = (
             proxy.normalize_reasoning_replay
             and self.path.split("?", 1)[0].rstrip("/").endswith("/chat/completions")
@@ -313,11 +326,14 @@ class _ProxyHandler(BaseHTTPRequestHandler):
                 line = response.readline()
                 if not line:
                     break
+                observer.feed(line)
                 self.wfile.write(self._normalize_sse_reasoning_line(line))
                 self.wfile.flush()
+            record_response()
             return
         if normalize_reasoning and "json" in content_type:
             payload = response.read()
+            observer.feed(payload)
             try:
                 parsed = json.loads(payload)
                 payload = json.dumps(
@@ -328,13 +344,16 @@ class _ProxyHandler(BaseHTTPRequestHandler):
                 pass
             self.wfile.write(payload)
             self.wfile.flush()
+            record_response()
             return
         while True:
             chunk = response.read(65536)
             if not chunk:
                 break
+            observer.feed(chunk)
             self.wfile.write(chunk)
             self.wfile.flush()
+        record_response()
 
     @staticmethod
     def _normalize_sse_reasoning_line(line: bytes) -> bytes:
