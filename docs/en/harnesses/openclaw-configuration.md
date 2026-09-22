@@ -197,55 +197,52 @@ Roller forwards the level to OpenClaw as-is. OpenClaw's current model profile th
 
 | Roller input | OpenClaw canonical value | GPT-5.6 Sol Responses API | Notes |
 | --- | --- | --- | --- |
-| `none` / `off` | `off` | `none` | `none` is only a Roller input alias. The native GPT API does not accept `off` |
+| `none` / `off` | `off` | `none` when the selected profile maps it | `none` is only a Roller input alias. A custom/proxy profile may omit the API field instead of sending `none`; inspect the wire trace |
 | `minimal` | `minimal` | Not supported | Only for other models that declare support for it |
 | `low` | `low` | `low` | Mapped as-is |
 | `medium` | `medium` | `medium` | Mapped as-is. The API default when GPT-5.6 Sol is sent no effort is also `medium` |
 | `high` | `high` | `high` | Mapped as-is |
 | `xhigh` | `xhigh` | `xhigh` | Requires the OpenClaw profile to declare support |
 | `adaptive` | `adaptive` | Not a native value | The actual level is decided by an OpenClaw profile that supports adaptive thinking |
-| `max` | `max` | `max` | Requires a newer OpenClaw and the matching model profile |
-| `ultra` | `ultra` | Not a native value | The default OpenClaw `2026.7.1` CLI does not accept it. Only use it when the chosen newer version lists it explicitly |
+| `max` | `max` | `max` | Requires a matching OpenClaw model profile |
+| `ultra` | `ultra` | Not a native value | An OpenClaw policy level; whether it is accepted and how it maps depend on the selected profile |
 
-For actual Responses requests to `gpt-5.6-sol`, the following were verified item by item: `none/low/medium/high/xhigh/max` succeed. `minimal/adaptive/ultra` as native effort return 400. `off` must be translated by OpenClaw to `none`. It must not be sent to the GPT API directly. The official support matrix is [OpenAI GPT-5.6 model guidance](https://developers.openai.com/api/docs/guides/model-guidance?model=gpt-5.6).
+For actual Responses requests to `gpt-5.6-sol`, the following raw API efforts were verified item by item: `none/low/medium/high/xhigh/max` succeed. `minimal/adaptive/ultra` as raw API efforts return 400. These raw values are not a promise that every OpenClaw provider profile maps the logical level the same way. In particular, a custom/proxy route may omit the effort for `off`. Check `wire_trace.jsonl` rather than assuming the command-line value is the serialized API value. The official support matrix is [OpenAI GPT-5.6 model guidance](https://developers.openai.com/api/docs/guides/model-guidance?model=gpt-5.6).
 
-Roller does not hard-code level mappings for open-source models. Custom models in OpenClaw `2026.7.1`
-use a top-level `thinkingLevelMap` to map logical levels to service values. Chat Completions services declare that they
-accept `reasoning_effort` with `compat.supportsReasoningEffort: true`:
+Roller does not hard-code level mappings for open-source models. Chat Completions services declare their transport capability in the OpenClaw model profile. For example, a service that accepts only `low` and `high` can use:
 
 ```json
 {
   "id": "my-reasoning-model",
   "name": "My reasoning model",
   "reasoning": true,
-  "thinkingLevelMap": {
-    "off": "none",
-    "low": "low",
-    "medium": "medium",
-    "high": "high",
-    "xhigh": "xhigh",
-    "max": "max"
-  },
-  "compat": {"supportsReasoningEffort": true}
+  "compat": {
+    "supportsReasoningEffort": true,
+    "supportedReasoningEfforts": ["low", "high"]
+  }
 }
 ```
 
-`thinkingLevelMap` belongs at the model top level. Do not put it inside `compat`. This stable version's user-config schema does not
-accept custom `compat.supportedReasoningEfforts` or `compat.reasoningEffortMap`. Writing those fields fails
-config validation. Qwen-compatible services that use `enable_thinking` can set
-`compat.thinkingFormat` to `qwen`. Actual fields and levels still follow the service implementation.
+If that service intentionally maps logical `medium` to transport `high`, add
+`"reasoningEffortMap": {"medium": "high"}` under `compat`. OpenClaw `2026.7.1` accepts both
+`compat.supportedReasoningEfforts` and `compat.reasoningEffortMap`. A top-level `thinkingLevelMap`
+describes model-level logical capabilities, but does not replace the Chat Completions transport map.
+Qwen-compatible services that use `enable_thinking` can set `compat.thinkingFormat` to `qwen`.
+Only advertise levels and mappings the service actually supports; an always-thinking model should not
+claim an unsupported `off`/`none` mode.
 
 > [!IMPORTANT]
-> OpenClaw `2026.7.1` in the default official image supports
-> `off/minimal/low/medium/high/xhigh/adaptive/max`. Roller rejects `ultra` on that version.
-> Legacy `wildclawbench-ubuntu:v1.3` ships `2026.3.11` and only reliably supports up to `high`. Roller rejects
+> Modern OpenClaw validates explicit levels against the selected provider/model/runtime profile. Roller does not
+> maintain a second model capability table or reject `ultra` solely from a modern runtime version string.
+> Legacy `wildclawbench-ubuntu:v1.3` ships `2026.3.11` and only reliably supports up to `high`; Roller rejects
 > `xhigh/adaptive/max/ultra` on it. Updating the Roller repo does not replace the Docker image. The runtime version is
 > `runtime.openclaw_version` in the sample `info.json`.
 
 ### Reasoning content and traces
 
-When using native thinking, Roller sets `reasoning: true` on the model-config copy injected for this
-rollout. The Chat Completions adapter sends `reasoning_effort`. The Responses adapter
+When thinking is explicitly enabled and the model config omits a `reasoning` capability, Roller adds
+`reasoning: true` to the rollout-local copy for legacy compatibility. An explicit `reasoning: false` is preserved.
+The selected OpenClaw profile decides whether the Chat Completions adapter sends `reasoning_effort`; the Responses adapter
 sends a reasoning config. Legacy `tags: ["reasoning"]` is automatically converted to the boolean field
 current OpenClaw accepts.
 

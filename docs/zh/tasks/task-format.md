@@ -307,8 +307,9 @@ OpenClaw adapter 会把 Context 注入 `/root/<target>` 与 `/tmp_workspace/<tar
 `env` 和 `setup` 都接受单个字符串或字符串数组。Task 作者应把 setup 当作可执行代码管理，只运行可信数据集中的命令。
 
 `thinking` 的 Roller schema 接受 `off/minimal/low/medium/high/xhigh/adaptive/max/ultra`；
-`none` 会规范化为 `off`。task 中的值优先于 CLI `--thinking`。OpenClaw `2026.7.1` 支持
-到 `max` 并拒绝 `ultra`；Codex 把有效档位映射到 `model_reasoning_effort`，拒绝
+`none` 会规范化为 `off`。task 中的值优先于 CLI `--thinking`。新版 OpenClaw 会按所选
+provider/model profile 校验档位；Roller 只会拒绝已知会静默降级的旧版 `2026.3.11` 高级档位。
+Codex 把有效档位映射到 `model_reasoning_effort`，拒绝
 OpenClaw 专用 `adaptive` 和没有通用等价语义的 `off`；默认 Codex 0.149.0 镜像支持
 `minimal/low/medium/high/xhigh`，不支持 `max/ultra`。Claude Code 2.1.222 接受
 `low/medium/high/xhigh/max/ultracode`，Roller 将 `ultra` 映射为 `ultracode`，拒绝

@@ -72,7 +72,8 @@ class FakeProcess:
 
 
 class FakeDockerRuntime:
-    def __init__(self) -> None:
+    def __init__(self, version: str = "2026.1.0") -> None:
+        self.version = version
         self.commands: list[list[str]] = []
         self.agent_messages: list[str] = []
         self.assistant_extractions = 0
@@ -80,7 +81,7 @@ class FakeDockerRuntime:
     def run(self, args, timeout=None):
         args = list(args)
         self.commands.append(args)
-        stdout = "2026.1.0\n" if args[-2:] == ["openclaw", "--version"] else ""
+        stdout = f"{self.version}\n" if args[-2:] == ["openclaw", "--version"] else ""
         if args and "ROLLER_SDK_LAST_ASSISTANT" in args[-1]:
             self.assistant_extractions += 1
             stdout = json.dumps(
@@ -195,10 +196,12 @@ class OpenClawHelpersTests(unittest.TestCase):
                         "OpenClaw 2026.3.11 (29dc654)", level
                     )
         validate_openclaw_thinking("OpenClaw 2026.3.11 (29dc654)", "high")
-        with self.assertRaisesRegex(RuntimeError, "does not accept"):
-            validate_openclaw_thinking("OpenClaw 2026.7.1", "ultra")
-        validate_openclaw_thinking("OpenClaw 2026.7.1", "max")
-        validate_openclaw_thinking("OpenClaw 2026.8.0", "max")
+
+    def test_modern_thinking_capabilities_are_owned_by_openclaw(self) -> None:
+        for version in ("OpenClaw 2026.7.1", "OpenClaw 2026.8.0"):
+            for level in ("xhigh", "adaptive", "max", "ultra"):
+                with self.subTest(version=version, level=level):
+                    validate_openclaw_thinking(version, level)
 
     def test_embedded_legacy_response_extractor_is_valid_python(self) -> None:
         script = OpenClawHarness._LEGACY_LAST_ASSISTANT_SCRIPT.replace(
@@ -268,6 +271,34 @@ class OpenClawHelpersTests(unittest.TestCase):
         self.assertNotIn("reasoning", config["providers"]["proxy"]["models"][1])
         self.assertEqual(config["providers"]["proxy"]["models"][1]["tags"], ["reasoning"])
 
+    def test_preserves_explicit_model_capabilities_and_effort_mapping(self) -> None:
+        model = {
+            "id": "plain",
+            "name": "Plain",
+            "reasoning": False,
+            "tags": ["reasoning"],
+            "thinkingLevelMap": {"medium": "high"},
+            "compat": {
+                "supportsReasoningEffort": False,
+                "supportedReasoningEfforts": ["low", "high"],
+                "reasoningEffortMap": {"medium": "high"},
+            },
+        }
+        config = {"providers": {"proxy": {"models": [model]}}}
+        original = json.loads(json.dumps(config))
+
+        prepared = prepare_model_config(
+            config,
+            "proxy/plain",
+            enable_reasoning=True,
+        )
+
+        saved = prepared["providers"]["proxy"]["models"][0]
+        self.assertFalse(saved["reasoning"])
+        self.assertEqual(saved["thinkingLevelMap"], model["thinkingLevelMap"])
+        self.assertEqual(saved["compat"], model["compat"])
+        self.assertNotIn("tags", saved)
+        self.assertEqual(config, original)
 
     def test_no_keep_thinking_requires_interceptable_model_config(self) -> None:
         task = Task(id="task", prompts=("hello",), source_index=0)
@@ -655,6 +686,46 @@ class OpenClawHelpersTests(unittest.TestCase):
             command for command in runtime.commands if "agent" in command
         )
         self.assertEqual(agent_command[agent_command.index("--thinking") + 1], "max")
+
+    def test_modern_harness_passes_explicit_levels_without_injecting_a_default(
+        self,
+    ) -> None:
+        for level in ("ultra", "off", None):
+            with self.subTest(level=level):
+                runtime = FakeDockerRuntime(version="OpenClaw 2026.7.1")
+                harness = OpenClawHarness(
+                    OpenClawConfig(
+                        docker_image="test-image",
+                        thinking=level,
+                        wire_trace_mode="off",
+                        set_image_model=False,
+                    ),
+                    worker_slot=0,
+                    runtime=runtime,
+                )
+                request = RunRequest(
+                    0,
+                    Task("task", ("solve",), 0),
+                    "provider/model",
+                    30,
+                )
+
+                with tempfile.TemporaryDirectory() as temporary:
+                    result = harness.run(request, Path(temporary), attempt=1)
+
+                self.assertEqual(result.status, "ok", result.error)
+                agent = next(command for command in runtime.commands if "agent" in command)
+                defaults = [
+                    command
+                    for command in runtime.commands
+                    if "agents.defaults.thinkingDefault" in command
+                ]
+                if level is None:
+                    self.assertNotIn("--thinking", agent)
+                    self.assertEqual(defaults, [])
+                else:
+                    self.assertEqual(agent[agent.index("--thinking") + 1], level)
+                    self.assertEqual(defaults[0][-1], level)
 
     def test_markdown_inside_one_message_remains_one_turn(self) -> None:
         prompt = "## Round 1\nKeep this whole message.\n## Round 2\nStill the same message."
