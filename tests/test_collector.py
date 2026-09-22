@@ -135,6 +135,11 @@ class FakeHarness(Harness):
                 "request_count": 1,
             }
             metadata = {"slot": self.slot}
+            if "reasoning_effort" in self.state:
+                metadata["settings"] = {
+                    "reasoning_effort": self.state["reasoning_effort"],
+                    "keep_thinking": self.state.get("keep_thinking", True),
+                }
             trajectory_path = str(trajectory)
             if self.state.get("raw_only"):
                 trajectory.unlink()
@@ -168,6 +173,12 @@ class FakeHarness(Harness):
                         "isError": False,
                     }
                 ]
+                trajectory.write_text(json.dumps(payload), encoding="utf-8")
+            if self.state.get("reasoning_text") and trajectory.is_file():
+                payload = json.loads(trajectory.read_text(encoding="utf-8"))
+                payload["steps"][0]["assistant_content"]["reasoning_content"] = (
+                    self.state["reasoning_text"]
+                )
                 trajectory.write_text(json.dumps(payload), encoding="utf-8")
             if self.state.get("record_output"):
                 artifact = output_dir / "results" / "artifact.txt"
@@ -246,6 +257,48 @@ class CollectorTests(unittest.TestCase):
             ]
             self.assertEqual(len(dataset), 4)
             self.assertEqual(dataset[0], sft)
+
+    def test_audits_visible_reasoning_without_rewriting_it(self) -> None:
+        cases = (
+            ("off", "unexpected chain", True, "mismatch", True),
+            ("off", None, True, "no_visible_reasoning", False),
+            ("high", "expected chain", True, "visible_reasoning_observed", False),
+            ("off", "filtered chain", False, "not_observable", False),
+        )
+        for effort, reasoning, keep, status, warned in cases:
+            with self.subTest(effort=effort, reasoning=reasoning, keep=keep):
+                with tempfile.TemporaryDirectory() as temporary:
+                    run_dir = Path(temporary) / "run"
+                    state = self._state()
+                    state.update(
+                        reasoning_effort=effort,
+                        reasoning_text=reasoning,
+                        keep_thinking=keep,
+                    )
+                    collector = Collector(
+                        CollectionConfig(run_dir=run_dir),
+                        lambda slot: FakeHarness(state, slot),
+                    )
+                    if warned:
+                        with self.assertLogs("roller.collector", level="WARNING"):
+                            result = collector.collect(make_requests()[:1])[0]
+                    else:
+                        result = collector.collect(make_requests()[:1])[0]
+
+                    audit = result["runtime"]["thinking_audit"]
+                    self.assertEqual(audit["requested_effort"], effort)
+                    self.assertEqual(audit["status"], status)
+                    self.assertEqual(audit["retained_in_actf"], keep)
+                    warnings = result["runtime"].get("warnings", [])
+                    self.assertEqual(bool(warnings), warned)
+                    actf = json.loads(
+                        next((run_dir / "samples").glob("*/*/trace_ACTF.json"))
+                        .read_text()
+                    )
+                    retained = actf["steps"][0]["assistant_content"][
+                        "reasoning_content"
+                    ]
+                    self.assertEqual(retained, reasoning or "")
 
     def test_collects_multimodal_sft_dataset_and_resumes(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

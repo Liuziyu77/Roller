@@ -1583,6 +1583,12 @@ class OpenClawSession(InteractiveSession):
                 "warnings": warnings,
                 "trajectory_conversion": trajectory_conversion,
                 "attempt": self.attempt,
+                "settings": {
+                    "reasoning_effort": self.harness._effective_thinking(
+                        self.request
+                    ),
+                    "keep_thinking": self.harness.config.keep_thinking,
+                },
                 "provenance": provenance,
             },
         )

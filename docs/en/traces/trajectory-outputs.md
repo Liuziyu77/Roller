@@ -580,6 +580,14 @@ encrypted reasoning does not enter SFT.
 
 The default `--keep-thinking` retains visible reasoning returned by the service. This includes GPT summaries, Claude visible thinking, and plaintext reasoning returned by open models.
 
+When a reasoning effort was explicitly requested, sample `info.json` records
+`runtime.thinking_audit`. This audit counts only visible reasoning retained in
+ACTF. If `off` was requested but visible reasoning is still present, its status
+is `mismatch` and Roller records a runtime warning without deleting or changing
+the returned text. With `--no-keep-thinking`, the status is `not_observable`:
+an empty exported field is not evidence that the model performed no hidden
+reasoning.
+
 Even with `--wire-trace off`, `--no-keep-thinking` must still start a proxy to
 strip request history, so OpenClaw still requires a proxyable `baseUrl` in
 `--model-config`. Codex and Claude Code do not perform that history stripping.

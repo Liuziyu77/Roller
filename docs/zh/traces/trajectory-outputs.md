@@ -476,6 +476,12 @@ effort、开源模型 profile 和 OpenClaw 镜像限制见
 - 返回明文 reasoning 的 Qwen、GLM 等开源模型：保持默认 `--keep-thinking`，明文 reasoning 直接进入
   ACTF/SFT `reasoning_content`。
 
+显式请求 reasoning 档位时，样本 `info.json` 会记录
+`runtime.thinking_audit`。该审计只统计 ACTF 中实际保留的可见 reasoning。若请求 `off`
+后仍返回可见 reasoning，状态为 `mismatch`，Roller 同时记录 runtime warning，但不会删除或
+修改模型返回的文本。使用 `--no-keep-thinking` 时状态为 `not_observable`：导出字段为空不代表
+模型没有进行隐藏推理。
+
 `--no-keep-thinking` 即使配合 `--wire-trace off`，也必须启动代理来剥离请求历史，因此
 OpenClaw 仍要求 `--model-config` 中存在可代理 `baseUrl`；Codex 和 Claude Code 不做
 该 history 剥离。
