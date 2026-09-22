@@ -57,8 +57,8 @@ SFT record 不包含 schema version、task/model、usage、时间戳、step ID�
 
 ### 多模态 record
 
-当工具结果携带图片、且 ACTF 层已无损捕获为 base64 字节时，record 会额外增加顶层
-`images` 列表。图片不再内联保留：它在消息文本中的位置变成保留占位符 `<image>`，
+当 user message 或工具结果携带图片、且 ACTF 层已无损捕获为 base64 字节时，record
+会额外增加顶层 `images` 列表。图片不再内联保留：它在消息文本中的位置变成保留占位符 `<image>`，
 归一化后的 data URI 追加进 `images`：
 
 ```json
@@ -115,7 +115,7 @@ SFT record 不包含 schema version、task/model、usage、时间戳、step ID�
 | ACTF | SFT |
 | --- | --- |
 | `system_prompt` | 第一条 system message |
-| `steps[*].user_content` | user message（非空时） |
+| `steps[*].user_content` | user message（非空时）；image block 变为 `<image>` 并追加顶层 `images` |
 | `steps[*].assistant_content` | assistant message |
 | `steps[*].observation` | tool message |
 | `steps[*].observation[*].content[*]` 的 image block | tool message 中的 `<image>` 占位符，外加一条顶层 `images` 记录 |
@@ -134,7 +134,7 @@ reasoning 不进入训练数据；只有 ACTF 中可见的 reasoning summary 会
 - 每个 call 在同一 step 内恰好有一个匹配的 tool result；
 - call 的工具名存在于顶层 tools schema；
 - arguments 可以编码为 JSON object；
-- 工具结果只包含字符串、text blocks 或内嵌 base64 字节的 image blocks。
+- user content 和工具结果只包含字符串、text blocks 或内嵌 base64 字节的 image blocks。
 
 image block 接受三种形态：base64 `source` 结构（Claude Code）、扁平 `data` +
 `mimeType` 结构（OpenClaw/Pi 原生）和内联 data URI。media type 必须是
@@ -158,7 +158,7 @@ Roller 不会静默删除内容。转换器本身不读文件也不访问
 
 | Harness | 运行时图片路径 | ACTF/SFT 图片保存 |
 | --- | --- | --- |
-| OpenClaw | 支持图片的模型与 image tool | 保留 |
+| OpenClaw | Prompt 附件、`read` 或 `image` 辅助模型调用 | 保留；紧凑 `actf` wire 模式只暂存所需图片输入 |
 | Codex | 通过 Responses 调用 `view_image` | 保留 |
 | Claude Code | `Read` 图片结果 | 保留 |
 | OpenCode | `read` 返回内嵌 data URL 附件 | 保留；非图片附件只保留有界审计元数据 |
@@ -178,8 +178,18 @@ SFT，因为导出过程不会读取文件或网络。该样本会保留 raw/ACT
 └── samples/<model>/<index>_<task>/
     ├── trace.jsonl
     ├── trace_ACTF.json
-    └── trace_SFT.json
+    ├── trace_SFT.json
+    └── subagents/
+        └── <index>_<session>/
+            ├── trace.jsonl
+            ├── trace_ACTF.json
+            └── trace_SFT.json
 ```
+
+OpenClaw 子代理 session 会独立导出，父子关系和路径记录在
+`info.json.runtime.subagent_trajectories`。它们不会被扁平拼接进主会话，也不会追加到
+run 级 `sft.jsonl`，从而在保留子代理图片输入的同时维持每条模型线程的语义。未完成的
+子代理也可以保留部分 raw/ACTF/SFT sidecar。
 
 User Simulator rollout 的任务 Agent SFT 位于根 sample，模拟用户自己的 SFT 位于
 `user_simulator/trace_SFT.json`；run 级 `sft.jsonl` 只汇总任务 Agent。

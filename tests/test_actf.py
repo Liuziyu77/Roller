@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import json
+import tempfile
 import unittest
+from pathlib import Path
 
-from roller.actf import openclaw_events_to_actf
+from roller.actf import convert_openclaw_trace, openclaw_events_to_actf
 from roller.sft import actf_to_sft
 
 
@@ -153,6 +156,76 @@ class ActfConversionTests(unittest.TestCase):
         tool_result = next(m for m in sft["messages"] if m["role"] == "tool")
         self.assertEqual(tool_result["content"], "image\n<image>")
         self.assertEqual(sft["images"], [data_url])
+
+    def test_preserves_images_in_user_messages(self) -> None:
+        events = _events()
+        events[1]["message"]["content"] = [
+            {"type": "text", "text": "[timestamp] first"},
+            {"type": "image", "data": "AA==", "mimeType": "image/png"},
+        ]
+
+        trajectory = openclaw_events_to_actf(
+            events,
+            user_messages=("clean first", "clean second"),
+            tools=[
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "read",
+                        "parameters": {"type": "object"},
+                    },
+                }
+            ],
+        )
+
+        self.assertEqual(
+            trajectory["steps"][0]["user_content"],
+            [
+                {"type": "text", "text": "clean first"},
+                {"type": "image", "data": "AA==", "mimeType": "image/png"},
+            ],
+        )
+        record = actf_to_sft(trajectory)
+        self.assertEqual(record["messages"][1]["content"], "clean first\n<image>")
+        self.assertEqual(record["images"], ["data:image/png;base64,AA=="])
+
+    def test_attaches_generated_wire_image_to_image_tool_result(self) -> None:
+        events = _events()
+        events[2]["message"]["content"][1]["name"] = "image"
+        events[2]["message"]["content"][1]["arguments"] = {
+            "image": "outputs/generated.png"
+        }
+        events[3]["message"]["toolName"] = "image"
+        events[3]["message"]["content"] = [{"type": "text", "text": "red"}]
+        wire = {
+            "kind": "request",
+            "ts": "1970-01-01T00:00:01Z",
+            "image_inputs": [
+                {"type": "image", "data": "AA==", "mimeType": "image/png"}
+            ],
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "trace.jsonl"
+            wire_trace = root / "wire.jsonl"
+            source.write_text(
+                "\n".join(json.dumps(event) for event in events) + "\n",
+                encoding="utf-8",
+            )
+            wire_trace.write_text(json.dumps(wire) + "\n", encoding="utf-8")
+            trajectory = convert_openclaw_trace(
+                source,
+                root / "trace_ACTF.json",
+                user_messages=("first", "second"),
+                wire_trace=wire_trace,
+                tools=[{"type": "function", "function": {"name": "image"}}],
+            )
+
+        content = trajectory["steps"][0]["observation"][0]["content"]
+        self.assertEqual(content[-1], wire["image_inputs"][0])
+        self.assertEqual(
+            actf_to_sft(trajectory)["images"], ["data:image/png;base64,AA=="]
+        )
 
     def test_tool_call_ids_are_namespaced_across_sessions(self) -> None:
         first = _events()[:4]

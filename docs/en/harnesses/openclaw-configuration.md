@@ -382,6 +382,25 @@ Check the flags available in your installed version:
 roller collect --help
 ```
 
+### Multimodal and sub-agent trajectories
+
+Native image blocks on user messages are retained in ACTF and become ordered
+`<image>` placeholders plus top-level `images` entries in SFT. OpenClaw's
+`image` tool invokes a separate model request and normally writes only its text
+answer to the main session. With the default `--wire-trace actf`, Roller keeps
+only the image inputs from that auxiliary request long enough to attach them to
+the matching tool result; unrelated request text is not retained. Full mode
+keeps the complete request as before. `--wire-trace off` cannot recover image
+bytes that exist only in the auxiliary request.
+
+When `sessions_spawn` creates child sessions, `sessions_yield` is treated as an
+intentional wait rather than an empty reply. Each discovered child is exported
+under `subagents/<index>_<session>/` as independent raw, ACTF, and SFT files.
+Parent/session metadata is recorded in `runtime.subagent_trajectories`. Child
+records are deliberately not flattened into the main SFT or run-level
+`sft.jsonl`, because the parent model did not directly observe the child's full
+conversation.
+
 ## 9. Run metadata and safety
 
 Sample provenance records the OpenClaw version, image and digest, model ref, names of environment variables that were used, and a redacted API base. Usernames, passwords, query, and fragment in the API base do not enter results. Environment variable values and expanded API keys are not saved either.

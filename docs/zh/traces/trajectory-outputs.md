@@ -254,10 +254,11 @@ SFT 表达的是从 session 事件重建的逻辑对话，不是每次 provider 
 - 每个 tool call 在同一 step 恰好对应一个 tool result；
 - 被调用工具存在于顶层 tools schema；
 - arguments 可编码为 JSON object；
-- tool result 是字符串、text blocks 或内嵌 base64 字节的 image blocks。
+- user content 与 tool result 是字符串、text blocks 或内嵌 base64 字节的 image blocks。
 
 GPT Responses 的扁平 tools 与 Chat Completions 的嵌套 tools 都会统一为嵌套 function
-schema。image 工具结果会导出为 `<image>` 占位符加顶层 `images` data-URI 列表，对齐
+schema。user message 或 tool result 中的 image 会导出为 `<image>` 占位符加顶层
+`images` data-URI 列表，对齐
 约定见 [SFT 数据格式](sft-format.md)。其余无法无损导出的内容——audio 等未知 block
 类型、不支持的 media type、损坏的 base64、只引用路径而没有字节的 image block——仍会
 令 SFT 转换失败。Collector 在 `runtime.trajectory_conversion` 中记录

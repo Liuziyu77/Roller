@@ -186,6 +186,28 @@ class CliOnlyReplyRuntime(FakeDockerRuntime):
         return result
 
 
+class YieldingRuntime(FakeDockerRuntime):
+    def run(self, args, timeout=None):
+        result = super().run(args, timeout=timeout)
+        args = list(args)
+        if args and "ROLLER_SDK_LAST_ASSISTANT" in args[-1]:
+            yielded = self.assistant_extractions == 1
+            result = subprocess.CompletedProcess(
+                args,
+                0,
+                stdout=json.dumps(
+                    {
+                        "content": "" if yielded else "done",
+                        "assistant_count": self.assistant_extractions,
+                        "tool_names": ["sessions_yield"] if yielded else [],
+                    }
+                )
+                + "\n",
+                stderr="",
+            )
+        return result
+
+
 class OpenClawHelpersTests(unittest.TestCase):
     def test_rejects_advanced_thinking_on_known_downgrading_openclaw(self) -> None:
         for level in ("xhigh", "adaptive", "max", "ultra"):
@@ -219,6 +241,112 @@ class OpenClawHelpersTests(unittest.TestCase):
                 "sessionKey": "agent:main:explicit:roller",
             },
         )
+
+    def test_subagent_discovery_keeps_descendant_lineage(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            store = state / "agents" / "main" / "sessions" / "sessions.json"
+            store.parent.mkdir(parents=True)
+            store.write_text(
+                json.dumps(
+                    {
+                        "agent:main:explicit:roller": {"sessionId": "roller"},
+                        "agent:main:subagent:child": {
+                            "sessionId": "child-id",
+                            "spawnedBy": "agent:main:explicit:roller",
+                            "startedAt": 1,
+                        },
+                        "agent:main:subagent:grandchild": {
+                            "sessionId": "grandchild-id",
+                            "spawnedBy": "agent:main:subagent:child",
+                            "startedAt": 2,
+                        },
+                        "agent:main:subagent:other": {
+                            "sessionId": "other-id",
+                            "spawnedBy": "agent:main:explicit:other",
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            completed = subprocess.run(
+                ["python3", "-c", OpenClawHarness._SUBAGENT_SESSIONS_SCRIPT],
+                env={
+                    "OPENCLAW_STATE_DIR": str(state),
+                    "ROLLER_ROOT_SESSION_KEYS": json.dumps(
+                        ["agent:main:explicit:roller"]
+                    ),
+                },
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+
+        rows = json.loads(completed.stdout)
+        self.assertEqual(
+            [row["session_key"] for row in rows],
+            [
+                "agent:main:subagent:child",
+                "agent:main:subagent:grandchild",
+            ],
+        )
+
+    def test_subagent_trace_converts_to_independent_multimodal_sft(self) -> None:
+        harness = OpenClawHarness(
+            OpenClawConfig(docker_image="test-image"), worker_slot=0
+        )
+        events = [
+            {"type": "session", "timestamp": "2026-09-22T00:00:00Z"},
+            {
+                "type": "message",
+                "timestamp": "2026-09-22T00:00:01Z",
+                "message": {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "inspect"},
+                        {
+                            "type": "image",
+                            "data": "AA==",
+                            "mimeType": "image/png",
+                        },
+                    ],
+                },
+            },
+            {
+                "type": "message",
+                "timestamp": "2026-09-22T00:00:02Z",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "red"}],
+                    "stopReason": "stop",
+                },
+            },
+        ]
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            raw = root / "subagents" / "000_child" / "trace.jsonl"
+            raw.parent.mkdir(parents=True)
+            raw.write_text(
+                "\n".join(json.dumps(event) for event in events) + "\n",
+                encoding="utf-8",
+            )
+            records = harness._convert_subagent_traces(
+                root,
+                [
+                    {
+                        "session_key": "agent:main:subagent:child",
+                        "raw": raw.relative_to(root).as_posix(),
+                    }
+                ],
+                cache_trace=None,
+                wire_trace=None,
+            )
+            sft = json.loads((raw.parent / "trace_SFT.json").read_text())
+
+        self.assertIsNotNone(records[0]["actf"])
+        self.assertIsNotNone(records[0]["sft"])
+        self.assertEqual(sft["messages"][1]["content"], "inspect\n<image>")
+        self.assertEqual(sft["images"], ["data:image/png;base64,AA=="])
 
     def test_state_dir_keeps_legacy_image_compatibility(self) -> None:
         self.assertEqual(
@@ -486,6 +614,28 @@ class OpenClawHelpersTests(unittest.TestCase):
         self.assertTrue(
             any("ROLLER_GATEWAY_PORT=18789" in command for command in flattened_commands)
         )
+
+    def test_harness_waits_for_visible_reply_after_sessions_yield(self) -> None:
+        request = RunRequest(
+            index=0,
+            task=Task(id="task", prompts=("delegate",), source_index=0),
+            model="provider/model",
+            timeout_seconds=30,
+        )
+        runtime = YieldingRuntime()
+        harness = OpenClawHarness(
+            OpenClawConfig(docker_image="test-image", set_image_model=False),
+            worker_slot=0,
+            runtime=runtime,
+        )
+
+        with tempfile.TemporaryDirectory() as temporary, mock.patch(
+            "roller.harnesses.openclaw.time.sleep"
+        ):
+            result = harness.run(request, Path(temporary), attempt=1)
+
+        self.assertEqual(result.status, "ok", result.error)
+        self.assertEqual(runtime.assistant_extractions, 2)
 
     def test_harness_counts_single_request_when_transcript_has_cli_delivery_copy(self) -> None:
         task = Task(id="task", prompts=("Summarize inputs",), source_index=0)

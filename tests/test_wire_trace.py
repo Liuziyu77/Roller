@@ -11,6 +11,7 @@ from roller.wire_trace import (
     REDACTED_VALUE,
     _ProxyHandler,
     WireTraceProxy,
+    extract_wire_image_requests,
     extract_wire_tools,
     redact_jsonl_file,
     redact_sensitive_values,
@@ -282,6 +283,100 @@ class ExtractWireToolsTests(unittest.TestCase):
             path.write_text("\n".join(json.dumps(e) for e in entries), encoding="utf-8")
             tools = extract_wire_tools(path)
         self.assertEqual(tools[0]["function"]["name"], "read")
+
+
+class ExtractWireImagesTests(unittest.TestCase):
+    def test_extracts_compact_and_full_image_requests(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "wire.jsonl"
+            entries = [
+                {
+                    "kind": "request",
+                    "ts": "2026-09-22T01:00:00Z",
+                    "image_inputs": [
+                        {"type": "image", "data": "AA==", "mimeType": "image/png"}
+                    ],
+                },
+                {
+                    "kind": "request",
+                    "ts": "2026-09-22T01:00:01Z",
+                    "body": {
+                        "messages": [
+                            {
+                                "role": "user",
+                                "content": [
+                                    {
+                                        "type": "image_url",
+                                        "image_url": {
+                                            "url": "data:image/jpeg;base64,AQ=="
+                                        },
+                                    }
+                                ],
+                            }
+                        ]
+                    },
+                },
+            ]
+            path.write_text(
+                "\n".join(json.dumps(entry) for entry in entries),
+                encoding="utf-8",
+            )
+
+            requests = extract_wire_image_requests(path)
+
+        self.assertEqual(
+            [request["ts"] for request in requests],
+            [entry["ts"] for entry in entries],
+        )
+        self.assertEqual(requests[0]["images"][0]["data"], "AA==")
+        self.assertEqual(
+            requests[1]["images"][0]["data"],
+            "data:image/jpeg;base64,AQ==",
+        )
+
+
+class CompactImageRecordingTests(unittest.TestCase):
+    def test_actf_mode_retains_only_image_inputs_from_request_body(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "wire.jsonl"
+            handler = MagicMock()
+            handler.server.proxy = WireTraceProxy(
+                "http://example.test/v1", path, mode="tools"
+            )
+            handler.headers = {}
+            handler.path = "/v1/chat/completions"
+            handler.command = "POST"
+            body = json.dumps(
+                {
+                    "model": "vision-model",
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": "private prompt"},
+                                {
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": "data:image/png;base64,AA=="
+                                    },
+                                },
+                            ],
+                        }
+                    ],
+                    "tools": [],
+                }
+            ).encode()
+
+            _ProxyHandler._record(handler, body)
+            entry = json.loads(path.read_text())
+
+        self.assertNotIn("body", entry)
+        self.assertEqual(entry["n_tools"], 0)
+        self.assertEqual(
+            entry["image_inputs"],
+            [{"type": "image", "data": "data:image/png;base64,AA=="}],
+        )
+        self.assertNotIn("private prompt", json.dumps(entry))
 
 
 class TraceRedactionTests(unittest.TestCase):

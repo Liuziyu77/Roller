@@ -337,6 +337,27 @@ class MultimodalSFTTests(unittest.TestCase):
         )
         self.assertEqual(len(record["images"]), 1)
 
+    def test_user_and_tool_images_share_message_order(self) -> None:
+        trajectory = self._trajectory(
+            {"type": "image", "mimeType": "image/jpeg", "data": self.jpeg}
+        )
+        trajectory["steps"][0]["user_content"] = [
+            {"type": "text", "text": "Describe this input"},
+            {"type": "image", "mimeType": "image/png", "data": self.png},
+        ]
+
+        record = actf_to_sft(trajectory)
+
+        self.assertEqual(record["messages"][1]["content"], "Describe this input\n<image>")
+        self.assertEqual(record["messages"][3]["content"], "<image>")
+        self.assertEqual(
+            record["images"],
+            [
+                f"data:image/png;base64,{self.png}",
+                f"data:image/jpeg;base64,{self.jpeg}",
+            ],
+        )
+
     def test_accepts_every_supported_media_type(self) -> None:
         for payload, media_type in (
             (self.png, "image/png"),

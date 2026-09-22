@@ -18,7 +18,7 @@ class SFTUnsupportedContentError(SFTConversionError):
     """Raised when valid ACTF content cannot be represented without data loss."""
 
 
-# Multimodal SFT contract: every image in a tool result becomes one
+# Multimodal SFT contract: every image in user or tool content becomes one
 # ``<image>`` placeholder in the message text and one entry in the top-level
 # ``images`` list. Scanning ``messages`` front to back, the Nth placeholder
 # maps to ``images[N-1]``, so the placeholder count must equal the list length.
@@ -165,7 +165,7 @@ def _image_data_uri(block: Any, field: str) -> str:
     return f"data:{media_type};base64,{canonical}"
 
 
-def _tool_result_content(value: Any, field: str, images: list[str]) -> str:
+def _message_content(value: Any, field: str, images: list[str]) -> str:
     if isinstance(value, str):
         return value
     if not isinstance(value, list):
@@ -267,7 +267,10 @@ def actf_to_sft(trajectory: Mapping[str, Any]) -> dict[str, Any]:
         if not isinstance(step, dict):
             raise SFTConversionError(f"{prefix} must be an object")
 
-        user_content = _string(step.get("user_content", ""), f"{prefix}.user_content")
+        raw_user_content = step.get("user_content", "")
+        user_content = _message_content(
+            raw_user_content, f"{prefix}.user_content", images
+        )
         if user_content:
             messages.append({"role": "user", "content": user_content})
             user_count += 1
@@ -337,7 +340,7 @@ def actf_to_sft(trajectory: Mapping[str, Any]) -> dict[str, Any]:
                 {
                     "role": "tool",
                     "tool_call_id": call_id,
-                    "content": _tool_result_content(
+                    "content": _message_content(
                         observation.get("content", []), f"{field}.content", images
                     ),
                 }

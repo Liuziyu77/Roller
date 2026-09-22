@@ -188,6 +188,7 @@ class Collector:
             "results",
             "conversation.json",
             "user_simulator",
+            "subagents",
             # Written by bench grading, which runs before the container dies.
             "score.json",
         }
