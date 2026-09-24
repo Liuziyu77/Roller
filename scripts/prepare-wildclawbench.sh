@@ -10,6 +10,7 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "$script_dir/.." && pwd)"
 bench_root="${1:-$repo_root/.benchmarks/wildclawbench}"
 harness="${WILDCLAW_HARNESS:-openclaw}"
+expected_revision="41bfe78a4d04369887687397708504882a80c17a"
 
 command -v git >/dev/null || fail "git is required"
 command -v docker >/dev/null || fail "docker is required"
@@ -17,9 +18,17 @@ command -v hf >/dev/null || fail "the Hugging Face CLI is required (pip install 
 
 if [[ ! -e "$bench_root" ]]; then
   mkdir -p "$(dirname "$bench_root")"
-  git clone --depth 1 https://github.com/InternLM/WildClawBench.git "$bench_root"
-elif [[ ! -d "$bench_root/.git" ]]; then
+  git init "$bench_root"
+  git -C "$bench_root" remote add origin https://github.com/InternLM/WildClawBench.git
+  git -C "$bench_root" fetch --depth 1 origin "$expected_revision"
+  git -C "$bench_root" checkout --detach FETCH_HEAD
+elif ! git -C "$bench_root" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   fail "$bench_root exists but is not a Git checkout"
+fi
+
+actual_revision="$(git -C "$bench_root" rev-parse HEAD)"
+if [[ "$actual_revision" != "$expected_revision" ]]; then
+  fail "expected WildClawBench at $expected_revision, found $actual_revision"
 fi
 
 case "$harness" in
@@ -63,5 +72,5 @@ if [[ "${WILDCLAW_SKIP_ASSET_PREPARE:-0}" != "1" ]]; then
 fi
 
 printf 'WildClawBench root: %s\n' "$(cd "$bench_root" && pwd)"
-printf 'Revision: %s\n' "$(git -C "$bench_root" rev-parse HEAD)"
+printf 'Revision: %s\n' "$actual_revision"
 printf 'Harness image: %s\n' "$image_tag"

@@ -40,6 +40,9 @@ The task snapshot and report are saved under
 dry run when using its search shim. The direct `roller collect --bench` flags
 listed below remain available for one-off runs.
 
+The preparation script pins revision `41bfe78a4d04369887687397708504882a80c17a`. If the target
+directory already contains another revision, the script stops without changing the checkout.
+
 ## 2. Upstream knobs → Roller equivalents
 
 CLI flags of `eval/run_batch.py`:
@@ -193,6 +196,13 @@ graders.
 
 ## 9. Known pitfalls
 
+- The upstream `.env` commonly sets `SEARCH_SHIM_HOST_IP=172.17.0.1`, which
+  assumes Docker's default bridge. Roller uses host networking by default, and
+  Podman's bridge does not necessarily expose that address. When the shim is
+  listening on the same machine as the containers, use
+  `SEARCH_SHIM_HOST_IP=127.0.0.1` with `execution.network: host`. A quick
+  request from a container should return an HTTP response before a full run;
+  a connection timeout means the shim address or network mode is still wrong.
 - An image may preset `http_proxy`. For example, `wildclawbench-ubuntu:v1.3`
   sets it without a matching `no_proxy`. Requests to a self-hosted gateway
   may time out, leaving `request_count=0` and all tasks exiting in the same

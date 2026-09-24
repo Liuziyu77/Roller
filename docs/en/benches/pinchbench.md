@@ -24,6 +24,9 @@ prints the commit for experiment records and does not read or write API keys. To
 environment by hand, clone <https://github.com/pinchbench/skill> and pull
 `ghcr.io/openclaw/openclaw:2026.7.1-2`.
 
+The preparation script pins revision `819384ae830492365b8363fc26bc2602e73f216d`. It stops without
+changing the checkout when an existing directory is at another revision.
+
 Run two automatically graded tasks before starting a larger job. They do not need a judge:
 
 ```bash

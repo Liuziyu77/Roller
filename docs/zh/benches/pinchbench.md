@@ -23,6 +23,9 @@ export ROLLER_BENCH_OUTPUT="$PWD/runs/pinchbench"
 <https://github.com/pinchbench/skill>，再拉取
 `ghcr.io/openclaw/openclaw:2026.7.1-2`。
 
+准备脚本固定使用 revision `819384ae830492365b8363fc26bc2602e73f216d`。已有 checkout 的
+revision 不一致时，脚本会报错，不会自动切换版本。
+
 先跑两道自动评分题。这一步不需要 judge：
 
 ```bash

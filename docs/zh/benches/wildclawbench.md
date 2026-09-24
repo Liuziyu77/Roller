@@ -36,6 +36,9 @@ scripts/run-benchmark.sh --config examples/benchmarks/base.yaml \
 任务快照与报告保存在 `$ROLLER_BENCH_OUTPUT/wildclawbench/`。使用上游 search shim 时，
 应在 dry-run 前 source 上游 `.env`。下文列出的 `roller collect --bench` 参数仍可用于临时运行。
 
+准备脚本固定使用 revision `41bfe78a4d04369887687397708504882a80c17a`。如果目标目录已有其他
+revision，脚本会报错，不会改动 checkout。
+
 ## 2. 上游旋钮 → Roller 对应
 
 `eval/run_batch.py` 的 CLI 参数：
@@ -172,6 +175,11 @@ Adapter 保留这段前缀，使导出的 prompt 与上游逐字节一致；遗�
 
 ## 9. 已知坑
 
+- 上游 `.env` 常用 `SEARCH_SHIM_HOST_IP=172.17.0.1`，这个地址依赖 Docker 默认
+  bridge；Podman 的 bridge 不一定能访问它。Roller 默认使用 host network。如果 shim
+  和容器在同一台机器，应配置 `SEARCH_SHIM_HOST_IP=127.0.0.1` 和
+  `execution.network: host`。正式运行前可先从容器发一次请求确认能收到 HTTP 响应；
+  如果连接超时，说明 shim 地址或网络模式仍不正确。
 - 镜像可能预设 `http_proxy`。例如 `wildclawbench-ubuntu:v1.3` 设置了代理，却未配置
   `no_proxy`，可能使自建 gateway 的请求超时，出现 `request_count=0` 和全部任务
   在同一秒退出的情况。可使用 WCB `.env` 中的 `*_INNER` 代理配置，其 `NO_PROXY_INNER`

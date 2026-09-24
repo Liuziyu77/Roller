@@ -13,7 +13,7 @@ if [[ ! -e "$bench_root" ]]; then
   mkdir -p "$(dirname "$bench_root")"
   git clone --branch v1.1 --depth 1 \
     https://github.com/benchflow-ai/skillsbench.git "$bench_root"
-elif [[ ! -d "$bench_root/.git" ]]; then
+elif ! git -C "$bench_root" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   echo "error: $bench_root exists but is not a Git checkout" >&2
   exit 1
 fi
