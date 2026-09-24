@@ -243,14 +243,19 @@ def _openclaw_model_config(
     model: Mapping[str, Any], temporary_root: Path
 ) -> tuple[str, Path]:
     model_id = _required_string(model, "id", "model")
-    if "/" not in model_id:
+    provider_override = _optional_string(model, "provider", "model")
+    if provider_override is not None:
+        provider_id = provider_override
+        upstream_model_id = model_id
+    elif "/" in model_id:
+        # Backward compatibility for the historical provider/model spelling.
+        provider_id, upstream_model_id = model_id.split("/", 1)
+    else:
+        provider_id = "roller"
+        upstream_model_id = model_id
+    if not provider_id or not upstream_model_id or "/" in provider_id:
         raise ValueError(
-            "model.id must use provider/model form when harness.id is openclaw"
-        )
-    provider_id, upstream_model_id = model_id.split("/", 1)
-    if not provider_id or not upstream_model_id:
-        raise ValueError(
-            "model.id must use provider/model form when harness.id is openclaw"
+            "model.provider must be a non-empty OpenClaw provider name"
         )
     base_url = _required_string(model, "base_url", "model")
     api_key_env = _required_string(model, "api_key_env", "model")
@@ -279,7 +284,7 @@ def _openclaw_model_config(
     }
     path = temporary_root / "openclaw-models.json"
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    return model_id, path
+    return f"{provider_id}/{upstream_model_id}", path
 
 
 def _validate_url(value: str) -> None:
@@ -372,7 +377,16 @@ def load_bench_run_plan(
     )
     _reject_unknown(
         model,
-        {"id", "label", "base_url", "api_key_env", "api_protocol", "thinking", "params"},
+        {
+            "id",
+            "label",
+            "provider",
+            "base_url",
+            "api_key_env",
+            "api_protocol",
+            "thinking",
+            "params",
+        },
         "model",
     )
     _reject_unknown(harness, {"id", "image", "extra"}, "harness")
@@ -411,6 +425,7 @@ def load_bench_run_plan(
             f"harness.id must be one of: {', '.join(HARNESS_NAMES)}"
         )
     model_id = _required_string(model, "id", "model")
+    model_provider = _optional_string(model, "provider", "model")
     base_url = _optional_string(model, "base_url", "model")
     api_key_env = _optional_string(model, "api_key_env", "model")
     api_protocol = _optional_string(model, "api_protocol", "model")
@@ -566,6 +581,7 @@ def load_bench_run_plan(
             "model": {
                 "id": model_id,
                 "label": model.get("label"),
+                "provider": model_provider,
                 "base_url": _safe_url(base_url),
                 "api_key_env": api_key_env,
                 "api_protocol": (

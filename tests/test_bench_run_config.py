@@ -124,6 +124,83 @@ class BenchRunConfigTests(unittest.TestCase):
             self.assertIn("--no-cache-trace", argv)
             self.assertNotIn("secret-value", model_config.read_text(encoding="utf-8"))
 
+    def test_openclaw_provider_keeps_upstream_model_id_unchanged(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            config = self._base()
+            config["benchmark"] = {"id": "pinchbench", "root": "/bench/pinch"}
+            config["harness"] = {"id": "openclaw"}
+            config["model"]["id"] = "organization/model"
+            config["model"]["provider"] = "roller"
+            path = self._write(root, "run.yaml", config)
+            plan = load_bench_run_plan(
+                path,
+                environ={
+                    "MODEL_BASE_URL": "https://model.example/v1",
+                    "MODEL_API_KEY": "secret-value",
+                },
+                temporary_root=root,
+            )
+            argv = list(plan.collect_argv)
+            model_config = Path(argv[argv.index("--model-config") + 1])
+            payload = json.loads(model_config.read_text(encoding="utf-8"))
+
+            self.assertEqual(argv[argv.index("--model") + 1], "roller/organization/model")
+            self.assertEqual(
+                payload["providers"]["roller"]["models"][0]["id"],
+                "organization/model",
+            )
+            self.assertEqual(
+                plan.provenance["effective"]["model"]["provider"], "roller"
+            )
+
+    def test_openclaw_defaults_provider_for_plain_model_id(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            config = self._base()
+            config["benchmark"] = {"id": "pinchbench", "root": "/bench/pinch"}
+            config["harness"] = {"id": "openclaw"}
+            config["model"]["id"] = "plain-model"
+            path = self._write(root, "run.yaml", config)
+            plan = load_bench_run_plan(
+                path,
+                environ={
+                    "MODEL_BASE_URL": "https://model.example/v1",
+                    "MODEL_API_KEY": "secret-value",
+                },
+                temporary_root=root,
+            )
+            argv = list(plan.collect_argv)
+            model_config = Path(argv[argv.index("--model-config") + 1])
+            payload = json.loads(model_config.read_text(encoding="utf-8"))
+
+            self.assertEqual(argv[argv.index("--model") + 1], "roller/plain-model")
+            self.assertEqual(
+                payload["providers"]["roller"]["models"][0]["id"], "plain-model"
+            )
+
+    def test_non_openclaw_keeps_model_id_when_provider_is_set(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            config = self._base()
+            config["benchmark"] = {"id": "skillsbench", "root": "/bench/skills"}
+            config["harness"] = {"id": "opencode"}
+            config["model"]["id"] = "organization/model"
+            config["model"]["provider"] = "roller"
+            path = self._write(root, "run.yaml", config)
+            plan = load_bench_run_plan(
+                path,
+                environ={
+                    "MODEL_BASE_URL": "https://model.example/v1",
+                    "MODEL_API_KEY": "secret-value",
+                },
+                temporary_root=root,
+            )
+            argv = list(plan.collect_argv)
+
+            self.assertEqual(argv[argv.index("--model") + 1], "organization/model")
+            self.assertNotIn("roller/organization/model", argv)
+
     def test_openclaw_custom_model_config_can_clear_common_connection(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

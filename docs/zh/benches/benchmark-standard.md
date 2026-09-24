@@ -32,6 +32,7 @@ benchmark:
 
 model:
   id: ${ROLLER_MODEL_ID}
+  provider: roller              # OpenClaw 内部命名空间，其他 Harness 忽略
   base_url: ${ROLLER_MODEL_BASE_URL}
   api_key_env: ROLLER_MODEL_API_KEY
   api_protocol: openai-completions  # 可省略；默认根据 Harness 推断
@@ -72,6 +73,7 @@ execution:
 | `benchmark.timeout_multiplier` | 同时调整任务声明和实际执行时间 |
 | `benchmark.environment` | 仅在本次进程中设置的 benchmark 环境变量，运行结束后恢复原值 |
 | `model.id` | 被测模型 ID |
+| `model.provider` | 可选的 OpenClaw provider 命名空间；其他 Harness 仍原样使用 `model.id` |
 | `model.base_url` | 模型 API 地址 |
 | `model.api_key_env` | 保存模型密钥的宿主机环境变量名 |
 | `model.api_protocol` | API 协议；OpenClaw 写入自动生成的 provider，其他 Harness 会检查它是否符合自身协议 |
@@ -80,7 +82,7 @@ execution:
 | `harness.extra` | Harness 专属参数，未知字段会在启动前报错 |
 | `execution.*` | 输出目录、并发、重复次数、重试、trace 和容器公共参数 |
 
-OpenClaw 使用相同的 `model.id`、`base_url`、`api_key_env` 和 `api_protocol`。Roller 会在临时目录生成 models 配置，运行结束后删除。`model.id` 在 OpenClaw 下必须写成 `provider/model`。需要完整自定义 OpenClaw provider 时，可改用 `harness.extra.model_config`，并在该层将继承的 `model.base_url`、`model.api_key_env` 和 `model.api_protocol` 设为 `null`，两种配置不能同时使用。
+OpenClaw 使用相同的 `model.id`、`base_url`、`api_key_env` 和 `api_protocol`。Roller 会在临时目录生成 models 配置，运行结束后删除。`model.provider` 用作 OpenClaw 的内部命名空间；模型 ID 不含斜杠且未设置该字段时，默认值是 `roller`。为兼容旧配置，未设置 `model.provider` 时仍接受 `provider/model` 写法。需要完整自定义 OpenClaw provider 时，可改用 `harness.extra.model_config`，并在该层将继承的 `model.base_url`、`model.api_key_env` 和 `model.api_protocol` 设为 `null`，两种配置不能同时使用。
 
 从 benchmark 示例预设的 Harness 切换到其他 Harness 时，应同时覆盖镜像并清空原有的专属参数：
 

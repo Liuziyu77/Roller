@@ -36,6 +36,7 @@
       "properties": {
         "id": {"$ref": "#/$defs/nonEmptyString"},
         "label": {"$ref": "#/$defs/nullableNonEmptyString"},
+        "provider": {"$ref": "#/$defs/nullableNonEmptyString"},
         "base_url": {"$ref": "#/$defs/nullableNonEmptyString"},
         "api_key_env": {
           "type": ["string", "null"],

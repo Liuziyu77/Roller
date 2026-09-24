@@ -32,6 +32,7 @@ benchmark:
 
 model:
   id: ${ROLLER_MODEL_ID}
+  provider: roller              # OpenClaw namespace; ignored by other Harnesses
   base_url: ${ROLLER_MODEL_BASE_URL}
   api_key_env: ROLLER_MODEL_API_KEY
   api_protocol: openai-completions  # optional; inferred from the Harness when omitted
@@ -72,6 +73,7 @@ Keep credentials out of `model.base_url`. Roller rejects URL user information, q
 | `benchmark.timeout_multiplier` | Scales both the task declaration and execution deadline |
 | `benchmark.environment` | Benchmark variables scoped to this process and restored afterward |
 | `model.id` | Model under test |
+| `model.provider` | Optional OpenClaw provider namespace; other Harnesses still receive `model.id` unchanged |
 | `model.base_url` | Model API endpoint |
 | `model.api_key_env` | Host environment variable containing the model key |
 | `model.api_protocol` | API protocol. OpenClaw writes it into the generated provider; other Harnesses validate it against their native protocol |
@@ -80,7 +82,7 @@ Keep credentials out of `model.base_url`. Roller rejects URL user information, q
 | `harness.extra` | Harness-specific settings; unknown fields fail before execution |
 | `execution.*` | Output, concurrency, attempts, retries, trace, and common container settings |
 
-OpenClaw uses the same `model.id`, `base_url`, `api_key_env`, and `api_protocol`. Roller creates a temporary models file and removes it after the command. OpenClaw model IDs must use `provider/model`. Advanced users can set `harness.extra.model_config` instead. Set inherited `model.base_url`, `model.api_key_env`, and `model.api_protocol` fields to `null` in that layer because a custom models file cannot be combined with them.
+OpenClaw uses the same `model.id`, `base_url`, `api_key_env`, and `api_protocol`. Roller creates a temporary models file and removes it after the command. `model.provider` supplies OpenClaw's internal namespace and defaults to `roller` for a plain model ID. The older `provider/model` spelling remains supported when `model.provider` is omitted. Advanced users can set `harness.extra.model_config` instead. Set inherited `model.base_url`, `model.api_key_env`, and `model.api_protocol` fields to `null` in that layer because a custom models file cannot be combined with them.
 
 When switching away from the Harness selected by a benchmark example, override its image and clear its options together:
 

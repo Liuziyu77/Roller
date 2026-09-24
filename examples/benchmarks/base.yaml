@@ -3,6 +3,8 @@ schema_version: roller.bench-run/v1
 # Shared model settings. Keep credentials in the named environment variable.
 model:
   id: ${ROLLER_MODEL_ID}
+  # OpenClaw needs an internal provider namespace. Other Harnesses ignore it.
+  provider: roller
   base_url: ${ROLLER_MODEL_BASE_URL}
   api_key_env: ROLLER_MODEL_API_KEY
   thinking: high
