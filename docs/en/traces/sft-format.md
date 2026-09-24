@@ -204,3 +204,36 @@ networks. The sample therefore retains raw/ACTF and records SFT as unavailable.
 For a User Simulator rollout, the Task Agent SFT is in the root sample. The
 simulated user's own SFT is at `user_simulator/trace_SFT.json`. Run-level
 `sft.jsonl` aggregates only the Task Agent.
+
+## 6. Re-exporting older Codex image trajectories
+
+Older Codex exports serialized `input_image` tool-result blocks into ACTF text.
+Their SFT files contain JSON/base64 text instead of `<image>` placeholders and
+an `images` list. Updating Roller or resuming a completed run does not rebuild
+these existing files. With a current Roller checkout, re-export them offline:
+
+```bash
+PYTHONPATH=src python -m roller.reexport_codex runs/my-codex-run \
+  --output exports/my-codex-run
+```
+
+The command reads the run's `info.json` and each completed sample's `info.json`,
+`trace.jsonl`, and `trace_ACTF.json`. It rebuilds tool observations from the
+native Codex trace and preserves the existing ACTF's prompts, assistant turns
+(including deliberately removed reasoning), captured tool schemas, and metrics.
+It never invokes a model, Docker, or an image download. Tool-call IDs and names
+must agree between the native and saved trajectories.
+
+The destination must be a new directory outside the source run. It contains:
+
+- `samples/.../trace_ACTF.json` and `trace_SFT.json`;
+- `sft.jsonl`, ordered by `request_index`;
+- `reexport.json`, mapping each aggregate line to its model, task, source sample,
+  and image count.
+
+Only task-agent samples with run status `ok` or `skipped` are selected. Each
+selected sample must use Codex; failed samples are counted but not exported.
+Missing raw/ACTF files, mismatched tool calls, or invalid images abort the export
+without publishing a partial destination. The source is left intact. The output
+is a derived dataset, **not** a resumable run: results, locks, raw/wire traces,
+and User Simulator exports remain in the original run.

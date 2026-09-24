@@ -183,3 +183,30 @@ SFT，因为导出过程不会读取文件或网络。该样本会保留 raw/ACT
 
 User Simulator rollout 的任务 Agent SFT 位于根 sample，模拟用户自己的 SFT 位于
 `user_simulator/trace_SFT.json`；run 级 `sft.jsonl` 只汇总任务 Agent。
+
+## 6. 重新导出旧版 Codex 图片轨迹
+
+旧版 Codex 导出器会把 `input_image` 工具结果序列化成 ACTF text，因此 SFT 中保留的是
+JSON/base64 文本，没有 `<image>` 占位符和 `images` 列表。更新 Roller 或 Resume
+已完成的 run 不会重建这些旧文件。使用当前 Roller 代码可以离线重新导出：
+
+```bash
+PYTHONPATH=src python -m roller.reexport_codex runs/my-codex-run \
+  --output exports/my-codex-run
+```
+
+命令读取 run 的 `info.json`，以及每个已完成 sample 的 `info.json`、`trace.jsonl` 和
+`trace_ACTF.json`，从原生 Codex 日志重建工具 observation。原 ACTF 中的提示词、
+assistant 回合（包括已移除的 reasoning）、捕获的工具 schema 和用量指标均保留。
+过程不调用模型、Docker，也不下载图片；原生日志与已有轨迹的工具调用 ID、名称必须一致。
+
+目标必须是源 run 之外的新目录，包含：
+
+- `samples/.../trace_ACTF.json` 和 `trace_SFT.json`；
+- 按 `request_index` 排序的 `sft.jsonl`；
+- `reexport.json`，按汇总行号记录模型、任务、源 sample 和图片数量。
+
+只选择 run 中状态为 `ok` 或 `skipped` 的任务 Agent sample，且这些 sample 必须使用
+Codex；失败 sample 只计数，不导出。原始日志或 ACTF 缺失、工具调用不匹配、图片无效
+都会中止导出，不留下部分完成的目标目录。源文件保持不变。目标是派生数据集，
+**不是可 Resume 的 run**：结果文件、lock、raw/wire 日志和 User Simulator 轨迹仍在原 run 中。
