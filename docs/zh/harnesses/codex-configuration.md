@@ -11,7 +11,7 @@ Codex Harness 支持：
 - Task Bundle、只读 inputs、Context、`runtime.setup` 和完整 `output_dir` 回收。
 - 并行、retry、run lock、Resume 完整性检查。
 - Codex native session JSONL、`ACTF_v1.0`、单条 SFT 和 run 级 `sft.jsonl`。
-- request-side `--wire-trace full`。
+- 默认 `--wire-trace actf` 捕获原始请求工具定义，`--wire-trace full` 额外保留完整请求。
 - 动态 User Simulator 和 Task Agent。Simulator 可通过 `user_simulator.harness`
   独立选择并使用不同 model。
 - Viewer 展示可见 reasoning、工具调用、工具结果和最终回复。
@@ -122,7 +122,7 @@ roller collect \
 
 提供自定义 API 地址时，Roller 会创建隔离的 Codex provider，固定使用 `wire_api="responses"`，并默认设置 `supports_websockets=false`。这适用于只实现 Responses HTTP streaming 的兼容服务。只有确认服务支持 Responses WebSocket 时才使用 `--codex-websockets`。
 
-`--wire-trace full` 使用当前 rollout 的 HTTP 代理，因此需要显式 API 地址、默认的 `--no-codex-websockets` 和 `--network host`。未设置自定义 API 地址时，Codex 使用自己的内置 OpenAI provider 和 transport 策略。
+默认 `--wire-trace actf` 和 `full` 在配置 API 地址时通过当前 rollout 的 HTTP 代理捕获工具，需要 `--network host` 和默认的 `--no-codex-websockets`。未配置 API 地址时仍使用 Codex 内置 provider，可保留 native raw/ACTF，但因无法获取原始工具定义而不导出 SFT。`full` 会拒绝缺少 API 地址或启用 WebSocket 的配置。
 
 (codex-cli-flags)=
 ## 4. Codex 专属参数
@@ -227,6 +227,7 @@ Codex sample 的默认结构与 OpenClaw 相同：
 <sample>/
 ├── trace.jsonl
 ├── trace_ACTF.json
+├── tools_capture.jsonl      # 每次请求的原始工具定义
 ├── trace_SFT.json
 ├── info.json
 └── results/                 # 有输出时
@@ -247,15 +248,17 @@ output。顶层 system prompt 来自 `session_meta.base_instructions`、native d
 message，以及 Codex 在首轮前注入的 `<environment_context>`。Task 中的用户消息按内容
 匹配，避免把环境事件当作用户消息或分配到错误轮次。
 
-Codex native session 不提供每个工具的完整原始 JSON Schema。为了产出严格 SFT，Roller 会
-基于实际调用名和参数字段生成 permissive function schema。这些 schema 保留 tool call 的名称、
-参数和结果，但不包含 Codex 内置工具接口的完整定义。
+工具定义来自实际发出的 Responses 请求，包括模型未调用的工具，不再根据调用参数推导 schema。ACTF 保存 `tools_format: "responses"`、原样的 `tools` 列表，以及含每次请求快照的 `tools_capture` 来源信息。description、required、enum、custom grammar、namespace 和原始顺序均保留。
+
+`tools_capture.jsonl` 在常规清理后仍保留，仅保存工具相关字段：`tools`、`tool_choice`、`parallel_tool_calls` 和类型为 `additional_tools` 的 input item，不包含普通消息和 HTTP header。schema 按原始 JSON 值保存，不经过通用敏感字段名脱敏，以免破坏名为 `token` 的合法参数。description 和 default 等内容也属于原始 harness 数据。
 
 ### `trace_SFT.json` 与 `sft.jsonl`
 
-和 OpenClaw 一样，单条 SFT 顶层严格只有 `messages` 和 `tools`。Assistant 固定包含
+纯文本 SFT 顶层包含 `messages` 和 `tools`，图片样本额外包含 `images`。Codex 的 `tools` 保持原始 Responses 格式，包括 namespace、custom 和内置工具，不统一改写成 Chat Completions 的嵌套 function。custom call 使用 `type: "custom"` 并保留原始字符串 `input`，namespace 字段也原样保留。Assistant 固定包含
 `reasoning_content`、`content`、`tool_calls`。工具结果转成 `role=tool`。Run 级 `sft.jsonl`
 只汇总成功或可信 Resume 的样本。
+
+捕获缺失或损坏、各请求间工具定义变化、存在 programmatic `additional_tools` input item 时，SFT 会明确标记为不可用，保留 raw 与完整请求快照。单个顶层 `tools` 无法忠实表达这些变化或其他定义形式。即使模型没有调用工具，也必须捕获到请求才能确认工具列表为空；`--wire-trace off` 因此不产出 Codex SFT。
 
 ## 9. Native raw 与 wire trace
 
@@ -268,9 +271,7 @@ rollout-local 代理，在转发给真实 `--api-base` 前保存脱敏后的完�
 Codex 请求中的工具定义可位于 `input` 的 `additional_tools` item。该文件是 request-side 证据，不保存
 上游 response body，也不能说明模型服务内部如何再次截断、路由或 tokenize。
 
-默认 `--wire-trace actf` 不保留额外 wire 文件。Codex ACTF 的工具 schema 来自 native 实际
-调用的 permissive 投影，而不是完整 request schema。需要检查某次模型调用的完整请求时
-必须显式使用 `--wire-trace full`，并配合足够严格的日志访问权限。
+默认 `--wire-trace actf` 保留 `tools_capture.jsonl`，转换后删除临时 wire 文件，在不记录完整消息正文的情况下捕获原始工具定义。检查完整请求上下文需使用 `--wire-trace full` 并设置合适的日志访问权限。捕获证明的是发往 API 的请求，不能验证上游服务内部的再次改写。
 
 ## 10. 常见问题
 

@@ -120,8 +120,8 @@ The contract is:
 - `tool` contains only `role`, `tool_call_id`, and string `content`.
 - The assistant after a tool call follows the matching tool message directly.
   No empty user message is inserted.
-- `tools` keeps the function schema the model actually saw. It is `[]` when no
-  schema is available and the trajectory did not call tools.
+- `tools` keeps captured tool definitions. Codex preserves the native Responses list (flat functions, namespaces, custom grammars, and built-in tools), including unused tools and all original schema fields; consumers must support this format. Other harnesses keep the existing nested function representation. Codex requires captured definitions even when no tools were called; missing capture never becomes an empty list.
+- Codex custom calls use `{"id":"...","type":"custom","custom":{"name":"...","input":"original string"}}`. Function/custom call namespace fields are preserved. Changing schemas or programmatic `additional_tools` items retain their exact snapshots in ACTF and make SFT explicitly unavailable.
 
 ## 3. ACTF mapping
 
@@ -146,7 +146,7 @@ The exporter requires:
 - Every assistant tool call has a non-empty, globally unique ID;
 - Every call has exactly one matching tool result in the same step;
 - The call's tool name exists in the top-level tools schema;
-- Arguments can be encoded as a JSON object;
+- Function arguments can be encoded as a JSON object; Codex custom input remains a string;
 - Tool results contain only strings, text blocks, or image blocks with
   embedded base64 bytes.
 
