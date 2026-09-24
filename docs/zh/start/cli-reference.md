@@ -225,7 +225,7 @@ Bench 参数用于把外部 benchmark 转换为 Roller task、运行采集、执
 
 ```bash
 roller bench run --config BASE.yaml [--extra-config FILE_OR_JSON]... [--dry-run]
-roller collect --bench NAME --bench-root ROOT [--bench-category CAT]... [--bench-task-id ID]... [--bench-variant NAME] [--bench-timeout-multiplier N] ...
+roller collect --bench NAME --bench-root ROOT [--bench-category CAT]... [--bench-task-id ID]... [--bench-variant NAME] [--bench-timeout-multiplier N] [--bench-runs-per-task N] ...
 roller bench export NAME ROOT --output TASKS.jsonl [--category CAT]... [--task-id ID]... [--variant NAME] [--timeout-multiplier N]
 roller bench report RUN_DIR [--output REPORT.json]
 ```
@@ -242,6 +242,7 @@ roller bench report RUN_DIR [--output REPORT.json]
 | `--bench-task-id ID` / `--task-id ID` | 不限制 | 只选择指定 task，可重复，错误 ID 会直接报错 |
 | `--bench-variant NAME` / `--variant NAME` | adapter 默认值 | 选择 benchmark 条件，例如 SkillsBench 的 `with-skill` 或 `no-skill` |
 | `--bench-timeout-multiplier N` / `--timeout-multiplier N` | adapter 默认值 | 按有限正数倍数缩放每条 benchmark task 的超时 |
+| `--bench-runs-per-task N` / `--runs-per-task N` | `1` | 复制选中的 benchmark task，并记录对应的上游运行序号 |
 | `--output` / `-o` | export 时必填 | 设置 export 的 task JSONL 或 report 的报告 JSON |
 | `RUN_DIR` | report 时必填 | 指定已完成的 run，属于位置参数 |
 | `--rebuild-task-images` | 关闭 | 即使 task-specific benchmark 镜像已经存在也重新构建 |

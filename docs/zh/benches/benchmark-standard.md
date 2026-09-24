@@ -27,6 +27,7 @@ benchmark:
   categories: []
   task_ids: []
   timeout_multiplier: 1
+  extra: {}
   environment:
     JUDGE_MODEL: ${ROLLER_JUDGE_MODEL}
 
@@ -72,6 +73,7 @@ execution:
 | `benchmark.categories` / `task_ids` | 可重复筛选项，空列表表示不筛选 |
 | `benchmark.timeout_multiplier` | 同时调整任务声明和实际执行时间 |
 | `benchmark.environment` | 仅在本次进程中设置的 benchmark 环境变量，运行结束后恢复原值 |
+| `benchmark.extra` | 当前 benchmark 专属的参数；未知字段会在启动前报错 |
 | `model.id` | 被测模型 ID |
 | `model.provider` | 可选的 OpenClaw provider 命名空间；其他 Harness 仍原样使用 `model.id` |
 | `model.base_url` | 模型 API 地址 |
@@ -107,6 +109,10 @@ benchmark:
 
 这些值不会出现在命令行。dry-run 和运行元数据会记录生效后的非敏感设置、配置文件路径、脱敏配置摘要和环境变量名称，密钥值不会落盘。
 
+`benchmark.extra` 与 `harness.extra` 分开管理。目前唯一的字段是 QwenClawBench 的
+`runs_per_task`。它复制每个选中的任务，并在 benchmark metadata 中保留上游运行序号。
+普通重复采样使用 `execution.samples`；除非确实需要两者相乘，否则不要同时设置。
+
 ## Harness 专属参数
 
 `harness.extra` 使用不带 Harness 前缀的字段。Roller 将其映射到现有 `collect` 参数。
@@ -131,6 +137,7 @@ benchmark:
 ```bash
 scripts/prepare-benchmark.sh wildclawbench "$WILDCLAWBENCH_ROOT"
 scripts/prepare-benchmark.sh pinchbench "$PINCHBENCH_ROOT"
+scripts/prepare-benchmark.sh qwenclawbench "$QWENCLAWBENCH_ROOT"
 scripts/prepare-benchmark.sh skillsbench "$SKILLSBENCH_ROOT"
 ```
 
@@ -166,16 +173,17 @@ Roller 在 agent 容器销毁前完成评分。运行结束后，run 目录包�
 roller bench report runs/<run-name> --output runs/<run-name>/bench-report.json
 ```
 
-## 三个参考配置
+## 参考配置
 
 | Benchmark | 额外配置 | 准备脚本 |
 | --- | --- | --- |
 | WildClawBench | `examples/benchmarks/wildclawbench.yaml` | `scripts/prepare-wildclawbench.sh` |
 | PinchBench | `examples/benchmarks/pinchbench.yaml` | `scripts/prepare-pinchbench.sh` |
+| QwenClawBench | `examples/benchmarks/knclawbench.yaml` | `scripts/prepare-knclawbench.sh` |
 | SkillsBench with skill | `examples/benchmarks/skillsbench.yaml` | `scripts/prepare-skillsbench.sh` |
 | SkillsBench without skill | 在上一项后再加 `examples/benchmarks/skillsbench-no-skill.yaml` | 同上 |
 
-WildClawBench 是完整标杆：它覆盖独立 judge、搜索环境、任务级 timeout、多种 Harness 和 ground-truth 延迟注入。PinchBench 与 SkillsBench 使用同一个运行入口，只保留各自必要的 overlay。
+WildClawBench 是完整标杆：它覆盖独立 judge、搜索环境、任务级 timeout、多种 Harness 和 ground-truth 延迟注入。PinchBench、QwenClawBench 与 SkillsBench 使用同一个运行入口，只保留各自必要的 overlay。
 
 ## 新 benchmark 的合入要求
 

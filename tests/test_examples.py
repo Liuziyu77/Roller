@@ -6,6 +6,7 @@ import tomllib
 import unittest
 from pathlib import Path
 
+from roller.benches import BENCHES
 from roller.benches.run_config import load_bench_run_plan
 from roller.harness_registry import HARNESS_NAMES
 from roller.bundles import TaskBundleStore
@@ -141,11 +142,13 @@ class ExampleFilesTests(unittest.TestCase):
             "ROLLER_SEARCH_API_KEY": "search-secret",
             "WILDCLAWBENCH_ROOT": "/tmp/wildclawbench",
             "PINCHBENCH_ROOT": "/tmp/pinchbench",
+            "QWENCLAWBENCH_ROOT": "/tmp/qwenclawbench",
             "SKILLSBENCH_ROOT": "/tmp/skillsbench",
         }
         cases = (
             ("wildclawbench.yaml", (), "wildclawbench", "openclaw"),
             ("pinchbench.yaml", (), "pinchbench", "openclaw"),
+            ("knclawbench.yaml", (), "qwenclawbench", "openclaw"),
             ("skillsbench.yaml", (), "skillsbench", "opencode"),
             (
                 "skillsbench.yaml",
@@ -169,6 +172,11 @@ class ExampleFilesTests(unittest.TestCase):
                     argv = list(plan.collect_argv)
                     self.assertEqual(argv[argv.index("--bench") + 1], benchmark)
                     self.assertEqual(argv[argv.index("--harness") + 1], harness)
+                    if benchmark == "qwenclawbench":
+                        self.assertEqual(
+                            argv[argv.index("--bench-runs-per-task") + 1], "3"
+                        )
+                        self.assertEqual(argv[argv.index("--samples") + 1], "1")
                     self.assertNotIn("model-secret", " ".join(argv))
                     self.assertNotIn("judge-secret", json.dumps(plan.provenance))
                     self.assertNotIn("search-secret", json.dumps(plan.provenance))
@@ -194,6 +202,22 @@ class ExampleFilesTests(unittest.TestCase):
             set(schema["properties"]["harness"]["properties"]["id"]["enum"]),
             set(HARNESS_NAMES),
         )
+
+    def test_every_registered_benchmark_has_standard_entry_files(self) -> None:
+        files = {
+            "pinchbench": ("pinchbench.yaml", "prepare-pinchbench.sh"),
+            "qwenclawbench": ("knclawbench.yaml", "prepare-knclawbench.sh"),
+            "skillsbench": ("skillsbench.yaml", "prepare-skillsbench.sh"),
+            "wildclawbench": ("wildclawbench.yaml", "prepare-wildclawbench.sh"),
+        }
+        self.assertEqual(set(files), set(BENCHES))
+        for config_name, script_name in files.values():
+            self.assertTrue(
+                (self.examples_root / "benchmarks" / config_name).is_file()
+            )
+            script = self.project_root / "scripts" / script_name
+            self.assertTrue(script.is_file())
+            self.assertTrue(script.stat().st_mode & 0o111)
 
 
 if __name__ == "__main__":

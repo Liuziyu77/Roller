@@ -201,6 +201,58 @@ class BenchRunConfigTests(unittest.TestCase):
             self.assertEqual(argv[argv.index("--model") + 1], "organization/model")
             self.assertNotIn("roller/organization/model", argv)
 
+    def test_qwenclawbench_maps_benchmark_specific_runs(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            config = self._base()
+            config["benchmark"] = {
+                "id": "qwenclawbench",
+                "root": "/bench/qwenclaw",
+                "extra": {"runs_per_task": 3},
+            }
+            config["harness"] = {"id": "openclaw"}
+            path = self._write(root, "run.yaml", config)
+            plan = load_bench_run_plan(
+                path,
+                environ={
+                    "MODEL_BASE_URL": "https://model.example/v1",
+                    "MODEL_API_KEY": "secret-value",
+                },
+                temporary_root=root,
+            )
+
+        argv = list(plan.collect_argv)
+        self.assertEqual(
+            argv[argv.index("--bench-runs-per-task") + 1], "3"
+        )
+        self.assertEqual(
+            plan.provenance["effective"]["benchmark"]["extra"],
+            {"runs_per_task": 3},
+        )
+
+    def test_rejects_benchmark_extra_for_the_wrong_benchmark(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            config = self._base()
+            config["benchmark"] = {
+                "id": "pinchbench",
+                "root": "/bench/pinch",
+                "extra": {"runs_per_task": 3},
+            }
+            path = self._write(root, "run.yaml", config)
+
+            with self.assertRaisesRegex(
+                ValueError, "benchmark.extra has unknown field.*runs_per_task"
+            ):
+                load_bench_run_plan(
+                    path,
+                    environ={
+                        "MODEL_BASE_URL": "https://model.example/v1",
+                        "MODEL_API_KEY": "secret-value",
+                    },
+                    temporary_root=root,
+                )
+
     def test_openclaw_custom_model_config_can_clear_common_connection(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

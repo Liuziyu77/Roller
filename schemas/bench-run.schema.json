@@ -27,6 +27,14 @@
           "type": "object",
           "propertyNames": {"pattern": "^[A-Za-z_][A-Za-z0-9_]*$"},
           "additionalProperties": {"type": "string"}
+        },
+        "extra": {
+          "type": ["object", "null"],
+          "description": "Benchmark-specific options. Roller validates fields against the selected benchmark.",
+          "properties": {
+            "runs_per_task": {"$ref": "#/$defs/positiveIntegerOrEnv"}
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false

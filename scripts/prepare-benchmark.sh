@@ -17,7 +17,10 @@ shift
 
 case "$benchmark" in
   wildclawbench | pinchbench | skillsbench) ;;
-  *) fail "unsupported benchmark: $benchmark (expected wildclawbench, pinchbench, or skillsbench)" ;;
+  qwenclawbench)
+    exec "$script_dir/prepare-knclawbench.sh" "$@"
+    ;;
+  *) fail "unsupported benchmark: $benchmark (expected wildclawbench, pinchbench, qwenclawbench, or skillsbench)" ;;
 esac
 
 exec "$script_dir/prepare-$benchmark.sh" "$@"

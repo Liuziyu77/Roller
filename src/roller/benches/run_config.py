@@ -218,6 +218,22 @@ _HARNESS_API_PROTOCOL = {
     "pi": "openai-completions",
 }
 
+_BENCHMARK_EXTRA: dict[str, dict[str, tuple[str, str]]] = {
+    "qwenclawbench": {
+        "runs_per_task": ("--bench-runs-per-task", "value"),
+    },
+}
+
+
+def _append_benchmark_extra(
+    argv: list[str], benchmark: str, extra: Mapping[str, Any]
+) -> None:
+    supported = _BENCHMARK_EXTRA.get(benchmark, {})
+    _reject_unknown(extra, set(supported), "benchmark.extra")
+    for name, value in extra.items():
+        flag, _kind = supported[name]
+        _append_value(argv, flag, value)
+
 
 def _append_harness_extra(
     argv: list[str], harness: str, extra: Mapping[str, Any]
@@ -372,6 +388,7 @@ def load_bench_run_plan(
             "task_ids",
             "timeout_multiplier",
             "environment",
+            "extra",
         },
         "benchmark",
     )
@@ -468,6 +485,8 @@ def load_bench_run_plan(
     _append_value(argv, "--bench-variant", _optional_string(benchmark, "variant", "benchmark"))
     if "timeout_multiplier" in benchmark:
         _append_value(argv, "--bench-timeout-multiplier", benchmark["timeout_multiplier"])
+    benchmark_extra = _mapping(benchmark, "extra")
+    _append_benchmark_extra(argv, benchmark_id, benchmark_extra)
 
     model_params = model.get("params", {})
     if not isinstance(model_params, dict):
@@ -577,6 +596,7 @@ def load_bench_run_plan(
                 "categories": benchmark.get("categories", []),
                 "task_ids": benchmark.get("task_ids", []),
                 "timeout_multiplier": benchmark.get("timeout_multiplier", 1),
+                "extra": _redact(benchmark_extra),
             },
             "model": {
                 "id": model_id,

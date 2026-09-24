@@ -225,7 +225,7 @@ Common command forms:
 
 ```bash
 roller bench run --config BASE.yaml [--extra-config FILE_OR_JSON]... [--dry-run]
-roller collect --bench NAME --bench-root ROOT [--bench-category CAT]... [--bench-task-id ID]... [--bench-variant NAME] [--bench-timeout-multiplier N] ...
+roller collect --bench NAME --bench-root ROOT [--bench-category CAT]... [--bench-task-id ID]... [--bench-variant NAME] [--bench-timeout-multiplier N] [--bench-runs-per-task N] ...
 roller bench export NAME ROOT --output TASKS.jsonl [--category CAT]... [--task-id ID]... [--variant NAME] [--timeout-multiplier N]
 roller bench report RUN_DIR [--output REPORT.json]
 ```
@@ -243,6 +243,7 @@ Use `bench run` for repeatable benchmark jobs. It resolves the shared and benchm
 | `--bench-task-id ID` / `--task-id ID` | Unlimited | Selects one task and can be repeated, invalid IDs fail immediately |
 | `--bench-variant NAME` / `--variant NAME` | Adapter default | Selects a benchmark condition such as SkillsBench `with-skill` or `no-skill` |
 | `--bench-timeout-multiplier N` / `--timeout-multiplier N` | Adapter default | Scales each benchmark task timeout by a finite positive number |
+| `--bench-runs-per-task N` / `--runs-per-task N` | `1` | Duplicates selected benchmark tasks and records their upstream run indices |
 | `--output` / `-o` | Required for export | Sets the exported task JSONL or report JSON |
 | `RUN_DIR` | Required for report | Selects a completed run and is a positional argument |
 | `--rebuild-task-images` | Off | Rebuilds task-specific benchmark images even when they already exist |

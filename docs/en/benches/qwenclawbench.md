@@ -12,7 +12,38 @@ Hermes, OpenCode, DeepSeek, and Pi. The adapter defaults to
 explored, but comparable leaderboard experiments should use OpenClaw and fix
 the image, agent model, judge model, and run count.
 
-## 1. Data and export
+## 1. Standard workflow
+
+Prepare the pinned checkout and Harness image:
+
+```bash
+export QWENCLAWBENCH_ROOT="$PWD/.benchmarks/knclawbench-v1.1"
+scripts/prepare-benchmark.sh qwenclawbench "$QWENCLAWBENCH_ROOT"
+```
+
+Set the common model and judge variables, then inspect the resolved plan:
+
+```bash
+export ROLLER_MODEL_ID=example/model
+export ROLLER_MODEL_BASE_URL=https://api.example.com/v1
+export ROLLER_MODEL_API_KEY=replace-with-your-api-key
+export ROLLER_JUDGE_BASE_URL=https://judge.example.com/v1
+export ROLLER_JUDGE_API_KEY=replace-with-your-judge-key
+export ROLLER_JUDGE_MODEL=example-judge
+export ROLLER_BENCH_OUTPUT="$PWD/runs"
+
+scripts/run-benchmark.sh \
+  --config examples/benchmarks/base.yaml \
+  --extra-config examples/benchmarks/knclawbench.yaml \
+  --dry-run
+```
+
+Remove `--dry-run` to start the evaluation. The example uses the official three runs per task
+through `benchmark.extra.runs_per_task`. A later config layer can reduce that value for a smoke
+test. The preparation script pins revision `ca8af7f914f76082b4c27c21481da2495a5d5125`
+and stops if an existing checkout is at another revision.
+
+## 2. Data and export
 
 ```bash
 git clone https://github.com/SKYLENAGE-AI/QwenClawBench.git \
@@ -40,7 +71,7 @@ Repeated row ids end in `__run_01`, `__run_02`, and `__run_03`. The original
 id, run index, and total run count remain in
 `bench.metadata.upstream_task_id`, `run_index`, and `runs_per_task`.
 
-## 2. One-command runner
+## 3. Legacy runner
 
 `scripts/run-qwenclawbench.sh` exports tasks, collects trajectories, and writes
 `<OUTPUT_ROOT>/<RUN_NAME>/report.json`. Put model and judge credentials in
@@ -90,7 +121,7 @@ Arguments after the script are appended to `roller collect`, for example
 Code, Hermes, OpenCode, DeepSeek, or Pi option. OpenClaw and Codex currently
 have no common CLI option for that limit.
 
-## 3. Local Qwen
+## 4. Local Qwen
 
 The repository includes
 `examples/config/openclaw/models-local-vllm.json`. It points OpenClaw to
@@ -123,7 +154,7 @@ OpenAI-compatible Chat Completions API. See the
 [CLI reference](../start/cli-reference.md) for endpoint, key, and Harness step
 options.
 
-## 4. Judge API
+## 5. Judge API
 
 The other 99 tasks are hybrid and require an OpenAI-compatible
 `POST /v1/chat/completions` judge. The grader runs in the container.
@@ -159,7 +190,7 @@ To test an external API later, replace only these three judge variables. A
 different judge endpoint, model, or prompt changes scores, so record and fix
 them for comparative runs.
 
-## 5. Scoring and aggregation
+## 6. Scoring and aggregation
 
 The automated score is the mean of the upstream numeric checks. The LLM judge
 returns a rubric score from 0 to 1. Hybrid tasks first compute:
@@ -189,7 +220,7 @@ Rollouts for the same upstream task are averaged first. `strict_accuracy`
 counts a task only when its mean is 1.0. The report also records the number of
 completed `runs_per_task` for every upstream task.
 
-## 6. Comparability boundary
+## 7. Comparability boundary
 
 - The official setup uses OpenClaw and three runs per task. Label changes to
   the harness or run count.
@@ -201,6 +232,6 @@ completed `runs_per_task` for every upstream task.
 - The adapter fixes `overall_score` to penalized scoring. It does not expose
   upstream `--simple-scoring`; `score_simple` is retained for diagnostics.
 
-## 7. Evaluation reports
+## 8. Evaluation reports
 
 - [Audited evaluation of DeepSeek V4 Flash and GLM-5.2 (2026-09-17 to 2026-09-18)](qwenclawbench-evaluation-2026-09-17.md)

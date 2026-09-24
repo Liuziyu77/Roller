@@ -27,6 +27,7 @@ benchmark:
   categories: []
   task_ids: []
   timeout_multiplier: 1
+  extra: {}
   environment:
     JUDGE_MODEL: ${ROLLER_JUDGE_MODEL}
 
@@ -72,6 +73,7 @@ Keep credentials out of `model.base_url`. Roller rejects URL user information, q
 | `benchmark.categories` / `task_ids` | Optional filters; an empty list applies no filter |
 | `benchmark.timeout_multiplier` | Scales both the task declaration and execution deadline |
 | `benchmark.environment` | Benchmark variables scoped to this process and restored afterward |
+| `benchmark.extra` | Options owned by the selected benchmark; unknown fields fail before execution |
 | `model.id` | Model under test |
 | `model.provider` | Optional OpenClaw provider namespace; other Harnesses still receive `model.id` unchanged |
 | `model.base_url` | Model API endpoint |
@@ -107,6 +109,11 @@ benchmark:
 
 These values are not placed on the command line. Dry-run output and run metadata record the effective non-secret settings, configuration paths, a digest of the redacted configuration, and environment variable names. Secret values are not recorded.
 
+`benchmark.extra` is intentionally separate from `harness.extra`. The only current field is
+QwenClawBench's `runs_per_task`, which duplicates each selected task and preserves the upstream
+run index in benchmark metadata. Use `execution.samples` for ordinary repeated sampling; do not
+combine the two unless the resulting multiplication is intended.
+
 ## Harness-specific settings
 
 `harness.extra` uses names without a Harness prefix. Roller maps them to the existing `collect` options.
@@ -131,6 +138,7 @@ Every maintained adapter provides `scripts/prepare-<name>.sh [ROOT]`. Use the di
 ```bash
 scripts/prepare-benchmark.sh wildclawbench "$WILDCLAWBENCH_ROOT"
 scripts/prepare-benchmark.sh pinchbench "$PINCHBENCH_ROOT"
+scripts/prepare-benchmark.sh qwenclawbench "$QWENCLAWBENCH_ROOT"
 scripts/prepare-benchmark.sh skillsbench "$SKILLSBENCH_ROOT"
 ```
 
@@ -172,10 +180,11 @@ roller bench report runs/<run-name> --output runs/<run-name>/bench-report.json
 | --- | --- | --- |
 | WildClawBench | `examples/benchmarks/wildclawbench.yaml` | `scripts/prepare-wildclawbench.sh` |
 | PinchBench | `examples/benchmarks/pinchbench.yaml` | `scripts/prepare-pinchbench.sh` |
+| QwenClawBench | `examples/benchmarks/knclawbench.yaml` | `scripts/prepare-knclawbench.sh` |
 | SkillsBench with skill | `examples/benchmarks/skillsbench.yaml` | `scripts/prepare-skillsbench.sh` |
 | SkillsBench without skill | Add `examples/benchmarks/skillsbench-no-skill.yaml` after the previous layer | Same as above |
 
-WildClawBench is the full reference integration because it exercises an independent judge, search configuration, task-level timeouts, several Harnesses, and delayed ground-truth staging. PinchBench and SkillsBench use the same entry point with smaller overlays.
+WildClawBench is the full reference integration because it exercises an independent judge, search configuration, task-level timeouts, several Harnesses, and delayed ground-truth staging. PinchBench, QwenClawBench, and SkillsBench use the same entry point with smaller overlays.
 
 ## Requirements for a new benchmark
 

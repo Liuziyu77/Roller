@@ -10,7 +10,38 @@ Roller 复用上游任务、资产、自动 grader、LLM rubric、评分权重�
 默认写入 `harness: openclaw`，可用 `--harness` 覆盖。其他 Harness 可用于探索，但
 排行榜可比实验应优先使用 OpenClaw，并固定镜像、Agent 模型、judge 模型和运行次数。
 
-## 1. 数据与导出
+## 1. 统一运行流程
+
+先准备固定版本的 checkout 和 Harness 镜像：
+
+```bash
+export QWENCLAWBENCH_ROOT="$PWD/.benchmarks/knclawbench-v1.1"
+scripts/prepare-benchmark.sh qwenclawbench "$QWENCLAWBENCH_ROOT"
+```
+
+设置统一的模型与 judge 变量，正式运行前先检查解析后的计划：
+
+```bash
+export ROLLER_MODEL_ID=example/model
+export ROLLER_MODEL_BASE_URL=https://api.example.com/v1
+export ROLLER_MODEL_API_KEY=replace-with-your-api-key
+export ROLLER_JUDGE_BASE_URL=https://judge.example.com/v1
+export ROLLER_JUDGE_API_KEY=replace-with-your-judge-key
+export ROLLER_JUDGE_MODEL=example-judge
+export ROLLER_BENCH_OUTPUT="$PWD/runs"
+
+scripts/run-benchmark.sh \
+  --config examples/benchmarks/base.yaml \
+  --extra-config examples/benchmarks/knclawbench.yaml \
+  --dry-run
+```
+
+确认后删除 `--dry-run` 即可开始评测。示例通过
+`benchmark.extra.runs_per_task` 使用官方的每题 3 次设置；smoke test 可在后续配置层
+覆盖该值。准备脚本固定使用 revision
+`ca8af7f914f76082b4c27c21481da2495a5d5125`；已有 checkout 版本不一致时会直接报错。
+
+## 2. 数据与导出
 
 ```bash
 git clone https://github.com/SKYLENAGE-AI/QwenClawBench.git \
@@ -35,7 +66,7 @@ workspace 根，并创建 `workspace -> .` 兼容别名；因此模型和 grader
 原始 id、当前序号和总运行数分别保存在
 `bench.metadata.upstream_task_id`、`run_index` 和 `runs_per_task`。
 
-## 2. 一键运行脚本
+## 3. 旧版专用脚本
 
 `scripts/run-qwenclawbench.sh` 会自动导出任务、采集轨迹并生成
 `<OUTPUT_ROOT>/<RUN_NAME>/report.json`。完整 hybrid 运行需要先把模型和 judge
@@ -82,7 +113,7 @@ QWENCLAW_REQUIRE_JUDGE=0 \
 `MAX_STEPS` 会映射到 Claude Code、Hermes、OpenCode、DeepSeek 和 Pi 对应的步数
 参数；OpenClaw 与 Codex CLI 当前没有统一的该参数。
 
-## 3. 本地 Qwen
+## 4. 本地 Qwen
 
 仓库提供了 vLLM/OpenClaw 模型配置
 `examples/config/openclaw/models-local-vllm.json`，默认访问宿主机
@@ -114,7 +145,7 @@ API，Hermes、OpenCode、DeepSeek 和 Pi 使用 OpenAI-compatible Chat Completi
 API。具体 endpoint、key 和各 Harness 步数参数见
 [CLI 参数参考](../start/cli-reference.md)。
 
-## 4. Judge API
+## 5. Judge API
 
 其余 99 个任务为 hybrid，需要 OpenAI-compatible
 `POST /v1/chat/completions` judge。grader 在容器内执行，以下变量由
@@ -148,7 +179,7 @@ roller collect --tasks /tmp/qwenclawbench.jsonl \
 后续使用外部 API 时只替换这三个 judge 变量。不同 judge endpoint、模型或 prompt
 会改变分数，比较实验时必须固定并记录它们。
 
-## 5. 评分与聚合
+## 6. 评分与聚合
 
 Automated 分数是上游各数值检查项的平均值。LLM judge 按 rubric 返回 0 到 1。
 Hybrid 先计算简单加权分数：
@@ -174,7 +205,7 @@ roller bench report /tmp/qcb-runs/local-qwen --output /tmp/qcb-report.json
 同一上游任务的多次 rollout 先取平均，再计算 `strict_accuracy`：
 任务均分为 1.0 才算严格通过。报告还包含每题实际完成的 `runs_per_task`。
 
-## 6. 可比性边界
+## 7. 可比性边界
 
 - 官方配置为 OpenClaw、每题 3 次；修改 Harness 或次数时应单独标注。
 - 必须使用 `--task-timeouts`，否则每题的 1800 秒上游预算不会生效。
@@ -183,6 +214,6 @@ roller bench report /tmp/qcb-runs/local-qwen --output /tmp/qcb-report.json
 - 当前 Adapter 固定使用惩罚式 `overall_score`，不提供上游 `--simple-scoring` 开关；
   `score_simple` 仅作为诊断值保留。
 
-## 7. 评测报告
+## 8. 评测报告
 
 - [DeepSeek V4 Flash 与 GLM-5.2 审计评测（2026-09-17 至 2026-09-18，英文）](../../en/benches/qwenclawbench-evaluation-2026-09-17.md)
