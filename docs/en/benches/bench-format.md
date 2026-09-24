@@ -9,7 +9,9 @@ task export and scoring before that teardown:
    bench's own grader in the same container, and write the score to
    `score.json`.
 
-`roller collect --bench NAME --bench-root ROOT` performs translation,
+`roller bench run --config BASE --extra-config BENCH` is the standard user-facing
+entry point; see [Benchmark run standard](benchmark-standard.md). It resolves to
+`roller collect --bench NAME --bench-root ROOT`, which performs translation,
 collection, grading, and aggregation in one command. The three-step `bench
 export` / ordinary `collect` / `bench report` interface remains available when
 you need to inspect or edit the intermediate task JSONL. Registered adapters
@@ -196,7 +198,9 @@ class MyBenchAdapter(BenchAdapter):
         return rows
 ```
 
-Then add one line to the registry in `src/roller/benches/__init__.py`. Optionally
+Then add one line to the registry in `src/roller/benches/__init__.py`. Add the
+preparation script, example extra configuration, bilingual guide, and tests
+listed in the [benchmark integration checklist](benchmark-standard.md#requirements-for-a-new-benchmark). Optionally
 override `categories()` and `aggregate()` (only when you need to match the
 upstream reporting method).
 

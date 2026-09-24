@@ -66,6 +66,7 @@ python -m http.server -d _build/html 8000
 
 | 目标 | 文档 |
 | --- | --- |
+| 用统一配置运行 benchmark | [Benchmark 运行规范](zh/benches/benchmark-standard.md) |
 | 运行 benchmark 并评分 | [Bench 接入与评分](zh/benches/bench-format.md#7-cli) |
 | 运行 WildClawBench（上游参数对应、search shim、已知问题） | [WildClawBench](zh/benches/wildclawbench.md) |
 | 跑 SkillsBench 的 with-skill / no-skill 对照 | [SkillsBench](zh/benches/skillsbench.md) |

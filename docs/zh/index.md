@@ -101,6 +101,7 @@ traces/viewer
 :caption: Bench
 
 benches/bench-format
+benches/benchmark-standard
 benches/wildclawbench
 benches/skillsbench
 benches/pinchbench

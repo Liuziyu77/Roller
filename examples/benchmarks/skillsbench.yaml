@@ -1,0 +1,20 @@
+benchmark:
+  id: skillsbench
+  root: ${SKILLSBENCH_ROOT}
+  variant: with-skill
+  timeout_multiplier: 1
+
+harness:
+  id: opencode
+  image: roller-opencode:1.18.30
+  extra:
+    max_steps: 100
+    context_length: 128000
+    output_tokens: 32768
+    vision: true
+
+execution:
+  run_name: skillsbench-with-skill
+  samples: 3
+  parallel: 1
+  grader_parallel: 1

@@ -1,0 +1,5 @@
+benchmark:
+  variant: no-skill
+
+execution:
+  run_name: skillsbench-no-skill

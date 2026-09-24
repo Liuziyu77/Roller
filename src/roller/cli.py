@@ -113,6 +113,29 @@ def _build_parser() -> argparse.ArgumentParser:
 
     bench_sub.add_parser("list", help="list registered benchmark adapters")
 
+    bench_run = bench_sub.add_parser(
+        "run", help="run a benchmark from layered YAML/JSON configuration"
+    )
+    bench_run.add_argument(
+        "--config",
+        required=True,
+        help="base benchmark run configuration (YAML or JSON)",
+    )
+    bench_run.add_argument(
+        "--extra-config",
+        action="append",
+        default=[],
+        help=(
+            "YAML/JSON overlay path or inline JSON object; repeatable and applied "
+            "from left to right"
+        ),
+    )
+    bench_run.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="resolve and validate the complete plan without starting containers",
+    )
+
     bench_export = bench_sub.add_parser(
         "export", help="convert a checked-out bench into a Roller task list"
     )
@@ -542,7 +565,7 @@ def _dry_run_payload(args: argparse.Namespace, requests: list) -> dict:
         cli_harness or getattr(request.task, "harness", "openclaw")
         for request in requests
     }
-    return {
+    payload = {
         "dry_run": True,
         "harness": next(iter(agent_harnesses)) if len(agent_harnesses) == 1 else "mixed",
         "docker_image": args.docker_image,
@@ -598,6 +621,10 @@ def _dry_run_payload(args: argparse.Namespace, requests: list) -> dict:
             for request in requests
         ],
     }
+    bench_run_config = getattr(args, "_bench_run_config", None)
+    if isinstance(bench_run_config, dict):
+        payload["bench_run_config"] = bench_run_config
+    return payload
 
 
 def _with_task_timeout(request):
@@ -1162,6 +1189,7 @@ def _collect(args: argparse.Namespace) -> int:
                 if bench_context is not None
                 else None
             ),
+            "bench_run_config": getattr(args, "_bench_run_config", None),
             "models": args.model,
             "trajectory_count": len(requests),
             "workspace": str(workspace) if workspace else None,
@@ -1400,6 +1428,25 @@ def _bench(args: argparse.Namespace) -> int:
             )
             print(f"{adapter.name:<16} {adapter.description}{variants}")
         return 0
+    if args.bench_command == "run":
+        from roller.benches.run_config import (
+            load_bench_run_plan,
+            temporary_environment,
+        )
+
+        with tempfile.TemporaryDirectory(prefix="roller-bench-run-") as temporary:
+            plan = load_bench_run_plan(
+                args.config,
+                args.extra_config,
+                temporary_root=Path(temporary),
+            )
+            collect_argv = list(plan.collect_argv)
+            if args.dry_run:
+                collect_argv.append("--dry-run")
+            collect_args = _build_parser().parse_args(collect_argv)
+            collect_args._bench_run_config = plan.provenance
+            with temporary_environment(plan.environment):
+                return _collect(collect_args)
     if args.bench_command == "export":
         adapter = get_bench(args.name)
         root = Path(args.root).expanduser().resolve()

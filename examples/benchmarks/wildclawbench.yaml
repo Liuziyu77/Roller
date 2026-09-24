@@ -1,0 +1,21 @@
+benchmark:
+  id: wildclawbench
+  root: ${WILDCLAWBENCH_ROOT}
+  timeout_multiplier: 1
+  environment:
+    OPENROUTER_BASE_URL: ${ROLLER_JUDGE_BASE_URL}
+    OPENROUTER_API_KEY: ${ROLLER_JUDGE_API_KEY}
+    JUDGE_MODEL: ${ROLLER_JUDGE_MODEL}
+    BRAVE_API_KEY: ${ROLLER_SEARCH_API_KEY}
+    NODE_EXTRA_CA_CERTS: /usr/local/share/ca-certificates/wildclaw-search-shim.crt
+
+harness:
+  id: openclaw
+  image: wildclawbench-ubuntu:v1.3
+  extra:
+    max_tokens: 32768
+
+execution:
+  run_name: wildclawbench
+  pass_env:
+    - NODE_EXTRA_CA_CERTS

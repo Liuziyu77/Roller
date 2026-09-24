@@ -449,6 +449,7 @@ class WildClawBenchAdapter(BenchAdapter):
                 needs_transcript=True,
                 workspace_path=WORKSPACE_CONTAINER_PATH,
                 score_key="overall_score",
+                grade_on_agent_failure=True,
                 stage=(
                     ((str(answer_key), ANSWER_KEY_DIR_NAME),)
                     if answer_key is not None
@@ -508,13 +509,15 @@ class WildClawBenchAdapter(BenchAdapter):
         # The shim has to be wired up before the agent runs, so it goes ahead of
         # the task's own warmup commands.
         setup = (shim.setup_commands() if shim is not None else []) + list(parsed["warmup"])
-        if parsed["env_names"] or setup:
-            runtime: dict[str, Any] = {}
-            if parsed["env_names"]:
-                runtime["env"] = list(parsed["env_names"])
-            if setup:
-                runtime["setup"] = setup
-            row["runtime"] = runtime
+        # Upstream prompts and graders use /tmp_workspace literally. Override
+        # every Harness default so Codex/Claude Code do not silently work in
+        # /roller/workspace while the task looks for files somewhere else.
+        runtime: dict[str, Any] = {"workspace_path": WORKSPACE_CONTAINER_PATH}
+        if parsed["env_names"]:
+            runtime["env"] = list(parsed["env_names"])
+        if setup:
+            runtime["setup"] = setup
+        row["runtime"] = runtime
         return row
 
     @staticmethod

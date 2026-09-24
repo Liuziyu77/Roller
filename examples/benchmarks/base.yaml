@@ -1,0 +1,18 @@
+schema_version: roller.bench-run/v1
+
+# Shared model settings. Keep credentials in the named environment variable.
+model:
+  id: ${ROLLER_MODEL_ID}
+  base_url: ${ROLLER_MODEL_BASE_URL}
+  api_key_env: ROLLER_MODEL_API_KEY
+  thinking: high
+
+execution:
+  output: ${ROLLER_BENCH_OUTPUT}
+  parallel: 4
+  grader_parallel: 2
+  samples: 1
+  retries: 0
+  timeout: 600
+  wire_trace: actf
+  keep_thinking: true

@@ -189,7 +189,7 @@ Run 根目录的 `sft.jsonl` 按 request 顺序汇总全部成功样本。需要
 | 选择并配置 Harness | [OpenClaw](docs/zh/harnesses/openclaw-configuration.md) · [Codex](docs/zh/harnesses/codex-configuration.md) · [Claude Code](docs/zh/harnesses/claude-code-configuration.md) · [Hermes](docs/zh/harnesses/hermes-configuration.md) · [OpenCode](docs/zh/harnesses/opencode-configuration.md) · [DeepSeek](docs/zh/harnesses/deepseek-configuration.md) · [Pi Agent](docs/zh/harnesses/pi-configuration.md) |
 | 查命令行参数与适用范围 | [CLI 参数参考](docs/zh/start/cli-reference.md) |
 | 管理输入、Context、输出和 Resume | [Task Bundle 与结果存储](docs/zh/tasks/task-bundle-and-storage.md) |
-| 跑评测 bench 或接入新 bench | [Bench 接入与评分](docs/zh/benches/bench-format.md) |
+| 跑评测 bench 或接入新 bench | [Benchmark 运行规范](docs/zh/benches/benchmark-standard.md) · [Bench 接入与评分](docs/zh/benches/bench-format.md) |
 | 制作训练数据 | [SFT 数据格式](docs/zh/traces/sft-format.md) |
 | 动态生成 user message | [User Simulator](docs/zh/tasks/user-simulator.md) |
 | 使用可视化页面 | [Viewer](docs/zh/traces/viewer.md) |
