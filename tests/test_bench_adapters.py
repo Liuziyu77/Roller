@@ -422,11 +422,19 @@ categories:
             with mock.patch.dict(namespace["_pinch_os"].environ, judge_env, clear=False), mock.patch.object(
                 namespace["_pinch_request"], "build_opener", return_value=opener
             ):
-                _, total, notes, _ = namespace["_pinch_judge"]([], str(root))
+                _, total, notes, provenance = namespace["_pinch_judge"]([], str(root))
 
         self.assertEqual(opener.calls, 1)
         self.assertEqual(total, 0.0)
         self.assertIn("after 1 attempt(s)", notes)
+        self.assertEqual(provenance["judge_error"], notes)
+
+        with mock.patch.dict(namespace["_pinch_os"].environ, judge_env, clear=False), mock.patch.object(
+            namespace["_pinch_request"], "build_opener", return_value=FailingOpener()
+        ):
+            result = namespace["roller_grade"]([], str(root))
+        self.assertFalse(result["score_eligible"])
+        self.assertEqual(result["error"], result["judge_notes"])
 
     def test_timeout_multiplier_scales_pinch_task_budget(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

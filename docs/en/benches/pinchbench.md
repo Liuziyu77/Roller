@@ -90,6 +90,8 @@ A reasoning model may use the default 2048-token budget before it emits JSON. In
 with `PINCHBENCH_JUDGE_MAX_TOKENS=8192`. When `PINCHBENCH_JUDGE_RETRIES` is greater than zero,
 Roller retries network errors and successful responses without a parseable score. If streamed
 `content` is empty, the grader also checks `reasoning_content`.
+If every judge attempt fails, the sample is marked ineligible instead of being counted as a
+genuine zero score.
 
 Roller keeps frontmatter `prerequisites` in bench metadata. For the four FWS/GWS/GitHub
 integration tasks, it installs pinned versions of `fws`, `gws`, and `gh` in the disposable

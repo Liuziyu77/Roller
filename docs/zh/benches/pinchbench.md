@@ -87,6 +87,7 @@ Roller 会从公共模型字段生成临时 OpenClaw models 文件，不需要�
 `PINCHBENCH_JUDGE_MAX_TOKENS=8192` 提高上限。`PINCHBENCH_JUDGE_RETRIES` 大于 0
 时，Roller 会重试网络错误和没有可解析分数的成功响应。流式响应的 `content` 为空时，
 grader 也会尝试读取 `reasoning_content`。
+如果所有 judge 请求都失败，该样本会标记为不可计分，不会被当作真实 0 分计入报告。
 
 Roller 会保留 frontmatter 中的 `prerequisites`。四个 FWS/GWS/GitHub integration 任务会在
 临时任务容器中安装固定版本的 `fws`、`gws` 和 `gh`，然后启动上游 FWS mock service。
