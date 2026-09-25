@@ -208,8 +208,13 @@ class _ProxyHandler(BaseHTTPRequestHandler):
 
     def _record(self, body: bytes | None) -> None:
         proxy: WireTraceProxy = self.server.proxy  # type: ignore[attr-defined]
+        capture_responses_tools = (
+            proxy.responses_tools_path is not None
+            and self.command == "POST"
+            and urlsplit(self.path).path.rstrip("/").endswith("/responses")
+        )
         entry: dict[str, Any] = {
-            "seq": proxy.next_seq(),
+            "seq": proxy.next_seq(responses_request=capture_responses_tools),
             "ts": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime()) + "Z",
             "kind": "request",
             "method": self.command,
@@ -232,11 +237,6 @@ class _ProxyHandler(BaseHTTPRequestHandler):
                 parsed = candidate if isinstance(candidate, dict) else None
             except (json.JSONDecodeError, UnicodeDecodeError):
                 parsed = None
-        capture_responses_tools = (
-            proxy.responses_tools_path is not None
-            and self.command == "POST"
-            and urlsplit(self.path).path.rstrip("/").endswith("/responses")
-        )
         if capture_responses_tools and parsed is None:
             raise ValueError("Cannot capture tools from a non-object Responses request")
         if parsed is not None:
@@ -411,6 +411,7 @@ class WireTraceProxy:
         self.timeout_seconds = timeout_seconds
         self._lock = threading.Lock()
         self._seq = 0
+        self.responses_request_count = 0
         self.tool_schema_fingerprints: set[str] = set()
         self._server: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
@@ -465,9 +466,11 @@ class WireTraceProxy:
         )
         return urlunsplit(("", "", parts.path, query, ""))
 
-    def next_seq(self) -> int:
+    def next_seq(self, *, responses_request: bool = False) -> int:
         with self._lock:
             self._seq += 1
+            if responses_request:
+                self.responses_request_count += 1
             return self._seq
 
     def write_tools(self, entry: Mapping[str, Any]) -> None:

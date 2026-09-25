@@ -252,6 +252,8 @@ Tool definitions come from the actual outgoing Responses requests, including too
 
 `tools_capture.jsonl` survives normal sample pruning. It contains only tool-related fields (`tools`, `tool_choice`, `parallel_tool_calls`, and any `input` items of type `additional_tools`), without ordinary messages or HTTP headers. Schema contents are preserved verbatim as JSON values, including properties named `token`; they are not subjected to the generic sensitive-key redactor. Treat descriptions and defaults as original harness-provided content.
 
+On shutdown, capture ends with a `codex_tools_complete` record containing the Responses `request_count`. SFT requires this final record and a matching snapshot count. Truncated captures and older captures without completion evidence retain raw/ACTF and the available snapshots, but cannot produce SFT.
+
 ### `trace_SFT.json` and `sft.jsonl`
 
 A text-only SFT record contains `messages` and `tools`; image records also contain `images`. Codex `tools` retains the native Responses format, including namespace/custom/built-in entries, instead of normalizing everything to nested Chat Completions functions. Custom calls retain their string `input` under a `type: "custom"` call; namespace fields are preserved. The assistant always includes

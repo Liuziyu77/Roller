@@ -33,14 +33,22 @@ def read_tool_capture(path: Path | None) -> dict[str, Any]:
             "--wire-trace actf/full with HTTP transport"
         )
         return capture
+    request_count: int | None = None
     try:
         with path.open(encoding="utf-8") as stream:
             for line in stream:
                 if not line.strip():
                     continue
                 entry = json.loads(line)
+                if request_count is not None:
+                    raise ValueError("Records found after Codex tool capture completion")
                 if entry.get("kind") == "codex_tools_error":
                     raise ValueError(entry.get("error", "Request recording failed"))
+                if entry.get("kind") == "codex_tools_complete":
+                    request_count = entry.get("request_count")
+                    if type(request_count) is not int or request_count < 0:
+                        raise ValueError("Invalid Codex tool capture request count")
+                    continue
                 if entry.get("kind") == "codex_tools":
                     snapshot = entry["snapshot"]
                 elif (
@@ -54,6 +62,13 @@ def read_tool_capture(path: Path | None) -> dict[str, Any]:
                 if not isinstance(snapshot, dict):
                     raise ValueError("tool snapshot must be an object")
                 capture["requests"].append({"seq": entry.get("seq"), "snapshot": snapshot})
+        if request_count is None:
+            raise ValueError("Codex tool capture is incomplete: missing completion record")
+        if request_count != len(capture["requests"]):
+            raise ValueError(
+                f"Codex tool capture request count mismatch: expected {request_count}, "
+                f"read {len(capture['requests'])}"
+            )
     except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
         capture.update(status="invalid", error=f"Cannot read Codex tool capture: {exc}")
         return capture

@@ -57,7 +57,8 @@ class CodexToolsTests(unittest.TestCase):
         source.write_text("\n".join(json.dumps(e) for e in events(call)) + "\n")
         capture = root / "tools_capture.jsonl"
         capture.write_text("".join(json.dumps({"kind": "codex_tools", "seq": n, "snapshot": s}) + "\n"
-                                   for n, s in enumerate(snapshots, 1)))
+                                   for n, s in enumerate(snapshots, 1)) +
+                           json.dumps({"kind": "codex_tools_complete", "request_count": len(snapshots)}) + "\n")
         return convert_codex_trace(source, root / "trace_ACTF.json", tools_trace=capture)
 
     def test_full_definitions_including_unused_namespace_custom_and_builtin(self) -> None:
@@ -127,6 +128,48 @@ class CodexToolsTests(unittest.TestCase):
         with self.assertRaisesRegex(SFTConversionError, "additional_tools"):
             actf_to_sft(trajectory)
 
+    def test_whole_record_loss_rejects_sft_and_preserves_remaining_snapshots(self) -> None:
+        modified = deepcopy(TOOLS)
+        modified[0]["description"] = "New definition."
+        for tools in [TOOLS, modified]:
+            with self.subTest(changed=tools != TOOLS), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                snapshots = [tool_snapshot({"tools": t}) for t in [TOOLS, tools, tools]]
+                self.convert(root, snapshots)
+                path = root / "tools_capture.jsonl"
+                lines = path.read_text().splitlines(keepends=True)
+                for retained, count, error in [
+                    (lines[:1], 1, "missing completion"),
+                    (lines[:-1], 3, "missing completion"),
+                    (lines[:1] + lines[-1:], 1, "count mismatch"),
+                    (lines[:1] + lines[2:], 2, "count mismatch"),
+                ]:
+                    with self.subTest(retained=count, error=error):
+                        path.write_text("".join(retained))
+                        trajectory = convert_codex_trace(
+                            root / "trace.jsonl", root / "trace_ACTF.json", tools_trace=path,
+                        )
+                        self.assertEqual(trajectory["tools_capture"]["status"], "invalid")
+                        self.assertEqual(len(trajectory["tools_capture"]["requests"]), count)
+                        self.assertTrue(trajectory["steps"])
+                        self.assertTrue((root / "trace_ACTF.json").is_file())
+                        with self.assertRaisesRegex(SFTConversionError, error):
+                            actf_to_sft(trajectory)
+
+    def test_invalid_completion_records_are_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.convert(root, [tool_snapshot({"tools": TOOLS})])
+            path = root / "tools_capture.jsonl"
+            snapshot, complete = path.read_text().splitlines(keepends=True)
+            for count in [None, True, -1, "1", 1.0, 2]:
+                with self.subTest(count=count):
+                    path.write_text(snapshot + json.dumps({"kind": "codex_tools_complete", "request_count": count}) + "\n")
+                    self.assertEqual(read_tool_capture(path)["status"], "invalid")
+            for tail in [snapshot, complete]:
+                path.write_text(snapshot + complete + tail)
+                self.assertEqual(read_tool_capture(path)["status"], "invalid")
+
     def test_unmatched_call_fails_without_adding_a_definition(self) -> None:
         call = {"type": "function_call", "call_id": "c", "name": "unseen", "arguments": "{}"}
         with self.assertRaisesRegex(SFTConversionError, "missing captured schema"):
@@ -137,8 +180,12 @@ class CodexToolsTests(unittest.TestCase):
             path = Path(tmp) / "wire.jsonl"
             path.write_text(json.dumps({"seq": 1, "path": "/v1/responses", "body": {"tools": TOOLS}}) + "\n")
             capture = read_tool_capture(path)
-            self.assertEqual(capture["status"], "captured")
+            self.assertEqual(capture["status"], "invalid")
+            self.assertIn("missing completion", capture["error"])
             self.assertEqual(capture["requests"][0]["snapshot"]["tools"], TOOLS)
+            with path.open("a") as stream:
+                stream.write(json.dumps({"kind": "codex_tools_complete", "request_count": 1}) + "\n")
+            self.assertEqual(read_tool_capture(path)["status"], "captured")
             for tail in ['{', json.dumps({"kind": "codex_tools_error", "error": "disk failed"})]:
                 with path.open("a") as stream:
                     stream.write(tail + "\n")
@@ -180,6 +227,7 @@ class CodexToolsProxyTests(unittest.TestCase):
                 _ProxyHandler._handle(handler)
             self.assertEqual(send.call_args.args[0].data, b"[]")
             self.assertIn("non-object", proxy.recording_error)
+            self.assertEqual(proxy.responses_request_count, 1)
 
     def test_default_actf_captures_every_request_without_mutating_forwarded_body(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -212,12 +260,42 @@ class CodexToolsProxyTests(unittest.TestCase):
                 harness._stop_wire_proxy()
             raw_capture = (root / "tools_capture.jsonl").read_text()
             captures = [json.loads(line) for line in raw_capture.splitlines()]
-            self.assertEqual([r["snapshot"] for r in captures], [tool_snapshot(b) for b in bodies])
+            self.assertEqual([r["snapshot"] for r in captures[:-1]], [tool_snapshot(b) for b in bodies])
+            self.assertEqual(captures[-1], {"kind": "codex_tools_complete", "request_count": 3})
+            self.assertEqual(read_tool_capture(root / "tools_capture.jsonl")["status"], "changed")
             self.assertNotIn("private prompt", raw_capture)
             self.assertNotIn("Bearer secret", raw_capture)
             # Shutdown redaction must not destroy legitimate schema properties named token.
             self.assertEqual(captures[0]["snapshot"]["tools"][0]["parameters"]["properties"]["token"],
                              TOOLS[0]["parameters"]["properties"]["token"])
+
+    def test_request_count_detects_dropped_snapshot_in_actf_and_full_modes(self) -> None:
+        for mode in ["actf", "full"]:
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                harness = CodexHarness(CodexConfig(api_base="http://example.test/v1", wire_trace_mode=mode), 0)
+                with patch.object(WireTraceProxy, "start"), patch.object(WireTraceProxy, "stop"):
+                    harness._start_wire_proxy(root)
+                    proxy = harness._wire_proxy
+                    handler = MagicMock()
+                    handler.server.proxy = proxy
+                    handler.headers = {}
+                    handler.command = "GET"
+                    handler.path = "/v1/models"
+                    _ProxyHandler._record(handler, None)
+                    handler.command = "POST"
+                    handler.path = "/v1/responses?stream=true"
+                    raw = json.dumps({"tools": TOOLS}).encode()
+                    _ProxyHandler._record(handler, raw)
+                    # Model a silently lost write, without recording_error.
+                    with patch.object(proxy, "write_tools"):
+                        _ProxyHandler._record(handler, raw)
+                    harness._stop_wire_proxy()
+                path = root / "tools_capture.jsonl"
+                self.assertEqual(proxy.responses_request_count, 2)
+                capture = read_tool_capture(path)
+                self.assertEqual(capture["status"], "invalid")
+                self.assertIn("expected 2, read 1", capture["error"])
 
     def test_capture_disabled_does_not_reuse_previous_attempt(self) -> None:
         for config in [CodexConfig(), CodexConfig(wire_trace_mode="off"),

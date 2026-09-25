@@ -194,6 +194,11 @@ class CodexHarness(InteractiveHarness):
             proxy.stop()
             if proxy.recording_error and proxy.responses_tools_path is not None:
                 proxy.write_tools({"kind": "codex_tools_error", "error": proxy.recording_error})
+            elif proxy.responses_tools_path is not None:
+                proxy.write_tools({
+                    "kind": "codex_tools_complete",
+                    "request_count": proxy.responses_request_count,
+                })
             if proxy.log_path.is_file():
                 redact_jsonl_file(proxy.log_path)
         finally:

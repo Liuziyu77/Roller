@@ -252,6 +252,8 @@ message，以及 Codex 在首轮前注入的 `<environment_context>`。Task 中�
 
 `tools_capture.jsonl` 在常规清理后仍保留，仅保存工具相关字段：`tools`、`tool_choice`、`parallel_tool_calls` 和类型为 `additional_tools` 的 input item，不包含普通消息和 HTTP header。schema 按原始 JSON 值保存，不经过通用敏感字段名脱敏，以免破坏名为 `token` 的合法参数。description 和 default 等内容也属于原始 harness 数据。
 
+代理关闭时，捕获文件以 `codex_tools_complete` 记录结束，其中 `request_count` 是 Responses 请求总数。导出 SFT 必须存在该末尾记录且快照数量一致。截断文件和没有完成凭据的旧捕获文件仍保留 raw/ACTF 与已有快照，但不能生成 SFT。
+
 ### `trace_SFT.json` 与 `sft.jsonl`
 
 纯文本 SFT 顶层包含 `messages` 和 `tools`，图片样本额外包含 `images`。Codex 的 `tools` 保持原始 Responses 格式，包括 namespace、custom 和内置工具，不统一改写成 Chat Completions 的嵌套 function。custom call 使用 `type: "custom"` 并保留原始字符串 `input`，namespace 字段也原样保留。Assistant 固定包含
