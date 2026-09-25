@@ -6,6 +6,7 @@ across Roller turns. The host owns the hard deadline and container cleanup.
 from __future__ import annotations
 
 import argparse
+import base64
 from importlib.metadata import version
 import json
 import os
@@ -48,6 +49,20 @@ def write_result(value):
     temp.replace(STATE / "result.json")
 
 
+def sdk_input(config):
+    images = config.get("images", [])
+    if not images:
+        return config["message"]
+    content = [{"type": "text", "text": config["message"]}]
+    for image in images:
+        path = Path(image["path"])
+        if path.stat().st_size > 20 * 1024 * 1024:
+            raise ValueError("DeepSeek image exceeds input bound")
+        content.append({"type": "image", "data": base64.b64encode(path.read_bytes()).decode("ascii"),
+                        "mimeType": image["mime_type"]})
+    return content
+
+
 def serve(config):
     from deepseek_harness import DeepSeekHarness
     check()
@@ -75,7 +90,7 @@ def serve(config):
                 with connection, connection.makefile("r", encoding="utf-8") as stream:
                     payload = json.loads(stream.readline())
                     try:
-                        result = session.run(payload["message"], on_notification=lambda n: journal(
+                        result = session.run(sdk_input(payload), on_notification=lambda n: journal(
                             {"type": "notification", "method": n.method, "payload": n.payload}))
                         limit_path = STATE / "limit.json"
                         if limit_path.exists():

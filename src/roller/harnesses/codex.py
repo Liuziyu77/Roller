@@ -20,6 +20,7 @@ from roller.codex_actf import convert_codex_trace
 from roller.harnesses.base import Harness, InteractiveHarness, InteractiveSession, TurnResult
 from roller.harnesses.docker import DockerRuntime, remove_container
 from roller.models import HarnessResult, RunRequest
+from roller.native_images import attachment_specs
 from roller.storage import safe_component
 from roller.thinking import normalize_thinking, resolve_thinking
 from roller.usage import ZERO_USAGE, extract_codex_usage
@@ -438,6 +439,8 @@ class CodexHarness(InteractiveHarness):
                     "disable_response_storage=true",
                 ]
             )
+        for image in attachment_specs(request, self.config.workspace_container_path, first_turn=not resume):
+            command.extend(["--image", image["path"]])
         command.extend(["--", prompt])
         return command
 

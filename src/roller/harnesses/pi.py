@@ -20,6 +20,7 @@ from roller.harnesses.base import InteractiveHarness, InteractiveSession, TurnRe
 from roller.harnesses.docker import DockerRuntime, remove_container
 from roller.pi_actf import convert_pi_trace, extract_pi_usage
 from roller.models import HarnessResult, RunRequest
+from roller.native_images import attachment_specs
 from roller.redaction import redact_file_literals
 from roller.storage import atomic_write_json
 from roller.thinking import normalize_thinking, resolve_thinking
@@ -248,6 +249,7 @@ class PiSession(InteractiveSession):
             "max_steps": config.max_steps, "timeout_seconds": timeout,
             "context_length": config.context_length, "output_tokens": config.output_tokens,
             "tools": list(PI_TOOLS),
+            "images": attachment_specs(self.request, config.workspace_container_path, first_turn=self.turns == 1),
             "context_paths": [item.target for item in self.request.task.context_files if item.role != "skill"],
             "system_prompt": f"You are running a Roller task. Work in {config.workspace_container_path}. "
                 f"Task inputs are in the workspace. Save deliverables under {self.request.task.output_dir}. "

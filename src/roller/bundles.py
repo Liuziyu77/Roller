@@ -549,6 +549,8 @@ class TaskBundleStore:
             "legacy_workspace": task.legacy_workspace,
             "resume_safe": context_manifest["resume_safe"],
         }
+        if task.attach_images:
+            manifest["files"]["attach_images"] = list(task.attach_images)
         manifest_digest = _canonical_digest(manifest)
         manifest["manifest_digest"] = manifest_digest
         manifest_path = task_root / "task.json"

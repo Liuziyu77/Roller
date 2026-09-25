@@ -98,6 +98,8 @@ def run_turn(config, state):
     args = ["opencode", "run", "--format", "json", "--thinking", "--agent", "build", "--model", "roller/" + model, "--title", "Roller task"]
     if session.get("id"):
         args += ["--session", session["id"]]
+    for path in config.get("files", []):
+        args += ["--file", path]
     stream_path = state / "cli.jsonl"
     with stream_path.open("w", encoding="utf-8") as output:
         process = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=output, stderr=None, text=True)

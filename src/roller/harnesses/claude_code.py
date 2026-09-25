@@ -20,6 +20,7 @@ from roller.claude_code_actf import convert_claude_code_trace
 from roller.harnesses.base import Harness, InteractiveHarness, InteractiveSession, TurnResult
 from roller.harnesses.docker import DockerRuntime, remove_container
 from roller.models import HarnessResult, RunRequest
+from roller.native_images import claude_message
 from roller.storage import safe_component
 from roller.thinking import normalize_thinking, resolve_thinking
 from roller.usage import ZERO_USAGE, extract_claude_code_usage
@@ -504,8 +505,21 @@ class ClaudeCodeHarness(InteractiveHarness):
         timeout_seconds: float,
         log_path: Path,
     ) -> int:
+        command = self._claude_command(container, request, prompt, resume=resume)
+        if request.task.attach_images:
+            payload_path = log_path.parent / ".claude-input.jsonl"
+            payload_path.parent.mkdir(parents=True, exist_ok=True)
+            payload_path.write_text(json.dumps(claude_message(request, prompt, first_turn=not resume)) + "\n")
+            target = f"{CLAUDE_HOME_CONTAINER_PATH}/input.jsonl"
+            try:
+                self._checked(["cp", str(payload_path), f"{container}:{target}"], "Claude native image input")
+            finally:
+                payload_path.unlink(missing_ok=True)
+            command = command[:-2] + ["--print", "--input-format=stream-json", "--replay-user-messages"]
+            index = command.index("claude")
+            command = command[:index] + ["/bin/sh", "-c", 'exec "$@" < "$0"', target, *command[index:]]
         process = self.runtime.popen(
-            self._claude_command(container, request, prompt, resume=resume),
+            command,
             log_path,
             append=resume,
         )

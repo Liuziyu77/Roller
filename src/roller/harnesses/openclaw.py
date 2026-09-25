@@ -22,6 +22,7 @@ from roller.artifacts import ArtifactCollectionResult, collect_output_directory
 from roller.harnesses.base import InteractiveHarness, InteractiveSession, TurnResult
 from roller.harnesses.docker import DockerRuntime, remove_container
 from roller.models import HarnessResult, RunRequest
+from roller.native_images import openclaw_message
 from roller.storage import safe_component
 from roller.thinking import normalize_thinking, resolve_thinking
 from roller.usage import ZERO_USAGE, extract_openclaw_usage
@@ -1298,7 +1299,9 @@ class OpenClawSession(InteractiveSession):
             # The CLI flag reaches this live session; changing the default after
             # gateway startup does not reliably affect an existing agent turn.
             command += ["--thinking", thinking]
-        command += ["--message", message]
+        native_message = openclaw_message(self.request, message, self.harness.config.workspace_container_path,
+                                         first_turn=self._assistant_count == 0)
+        command += ["--message", native_message]
         agent_log_path = (
             self.output_dir / "rollout" / f"agent.attempt-{self.attempt}.log"
         )

@@ -20,6 +20,7 @@ from roller.harnesses.base import InteractiveHarness, InteractiveSession, TurnRe
 from roller.harnesses.docker import DockerRuntime, remove_container
 from roller.opencode_actf import convert_opencode_trace, extract_opencode_usage
 from roller.models import HarnessResult, RunRequest
+from roller.native_images import attachment_specs
 from roller.storage import atomic_write_json
 from roller.thinking import normalize_thinking, resolve_thinking
 from roller.usage import ZERO_USAGE
@@ -296,6 +297,11 @@ class OpenCodeSession(InteractiveSession):
             raise TimeoutError("OpenCode turn timed out")
         config = self.harness.config
         self.turns += 1
+        images = attachment_specs(self.request, config.workspace_container_path,
+                                  first_turn=self.turns == 1 or getattr(self, "_images_after_reset", False))
+        if images and not config.vision:
+            raise ValueError("explicit native images require OpenCode vision capability")
+        self._images_after_reset = False
         # Context is present as regular workspace files for every role; OpenCode's
         # implicit host/profile discovery is disabled in the bridge.
         payload = {
@@ -304,6 +310,7 @@ class OpenCodeSession(InteractiveSession):
             "max_steps": config.max_steps, "timeout_seconds": timeout,
             "context_length": config.context_length, "output_tokens": config.output_tokens,
             "vision": config.vision,
+            "files": [image["path"] for image in images],
             "system_prompt": _system_prompt(
                 self.request, config.workspace_container_path
             ),
@@ -344,6 +351,7 @@ class OpenCodeSession(InteractiveSession):
             ["exec", self.container, "rm", "-f", STATE + "/session.json"],
             "OpenCode session reset",
         )
+        self._images_after_reset = True
 
     def finish(self, status: str, error: str | None = None) -> HarnessResult:
         if self._result is not None:

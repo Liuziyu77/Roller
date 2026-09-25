@@ -20,6 +20,7 @@ from roller.harnesses.base import InteractiveHarness, InteractiveSession, TurnRe
 from roller.harnesses.docker import DockerRuntime, remove_container
 from roller.deepseek_actf import convert_deepseek_trace, extract_deepseek_usage
 from roller.models import HarnessResult, RunRequest
+from roller.native_images import attachment_specs
 from roller.storage import atomic_write_json
 from roller.thinking import normalize_thinking, resolve_thinking
 from roller.usage import ZERO_USAGE
@@ -245,6 +246,7 @@ class DeepSeekSession(InteractiveSession):
             "max_steps": config.max_steps, "timeout_seconds": timeout,
             "context_length": config.context_length, "output_tokens": config.output_tokens,
             "tool_env_names": sorted(set((*config.pass_env, *self.request.task.env_names))),
+            "images": attachment_specs(self.request, config.workspace_container_path, first_turn=self.turns == 1),
             "system_prompt": f"You are running a Roller task. Work in {config.workspace_container_path}. "
                 f"Task inputs are in the workspace. Save deliverables under {self.request.task.output_dir}. "
                 f"Task context files (read when relevant): {context or '(none)'}. "
