@@ -203,8 +203,9 @@ class PiHarnessTests(unittest.TestCase):
         harness = PiHarness(PiConfig(api_key_env="LOCAL_TEST_KEY", wire_trace_mode="off"), 0, runtime)
         with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {"LOCAL_TEST_KEY": "test-secret"}), patch("roller.harnesses.pi.convert_pi_trace", side_effect=ValueError("invalid journal")):
             result = harness.run(RunRequest(0, Task("test", ("one",), 0), "model", 60), Path(tmp), 1)
-            self.assertEqual(result.status, "error")
-            self.assertIn("invalid journal", result.error)
+            self.assertEqual(result.status, "ok")
+            self.assertIsNone(result.error)
+            self.assertIn("invalid journal", result.metadata["trajectory_conversion"]["error"])
             self.assertIsNone(result.trajectory_path)
             self.assertTrue((Path(tmp)/result.trace_path).is_file())
             self.assertEqual((Path(tmp)/"results/answer.txt").read_text(), "TOKEN")

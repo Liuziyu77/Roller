@@ -290,6 +290,7 @@ class DeepSeekSession(InteractiveSession):
         output_metadata = None
         usage = dict(ZERO_USAGE)
         problems = []
+        trajectory_conversion = None
         try:
             if self.container_started:
                 try:
@@ -298,7 +299,8 @@ class DeepSeekSession(InteractiveSession):
                     copied = runtime.run(["cp", f"{self.container}:{self.transcript_container_path}", str(trace)], timeout=30)
                     if copied.returncode or not trace.is_file() or not trace.stat().st_size:
                         trace = None
-                        problems.append("no DeepSeek journal was collected")
+                        trajectory_conversion = {"status": "failed", "target": "raw",
+                                                 "error": "no DeepSeek journal was collected"}
                     else:
                         trace.write_text(self.redact(trace.read_text(encoding="utf-8")), encoding="utf-8")
                         usage = extract_deepseek_usage(trace)
@@ -308,7 +310,10 @@ class DeepSeekSession(InteractiveSession):
                             raise ValueError("DeepSeek journal produced no assistant steps")
                 except Exception as exc:
                     trajectory = None
-                    problems.append("DeepSeek trace conversion failed: " + self.redact(str(exc)))
+                    if trace is not None and trace.is_file() and trace.stat().st_size:
+                        trajectory_conversion = {"status": "unavailable", "target": "actf", "error": self.redact(str(exc))}
+                    else:
+                        trajectory_conversion = {"status": "failed", "target": "raw", "error": self.redact(str(exc))}
                 if self.collect_outputs:
                     staging = self.output_dir / ".runtime-outputs"
                     staging.mkdir(parents=True, exist_ok=True)
@@ -366,6 +371,7 @@ class DeepSeekSession(InteractiveSession):
             metadata={"raw_trace_schema": "roller.deepseek-events/v1", "deepseek_version": self.deepseek_version, "profile": "sdk-minimal",
                 "provenance": provenance, "output_collection": output_metadata, "turn_count": self.turns,
                 "retained_container": self.container if retained else None,
+                "trajectory_conversion": trajectory_conversion,
                 "settings": {"reasoning_effort": resolve_thinking(self.request.task.thinking, config.reasoning_effort), "max_steps": config.max_steps, "context_length": config.context_length, "output_tokens": config.output_tokens, "tools": list(DEEPSEEK_TOOLS), "keep_thinking": config.keep_thinking}},
         )
         return self._result

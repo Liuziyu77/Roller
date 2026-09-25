@@ -1451,9 +1451,9 @@ class OpenClawSession(InteractiveSession):
                     "error": conversion_error,
                 }
 
-        if status == "ok" and trace_path is None:
-            status = "error"
-            error = "OpenClaw finished but no session trace was found"
+        if trace_path is None:
+            trajectory_conversion = {"status": "failed", "target": "raw",
+                                     "error": "OpenClaw finished but no session trace was found"}
         if status == "ok" and output_copy_error is not None:
             status = "error"
             error = f"output collection failed: {output_copy_error}"

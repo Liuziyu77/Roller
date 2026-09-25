@@ -371,7 +371,8 @@ class OpenCodeSession(InteractiveSession):
                     copied = runtime.run(["cp", f"{self.container}:{self.transcript_container_path}", str(trace)], timeout=30)
                     if copied.returncode or not trace.is_file() or not trace.stat().st_size:
                         trace = None
-                        problems.append("no OpenCode journal was collected")
+                        trajectory_conversion = {"status": "failed", "target": "raw",
+                                                 "error": "no OpenCode journal was collected"}
                     else:
                         usage = extract_opencode_usage(trace)
                         trajectory = trace.with_name("trace_ACTF.json")
@@ -394,6 +395,8 @@ class OpenCodeSession(InteractiveSession):
                             "target": "actf",
                             "error": conversion_error,
                         }
+                    else:
+                        trajectory_conversion = {"status": "failed", "target": "raw", "error": conversion_error}
                 if self.collect_outputs:
                     staging = self.output_dir / ".runtime-outputs"
                     staging.mkdir(parents=True, exist_ok=True)

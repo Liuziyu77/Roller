@@ -498,7 +498,7 @@ class CollectorTests(unittest.TestCase):
             self.assertEqual(resumed[0]["status"], "skipped")
             self.assertEqual(state["calls"][("task-0", "provider/model")], 1)
 
-    def test_missing_actf_without_structured_conversion_error_is_an_error(self) -> None:
+    def test_missing_actf_is_conversion_failure_not_execution_failure(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             run_dir = Path(temporary) / "run"
             state = self._state()
@@ -511,9 +511,12 @@ class CollectorTests(unittest.TestCase):
                 lambda slot: FakeHarness(state, slot),
             ).collect(make_requests()[:1])[0]
 
-            self.assertEqual(result["status"], "error")
+            self.assertEqual(result["status"], "ok")
+            self.assertIsNone(result["error"])
+            self.assertFalse(result["training"]["eligible"])
+            self.assertEqual(result["conversion"]["status"], "failed")
             self.assertEqual(
-                result["error"],
+                result["conversion"]["error"],
                 "harness finished but no canonical ACTF trajectory was found",
             )
 

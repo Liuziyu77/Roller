@@ -19,8 +19,9 @@ from roller.integrity import (
     validate_resumable_sample,
 )
 from roller.models import HarnessResult, RunRequest
-from roller.sft import SFTConversionError, validate_sft_record, write_sft
+from roller.sft import actf_to_sft, validate_sft_record
 from roller.storage import atomic_write_json, safe_component, write_jsonl
+from roller.trajectory_status import conversion_outcome, export_sft, training_outcome
 
 logger = logging.getLogger(__name__)
 # New factories may inspect the request to select a task-level harness.  The
@@ -222,19 +223,16 @@ class Collector:
         trace_path = sample_dir / "trace.jsonl"
         actf_path = sample_dir / "trace_ACTF.json"
         sft_path = sample_dir / "trace_SFT.json"
-        if trace_source is None and final.status == "ok":
-            final.status = "error"
-            final.error = "harness finished but no raw trace was found"
-        elif (
-            trajectory_source is None
-            and final.status == "ok"
-            and not (
-                harness_name in {"opencode", "openclaw"}
-                and trajectory_conversion_unavailable(metadata) == "actf"
-            )
-        ):
-            final.status = "error"
-            final.error = "harness finished but no canonical ACTF trajectory was found"
+        if trace_source is None:
+            metadata["trajectory_conversion"] = {
+                "status": "failed", "target": "raw",
+                "error": "harness finished but no raw trace was found",
+            }
+        elif trajectory_source is None and trajectory_conversion_unavailable(metadata) != "actf":
+            metadata["trajectory_conversion"] = {
+                "status": "failed", "target": "actf",
+                "error": "harness finished but no canonical ACTF trajectory was found",
+            }
 
         if trace_source is not None:
             if trace_source.resolve() != trace_path.resolve():
@@ -243,35 +241,15 @@ class Collector:
         if trajectory_source is not None:
             if trajectory_source.resolve() != actf_path.resolve():
                 shutil.copy2(trajectory_source, actf_path)
-            try:
-                trajectory = json.loads(actf_path.read_text(encoding="utf-8"))
-                if not isinstance(trajectory, dict):
-                    raise ValueError("canonical ACTF trajectory must be a JSON object")
-                write_sft(sft_path, trajectory)
-            except SFTConversionError as exc:
-                logger.warning(
-                    "[%s | %s] SFT export unavailable: %s",
-                    request.task.id,
-                    request.model,
-                    exc,
-                )
-                metadata["trajectory_conversion"] = {
-                    "status": "unavailable",
-                    "target": "sft",
-                    "error": str(exc),
-                }
-                sft_path.unlink(missing_ok=True)
-            except Exception as exc:
-                logger.exception(
-                    "[%s | %s] trajectory conversion failed",
-                    request.task.id,
-                    request.model,
-                )
-                final.status = "error"
-                final.error = f"trajectory conversion failed: {exc}"
-        if attempts and attempts[-1].get("status") != final.status:
-            attempts[-1]["status"] = final.status
-            attempts[-1]["error"] = final.error
+            export_sft(sample_dir, metadata)
+        conversion = conversion_outcome(sample_dir, metadata)
+        training = training_outcome(final.status, conversion)
+        conversation = metadata.get("conversation")
+        if isinstance(conversation, dict):
+            simulator = conversation.get("participants", {}).get("user_simulator", {})
+            if simulator.get("training", {}).get("eligible") is False:
+                training["eligible"] = False
+                training["reasons"].append("user_simulator_not_trainable")
 
         provenance = metadata.get("provenance")
         if not isinstance(provenance, dict):
@@ -298,6 +276,8 @@ class Collector:
             "harness": harness_name,
             "status": final.status,
             "error": final.error,
+            "conversion": conversion,
+            "training": training,
             "usage": final.usage,
             "attempts": attempts,
             "timing": {
@@ -480,6 +460,12 @@ class Collector:
             for result in results:
                 if result.get("status") not in {"ok", "skipped"}:
                     continue
+                training = result.get("training")
+                if isinstance(training, dict) and training.get("eligible") is not True:
+                    continue
+                conversion = result.get("conversion")
+                if isinstance(conversion, dict) and conversion.get("status") != "ok":
+                    continue
                 path = self._sample_dir_from_result(result) / "trace_SFT.json"
                 runtime = result.get("runtime")
                 if trajectory_conversion_unavailable(
@@ -496,6 +482,9 @@ class Collector:
                     raise RuntimeError(f"invalid SFT sample shape: {path}")
                 try:
                     validate_sft_record(row)
+                    actf = json.loads(path.with_name("trace_ACTF.json").read_text(encoding="utf-8"))
+                    if actf_to_sft(actf) != row:
+                        raise ValueError("SFT does not match canonical ACTF projection")
                 except ValueError as exc:
                     raise RuntimeError(
                         f"invalid SFT sample shape ({exc}): {path}"

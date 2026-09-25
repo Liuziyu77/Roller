@@ -660,6 +660,7 @@ class ClaudeCodeHarness(InteractiveHarness):
         return_codes: list[int] = []
         trace_path: Path | None = None
         trajectory_path: Path | None = None
+        trajectory_conversion = None
         artifact_result: ArtifactCollectionResult | None = None
         output_copy_error: str | None = None
         claude_version = ""
@@ -747,13 +748,11 @@ class ClaudeCodeHarness(InteractiveHarness):
                     )
             except Exception as exc:
                 trajectory_path = None
-                if status == "ok":
-                    status = "error"
-                    error = f"Claude Code trajectory conversion failed: {exc}"
+                trajectory_conversion = {"status": "unavailable", "target": "actf", "error": str(exc)}
 
-        if status == "ok" and trace_path is None:
-            status = "error"
-            error = "Claude Code finished but no native session trace was found"
+        if trace_path is None:
+            trajectory_conversion = {"status": "failed", "target": "raw",
+                                     "error": "Claude Code finished but no native session trace was found"}
         if status == "ok" and output_copy_error is not None:
             status = "error"
             error = f"output collection failed: {output_copy_error}"
@@ -848,6 +847,7 @@ class ClaudeCodeHarness(InteractiveHarness):
             ),
             metadata={
                 "raw_trace_schema": "claude-code-session-jsonl",
+                "trajectory_conversion": trajectory_conversion,
                 "claude_code_version": claude_version,
                 "container": retained_container,
                 "agent_return_codes": return_codes,
@@ -982,6 +982,7 @@ class ClaudeCodeSession(InteractiveSession):
         output_copy_error: str | None = None
         final_status = status
         final_error = error
+        trajectory_conversion = None
         try:
             self.harness._stop_wire_proxy()
         except Exception as exc:
@@ -1013,10 +1014,10 @@ class ClaudeCodeSession(InteractiveSession):
                     raise ValueError("Claude Code native trace produced no assistant steps")
             except Exception as exc:
                 trajectory_path = None
-                if final_status == "ok":
-                    final_status, final_error = "error", f"Claude Code trajectory conversion failed: {exc}"
-        if final_status == "ok" and trace_path is None:
-            final_status, final_error = "error", "Claude Code finished but no native session trace was found"
+                trajectory_conversion = {"status": "unavailable", "target": "actf", "error": str(exc)}
+        if trace_path is None:
+            trajectory_conversion = {"status": "failed", "target": "raw",
+                                     "error": "Claude Code finished but no native session trace was found"}
         if final_status == "ok" and output_copy_error is not None:
             final_status, final_error = "error", f"output collection failed: {output_copy_error}"
         if final_status == "ok" and artifact_result is not None and not artifact_result.passed:
@@ -1083,6 +1084,7 @@ class ClaudeCodeSession(InteractiveSession):
             trajectory_path=trajectory_path.relative_to(self.output_dir).as_posix() if trajectory_path else None,
             metadata={
                 "raw_trace_schema": "claude-code-session-jsonl",
+                "trajectory_conversion": trajectory_conversion,
                 "claude_code_version": self.claude_version,
                 "container": retained_container,
                 "agent_return_codes": self.return_codes,
