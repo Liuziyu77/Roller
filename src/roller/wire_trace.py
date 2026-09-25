@@ -164,37 +164,49 @@ def redact_jsonl_file(path: Path) -> None:
         temporary.unlink(missing_ok=True)
 
 
+def request_tool_schemas(body: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Locate declarations without scanning arbitrary tool arguments/history."""
+    groups = []
+    if isinstance(body.get("tools"), list):
+        groups.append({"path": "tools", "tools": body["tools"]})
+    inputs = body.get("input")
+    if isinstance(inputs, list):
+        for index, item in enumerate(inputs):
+            if isinstance(item, dict) and isinstance(item.get("additional_tools"), list):
+                groups.append({"path": f"input[{index}].additional_tools", "tools": item["additional_tools"]})
+    return groups
+
+
 def extract_wire_tools(path: Path) -> list[Any] | None:
-    """Merge every tools schema recorded across wire-trace requests."""
+    """Summarize recorded tools, retaining the historical last-name-wins API.
+
+    This summary is not a per-request schema history. The wire trace retains
+    the actual declarations and their locations, including changing schemas.
+    """
+    merged: dict[str, Any] = {}
     try:
-        # JSONL records are separated by LF.  Unicode line separators can
-        # legally occur inside string values and must not split a record.
-        lines = path.read_text(encoding="utf-8", errors="replace").split("\n")
+        with path.open(encoding="utf-8", errors="replace") as stream:
+            for line in stream:
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(entry, dict):
+                    continue
+                body = entry if entry.get("kind") == "tools" else entry.get("body")
+                if not isinstance(body, dict):
+                    continue
+                for group in request_tool_schemas(body):
+                    for tool in group["tools"]:
+                        if not isinstance(tool, dict):
+                            continue
+                        function = tool.get("function")
+                        source = function if isinstance(function, dict) else tool
+                        name = source.get("name")
+                        if isinstance(name, str) and name:
+                            merged[name] = tool
     except OSError:
         return None
-    merged: dict[str, Any] = {}
-    for line in lines:
-        try:
-            entry = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if not isinstance(entry, dict):
-            continue
-        if entry.get("kind") == "tools":
-            tools = entry.get("tools")
-        else:
-            body = entry.get("body")
-            tools = body.get("tools") if isinstance(body, dict) else None
-        if not isinstance(tools, list):
-            continue
-        for tool in tools:
-            if not isinstance(tool, dict):
-                continue
-            function = tool.get("function")
-            source = function if isinstance(function, dict) else tool
-            name = source.get("name")
-            if isinstance(name, str) and name:
-                merged[name] = tool
     return list(merged.values()) or None
 
 
@@ -240,8 +252,12 @@ class _ProxyHandler(BaseHTTPRequestHandler):
                 messages = parsed.get("messages")
                 if isinstance(messages, list):
                     entry["n_messages"] = len(messages)
-                tools = parsed.get("tools")
-                if isinstance(tools, list) and tools:
+                groups = request_tool_schemas(parsed)
+                tools = [tool for group in groups for tool in group["tools"]]
+                if tools:
+                    # Capture provenance on every request, including repeated
+                    # declarations. This is not a rewritten outgoing payload.
+                    entry["tool_schema_sources"] = groups
                     fingerprint = json.dumps(
                         tools,
                         ensure_ascii=False,

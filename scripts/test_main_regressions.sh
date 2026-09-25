@@ -13,7 +13,7 @@ for value in "$REPO_DIR" "$PYTHON_BIN"; do
 done
 cd "$REPO_DIR"
 export PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$REPO_DIR/src:$REPO_DIR/tests"
-modules=(test_actf test_codex_actf test_sft test_wire_trace test_collector test_resume test_pi test_streaming_traces)
+modules=(test_actf test_codex_actf test_sft test_wire_trace test_collector test_resume test_pi test_streaming_traces test_wire_tool_sources)
 [[ $# == 0 ]] || modules=("$@")
 command=("$PYTHON_BIN" -m unittest "${modules[@]}" -q)
 printf 'Running:'; printf ' %q' "${command[@]}"; printf '\n'
