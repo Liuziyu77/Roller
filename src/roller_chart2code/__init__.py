@@ -1,1 +1,1 @@
-"""Private task-specific collection and acceptance, available only on chart2code."""
+"""Private render-journal helpers, available only on the chart2code branch."""
