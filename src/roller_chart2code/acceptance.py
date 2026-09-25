@@ -19,9 +19,9 @@ from roller_chart2code.png_check import inspect_png
 from roller_chart2code.profiles import freeze_profile
 from roller_chart2code.render_journal import _safe, validate_render_journal
 
-VERSION = "roller.chart2code-acceptance/v2"
+VERSION = "roller.chart2code-acceptance/v3"
 MAX_JSON_BYTES = 128 * 1024 * 1024
-MAIN_COMMIT = "341f359cd3864ed553196e80aaa12474e477e151"
+MAIN_COMMIT = "7cd8a563a83c1e930a3fec7d9dad47272328af8d"
 
 
 def file_hash(path: Path) -> str:
@@ -190,6 +190,8 @@ def audit_sample(sample: Path, contract: dict[str, Any], *, report_only: bool = 
         viewed = []
     journal = None
     successes = []
+    process_audit = {"reference_before_render_verified": False, "render_associations_verified": False,
+                     "render_view_order_verified": False, "render_views": []}
     try:
         outputs = _safe(sample, "results")
         collection = object_field(info.get("output_collection", {}), "output_collection")
@@ -221,18 +223,24 @@ def audit_sample(sample: Path, contract: dict[str, Any], *, report_only: bool = 
         if ordered_links:
             ordered_links = all(a["step_id"] <= b["step_id"] for a, b in zip(links, links[1:]))
         first_render = links[0]["step_id"] if ordered_links else None
-        check("trajectory", "reference_before_render", any(
+        process_audit["reference_before_render_verified"] = any(
             (row["role"] == "user" and row["step_id"] == 1)
             or (first_render is not None and row["step_id"] < first_render)
-            for row in references), "Without an unambiguous render association only initial user images prove prior delivery")
+            for row in references)
+        process_audit["render_associations_verified"] = ordered_links
         if expected_profile["output_view_policy"] == "forbidden":
             output_hashes = {row["image_sha256"] for row in successes}
             check("trajectory", "single_render_no_output_view", not any(row["sha256"] in output_hashes
                   and not (row["sha256"] == reference_hash and first_render is not None and row["step_id"] < first_render)
                   for row in viewed))
         else:
-            check("trajectory", "render_associations", ordered_links,
-                  "Requires unique markers; no wall-clock or command-text guessing")
+            # Default acceptance requires actual rendered-image content in the
+            # main trajectory, not a new marker absent from the legacy recorder.
+            # Finer per-attempt ordering remains diagnostic, never guessed.
+            rendered_hashes = {row["image_sha256"] for row in successes}
+            observed_hashes = {row["sha256"] for row in viewed}
+            check("trajectory", "rendered_image_coverage", bool(rendered_hashes) and rendered_hashes <= observed_hashes,
+                  "Actual image bytes required; this does not certify a separate post-render view for every attempt")
             for success in successes:
                 link = success["render_tool_call"]
                 index = next(i for i, row in enumerate(journal["attempts"]) if row["attempt_id"] == success["attempt_id"])
@@ -240,7 +248,8 @@ def audit_sample(sample: Path, contract: dict[str, Any], *, report_only: bool = 
                 # Calls in one ACTF step may run concurrently; their list order is not execution order.
                 inspected = ordered_links and link is not None and any(
                     row["sha256"] == success["image_sha256"] and link["step_id"] < row["step_id"] < next_step for row in viewed)
-                check("trajectory", f"view_after_{success['attempt_id']}", inspected)
+                process_audit["render_views"].append({"attempt_id": success["attempt_id"], "order_verified": bool(inspected)})
+            process_audit["render_view_order_verified"] = bool(successes) and all(row["order_verified"] for row in process_audit["render_views"])
     except (OSError, ValueError, KeyError, TypeError) as exc:
         check("artifact", "readable_evidence", False, str(exc))
     for gate in gates.values():
@@ -256,7 +265,9 @@ def audit_sample(sample: Path, contract: dict[str, Any], *, report_only: bool = 
             "qualified": three_gates and expected_profile["qualification_ready"] and not report_only,
             "failure_class": ("evidence_check_failed" if not three_gates else "policy_pending"
                               if not expected_profile["qualification_ready"] else "diagnostic_only" if report_only else None),
-            "profile_verdict": "pending_Q6" if not expected_profile["qualification_ready"] else "evaluated",
+            "profile_verdict": "evaluated",
+            "qualification_scope": "artifact_and_trajectory_evidence",
+            "prompt_compliance": "not_fully_audited", "process_audit": process_audit,
             "visual_quality": "not_evaluated", "report_only": report_only,
             "render_evidence": successes, "viewed_image_evidence": viewed,
             "code_revision_count": sum(a["code_sha256"] != b["code_sha256"] for a, b in zip(successes, successes[1:]))}

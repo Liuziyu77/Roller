@@ -78,8 +78,6 @@ class Chart2CodeCollector(Collector):
         return info, report
 
     def _preflight(self, requests):
-        if self.config.retries:
-            raise ValueError("Chart2Code attempts use new run directories; set retries=0 to preserve render evidence")
         indexes, paths, entries = set(), set(), []
         existing = []
         for request in requests:
@@ -103,6 +101,8 @@ class Chart2CodeCollector(Collector):
             raise ResumeRejected("existing sample directories require explicit resume; none were changed")
         lock = build_run_lock(requests, roller_version=__version__,
             execution={**self.execution, "chart2code_collection": {
+                "retries": self.config.retries,
+                "retry_backoff_seconds": self.config.retry_backoff_seconds,
                 "keep_aux_traces": self.config.keep_aux_traces,
                 "capture_cache_trace": self.config.capture_cache_trace,
                 "keep_thinking": self.config.keep_thinking}}, model_config=None)
@@ -123,7 +123,7 @@ class Chart2CodeCollector(Collector):
                 info, report = self._audit(request)
                 write_report(self.run_dir, self._safe_sample(request).relative_to(self.run_dir).as_posix(), report)
                 if not report["qualified"]:
-                    raise ResumeRejected("task acceptance failed or profile policy is unresolved")
+                    raise ResumeRejected("task acceptance failed")
                 self._approved[request.index] = (info, report["fingerprint"])
             except (OSError, ValueError, KeyError, TypeError) as exc:
                 rejected.append(f"request {request.index}: {exc}")

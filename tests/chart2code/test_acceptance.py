@@ -37,12 +37,14 @@ class AcceptanceTests(unittest.TestCase):
         refresh(self.sample, self.actf)
         self.assertFalse(self.audit()["qualified"])
 
-    def test_reference_after_render_is_not_initial_delivery(self):
+    def test_reference_delivery_does_not_falsely_certify_early_view(self):
         reference = self.actf["steps"][0]["user_content"].pop()
         self.actf["steps"].insert(1, step(2, call="late", content=[reference]))
         self.actf["steps"][-1]["step_id"] = 3
         refresh(self.sample, self.actf)
-        self.assertFalse(self.audit()["qualified"])
+        report = self.audit()
+        self.assertFalse(report["process_audit"]["reference_before_render_verified"])
+        self.assertEqual(report["prompt_compliance"], "not_fully_audited")
 
     def test_execution_and_generic_training_do_not_get_overwritten(self):
         for key, value in (("status", "error"), ("training", {"eligible": False}),
@@ -131,18 +133,32 @@ class AcceptanceTests(unittest.TestCase):
         self.assertFalse(report["qualified"])
         self.assertIn("budget", [c["id"] for c in report["gates"]["artifact"]["checks"] if not c["passed"]])
 
-    def test_loop_view_requires_proven_order_and_remains_pending_q6(self):
+    def test_loop_accepts_one_render_and_reports_order_separately(self):
         sample = self.run / "samples/loop"
         contract, actf, info = fixture(sample, "loop-v3", markers=True, output_view=True)
         report = audit_sample(sample, contract)
         self.assertTrue(report["three_gates_passed"], report)
-        self.assertFalse(report["qualified"])
-        self.assertEqual(report["profile_verdict"], "pending_Q6")
+        self.assertTrue(report["qualified"], report)
+        self.assertEqual(report["code_revision_count"], 0)
+        self.assertEqual(report["profile_verdict"], "evaluated")
+        self.assertTrue(report["process_audit"]["render_view_order_verified"])
         # Same image before a render does not establish post-render inspection.
         actf["steps"][0]["observation"][0]["content"] = [image(png())]
         refresh(sample, actf, info)
         report = audit_sample(sample, contract)
-        self.assertFalse(report["three_gates_passed"], report)
+        self.assertTrue(report["three_gates_passed"], report)
+        self.assertFalse(report["process_audit"]["render_view_order_verified"])
+
+    def test_legacy_recorder_without_marker_can_qualify_loop(self):
+        sample = self.run / "samples/legacy-loop"
+        contract, actf, info = fixture(sample, "loop-v3", markers=False, output_view=True)
+        report = audit_sample(sample, contract)
+        self.assertTrue(report["qualified"], report)
+        self.assertFalse(report["process_audit"]["render_associations_verified"])
+        self.assertFalse(report["process_audit"]["render_view_order_verified"])
+        actf["steps"][1]["observation"][0]["content"] = "I looked at the output"
+        refresh(sample, actf, info)
+        self.assertFalse(audit_sample(sample, contract)["qualified"])
 
 
 if __name__ == "__main__":

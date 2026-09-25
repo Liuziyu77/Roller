@@ -179,6 +179,21 @@ class PipelineTests(unittest.TestCase):
             self.collector()
         self.assertFalse((self.root / "seed/chart2code").exists())
 
+    def test_explicit_sample_retry_keeps_upstream_collector_semantics(self):
+        collector = self.collector(retries=1)
+        calls = []
+        class OnceFailingHarness(SyntheticHarness):
+            def run(inner, request, output_dir, attempt):
+                calls.append((attempt, request.timeout_seconds))
+                if attempt == 1:
+                    return HarnessResult.error_result("synthetic transient failure")
+                return super().run(request, output_dir, attempt)
+        collector.harness_factory = lambda slot: OnceFailingHarness(self.calls)
+        result = collector.collect([self.request])[0]
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(calls, [(1, 30), (2, 30)])
+        self.assertEqual(collector.task_summary["qualified"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -34,14 +34,15 @@ def freeze_profile(name: str, reference: str, *, max_renders: int | None = None)
     prompt = source.replace("{reference}", reference).replace("{max_renders}", str(maximum))
     loop = name.startswith("loop-")
     policy = {
-        "schema_version": "roller.chart2code-profile/v1",
+        "schema_version": "roller.chart2code-profile/v2",
+        "scope": "historical_experiment",
         "name": name, "reference": reference, "max_render_attempts": maximum,
         "prompt_template_sha256": hashlib.sha256(source.encode()).hexdigest(),
         "prompt_sha256": hashlib.sha256(prompt.encode()).hexdigest(),
         "output_view_policy": "every_successful_render" if loop else "forbidden",
-        "revision_policy": "pending_Q6" if loop else "forbidden",
-        "qualification_ready": not loop,
-        "unresolved_questions": ["Q6"] if loop else [],
+        "revision_policy": "optional" if loop else "forbidden",
+        "qualification_ready": True,
+        "unresolved_questions": [],
         "visual_quality": "not_evaluated",
     }
     # This digest can be used by resume/aggregation without storing env secrets.

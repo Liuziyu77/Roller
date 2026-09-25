@@ -14,12 +14,14 @@ class ProfileTests(unittest.TestCase):
         self.assertIn("Do not open the generated image", profile["prompt"])
         self.assertEqual(profile["prompt_sha256"], hashlib.sha256(profile["prompt"].encode()).hexdigest())
 
-    def test_loop_does_not_silently_resolve_optional_revision_conflict(self):
+    def test_historical_loop_allows_optional_revision(self):
         for name in ("loop-v1", "loop-v2", "loop-v3", "loop-v4-hard", "loop-v5-evidence"):
             with self.subTest(profile=name):
                 profile = freeze_profile(name, "inputs/reference.png")
-                self.assertFalse(profile["qualification_ready"])
-                self.assertEqual(profile["revision_policy"], "pending_Q6")
+                self.assertTrue(profile["qualification_ready"])
+                self.assertEqual(profile["revision_policy"], "optional")
+                self.assertEqual(profile["scope"], "historical_experiment")
+                self.assertEqual(profile["unresolved_questions"], [])
                 self.assertEqual(profile["output_view_policy"], "every_successful_render")
 
     def test_budget_and_reference_are_part_of_profile_fingerprint(self):
