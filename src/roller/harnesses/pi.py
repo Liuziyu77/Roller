@@ -20,6 +20,7 @@ from roller.harnesses.base import InteractiveHarness, InteractiveSession, TurnRe
 from roller.harnesses.docker import DockerRuntime, remove_container
 from roller.pi_actf import convert_pi_trace, extract_pi_usage
 from roller.models import HarnessResult, RunRequest
+from roller.redaction import redact_file_literals
 from roller.storage import atomic_write_json
 from roller.thinking import normalize_thinking, resolve_thinking
 from roller.usage import ZERO_USAGE
@@ -153,6 +154,10 @@ class PiSession(InteractiveSession):
         key = os.environ.get(self.harness.config.api_key_env)
         return text.replace(key, "[REDACTED]") if key else text
 
+    def redact_file(self, path: Path, *, errors: str = "strict") -> None:
+        key = os.environ.get(self.harness.config.api_key_env, "")
+        redact_file_literals(path, [key], errors=errors)
+
     def checked(
         self, args: Sequence[str], description: str, *, timeout: float = 60,
     ) -> subprocess.CompletedProcess[str]:
@@ -277,7 +282,7 @@ class PiSession(InteractiveSession):
             config_path.unlink(missing_ok=True)
             self.harness.runtime.close_log(process)
             if log_path.exists():
-                log_path.write_text(self.redact(log_path.read_text(encoding="utf-8", errors="replace")), encoding="utf-8")
+                self.redact_file(log_path, errors="replace")
 
     def finish(self, status: str, error: str | None = None) -> HarnessResult:
         if self._result is not None:
@@ -295,7 +300,7 @@ class PiSession(InteractiveSession):
                     log.parent.mkdir(parents=True, exist_ok=True)
                     runtime.run(["cp", f"{self.container}:{STATE}/runtime.log", str(log)], timeout=30)
                     if log.is_file():
-                        log.write_text(self.redact(log.read_text(encoding="utf-8", errors="replace")), encoding="utf-8")
+                        self.redact_file(log, errors="replace")
                 except Exception:
                     logger.warning("Pi runtime log collection failed", exc_info=True)
                 try:
@@ -306,7 +311,7 @@ class PiSession(InteractiveSession):
                         trace = None
                         problems.append("no Pi journal was collected")
                     else:
-                        trace.write_text(self.redact(trace.read_text(encoding="utf-8")), encoding="utf-8")
+                        self.redact_file(trace)
                         usage = extract_pi_usage(trace)
                         trajectory = trace.with_name("trace_ACTF.json")
                         converted = convert_pi_trace(trace, trajectory, keep_thinking=config.keep_thinking)

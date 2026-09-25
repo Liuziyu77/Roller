@@ -13,9 +13,21 @@ from roller.usage import ZERO_USAGE
 
 def read_pi_events(path: Path) -> list[dict[str, Any]]:
     # JSONL framing is LF only: Unicode separators are valid inside strings.
-    events = [json.loads(line) for line in path.read_text(encoding="utf-8").split("\n") if line.strip()]
-    if not all(isinstance(event, dict) for event in events):
-        raise ValueError("Pi journal must contain JSON objects")
+    events = []
+    with path.open(encoding="utf-8") as stream:
+        for line in stream:
+            if not line.strip():
+                continue
+            event = json.loads(line)
+            if not isinstance(event, dict):
+                raise ValueError("Pi journal must contain JSON objects")
+            # Keep ordering/turn envelopes, not every repeated partial snapshot.
+            # The unmodified raw events remain on disk for diagnostics.
+            payload = event.get("event")
+            if (event.get("type") == "event" and isinstance(payload, dict)
+                    and payload.get("type") == "message_update"):
+                event = {**event, "event": {"type": "message_update"}}
+            events.append(event)
     return events
 
 
