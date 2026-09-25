@@ -64,13 +64,30 @@ def _tool_call(block: dict[str, Any]) -> dict[str, Any]:
 
 
 def _user_content(value: Any, text: str, *, native_text: str | None = None) -> str | list[Any]:
-    """Retain native multimodal block order, without guessing text rewrites."""
+    """Keep upstream prompt cleanup and retain native image positions.
+
+    A single text block has an unambiguous replacement location. Multiple
+    unchanged text blocks can stay as-is; an unrelated replacement spanning
+    several blocks still needs an explicit mapping rather than moving images.
+    """
     if not isinstance(value, list):
         return text
     if all(isinstance(item, str) or (isinstance(item, dict)
            and item.get("type") in {"text", "input_text", "output_text"}) for item in value):
         return text
     if (native_text if native_text is not None else _text(value)) != text:
+        text_indexes = [index for index, item in enumerate(value)
+                        if isinstance(item, str) or (isinstance(item, dict)
+                            and item.get("type") in {"text", "input_text", "output_text"}
+                            and isinstance(item.get("text"), str))]
+        if len(text_indexes) == 1:
+            result = deepcopy(value)
+            index = text_indexes[0]
+            if isinstance(result[index], str):
+                result[index] = text
+            else:
+                result[index]["text"] = text
+            return result
         raise ValueError("multimodal user text differs from requested replacement; cannot infer block positions")
     return deepcopy(value)
 

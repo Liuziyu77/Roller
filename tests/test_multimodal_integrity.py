@@ -46,9 +46,44 @@ class MultimodalIntegrityTests(unittest.TestCase):
             actf_to_sft(trajectory)
 
     def test_does_not_guess_image_positions_when_replacing_native_prompt(self):
-        content = [{"type": "text", "text": "original"}, {"type": "image", "data": "AA==", "mimeType": "image/png"}]
+        content = [{"type": "text", "text": "before"}, {"type": "image", "data": "AA==", "mimeType": "image/png"},
+                   {"type": "text", "text": "after"}]
         with self.assertRaisesRegex(ValueError, "cannot infer"):
             openclaw_events_to_actf(self.events(content), user_messages=["different"])
+
+    def test_prompt_cleanup_replaces_one_text_block_without_moving_images(self):
+        from roller.actf import _user_content
+        for original_text in ("wrapper\nclean prompt", {"type": "text", "text": "wrapper\nclean prompt", "extra": "keep"}):
+            for image_first in (False, True):
+                with self.subTest(text=original_text, image_first=image_first):
+                    picture = {"type": "image", "data": "AA==", "mimeType": "image/png"}
+                    content = [picture, original_text] if image_first else [original_text, picture]
+                    original = deepcopy(content)
+                    updated = _user_content(content, "clean prompt")
+                    self.assertEqual(updated[0 if image_first else 1], picture)
+                    self.assertEqual(content, original)
+                    exported = actf_to_sft(openclaw_events_to_actf(self.events(content), user_messages=["clean prompt"]))
+                    self.assertEqual(exported["messages"][1]["content"],
+                                     "<image>\nclean prompt" if image_first else "clean prompt\n<image>")
+
+    def test_codex_and_claude_keep_prompt_cleanup_with_native_image(self):
+        from test_codex_actf import _events as codex_events
+        from test_claude_code_actf import _events as claude_events
+        cases = [(codex_events(), codex_events_to_actf, "read input.txt"),
+                 (claude_events(), claude_code_events_to_actf, "inspect input.txt")]
+        for events, project, prompt in cases:
+            with self.subTest(project=project.__name__):
+                if project is codex_events_to_actf:
+                    content = [{"type": "input_image", "image_url": "data:image/png;base64,AA=="},
+                               {"type": "input_text", "text": "wrapper\n" + prompt}]
+                    events[2]["payload"]["content"] = content
+                else:
+                    content = [{"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "AA=="}},
+                               {"type": "text", "text": " \n" + prompt + "\n "}]
+                    events[0]["message"]["content"] = content
+                actf = project(events, user_messages=[prompt])
+                self.assertEqual(actf["steps"][0]["user_content"][0], content[0])
+                self.assertEqual(actf["steps"][0]["user_content"][1]["text"], prompt)
 
     def test_unknown_media_and_unpersisted_urls_are_not_silently_lost(self):
         for block in [{"type": "video", "url": "local.mp4"},
