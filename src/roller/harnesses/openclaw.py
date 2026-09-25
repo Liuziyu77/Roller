@@ -495,7 +495,6 @@ exec node --input-type=module -e "$1"
                 mode=log_mode,
                 strip_thinking=not self.config.keep_thinking,
                 normalize_reasoning_replay=self.config.keep_thinking,
-                transport_log_path=output_dir / "transport_trace.jsonl",
             )
             self._wire_proxy.start()
         except Exception as exc:
