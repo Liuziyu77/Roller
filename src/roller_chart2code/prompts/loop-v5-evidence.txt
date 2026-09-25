@@ -1,0 +1,72 @@
+Recreate the complete reference chart as faithfully as practical with editable Matplotlib code. This is an evidence-driven difficult-case run. Your job is not merely to include similar chart elements; you must repeatedly verify that every visible region has the same structure, content, dominant geometry, and styling as the reference. Treat the reference image as the visual source of truth and preserve a valid best-so-far result throughout.
+
+The reference is attached and is also available at the read-only file `{reference}`. Inspect the full reference with an image-reading tool before writing code. If the attachment is unavailable, open that exact file. Do not search elsewhere or use the network. Do not embed, trace, copy, or modify the reference image in the generated chart. Do not use OCR, automated pixel or color extraction, histograms, numerical image matching, edge detection, feature matching, or parameter sweeps. This task evaluates visual reasoning and iterative editing rather than image copying or optimization against pixels.
+
+Observation-only cropping and enlargement are explicitly allowed and expected. You may use Pillow only to crop or resize a visually chosen rectangular region into `inspection/`; do not inspect pixel values or compute measurements from the image. These derived files are temporary evidence, not chart assets, and must never be read or embedded by `outputs/plot.py`. Open every useful crop with an image-reading tool so the crop becomes actual visual evidence in the trajectory.
+
+## Mandatory evidence pass before coding
+
+First open the entire reference and make a compact region map. For a multi-panel, inset, dense, small-text, overlapping, or otherwise difficult figure, create and open separate reference crops for every panel and for any inset, legend, colorbar, annotation cluster, or other region whose details are small in the full image. A crop may cover a tightly related group of features, but no panel may be skipped. For a simple single-panel figure, crop only where full-image inspection is insufficient.
+
+The moment you would describe anything as unclear, tiny, hard to tell, low resolution, ambiguous, or uncertain, stop and inspect a crop before guessing, editing, or declaring the issue unactionable. If the first crop remains unclear, make one tighter crop or enlargement. Only after those visual checks may you record genuine residual uncertainty.
+
+Before the first edit, write a reconstruction ledger with one row per panel or meaningful region. Each row must cover:
+
+1. region bounds and relative size within the canvas;
+2. chart type, orientation, overlays, and drawing order;
+3. category order, series count, and visibly separable mark count;
+4. dominant data geometry: trends, extrema, crossings, lobes, clusters, flow topology, directions, stacking, overlap, and clipping;
+5. axes, approximate ranges, ticks, grids, baselines, and scale type;
+6. titles, labels, legends, annotations, text orientation, and readable text;
+7. colors, markers, sizes, line styles, opacity, backgrounds, and spacing;
+8. unresolved details and the crop or later render comparison needed to resolve each one.
+
+For vector fields, contours, dense line work, maps, or other continuous structures, matching the chart type is not enough. The number and location of major lobes, centers, saddles, bands, turns, crossings, extrema, and flow directions are high-priority geometry requirements. Approximate hidden formulas are acceptable only when their visible topology matches the reference.
+
+## Build and render contract
+
+Write a complete first attempt to `outputs/plot.py` and transcribe all legible text. Use the installed Matplotlib, NumPy, SciPy, and Python standard library only for the generated chart. Do not install packages. Use a fixed random seed if needed. The script must save `outputs/output.png` and should resolve that path relative to the script.
+
+Render only from the workspace root with `python3 outputs/plot.py`. The complete run has an upper limit of {max_renders} render executions, including failed executions. Never evade the limit through another interpreter, inline plotting code, helper plotting scripts, subprocesses, alternate output paths, or manual archive changes. Observation-only crop commands are allowed, but they must not render or alter the chart. The render limit is a ceiling, not a target.
+
+After EVERY successful render, open the newly generated `outputs/output.png` with an image-reading tool before editing again. A successful command, existing file, source code, terminal output, or memory of an earlier image is not visual evidence for the current rendering. If image viewing fails, stop and report the limitation.
+
+At render 1, after every second successful render, and immediately before stopping, perform a reference-grounded checkpoint:
+
+1. reopen the full reference;
+2. reopen the current full `outputs/output.png` in the same comparison step;
+3. compare every ledger region rather than only the region edited most recently;
+4. for every active or uncertain mismatch, create and open matching reference and current-output crops;
+5. state which visible facts in those freshly viewed images support the next action or the decision to stop.
+
+Do not claim a region passes because the expected Matplotlib artists or labels exist. Judge the rendered appearance. A panel with the correct chart type but the wrong dominant shape, flow topology, direction, number of structures, relative proportions, or feature locations does not pass.
+
+## Discrepancy and revision policy
+
+Maintain a concise discrepancy ledger after every viewed render, ordered by impact:
+
+- `P0 STRUCTURE`: canvas, backgrounds, panel count/order/bounds/relative sizes, chart type, orientation, inset placement.
+- `P1 CONTENT`: categories, series, visibly present marks, overlays, encodings, legends, annotations, and readable text.
+- `P2 GEOMETRY`: ranges, relative positions, trends, topology, directions, crossings, extrema, proportions, marker sizes, stacking, overlap, clipping, and drawing order.
+- `P3 STYLE`: hues, line widths, fonts, opacity, spacing, tick styling, grids, and decoration.
+
+For each region, record concrete matches as well as mismatches so that a generic statement such as “P0/P1 pass” is never used without evidence. Choose at most four causally related changes for the next edit, state the expected visible effect in specific regions, and make one coherent revision. Fix P0 before P1, P1 before P2, and P2 before P3 unless a small independent fix is demonstrably safe. Prefer direct causal changes over nudging many values. Keep uncertain values stable until a crop or render comparison provides new evidence.
+
+At the next inspection, first determine whether every expected effect occurred and whether any other region regressed. If an approach had no visible effect, do not repeat it with a nearby value; diagnose a different mechanism. If the current result is worse than a previous archived step, open the relevant previous image and current image, identify the better step, and restore its behavior before unrelated refinements. Do not broadly rewrite a working chart late in the run.
+
+## Final evidence gate
+
+You may stop only after a fresh final checkpoint against the reference. Before stopping, all of the following must be true:
+
+- every panel and meaningful subregion has been checked individually in the final rendered image;
+- the full reference and exact final output were reopened during the final checkpoint;
+- every detail described as unclear, small, low resolution, ambiguous, or uncertain was inspected with a crop or enlargement first;
+- no concrete P0 or P1 mismatch remains;
+- no obvious actionable P2 or high-impact P3 mismatch remains;
+- the current image is at least as strong as the best previously viewed render.
+
+Two consecutive revisions without visible improvement are a reason to stop only after the required fresh reference/current comparison and targeted crop checks show that a different causal edit is unavailable. Reaching an approximate hidden formula is not itself a stopping reason when its rendered topology is visibly wrong. If the render ceiling is reached, do not edit or render again; inspect the final successful image if possible and report unresolved mismatches honestly.
+
+If a render fails, use the error output for one targeted repair when budget remains. Failed executions count toward the ceiling. Never claim that an older image matches newer code. Do not create, edit, delete, or overwrite archive snapshots maintained by the environment.
+
+In the final response, report the artifact paths, attempted and successful render counts, full images and crops actually viewed during the final checkpoint, the best-so-far step used, improvements by region, the stopping reason, and all remaining visible differences or uncertainty. Claim completion only when `outputs/plot.py` produced the final `outputs/output.png`, that exact image was opened, and the final evidence gate was completed. Do not claim exact numerical or pixel fidelity.

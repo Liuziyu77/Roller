@@ -1,0 +1,44 @@
+Recreate the complete reference chart as faithfully as practical with editable Matplotlib code. This is a difficult-case refinement run: use multiple render-and-inspect rounds when they produce visible progress, while preserving a valid best result throughout. Treat the reference as the visual source of truth. Match the canvas, backgrounds, panel layout, chart types and orientations, categories and series, visible marks and their encodings, relative data geometry, axes, readable text, legends, annotations, spacing, layering, and aspect ratio.
+
+The reference is attached and is also available at the read-only file `{reference}`. Inspect the whole reference before coding. If the attachment is unavailable, open that exact file with an image-reading tool. You may visually revisit the reference when a specific unresolved feature requires confirmation, but do not search elsewhere or use the network. Do not embed, trace, copy, or modify the reference image in the output. Do not use OCR, automated pixel/color extraction, numerical image matching, or parameter sweeps; this run evaluates visual reasoning and iterative editing, not image copying or optimization against pixels.
+
+Before the first edit, make a compact reconstruction inventory covering:
+
+1. canvas aspect, figure/axes backgrounds, margins, and panel grid;
+2. chart type and orientation in every panel;
+3. category order, series count, and visibly separable mark count;
+4. axes, approximate ranges, ticks, grids, baselines, and scale type;
+5. titles, labels, legends, annotations, and text orientation;
+6. data encodings such as color, marker, size, line style, stacking, overlap, and drawing order;
+7. the three highest-risk ambiguities that may need confirmation after rendering.
+
+Write a complete first attempt to `outputs/plot.py` and transcribe all legible text. Use the installed Matplotlib, NumPy, SciPy, and Python standard library only. Do not install packages. Use a fixed random seed if needed. The script must save `outputs/output.png` and should resolve the output path relative to the script.
+
+Render only from the workspace root with `python3 outputs/plot.py`. The complete run has an upper limit of {max_renders} render executions, including failed executions. Never evade the limit through another interpreter, inline Python, helper scripts, subprocesses, alternate output paths, or manual archive changes. This is a ceiling, not a target: stop as soon as further edits are not supported by a clear visible discrepancy.
+
+After EVERY successful render, open the newly generated `outputs/output.png` with an image-reading tool and compare it directly with the reference. A command succeeding, a file existing, source code, terminal output, or a previously viewed image is not visual evidence for the current rendering. Do not edit again until the current image has been viewed. If image viewing fails, stop and report the limitation.
+
+Maintain a concise discrepancy ledger after each viewed render, ordered by impact:
+
+- `P0 STRUCTURE`: canvas, backgrounds, panel count/order/relative sizes, chart type, orientation.
+- `P1 CONTENT`: categories, series, visibly present marks, encodings, legends, annotations, readable text.
+- `P2 GEOMETRY`: ranges, relative positions, trends, proportions, marker sizes, stacking, overlap, clipping, drawing order.
+- `P3 STYLE`: exact hues, line widths, fonts, spacing, tick styling, and other decoration.
+
+For the current image, record only concrete visible mismatches. Choose at most four related changes for the next edit, state the expected visible effect, and make one coherent revision. Fix P0 before P1, P1 before P2, and P2 before P3 unless one small independent fix is clearly safe. Prefer direct causal changes over nudging many values. Keep uncertain values stable unless the rendered comparison provides new evidence.
+
+At the next inspection, first decide whether the previous expected effects occurred and whether any regression was introduced. If an approach had no visible effect, do not repeat it with a nearby value; diagnose a different mechanism. If it regressed the image, restore the last known-good behavior before attempting unrelated refinements. Do not broadly rewrite a working chart late in the run.
+
+Use fuller checkpoint reviews after render 1 and approximately every fifth successful render. At a checkpoint, rescan the whole figure from P0 through P3 so local refinement does not hide missing panels, marks, labels, or global proportion errors. Between checkpoints, concentrate on the active discrepancies and verify that supposedly finished regions remain stable.
+
+Once P0 and P1 pass, continue with clearly visible P2 and then high-impact P3 differences when a direct change is available. Small styling corrections are allowed in this hard-case profile, but do not chase differences that are ambiguous at the available visual resolution. Stop early when any of these conditions holds:
+
+- no concrete P0/P1 issue or obvious actionable P2/P3 issue remains;
+- two consecutive successful revisions fail to produce visible improvement;
+- remaining differences are ambiguous, mutually conflicting, or would require forbidden pixel analysis;
+- another edit risks regressing a stronger current result;
+- the render-execution ceiling is reached.
+
+If a render fails, use the error output for one targeted repair when budget remains. The failed execution counts toward the ceiling. After the final allowed execution, do not edit or render again; inspect it if successful. Never claim that an older image matches newer code.
+
+The environment records every execution attempt and archives successful code/image pairs. Do not create, edit, delete, or overwrite archive snapshots. In the final response, report the artifact paths, attempted and successful render counts, which generated images were actually viewed, the main improvements, the stopping reason, and remaining visible differences or uncertainty. Claim completion only when `outputs/plot.py` produced the final `outputs/output.png` and that exact image was successfully viewed. Do not claim exact numerical or pixel fidelity.

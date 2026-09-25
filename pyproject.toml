@@ -22,6 +22,7 @@ dependencies = ["PyYAML>=6.0,<7"]
 
 [project.scripts]
 roller = "roller.cli:main"
+roller-chart2code-profile = "roller_chart2code.profiles:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -29,6 +30,7 @@ where = ["src"]
 [tool.setuptools.package-data]
 "roller.viewer" = ["static/*"]
 "roller" = ["assets/hermes/*", "assets/opencode/*", "assets/deepseek/*", "assets/pi/*"]
+"roller_chart2code" = ["prompts/*.txt"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
