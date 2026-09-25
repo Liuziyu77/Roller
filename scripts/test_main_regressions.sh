@@ -15,7 +15,7 @@ for value in "$REPO_DIR" "$PYTHON_BIN" "$LOG_DIR" "$@"; do
 done
 cd "$REPO_DIR"
 export PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$REPO_DIR/src:$REPO_DIR/tests"
-modules=(test_actf test_codex_actf test_sft test_wire_trace test_collector test_resume test_pi test_streaming_traces test_wire_tool_sources test_runtime_regressions test_multimodal_integrity test_native_attachments test_tool_id_identity test_deepseek test_opencode test_attachment_recovery test_codex_integrity test_training_status test_conversation test_codex test_claude_code test_openclaw test_hermes test_tasks test_bundles test_run_lock test_compatibility_config test_transport_observability)
+modules=(test_actf test_codex_actf test_sft test_wire_trace test_collector test_resume test_pi test_streaming_traces test_wire_tool_sources test_runtime_regressions test_multimodal_integrity test_native_attachments test_tool_id_identity test_deepseek test_opencode test_attachment_recovery test_codex_integrity test_training_status test_conversation test_codex test_claude_code test_openclaw test_hermes test_tasks test_bundles test_run_lock test_compatibility_config)
 [[ $# == 0 ]] || modules=("$@")
 command=("$PYTHON_BIN" -m unittest "${modules[@]}" -q)
 printf 'Running:'; printf ' %q' "${command[@]}"; printf '\n'

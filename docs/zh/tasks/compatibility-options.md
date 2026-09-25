@@ -14,5 +14,3 @@ DeepSeek 标准 SDK 的 bash 子进程只继承 `--pass-env` 或任务显式声�
 `info.json` 现在分别记录 `status`（执行）、`conversion`（raw/ACTF/SFT）、`training.eligible`（通用训练资格）。转换失败不把成功执行改成失败；有完整 raw 和结构化 `unavailable` 的结果可复用但不能进入 SFT。缺失/损坏产物的 `failed` 结果不可复用。`skipped` 只表示复用，`resumed_from_status` 保存原执行结果。
 
 本文配置已通过 mock/离线测试，真实服务与镜像验证另记，不将配置可解析等同于服务可用。
-
-HTTP 代理将请求序号、响应状态、传输字节、耗时、断连方向写入独立 `transport_trace.jsonl`，在 wire 日志关闭时仍可诊断。该记录不包含 URL 查询、完整路径、请求/响应 body、header 或异常详情字符串。工具 ID 映射包含同一请求序号。当前每次代理请求仅转发一次，连接超时和流中断不自动重放；整个样本 attempt 重试是另一个显式配置，参见 `--retries` / `--retry-backoff`。
