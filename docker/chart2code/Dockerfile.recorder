@@ -1,0 +1,11 @@
+# Refresh locally available harness images, without downloading dependencies.
+ARG BASE_IMAGE=roller-openclaw-chart2code:2026.7.1-3
+FROM ${BASE_IMAGE}
+USER root
+COPY docker/chart2code/recorder-path.sh /etc/profile.d/zz-chart2code-recorder.sh
+COPY docker/chart2code/python-with-snapshots.sh /opt/chart2code/bin/python
+COPY docker/chart2code/render_recorder.py /opt/chart2code/bin/render_recorder.py
+RUN chmod 0755 /opt/chart2code/bin/python \
+    && ln -sf python /opt/chart2code/bin/python3 \
+    && /opt/chart2code/bin/python3 -c 'import sys, matplotlib, numpy, scipy; print(sys.executable)'
+ENV PATH="/opt/chart2code/bin:${PATH}"
