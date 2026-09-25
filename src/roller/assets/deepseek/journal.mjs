@@ -1,12 +1,47 @@
 // Observe the native adapter's serialized fetch body; never record headers.
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 
 export const name = 'roller-request-journal';
-export const inject = ['subprocess'];
+export const inject = ['subprocess', 'attachments'];
 export function apply(ctx) {
   const original = globalThis.fetch;
   let turn, count = 0;
   const journal = process.env.ROLLER_DEEPSEEK_JOURNAL;
+  const attachments = ctx.attachments;
+  const saveImage = attachments.saveImage;
+  const saveImages = attachments.saveImages;
+  const pending = new Map();
+  const recordImage = (ref) => {
+    if (!ref?.attachmentId) throw new Error('DeepSeek image has no attachment ID');
+    // Concurrent saveImage/saveImages callers await the same durable write.
+    // IDs belong to the attachment service, not to the active user session.
+    if (!pending.has(ref.attachmentId)) {
+      const write = (async () => {
+        const stored = await attachments.readImage(ref);
+        const data = Buffer.from(stored.data);
+        if (!data.length || data.length > 50 * 1024 * 1024)
+          throw new Error('DeepSeek image exceeds the journal byte limit or is empty');
+        appendFileSync(journal, JSON.stringify({
+          type: 'attachment', attachment: stored.ref, mimeType: stored.ref.mediaType,
+          data: data.toString('base64'), sha256: createHash('sha256').update(data).digest('hex'),
+        }) + '\n');
+      })();
+      pending.set(ref.attachmentId, write);
+      write.catch(() => pending.delete(ref.attachmentId));
+    }
+    return pending.get(ref.attachmentId);
+  };
+  attachments.saveImage = async function (input) {
+    const ref = await saveImage.call(this, input);
+    await recordImage(ref);
+    return ref;
+  };
+  attachments.saveImages = async function (inputs) {
+    const refs = await saveImages.call(this, inputs);
+    for (const ref of refs) await recordImage(ref);
+    return refs;
+  };
   // dsh scrubs credential-shaped ambient names. Restore only environment
   // entries the Roller task or --pass-env explicitly requested, using the
   // native subprocess service's deliberate env override seam.
@@ -35,5 +70,10 @@ export function apply(ctx) {
     }
     return original.call(globalThis, input, init);
   };
-  ctx.on('dispose', () => { globalThis.fetch = original; service.spawnTerminal = spawnTerminal; });
+  ctx.on('dispose', () => {
+    globalThis.fetch = original;
+    service.spawnTerminal = spawnTerminal;
+    attachments.saveImage = saveImage;
+    attachments.saveImages = saveImages;
+  });
 }
