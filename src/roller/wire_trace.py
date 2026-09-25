@@ -21,6 +21,8 @@ from typing import Any, Mapping, Sequence
 from urllib import request as urllib_request
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
+from roller.tool_id_identity import ToolIdRegistry
+
 
 HOP_BY_HOP_HEADERS = {
     "connection",
@@ -218,6 +220,8 @@ class _ProxyHandler(BaseHTTPRequestHandler):
 
     def _record(self, body: bytes | None) -> None:
         proxy: WireTraceProxy = self.server.proxy  # type: ignore[attr-defined]
+        if proxy.mode == "off":
+            return
         entry: dict[str, Any] = {
             "seq": proxy.next_seq(),
             "ts": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime()) + "Z",
@@ -296,6 +300,8 @@ class _ProxyHandler(BaseHTTPRequestHandler):
                 and normalized_key not in proxy.drop_request_headers
             ):
                 outgoing.add_header(key, value)
+        if proxy.unique_anthropic_tool_ids:
+            outgoing.add_header("Accept-Encoding", "identity")
         try:
             response = urllib_request.urlopen(outgoing, timeout=proxy.timeout_seconds)
         except urllib_request.HTTPError as exc:  # 4xx/5xx still carry a body
@@ -319,6 +325,32 @@ class _ProxyHandler(BaseHTTPRequestHandler):
         self.end_headers()
         content_type = response.headers.get("Content-Type", "").lower()
         content_encoding = response.headers.get("Content-Encoding", "").lower()
+        normalize_ids = (proxy.unique_anthropic_tool_ids
+                         and self.path.split("?", 1)[0].rstrip("/").endswith("/messages")
+                         and content_encoding in ("", "identity"))
+        if normalize_ids and "text/event-stream" in content_type:
+            while line := response.readline():
+                if line.startswith(b"data:"):
+                    try:
+                        event = json.loads(line[5:])
+                    except (ValueError, UnicodeDecodeError):
+                        pass
+                    else:
+                        line = b"data: " + json.dumps(proxy.repair_tool_ids(event)).encode("utf-8") + b"\n"
+                self.wfile.write(line)
+                self.wfile.flush()
+            return
+        if normalize_ids and "json" in content_type:
+            payload = response.read()
+            try:
+                event = json.loads(payload)
+            except (ValueError, UnicodeDecodeError):
+                pass
+            else:
+                payload = json.dumps(proxy.repair_tool_ids(event)).encode("utf-8")
+            self.wfile.write(payload)
+            self.wfile.flush()
+            return
         normalize_reasoning = (
             proxy.normalize_reasoning_replay
             and self.path.split("?", 1)[0].rstrip("/").endswith("/chat/completions")
@@ -390,8 +422,9 @@ class WireTraceProxy:
 
         drop_query_parameters: Sequence[str] = (),
         drop_request_headers: Sequence[str] = (),
+        unique_anthropic_tool_ids: bool = False,
     ) -> None:
-        if mode not in ("tools", "full"):
+        if mode not in ("off", "tools", "full"):
             raise ValueError(f"unknown wire trace mode: {mode}")
         parts = urlsplit(upstream_base_url)
         if not parts.scheme or not parts.netloc:
@@ -400,6 +433,8 @@ class WireTraceProxy:
         self.base_path = parts.path.rstrip("/")
         self.log_path = log_path
         self.mode = mode
+        self.unique_anthropic_tool_ids = unique_anthropic_tool_ids
+        self.tool_id_registry = ToolIdRegistry()
         self.strip_thinking = strip_thinking
         self.normalize_reasoning_replay = normalize_reasoning_replay
         self.drop_query_parameters = frozenset(drop_query_parameters)
@@ -469,10 +504,22 @@ class WireTraceProxy:
             return self._seq
 
     def write(self, entry: Mapping[str, Any]) -> None:
+        if self.mode == "off":
+            return
         line = json.dumps(entry, ensure_ascii=False)
         with self._lock:
             with self.log_path.open("a", encoding="utf-8") as stream:
                 stream.write(line + "\n")
+
+    def repair_tool_ids(self, event: Any) -> Any:
+        mappings: list[dict[str, str]] = []
+        with self._lock:
+            normalized = self.tool_id_registry.response(event, mappings)
+            if mappings:
+                # Identity provenance is part of the repair, not optional wire logging.
+                with self.log_path.with_name("tool_id_mappings.jsonl").open("a", encoding="utf-8") as stream:
+                    stream.write(json.dumps({"mappings": mappings}) + "\n")
+        return normalized
 
 
 def rewrite_model_config(

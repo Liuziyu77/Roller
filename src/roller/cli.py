@@ -493,6 +493,8 @@ def _build_parser() -> argparse.ArgumentParser:
         choices=CLAUDE_PERMISSION_MODES,
         default="bypassPermissions",
     )
+    claude.add_argument("--claude-unique-tool-ids", action=argparse.BooleanOptionalAction,
+                       default=False, help="repair duplicate tool IDs from the configured Claude endpoint")
     return parser
 
 
@@ -897,6 +899,7 @@ def _collect(args: argparse.Namespace) -> int:
             max_thinking_tokens=args.claude_max_thinking_tokens,
             max_turns=args.claude_max_turns,
             permission_mode=args.claude_permission_mode,
+            unique_tool_ids=args.claude_unique_tool_ids,
             wire_trace_mode=args.wire_trace,
             keep_thinking=args.keep_thinking,
             keep_container_on_error=args.keep_container_on_error,
@@ -1100,6 +1103,7 @@ def _collect(args: argparse.Namespace) -> int:
             "max_thinking_tokens": args.claude_max_thinking_tokens,
             "max_turns": args.claude_max_turns,
             "permission_mode": args.claude_permission_mode,
+            "unique_tool_ids": args.claude_unique_tool_ids,
             "wire_trace": args.wire_trace,
             "keep_thinking": args.keep_thinking,
             "pass_env_names": list(claude_code_config.pass_env),

@@ -189,6 +189,7 @@ class Collector:
             "trace_SFT.json",
             "signature_recovery.jsonl",  # Preserve historical artifacts; never generated now.
             "info.json",
+            "tool_id_mappings.jsonl",
             "results",
             "conversation.json",
             "user_simulator",

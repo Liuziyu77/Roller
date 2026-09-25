@@ -11,6 +11,7 @@ from typing import Any, Iterable, Mapping
 
 from roller.storage import atomic_write_json
 from roller.actf import _merge_user_content, _user_content
+from roller.tool_id_identity import scope_claude_events
 
 
 def _read_events(path: Path) -> list[dict[str, Any]]:
@@ -134,6 +135,8 @@ def _assistant_parts(
                 "id": call_id,
                 "name": name,
                 "arguments": deepcopy(arguments),
+                **({"original_tool_call_id": block["roller_original_tool_id"]}
+                   if "roller_original_tool_id" in block else {}),
             }
         )
     return "\n\n".join(visible), "\n\n".join(reasoning), calls
@@ -328,6 +331,7 @@ def claude_code_events_to_actf(
             seen_uuids.add(event_uuid)
         rows.append(row)
     rows.sort(key=lambda row: str(row.get("timestamp", "")))
+    rows = scope_claude_events(rows)
 
     expected_users = tuple(user_messages) if user_messages is not None else None
     expected_index = 0

@@ -129,8 +129,11 @@ class ClaudeCodeConfig:
     keep_thinking: bool = True
     keep_container_on_error: bool = False
     docker_binary: str = "docker"
+    unique_tool_ids: bool = False
 
     def __post_init__(self) -> None:
+        if self.unique_tool_ids and not self.api_base:
+            raise ValueError("Claude tool ID repair requires an explicit api_base")
         object.__setattr__(
             self,
             "reasoning_effort",
@@ -224,14 +227,16 @@ class ClaudeCodeHarness(InteractiveHarness):
 
     def _start_wire_proxy(self, output_dir: Path) -> None:
         self._wire_proxy = None
-        if self.config.wire_trace_mode == "off" or not self.config.api_base:
+        if not self.config.api_base or (self.config.wire_trace_mode == "off" and not self.config.unique_tool_ids):
             return
         log_path = output_dir / "wire_trace.jsonl"
         log_path.unlink(missing_ok=True)
         self._wire_proxy = WireTraceProxy(
             self.config.api_base,
             log_path,
-            mode="full" if self.config.wire_trace_mode == "full" else "tools",
+            mode=("off" if self.config.wire_trace_mode == "off" else
+                  "full" if self.config.wire_trace_mode == "full" else "tools"),
+            unique_anthropic_tool_ids=self.config.unique_tool_ids,
             # Claude Code 2.1.222 uses an SDK-internal ``?beta=true`` route.
             # Anthropic-compatible gateways commonly implement the stable
             # Messages path but reject this transport-only query flag.
