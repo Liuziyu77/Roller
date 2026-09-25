@@ -4,7 +4,7 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 LOG_DIR="${LOG_DIR:-}"
 if [[ "${1:-}" == --help ]]; then
-  printf '%s\n' 'Offline Chart2Code synthetic recorder/acceptance tests; no API or Docker.' \
+  printf '%s\n' 'Offline Chart2Code synthetic recorder/journal tests; no API or Docker.' \
     'PYTHON_BIN selects Python with Roller dependencies. Optional args select unittest modules.' \
     'LOG_DIR optionally saves a fresh timestamped log.'
   exit 0
