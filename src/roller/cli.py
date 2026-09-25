@@ -5,6 +5,7 @@ import dataclasses
 import hashlib
 import json
 import logging
+import math
 import os
 import shutil
 import subprocess
@@ -229,6 +230,10 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     collect.add_argument("--retries", type=int, default=0)
+    collect.add_argument(
+        "--retry-backoff", type=float, default=0.0,
+        help="initial exponential wait between failed attempts; timeout remains per attempt",
+    )
     collect.add_argument("--start-index", type=int, default=0, help="first normalized task index")
     collect.add_argument("--limit", type=int, help="maximum number of tasks")
     collect.add_argument("--output", default="runs", help="root directory for collections")
@@ -631,6 +636,8 @@ def _collect(args: argparse.Namespace) -> int:
         raise ValueError("--samples must be at least 1")
     if args.retries < 0:
         raise ValueError("--retries cannot be negative")
+    if not math.isfinite(args.retry_backoff) or args.retry_backoff < 0:
+        raise ValueError("--retry-backoff must be finite and non-negative")
     if args.timeout <= 0:
         raise ValueError("--timeout must be greater than zero")
     if args.start_index < 0:
@@ -1170,6 +1177,7 @@ def _collect(args: argparse.Namespace) -> int:
             "grader_parallel": args.grader_parallel or args.parallel,
             "samples": args.samples,
             "retries": args.retries,
+            "retry_backoff_seconds": args.retry_backoff,
             "start_index": args.start_index,
             "limit": args.limit,
             "resume": args.resume,
@@ -1356,6 +1364,7 @@ def _collect(args: argparse.Namespace) -> int:
                     run_dir=run_dir,
                     parallel=args.parallel,
                     retries=args.retries,
+                    retry_backoff_seconds=args.retry_backoff,
                     resume=lock_decision.reuse_existing_samples,
                     keep_aux_traces=keep_aux_traces,
                     capture_cache_trace=(

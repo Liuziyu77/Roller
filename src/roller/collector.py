@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import inspect
 import logging
+import math
 import queue
 import shutil
 import time
@@ -74,12 +75,15 @@ class CollectionConfig:
     keep_aux_traces: bool = False
     capture_cache_trace: bool = True
     keep_thinking: bool = True
+    retry_backoff_seconds: float = 0.0
 
     def __post_init__(self) -> None:
         if self.parallel < 1:
             raise ValueError("parallel must be at least 1")
         if self.retries < 0:
             raise ValueError("retries cannot be negative")
+        if not math.isfinite(self.retry_backoff_seconds) or self.retry_backoff_seconds < 0:
+            raise ValueError("retry_backoff_seconds must be finite and non-negative")
 
 
 class Collector:
@@ -365,12 +369,17 @@ class Collector:
             if final.status == "ok":
                 break
             if attempt <= self.config.retries:
+                delay = self.config.retry_backoff_seconds * (2 ** (attempt - 1))
+                attempt_rows[-1]["retry_backoff_seconds"] = delay
                 logger.warning(
-                    "[%s | %s] attempt %d failed; retrying",
+                    "[%s | %s] attempt %d failed; retrying in %.1fs",
                     request.task.id,
                     request.model,
                     attempt,
+                    delay,
                 )
+                if delay:
+                    time.sleep(delay)
 
         return self._finalize_sample(
             request, sample_dir, harness_name, final, attempt_rows, started_at

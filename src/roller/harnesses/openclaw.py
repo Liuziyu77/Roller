@@ -51,7 +51,6 @@ ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 COMMON_ENV_NAMES = (
     "OPENROUTER_API_KEY",
     "OPENROUTER_BASE_URL",
-    "BRAVE_API_KEY",
     "TAVILY_API_KEY",
     "HTTP_PROXY",
     "HTTPS_PROXY",
