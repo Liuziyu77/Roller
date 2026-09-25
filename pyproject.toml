@@ -23,6 +23,7 @@ dependencies = ["PyYAML>=6.0,<7"]
 [project.scripts]
 roller = "roller.cli:main"
 roller-chart2code-profile = "roller_chart2code.profiles:main"
+roller-chart2code-audit = "roller_chart2code.export:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
