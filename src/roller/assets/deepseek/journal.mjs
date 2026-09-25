@@ -46,7 +46,18 @@ export function apply(ctx) {
   // entries the Roller task or --pass-env explicitly requested, using the
   // native subprocess service's deliberate env override seam.
   const service = ctx.subprocess;
+  const spawn = service.spawn;
   const spawnTerminal = service.spawnTerminal;
+  service.spawn = function (spec) {
+    // Standard SDK bash-sandbox uses bash -c, whereas sdk-minimal uses a PTY.
+    // Apply only the explicitly configured tool environment to that seam.
+    if (!['bash', '/bin/bash'].includes(spec.argv?.[0]) || spec.argv?.[1] !== '-c')
+      return spawn.call(service, spec);
+    const config = JSON.parse(readFileSync('/roller/deepseek-state/turn.json', 'utf8'));
+    const env = Object.fromEntries(config.tool_env_names.filter(n => process.env[n] !== undefined)
+      .map(n => [n, process.env[n]]));
+    return spawn.call(service, {...spec, env: {...env, ...spec.env}});
+  };
   service.spawnTerminal = function (spec) {
     const config = JSON.parse(readFileSync('/roller/deepseek-state/turn.json', 'utf8'));
     const env = Object.fromEntries(config.tool_env_names.filter(n => process.env[n] !== undefined)
@@ -72,6 +83,7 @@ export function apply(ctx) {
   };
   ctx.on('dispose', () => {
     globalThis.fetch = original;
+    service.spawn = spawn;
     service.spawnTerminal = spawnTerminal;
     attachments.saveImage = saveImage;
     attachments.saveImages = saveImages;

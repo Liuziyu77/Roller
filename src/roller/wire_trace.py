@@ -13,6 +13,7 @@ OpenAI-compatible HTTP layer, it works for harness versions that honour
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -212,6 +213,23 @@ def extract_wire_tools(path: Path) -> list[Any] | None:
     return list(merged.values()) or None
 
 
+def default_responses_image_detail(body: Any, detail: str) -> Any:
+    """Fill only missing image detail fields in a Responses input block list."""
+    if not isinstance(body, Mapping):
+        return body
+    result = deepcopy(dict(body))
+    for item in result.get("input", []) if isinstance(result.get("input"), list) else []:
+        if not isinstance(item, dict):
+            continue
+        blocks = item.get("content")
+        if not isinstance(blocks, list):
+            continue
+        for block in blocks:
+            if isinstance(block, dict) and block.get("type") == "input_image" and "detail" not in block:
+                block["detail"] = detail
+    return result
+
+
 class _ProxyHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -279,9 +297,14 @@ class _ProxyHandler(BaseHTTPRequestHandler):
         proxy: WireTraceProxy = self.server.proxy  # type: ignore[attr-defined]
         length = self.headers.get("Content-Length")
         body = self.rfile.read(int(length)) if length and length.isdigit() else None
-        if body and proxy.strip_thinking:
+        patch_detail = proxy.responses_image_detail and urlsplit(self.path).path.rstrip("/").endswith("/responses")
+        if body and (proxy.strip_thinking or patch_detail):
             try:
-                parsed = strip_thinking_from_body(json.loads(body))
+                parsed = json.loads(body)
+                if proxy.strip_thinking:
+                    parsed = strip_thinking_from_body(parsed)
+                if patch_detail:
+                    parsed = default_responses_image_detail(parsed, proxy.responses_image_detail)
                 body = json.dumps(parsed, ensure_ascii=False).encode("utf-8")
             except (json.JSONDecodeError, UnicodeDecodeError):
                 pass
@@ -423,9 +446,13 @@ class WireTraceProxy:
         drop_query_parameters: Sequence[str] = (),
         drop_request_headers: Sequence[str] = (),
         unique_anthropic_tool_ids: bool = False,
+        responses_image_detail: str | None = None,
     ) -> None:
         if mode not in ("off", "tools", "full"):
             raise ValueError(f"unknown wire trace mode: {mode}")
+        if responses_image_detail not in {None, "auto", "low", "high", "original"}:
+            raise ValueError("responses_image_detail must be auto|low|high|original or None")
+        self.responses_image_detail = responses_image_detail
         parts = urlsplit(upstream_base_url)
         if not parts.scheme or not parts.netloc:
             raise ValueError(f"upstream base URL must be absolute: {upstream_base_url}")

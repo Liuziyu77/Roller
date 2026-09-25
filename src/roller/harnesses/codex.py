@@ -92,6 +92,7 @@ class CodexConfig:
     keep_thinking: bool = True
     keep_container_on_error: bool = False
     docker_binary: str = "docker"
+    responses_image_detail: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -125,6 +126,10 @@ class CodexConfig:
             raise ValueError("Codex web search must be disabled|cached|live")
         if self.wire_trace_mode not in {"off", "actf", "full"}:
             raise ValueError("Codex wire trace mode must be off|actf|full")
+        if self.responses_image_detail not in {None, "auto", "low", "high", "original"}:
+            raise ValueError("Codex responses image detail must be auto|low|high|original")
+        if self.responses_image_detail and (not self.api_base or self.network != "host" or self.supports_websockets):
+            raise ValueError("Codex image detail compatibility requires api_base, host network, and HTTP (no WebSockets)")
         if self.wire_trace_mode == "full" and not self.api_base:
             raise ValueError("Codex --wire-trace full requires --api-base")
         if self.wire_trace_mode == "full" and self.network != "host":
@@ -164,7 +169,7 @@ class CodexHarness(InteractiveHarness):
 
     def _start_wire_proxy(self, output_dir: Path) -> None:
         self._wire_proxy = None
-        if self.config.wire_trace_mode != "full":
+        if self.config.wire_trace_mode != "full" and not self.config.responses_image_detail:
             return
         if not self.config.api_base:
             raise RuntimeError("Codex wire proxy requires --api-base")
@@ -172,7 +177,8 @@ class CodexHarness(InteractiveHarness):
         self._wire_proxy = WireTraceProxy(
             self.config.api_base,
             log_path,
-            mode="full",
+            mode="full" if self.config.wire_trace_mode == "full" else "off",
+            responses_image_detail=self.config.responses_image_detail,
         )
         self._wire_proxy.start()
 
@@ -720,6 +726,7 @@ class CodexHarness(InteractiveHarness):
                     request.task.thinking, self.config.reasoning_effort
                 ),
                 "wire_trace": self.config.wire_trace_mode,
+                "responses_image_detail": self.config.responses_image_detail,
                 "reasoning_summary": self.config.reasoning_summary,
                 "keep_thinking": self.config.keep_thinking,
                 "web_search": self.config.web_search,
@@ -967,6 +974,7 @@ class CodexSession(InteractiveSession):
                 "turns": len(self.messages),
                 "reasoning_effort": reasoning_effort,
                 "wire_trace": config.wire_trace_mode,
+                "responses_image_detail": config.responses_image_detail,
                 "reasoning_summary": config.reasoning_summary,
                 "keep_thinking": config.keep_thinking,
                 "web_search": config.web_search,
