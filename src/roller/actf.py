@@ -67,8 +67,8 @@ def _user_content(value: Any, text: str, *, native_text: str | None = None) -> s
     """Keep upstream prompt cleanup and retain native image positions.
 
     A single text block has an unambiguous replacement location. Multiple
-    unchanged text blocks can stay as-is; an unrelated replacement spanning
-    several blocks still needs an explicit mapping rather than moving images.
+    unchanged text blocks can stay as-is. Otherwise use the upstream-selected
+    text, without adding a rejection or inventing a block-placement policy.
     """
     if not isinstance(value, list):
         return text
@@ -88,7 +88,7 @@ def _user_content(value: Any, text: str, *, native_text: str | None = None) -> s
             else:
                 result[index]["text"] = text
             return result
-        raise ValueError("multimodal user text differs from requested replacement; cannot infer block positions")
+        return text
     return deepcopy(value)
 
 

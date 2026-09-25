@@ -45,11 +45,18 @@ class MultimodalIntegrityTests(unittest.TestCase):
         with self.assertRaisesRegex(SFTConversionError, "incomplete"):
             actf_to_sft(trajectory)
 
-    def test_does_not_guess_image_positions_when_replacing_native_prompt(self):
-        content = [{"type": "text", "text": "before"}, {"type": "image", "data": "AA==", "mimeType": "image/png"},
-                   {"type": "text", "text": "after"}]
-        with self.assertRaisesRegex(ValueError, "cannot infer"):
-            openclaw_events_to_actf(self.events(content), user_messages=["different"])
+    def test_non_single_text_replacement_keeps_upstream_text_only_behavior(self):
+        picture = {"type": "image", "data": "AA==", "mimeType": "image/png"}
+        for content in ([picture], [{"type": "text", "text": "before"}, picture,
+                                    {"type": "text", "text": "after"}]):
+            with self.subTest(content=content):
+                original = deepcopy(content)
+                actf = openclaw_events_to_actf(self.events(content), user_messages=["different"])
+                self.assertEqual(actf["steps"][0]["user_content"], "different")
+                sft = actf_to_sft(actf)
+                self.assertEqual(sft["messages"][1]["content"], "different")
+                self.assertFalse(sft.get("images"))
+                self.assertEqual(content, original)
 
     def test_prompt_cleanup_replaces_one_text_block_without_moving_images(self):
         from roller.actf import _user_content
