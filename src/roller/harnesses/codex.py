@@ -25,7 +25,7 @@ from roller.storage import safe_component
 from roller.thinking import normalize_thinking, resolve_thinking
 from roller.usage import ZERO_USAGE, extract_codex_usage
 from roller.version import __version__
-from roller.wire_trace import WireTraceProxy, redact_jsonl_file
+from roller.wire_trace import WireTraceProxy, extract_wire_tools, redact_jsonl_file
 
 logger = logging.getLogger(__name__)
 
@@ -617,6 +617,7 @@ class CodexHarness(InteractiveHarness):
                     trajectory_path,
                     user_messages=request.task.prompts,
                     keep_thinking=self.config.keep_thinking,
+                    tools=extract_wire_tools(output_dir / "wire_trace.jsonl"),
                 )
                 if not trajectory.get("steps"):
                     raise ValueError("Codex native trace produced no assistant steps")
@@ -810,6 +811,7 @@ class CodexSession(InteractiveSession):
             destination,
             user_messages=[*self.messages, self._pending_message],
             keep_thinking=self.harness.config.keep_thinking,
+            tools=extract_wire_tools(self.output_dir / "wire_trace.jsonl"),
         )
         steps = trajectory.get("steps")
         if not isinstance(steps, list):
@@ -882,6 +884,7 @@ class CodexSession(InteractiveSession):
                     trajectory_path,
                     user_messages=self.messages,
                     keep_thinking=config.keep_thinking,
+                    tools=extract_wire_tools(self.output_dir / "wire_trace.jsonl"),
                 )
                 if not trajectory.get("steps"):
                     raise ValueError("Codex native trace produced no assistant steps")

@@ -303,6 +303,7 @@ def codex_events_to_actf(
     *,
     user_messages: Iterable[str] | None = None,
     keep_thinking: bool = True,
+    tools: list[Any] | None = None,
 ) -> dict[str, Any]:
     """Convert one Codex native rollout stream to ``ACTF_v1.0``.
 
@@ -468,8 +469,8 @@ def codex_events_to_actf(
         if payload_type in {"function_call", "custom_tool_call"}:
             call_id = payload.get("call_id")
             name = payload.get("name")
-            if not isinstance(call_id, str) or not call_id:
-                continue
+            if not isinstance(call_id, str) or not call_id or call_id in calls_by_id:
+                raise ValueError("Codex tool call ID is missing or repeated")
             if not isinstance(name, str) or not name:
                 name = "unknown_tool"
             namespace = payload.get("namespace")
@@ -494,7 +495,9 @@ def codex_events_to_actf(
             call_id = payload.get("call_id")
             call = calls_by_id.get(call_id) if isinstance(call_id, str) else None
             if call is None:
-                continue
+                raise ValueError("Codex tool result has no matching call")
+            if call["output"] is not None:
+                raise ValueError("Codex tool call has repeated results")
             output, metadata = _output_content(payload.get("output"))
             call["output"] = output
             call["output_time"] = timestamp
@@ -580,14 +583,22 @@ def codex_events_to_actf(
     if steps and not any(step["user_content"] for step in steps) and expected_users:
         steps[0]["user_content"] = expected_users[0]
 
-    return {
+    trajectory = {
         "schema_version": "ACTF_v1.0",
         "system_prompt": "\n\n".join(system_parts),
-        "tools": _tool_schemas(steps),
+        "tools": deepcopy(tools) if tools is not None else _tool_schemas(steps),
+        "tool_schema_source": "wire" if tools is not None else "inferred_from_calls",
         "steps": steps,
         "started_at": steps[0]["started_at"] if steps else first_time or "",
         "finished_at": steps[-1]["finished_at"] if steps else last_time or first_time or "",
     }
+    missing = [call["id"] for call in calls_by_id.values() if call["output"] is None]
+    if missing:
+        trajectory["projection"] = {
+            "complete": False, "training_eligible": False,
+            "reason": "missing_tool_results", "missing_tool_call_ids": missing,
+        }
+    return trajectory
 
 
 def convert_codex_trace(
@@ -596,11 +607,13 @@ def convert_codex_trace(
     *,
     user_messages: Iterable[str] | None = None,
     keep_thinking: bool = True,
+    tools: list[Any] | None = None,
 ) -> dict[str, Any]:
     trajectory = codex_events_to_actf(
         _read_events(source),
         user_messages=user_messages,
         keep_thinking=keep_thinking,
+        tools=tools,
     )
     atomic_write_json(destination, trajectory)
     return trajectory
