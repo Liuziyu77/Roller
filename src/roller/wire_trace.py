@@ -230,6 +230,37 @@ def default_responses_image_detail(body: Any, detail: str) -> Any:
     return result
 
 
+class _TransportIO:
+    """Track byte counts and failure direction without retaining payloads."""
+    def __init__(self, stream, context, side):
+        self.stream, self.context, self.side = stream, context, side
+
+    def __getattr__(self, name):
+        return getattr(self.stream, name)
+
+    def read(self, *args):
+        self.context["phase"] = self.side
+        value = self.stream.read(*args)
+        self.context["upstream_bytes"] += len(value)
+        return value
+
+    def readline(self, *args):
+        self.context["phase"] = self.side
+        value = self.stream.readline(*args)
+        self.context["upstream_bytes"] += len(value)
+        return value
+
+    def write(self, value):
+        self.context["phase"] = self.side
+        count = self.stream.write(value)
+        self.context["client_bytes"] += count if isinstance(count, int) else len(value)
+        return count
+
+    def flush(self):
+        self.context["phase"] = self.side
+        return self.stream.flush()
+
+
 class _ProxyHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -295,6 +326,39 @@ class _ProxyHandler(BaseHTTPRequestHandler):
 
     def _handle(self) -> None:
         proxy: WireTraceProxy = self.server.proxy  # type: ignore[attr-defined]
+        started = time.monotonic()
+        path = urlsplit(self.path).path.rstrip("/")
+        route = next((suffix for suffix in ("/responses", "/chat/completions", "/messages", "/models")
+                      if path.endswith(suffix)), "other")
+        context = {"request_seq": proxy.next_seq(), "phase": "request", "upstream_bytes": 0,
+                   "client_bytes": 0, "outcome": "response_complete", "response": None}
+        common = {"request_seq": context["request_seq"], "method": self.command, "route": route}
+        proxy.write_transport({**common, "kind": "request", "max_upstream_attempts": 1})
+        output = self.wfile
+        self.wfile = _TransportIO(output, context, "client")
+        try:
+            _ProxyHandler._forward(self, context)
+        except Exception as exc:
+            context["outcome"] = "client_disconnect" if context["phase"] == "client" else "upstream_stream_error"
+            context["error_type"] = type(exc).__name__
+            # Do not fabricate another response after headers/body were sent,
+            # and never replay a request whose service-side state is unknown.
+        finally:
+            self.wfile = output
+            if context["response"] is not None:
+                try:
+                    context["response"].close()
+                except OSError:
+                    pass
+            proxy.write_transport({**common, "kind": context["outcome"],
+                                   "upstream_bytes": context["upstream_bytes"],
+                                   "client_bytes": context["client_bytes"],
+                                   "error_type": context.get("error_type"),
+                                   "status": context.get("status"), "will_retry": False,
+                                   "elapsed_ms": round((time.monotonic() - started) * 1000)})
+
+    def _forward(self, context) -> None:
+        proxy: WireTraceProxy = self.server.proxy  # type: ignore[attr-defined]
         length = self.headers.get("Content-Length")
         body = self.rfile.read(int(length)) if length and length.isdigit() else None
         patch_detail = proxy.responses_image_detail and urlsplit(self.path).path.rstrip("/").endswith("/responses")
@@ -325,11 +389,14 @@ class _ProxyHandler(BaseHTTPRequestHandler):
                 outgoing.add_header(key, value)
         if proxy.unique_anthropic_tool_ids:
             outgoing.add_header("Accept-Encoding", "identity")
+        context["phase"] = "upstream"
         try:
             response = urllib_request.urlopen(outgoing, timeout=proxy.timeout_seconds)
         except urllib_request.HTTPError as exc:  # 4xx/5xx still carry a body
             response = exc
         except Exception as exc:
+            context["outcome"] = "upstream_error"
+            context["error_type"] = type(exc).__name__
             payload = json.dumps({"error": str(exc)}).encode("utf-8")
             self.send_response(502)
             self.send_header("Content-Type", "application/json")
@@ -340,6 +407,10 @@ class _ProxyHandler(BaseHTTPRequestHandler):
         status = getattr(response, "status", None)
         if not isinstance(status, int):
             status = getattr(response, "code", None)
+        context["status"] = status if isinstance(status, int) else None
+        context["response"] = response
+        response = _TransportIO(response, context, "upstream")
+        context["phase"] = "client"
         self.send_response(status if isinstance(status, int) else 502)
         for key, value in response.headers.items():
             if key.lower() not in HOP_BY_HOP_HEADERS:
@@ -359,7 +430,7 @@ class _ProxyHandler(BaseHTTPRequestHandler):
                     except (ValueError, UnicodeDecodeError):
                         pass
                     else:
-                        line = b"data: " + json.dumps(proxy.repair_tool_ids(event)).encode("utf-8") + b"\n"
+                        line = b"data: " + json.dumps(proxy.repair_tool_ids(event, request_seq=context["request_seq"])).encode("utf-8") + b"\n"
                 self.wfile.write(line)
                 self.wfile.flush()
             return
@@ -370,7 +441,7 @@ class _ProxyHandler(BaseHTTPRequestHandler):
             except (ValueError, UnicodeDecodeError):
                 pass
             else:
-                payload = json.dumps(proxy.repair_tool_ids(event)).encode("utf-8")
+                payload = json.dumps(proxy.repair_tool_ids(event, request_seq=context["request_seq"])).encode("utf-8")
             self.wfile.write(payload)
             self.wfile.flush()
             return
@@ -447,6 +518,7 @@ class WireTraceProxy:
         drop_request_headers: Sequence[str] = (),
         unique_anthropic_tool_ids: bool = False,
         responses_image_detail: str | None = None,
+        transport_log_path: Path | None = None,
     ) -> None:
         if mode not in ("off", "tools", "full"):
             raise ValueError(f"unknown wire trace mode: {mode}")
@@ -459,6 +531,7 @@ class WireTraceProxy:
         self.upstream_origin = f"{parts.scheme}://{parts.netloc}"
         self.base_path = parts.path.rstrip("/")
         self.log_path = log_path
+        self.transport_log_path = transport_log_path or log_path.with_name("transport_trace.jsonl")
         self.mode = mode
         self.unique_anthropic_tool_ids = unique_anthropic_tool_ids
         self.tool_id_registry = ToolIdRegistry()
@@ -538,14 +611,26 @@ class WireTraceProxy:
             with self.log_path.open("a", encoding="utf-8") as stream:
                 stream.write(line + "\n")
 
-    def repair_tool_ids(self, event: Any) -> Any:
+    def write_transport(self, entry: Mapping[str, Any]) -> None:
+        # No exception strings, URL queries, body or header values. Logging
+        # failure must not prevent an otherwise valid request from proceeding.
+        row = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime()) + "Z", **entry}
+        try:
+            with self._lock:
+                self.transport_log_path.parent.mkdir(parents=True, exist_ok=True)
+                with self.transport_log_path.open("a", encoding="utf-8") as stream:
+                    stream.write(json.dumps(row, ensure_ascii=False) + "\n")
+        except OSError:
+            pass
+
+    def repair_tool_ids(self, event: Any, *, request_seq: int | None = None) -> Any:
         mappings: list[dict[str, str]] = []
         with self._lock:
             normalized = self.tool_id_registry.response(event, mappings)
             if mappings:
                 # Identity provenance is part of the repair, not optional wire logging.
                 with self.log_path.with_name("tool_id_mappings.jsonl").open("a", encoding="utf-8") as stream:
-                    stream.write(json.dumps({"mappings": mappings}) + "\n")
+                    stream.write(json.dumps({"request_seq": request_seq, "mappings": mappings}) + "\n")
         return normalized
 
 
