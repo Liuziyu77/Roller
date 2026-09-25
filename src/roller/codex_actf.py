@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
+from roller.actf import _merge_user_content, _user_content
 from roller.storage import atomic_write_json
 
 
@@ -96,6 +97,8 @@ def _reasoning_text(payload: Mapping[str, Any]) -> str:
 def _arguments(payload: Mapping[str, Any]) -> tuple[dict[str, Any], Any]:
     payload_type = payload.get("type")
     raw = payload.get("arguments") if payload_type == "function_call" else payload.get("input")
+    if payload_type == "custom_tool_call" and isinstance(raw, str):
+        return {"input": raw}, raw
     if isinstance(raw, str):
         try:
             parsed = json.loads(raw)
@@ -313,7 +316,7 @@ def codex_events_to_actf(
     rows = list(events)
     expected_users = tuple(user_messages or ())
     user_index = 0
-    pending_user = ""
+    pending_user: str | list[Any] = ""
     pending_user_time: str | None = None
     pending_reasoning: list[str] = []
     system_parts: list[str] = []
@@ -452,10 +455,9 @@ def codex_events_to_actf(
                         continue
                 else:
                     value = content
+                value = _user_content(payload.get("content"), value, native_text=content)
                 if value:
-                    pending_user = (
-                        f"{pending_user}\n\n{value}" if pending_user else value
-                    )
+                    pending_user = _merge_user_content(pending_user, value)
                     pending_user_time = pending_user_time or timestamp
             elif role == "assistant":
                 target = group(timestamp)
@@ -470,6 +472,9 @@ def codex_events_to_actf(
                 continue
             if not isinstance(name, str) or not name:
                 name = "unknown_tool"
+            namespace = payload.get("namespace")
+            if isinstance(namespace, str) and namespace and not name.startswith(namespace + "."):
+                name = namespace + "." + name
             arguments, raw_arguments = _arguments(payload)
             call = {
                 "type": "toolCall",

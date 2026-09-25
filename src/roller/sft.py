@@ -43,7 +43,30 @@ def _normalize_tools(value: Any) -> list[dict[str, Any]]:
 
     tools: list[dict[str, Any]] = []
     names: set[str] = set()
-    for index, tool in enumerate(value):
+
+    def flattened(items: list[Any], prefix: str = ""):
+        for original in items:
+            if isinstance(original, dict) and original.get("type") == "namespace":
+                name, children = original.get("name"), original.get("tools")
+                if not isinstance(name, str) or not name or not isinstance(children, list) or not children:
+                    raise SFTConversionError("namespace requires a name and non-empty tools list")
+                yield from flattened(children, prefix + name + ".")
+                continue
+            tool = deepcopy(original)
+            if isinstance(tool, dict) and tool.get("type") == "custom":
+                tool = {
+                    "type": "function", "name": tool.get("name"),
+                    "description": str(tool.get("description", "")) + "\nNative custom tool format: " + json.dumps(tool.get("format"), ensure_ascii=False),
+                    "parameters": {"type": "object", "properties": {"input": {"type": "string"}},
+                                   "required": ["input"], "additionalProperties": False},
+                }
+            if prefix and isinstance(tool, dict) and tool.get("type") == "function":
+                target = tool.get("function", tool)
+                if isinstance(target, dict) and isinstance(target.get("name"), str):
+                    target["name"] = prefix + target["name"]
+            yield tool
+
+    for index, tool in enumerate(flattened(value)):
         if not isinstance(tool, dict) or tool.get("type") != "function":
             raise SFTConversionError(f"tools[{index}] must be a function tool")
         function = tool.get("function")
@@ -96,6 +119,9 @@ def _normalize_tool_call(call: Any, field: str) -> dict[str, Any]:
         arguments = call.get("arguments", {})
     if not isinstance(name, str) or not name:
         raise SFTConversionError(f"{field} tool name must be non-empty")
+    namespace = call.get("namespace")
+    if isinstance(namespace, str) and namespace and not name.startswith(namespace + "."):
+        name = namespace + "." + name
     return {
         "id": call_id,
         "type": "function",
@@ -128,6 +154,13 @@ def _image_data_uri(block: Any, field: str) -> str:
     """
     if not isinstance(block, dict):
         raise SFTConversionError(f"{field} must be an object")
+    url = block.get("image_url", block.get("url"))
+    if isinstance(url, dict):
+        url = url.get("url")
+    if isinstance(url, str):
+        if not url.startswith("data:"):
+            raise SFTUnsupportedContentError(f"{field} image URL has no persisted bytes")
+        block = {**block, "data": url}
     source = block.get("source")
     if isinstance(source, dict):
         if source.get("type") != "base64":
@@ -181,12 +214,12 @@ def _tool_result_content(value: Any, field: str, images: list[str]) -> str:
             raise SFTUnsupportedContentError(
                 f"{block_field} is non-text; SFT export would lose data"
             )
-        if block.get("type") == "text":
+        if block.get("type") in {"text", "input_text", "output_text"}:
             text = block.get("text")
             if not isinstance(text, str):
                 raise SFTConversionError(f"{block_field}.text must be a string")
             parts.append(text)
-        elif block.get("type") == "image":
+        elif block.get("type") in {"image", "image_url", "input_image"}:
             # Append without deduplication: images encode the occurrence
             # sequence, the Nth placeholder must keep mapping to images[N-1].
             images.append(_image_data_uri(block, block_field))
@@ -246,6 +279,11 @@ def validate_sft_record(record: Any) -> None:
 def actf_to_sft(trajectory: Mapping[str, Any]) -> dict[str, Any]:
     """Convert one ACTF trajectory to a minimal messages/tools SFT record."""
 
+    projection = trajectory.get("projection")
+    if isinstance(projection, Mapping) and (
+        projection.get("complete") is False or projection.get("training_eligible") is False
+    ):
+        raise SFTConversionError("incomplete diagnostic projection is not eligible for SFT")
     system_prompt = trajectory.get("system_prompt", "")
     if not isinstance(system_prompt, str):
         raise SFTConversionError("system_prompt must be a string")
@@ -267,7 +305,7 @@ def actf_to_sft(trajectory: Mapping[str, Any]) -> dict[str, Any]:
         if not isinstance(step, dict):
             raise SFTConversionError(f"{prefix} must be an object")
 
-        user_content = _string(step.get("user_content", ""), f"{prefix}.user_content")
+        user_content = _tool_result_content(step.get("user_content", ""), f"{prefix}.user_content", images)
         if user_content:
             messages.append({"role": "user", "content": user_content})
             user_count += 1

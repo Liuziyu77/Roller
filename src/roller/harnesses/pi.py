@@ -314,7 +314,8 @@ class PiSession(InteractiveSession):
                         self.redact_file(trace)
                         usage = extract_pi_usage(trace)
                         trajectory = trace.with_name("trace_ACTF.json")
-                        converted = convert_pi_trace(trace, trajectory, keep_thinking=config.keep_thinking)
+                        converted = convert_pi_trace(trace, trajectory, keep_thinking=config.keep_thinking,
+                                                     allow_incomplete=status != "ok")
                         if not converted.get("steps"):
                             raise ValueError("Pi journal produced no assistant steps")
                 except Exception as exc:

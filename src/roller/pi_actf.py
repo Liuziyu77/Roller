@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from roller.actf import openclaw_events_to_actf
+from roller.sft import _image_data_uri
 from roller.storage import atomic_write_json
 from roller.usage import ZERO_USAGE
 
@@ -31,7 +32,7 @@ def read_pi_events(path: Path) -> list[dict[str, Any]]:
     return events
 
 
-def pi_events_to_actf(events: Iterable[dict[str, Any]], *, keep_thinking: bool = True) -> dict[str, Any]:
+def pi_events_to_actf(events: Iterable[dict[str, Any]], *, keep_thinking: bool = True, allow_incomplete: bool = False) -> dict[str, Any]:
     events = list(events)
     rows, tools, system = [], None, None
     calls, completed_calls = {}, set()
@@ -39,9 +40,13 @@ def pi_events_to_actf(events: Iterable[dict[str, Any]], *, keep_thinking: bool =
     awaiting_reply = False
     last_role = None
     users = 0
+    interruption_reason = ""
     for record in events:
         kind = record.get("type")
         if kind == "runner_error":
+            if allow_incomplete:
+                interruption_reason = "runner_error"
+                break
             raise ValueError("Pi journal contains a runner error")
         if kind == "turn_start":
             if turn is not None or record.get("turn") != turn_count + 1:
@@ -87,6 +92,9 @@ def pi_events_to_actf(events: Iterable[dict[str, Any]], *, keep_thinking: bool =
             continue
         message = deepcopy(event["message"])
         role = message.get("role")
+        if allow_incomplete and role == "assistant" and message.get("stopReason") in {"error", "aborted"}:
+            interruption_reason = "assistant_" + message["stopReason"]
+            break
         if role not in {"user", "assistant", "toolResult"}:
             raise ValueError(f"Pi message cannot be represented as text-only SFT: {role}")
         content = message.get("content")
@@ -100,9 +108,8 @@ def pi_events_to_actf(events: Iterable[dict[str, Any]], *, keep_thinking: bool =
             block_type = block.get("type")
             if block_type == "text" and isinstance(block.get("text"), str):
                 continue
-            if (role == "toolResult" and block_type == "image"
-                    and isinstance(block.get("data"), str)
-                    and isinstance(block.get("mimeType", block.get("mime_type")), str)):
+            if role in {"user", "toolResult"} and block_type == "image":
+                _image_data_uri(block, "Pi image block")
                 continue
             if role == "assistant" and block_type == "thinking" and isinstance(block.get("thinking"), str):
                 continue
@@ -136,13 +143,23 @@ def pi_events_to_actf(events: Iterable[dict[str, Any]], *, keep_thinking: bool =
             completed_calls.add(call_id)
         last_role = role
         rows.append({"type": "message", "timestamp": message.get("timestamp"), "message": message})
-    if turn is not None or not turn_count or not system or request_count != assistant_count or set(calls) != completed_calls:
+    incomplete = bool(interruption_reason) or turn is not None or not turn_count or request_count != assistant_count or set(calls) != completed_calls
+    if not system or (incomplete and not allow_incomplete):
         raise ValueError("Pi journal contains incomplete turns or requests")
-    return openclaw_events_to_actf(rows, system_prompts=[system], tools=tools, keep_thinking=keep_thinking)
+    trajectory = openclaw_events_to_actf(rows, system_prompts=[system], tools=tools, keep_thinking=keep_thinking)
+    if incomplete:
+        trajectory["projection"] = {
+            "complete": False, "training_eligible": False,
+            "reason": interruption_reason or "incomplete_turn_or_request",
+            "scope": "observed_completed_messages_before_interruption",
+            "observed_tool_calls": len(calls), "observed_tool_results": len(completed_calls),
+            "pending_tool_call_ids": sorted(set(calls) - completed_calls),
+        }
+    return trajectory
 
 
-def convert_pi_trace(source: Path, destination: Path, *, keep_thinking: bool = True) -> dict[str, Any]:
-    trajectory = pi_events_to_actf(read_pi_events(source), keep_thinking=keep_thinking)
+def convert_pi_trace(source: Path, destination: Path, *, keep_thinking: bool = True, allow_incomplete: bool = False) -> dict[str, Any]:
+    trajectory = pi_events_to_actf(read_pi_events(source), keep_thinking=keep_thinking, allow_incomplete=allow_incomplete)
     atomic_write_json(destination, trajectory)
     return trajectory
 
