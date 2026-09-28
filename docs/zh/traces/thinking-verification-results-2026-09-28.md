@@ -1,7 +1,5 @@
 # Issue #51 thinking 复测结果（2026-09-28）
 
-PR #64 reviewer 意见的处理细节见[逐项修复说明](thinking-review-fixes-pr64.md)。
-
 检查方案见 [thinking 回归检查矩阵](thinking-verification-matrix.md)。本次使用
 PR #64 的 `af681e7` 代码和所提供的兼容 API 服务；在线任务每格采样一次、
 超时 180 秒、Roller 重试次数 0。主矩阵使用默认 `actf` 采集；对照组针对

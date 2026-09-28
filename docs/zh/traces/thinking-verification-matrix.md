@@ -1,7 +1,5 @@
 # Thinking 回归检查矩阵
 
-PR #64 reviewer 意见的逐项处理见[修复说明](thinking-review-fixes-pr64.md)。
-
 本矩阵用于复核 [issue #51](https://github.com/Liuziyu77/Roller/issues/51)
 与 PR #64 的能力预检、请求审计、轨迹保存和训练过滤。每个检查项保存
 **输入配置、实际出站证据、响应证据、ACTF/SFT、过滤原因和判定**。
