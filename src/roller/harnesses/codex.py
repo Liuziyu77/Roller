@@ -45,6 +45,21 @@ COMMON_ENV_NAMES = (
 )
 
 
+def codex_effort(value: str | None) -> str | None:
+    """Validate a logical effort using the same rules as Codex execution."""
+    effort = normalize_thinking(value, field="Codex reasoning effort")
+    if effort == "off":
+        raise ValueError(
+            "Codex does not expose a harness-level reasoning-off mode; omit "
+            "--thinking to use the model default or choose an explicit effort"
+        )
+    if effort == "adaptive":
+        raise ValueError(
+            "Codex does not accept the OpenClaw-specific adaptive thinking profile"
+        )
+    return effort
+
+
 def redact_api_base(value: str) -> str:
     """Return an API endpoint safe to retain in run metadata."""
 
@@ -113,9 +128,14 @@ class CodexConfig:
             raise ValueError("Codex wire trace mode must be off|actf|full")
         if self.wire_trace_mode == "full" and not self.api_base:
             raise ValueError("Codex --wire-trace full requires --api-base")
-        if self.wire_trace_mode == "full" and self.network != "host":
+        if self.wire_trace_mode == "full" and self.supports_websockets:
+            raise ValueError("Codex tool capture requires --no-codex-websockets")
+        if (
+            self.wire_trace_mode != "off" and self.api_base
+            and not self.supports_websockets and self.network != "host"
+        ):
             raise ValueError(
-                "Codex --wire-trace full requires "
+                "Codex tool capture requires "
                 "--network host so the container can reach the rollout-local proxy"
             )
         if self.config_path is not None and not self.config_path.is_file():
@@ -150,15 +170,21 @@ class CodexHarness(InteractiveHarness):
 
     def _start_wire_proxy(self, output_dir: Path) -> None:
         self._wire_proxy = None
-        if self.config.wire_trace_mode != "full":
+        tools_path = output_dir / "tools_capture.jsonl"
+        tools_path.unlink(missing_ok=True)
+        if (
+            self.config.wire_trace_mode == "off"
+            or not self.config.api_base
+            or self.config.supports_websockets
+        ):
             return
-        if not self.config.api_base:
-            raise RuntimeError("Codex wire proxy requires --api-base")
         log_path = output_dir / "wire_trace.jsonl"
+        log_path.unlink(missing_ok=True)
         self._wire_proxy = WireTraceProxy(
             self.config.api_base,
             log_path,
-            mode="full",
+            mode="full" if self.config.wire_trace_mode == "full" else "tools",
+            responses_tools_path=tools_path,
         )
         self._wire_proxy.start()
 
@@ -168,6 +194,13 @@ class CodexHarness(InteractiveHarness):
         proxy = self._wire_proxy
         try:
             proxy.stop()
+            if proxy.recording_error and proxy.responses_tools_path is not None:
+                proxy.write_tools({"kind": "codex_tools_error", "error": proxy.recording_error})
+            elif proxy.responses_tools_path is not None:
+                proxy.write_tools({
+                    "kind": "codex_tools_complete",
+                    "request_count": proxy.responses_request_count,
+                })
             if proxy.log_path.is_file():
                 redact_jsonl_file(proxy.log_path)
         finally:
@@ -345,16 +378,7 @@ class CodexHarness(InteractiveHarness):
 
     def _effective_effort(self, request: RunRequest) -> str | None:
         effort = resolve_thinking(request.task.thinking, self.config.reasoning_effort)
-        if effort == "off":
-            raise ValueError(
-                "Codex does not expose a harness-level reasoning-off mode; omit "
-                "--thinking to use the model default or choose an explicit effort"
-            )
-        if effort == "adaptive":
-            raise ValueError(
-                "Codex does not accept the OpenClaw-specific adaptive thinking profile"
-            )
-        return effort
+        return codex_effort(effort)
 
     def _codex_command(
         self,
@@ -598,6 +622,7 @@ class CodexHarness(InteractiveHarness):
                     trajectory_path,
                     user_messages=request.task.prompts,
                     keep_thinking=self.config.keep_thinking,
+                    tools_trace=output_dir / "tools_capture.jsonl",
                 )
                 if not trajectory.get("steps"):
                     raise ValueError("Codex native trace produced no assistant steps")
@@ -788,6 +813,7 @@ class CodexSession(InteractiveSession):
             destination,
             user_messages=[*self.messages, self._pending_message],
             keep_thinking=self.harness.config.keep_thinking,
+            tools_trace=self.output_dir / "tools_capture.jsonl",
         )
         steps = trajectory.get("steps")
         if not isinstance(steps, list):
@@ -860,6 +886,7 @@ class CodexSession(InteractiveSession):
                     trajectory_path,
                     user_messages=self.messages,
                     keep_thinking=config.keep_thinking,
+                    tools_trace=self.output_dir / "tools_capture.jsonl",
                 )
                 if not trajectory.get("steps"):
                     raise ValueError("Codex native trace produced no assistant steps")

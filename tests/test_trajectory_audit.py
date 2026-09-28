@@ -11,6 +11,68 @@ from roller.trajectory_audit import (
 
 
 class TrajectoryAuditTests(unittest.TestCase):
+    def test_unified_visible_reasoning_audit_excludes_simulator(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            metadata = {"reasoning_effort": "off", "keep_thinking": True}
+            actf = {"steps": [{"assistant_content": {
+                "content": "answer", "reasoning_content": "visible reasoning"},
+                "metric": {"stop_reason": "stop"}}]}
+            record_training_audits(metadata, actf, Path(temporary) / "wire_trace.jsonl")
+            self.assertEqual(metadata["thinking_audit"]["status"], "mismatch")
+            self.assertEqual(metadata["sft_eligibility"]["reason"], "thinking_effort_mismatch")
+
+    def test_final_response_truncation_overrides_actf_stop_and_recovery(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "wire_trace.jsonl"
+            actf = {"steps": [{"assistant_content": {"content": "answer"},
+                                 "metric": {"stop_reason": "stop"}}]}
+            rows = [
+                {"seq": 1, "path": "/v1/responses", "model": "model", "body": {}},
+                {"kind": "response_metadata", "request_seq": 1, "response_models": ["model"],
+                 "finish_reasons": ["max_output_tokens"], "response_statuses": ["incomplete"],
+                 "capture_status": "observed"},
+            ]
+            path.write_text("\n".join(map(json.dumps, rows)) + "\n")
+            metadata = {}
+            record_training_audits(metadata, actf, path)
+            self.assertEqual(metadata["completion_audit"]["status"], "incomplete")
+            self.assertEqual(metadata["actf_completion_audit"]["status"], "not_flagged")
+            self.assertEqual(metadata["response_completion_audit"]["status"], "incomplete")
+            self.assertEqual(metadata["sft_eligibility"]["reason"], "token_limit")
+            rows.extend([
+                {"seq": 2, "path": "/v1/responses", "model": "model", "body": {}},
+                {"kind": "response_metadata", "request_seq": 2, "response_models": ["model"],
+                 "finish_reasons": [], "response_statuses": ["completed"],
+                 "capture_status": "observed"},
+            ])
+            path.write_text("\n".join(map(json.dumps, rows)) + "\n")
+            recovered = {}
+            record_training_audits(recovered, actf, path)
+            self.assertEqual(recovered["response_completion_audit"]["status"], "not_flagged")
+            self.assertNotIn("sft_eligibility", recovered)
+
+    def test_native_request_mismatch_is_used_without_wire_trace(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "trace.jsonl").write_text(json.dumps({"type": "request", "turn": 1,
+                "body": {"reasoning_effort": "high"}}) + "\n")
+            metadata = {"reasoning_effort": "low", "raw_trace_schema": "roller.pi-events/v1"}
+            record_training_audits(metadata, {"steps": [{"assistant_content": {"content": "ok"}}]},
+                                   root / "wire_trace.jsonl")
+            self.assertEqual(metadata["wire_effort_audit"]["status"], "mismatch")
+            self.assertEqual(metadata["wire_effort_audit"]["source"], "native")
+            self.assertEqual(metadata["sft_eligibility"]["reason"], "wire_effort_mismatch")
+
+    def test_claude_ultra_keeps_logical_effort_and_matches_transport(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "wire_trace.jsonl"
+            path.write_text(json.dumps({"path": "/v1/messages", "body": {
+                "output_config": {"effort": "ultracode"}}}) + "\n")
+            metadata = {"reasoning_effort": "ultra", "transport_effort": "ultracode"}
+            record_training_audits(metadata, None, path)
+            self.assertEqual(metadata["wire_effort_audit"]["requested_effort"], "ultra")
+            self.assertEqual(metadata["wire_effort_audit"]["status"], "matched")
+
     def test_openclaw_native_completion_ignores_user_and_preserves_tools(self):
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "trace.jsonl"

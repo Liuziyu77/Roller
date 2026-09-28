@@ -9,6 +9,18 @@ from roller.thinking_capabilities import load_thinking_capabilities
 
 
 class ThinkingCapabilitiesTests(unittest.TestCase):
+    def test_claude_equivalent_api_bases_share_capability_limit(self) -> None:
+        capabilities = self._load({
+            "schema_version": "roller.thinking-capabilities/v1",
+            "profiles": [{"harness": "claude-code", "model": "served-model",
+                          "api_base": "http://gateway.test", "supported_efforts": ["low"]}],
+        })
+        for endpoint in ("http://gateway.test", "http://gateway.test/v1",
+                         "http://gateway.test/v1/messages/"):
+            with self.subTest(endpoint=endpoint), self.assertRaisesRegex(ValueError, "not declared supported"):
+                capabilities.validate(harness="claude-code", model="served-model",
+                                      api_base=endpoint, effort="high")
+
     def test_rejects_inert_or_misspelled_profiles(self) -> None:
         for update in (
             {"harness": "hermse"},

@@ -12,9 +12,19 @@ from unittest.mock import patch
 from roller.cli import _build_parser, _collect, _docker_preflight, _jsonl_equivalent, _validate_thinking_requests
 from roller.models import RunRequest, Task, UserSimulatorSpec
 from roller.thinking_capabilities import ThinkingCapabilities, ThinkingCapability
+from roller.harnesses.codex import codex_effort
 
 
 class CliTests(unittest.TestCase):
+    def test_codex_preflight_rejects_runtime_unsupported_efforts(self):
+        for effort in ("off", "adaptive"):
+            with self.subTest(effort=effort), self.assertRaises(ValueError):
+                request = RunRequest(0, Task(id="task", prompts=("hello",), source_index=0,
+                                             thinking=effort), "model", 30)
+                _validate_thinking_requests([request], cli_harness="codex", harness="codex",
+                                            api_base=None, default_effort=None,
+                                            effort_validator=codex_effort, capabilities=None)
+
     def test_capabilities_use_logical_effort_for_simulator_and_resolve_endpoint(self):
         profiles = ThinkingCapabilities((ThinkingCapability(
             harness="claude-code", model="sim-model", supported_efforts=frozenset({"ultra"}),

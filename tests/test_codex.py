@@ -117,7 +117,7 @@ class CodexHarnessTests(unittest.TestCase):
                 + "\n",
                 encoding="utf-8",
             )
-            proxy = MagicMock(log_path=log_path)
+            proxy = MagicMock(log_path=log_path, recording_error=None, responses_tools_path=None)
             harness._wire_proxy = proxy
 
             harness._stop_wire_proxy()

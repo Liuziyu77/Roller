@@ -68,69 +68,6 @@ def check_retired_cot_samples(run_dir: Path, requests: list[RunRequest]) -> None
                     )
 
 
-def _thinking_audit(
-    trajectory: dict[str, Any], metadata: dict[str, Any]
-) -> dict[str, Any] | None:
-    """Describe visible reasoning without treating its absence as proof."""
-
-    settings = metadata.get("settings")
-    if not isinstance(settings, dict):
-        settings = {}
-    requested = metadata.get("reasoning_effort")
-    if requested is None:
-        requested = settings.get("reasoning_effort")
-    if requested is None:
-        return None
-
-    keep_thinking = metadata.get("keep_thinking")
-    if keep_thinking is None:
-        keep_thinking = settings.get("keep_thinking", True)
-    audit: dict[str, Any] = {
-        "requested_effort": requested,
-        "retained_in_actf": bool(keep_thinking),
-    }
-    if not keep_thinking:
-        audit.update(
-            {
-                "status": "not_observable",
-                "visible_reasoning_observed": None,
-                "visible_reasoning_characters": None,
-                "visible_reasoning_steps": None,
-            }
-        )
-        return audit
-
-    reasoning: list[str] = []
-    steps = trajectory.get("steps")
-    if isinstance(steps, list):
-        for step in steps:
-            if not isinstance(step, dict):
-                continue
-            assistant = step.get("assistant_content")
-            if not isinstance(assistant, dict):
-                continue
-            content = assistant.get("reasoning_content")
-            if isinstance(content, str) and content:
-                reasoning.append(content)
-    characters = sum(len(content) for content in reasoning)
-    observed = bool(reasoning)
-    audit.update(
-        {
-            "status": (
-                "mismatch"
-                if requested == "off" and observed
-                else "visible_reasoning_observed"
-                if observed
-                else "no_visible_reasoning"
-            ),
-            "visible_reasoning_observed": observed,
-            "visible_reasoning_characters": characters,
-            "visible_reasoning_steps": len(reasoning),
-        }
-    )
-    return audit
-
-
 @dataclass(frozen=True)
 class CollectionConfig:
     run_dir: Path
@@ -249,6 +186,7 @@ class Collector:
             "trace.jsonl",
             "trace_ACTF.json",
             "trace_SFT.json",
+            "tools_capture.jsonl",  # Exact Codex Responses tool snapshots.
             "signature_recovery.jsonl",  # Preserve historical artifacts; never generated now.
             "info.json",
             "results",
@@ -309,26 +247,6 @@ class Collector:
                 trajectory = json.loads(actf_path.read_text(encoding="utf-8"))
                 if not isinstance(trajectory, dict):
                     raise ValueError("canonical ACTF trajectory must be a JSON object")
-                thinking_audit = _thinking_audit(trajectory, metadata)
-                if thinking_audit is not None:
-                    metadata["thinking_audit"] = thinking_audit
-                    if thinking_audit["status"] == "mismatch":
-                        warning = (
-                            "requested thinking effort 'off', but retained ACTF "
-                            "contains visible reasoning content"
-                        )
-                        warnings = metadata.get("warnings")
-                        if not isinstance(warnings, list):
-                            warnings = []
-                            metadata["warnings"] = warnings
-                        if warning not in warnings:
-                            warnings.append(warning)
-                        logger.warning(
-                            "[%s | %s] %s",
-                            request.task.id,
-                            request.model,
-                            warning,
-                        )
                 if final.status == "ok":
                     write_sft(sft_path, trajectory)
             except SFTConversionError as exc:
@@ -356,12 +274,6 @@ class Collector:
         # Also remove stale exports left by an earlier attempt or failed write.
         if final.status != "ok":
             sft_path.unlink(missing_ok=True)
-        audit = metadata.get("thinking_audit")
-        if isinstance(audit, dict) and audit.get("status") == "mismatch":
-            metadata["sft_eligibility"] = {
-                "eligible": False,
-                "reason": "thinking_effort_mismatch",
-            }
         record_training_audits(
             metadata, trajectory if isinstance(trajectory, dict) else None,
             sample_dir / "wire_trace.jsonl",

@@ -56,10 +56,71 @@ def training_summary(results: list[dict[str, Any]]) -> dict[str, int]:
     return summary
 
 
-def wire_effort_audit(path: Path, requested: str | None) -> dict[str, Any] | None:
+def thinking_audit(trajectory: dict[str, Any], metadata: dict[str, Any]) -> dict[str, Any] | None:
+    """Describe visible reasoning without treating its absence as proof."""
+    settings = metadata.get("settings")
+    settings = settings if isinstance(settings, dict) else {}
+    requested = metadata.get("reasoning_effort")
+    if requested is None:
+        requested = settings.get("reasoning_effort")
     if requested is None:
         return None
-    requests = []
+    keep_thinking = metadata.get("keep_thinking", settings.get("keep_thinking", True))
+    audit: dict[str, Any] = {"requested_effort": requested, "retained_in_actf": bool(keep_thinking)}
+    if not keep_thinking:
+        audit.update(status="not_observable", visible_reasoning_observed=None,
+                     visible_reasoning_characters=None, visible_reasoning_steps=None)
+        return audit
+    reasoning = []
+    steps = trajectory.get("steps")
+    for step in steps if isinstance(steps, list) else []:
+        assistant = step.get("assistant_content") if isinstance(step, dict) else None
+        content = assistant.get("reasoning_content") if isinstance(assistant, dict) else None
+        if isinstance(content, str) and content:
+            reasoning.append(content)
+    observed = bool(reasoning)
+    audit.update(status="mismatch" if requested == "off" and observed else
+                 "visible_reasoning_observed" if observed else "no_visible_reasoning",
+                 visible_reasoning_observed=observed,
+                 visible_reasoning_characters=sum(map(len, reasoning)),
+                 visible_reasoning_steps=len(reasoning))
+    return audit
+
+
+def _request_effort(body: dict[str, Any], requested: str, transport_effort: str | None,
+                    seq: int | None) -> dict[str, Any]:
+    efforts = []
+    if "reasoning_effort" in body:
+        efforts.append(body["reasoning_effort"])
+    for key in ("reasoning", "output_config"):
+        value = body.get(key)
+        if isinstance(value, dict) and "effort" in value:
+            efforts.append(value["effort"])
+    efforts = ["off" if e == "none" else e for e in efforts]
+    thinking = body.get("thinking")
+    mode = thinking.get("type") if isinstance(thinking, dict) else None
+    template = body.get("chat_template_kwargs")
+    switches = [body.get("enable_thinking")]
+    if isinstance(template, dict):
+        switches.append(template.get("enable_thinking"))
+    disabled = mode == "disabled" or any(v is False for v in switches)
+    active = mode in ("enabled", "adaptive") or any(v is True for v in switches)
+    known = [requested if e == transport_effort and transport_effort != requested else e
+             for e in efforts if isinstance(e, str) and
+             (e in THINKING_LEVELS or e == transport_effort)]
+    mismatch = any(e != requested for e in known)
+    mismatch |= (requested == "off" and active) or (requested != "off" and disabled)
+    status = ("mismatch" if mismatch else "matched" if
+              (efforts and len(known) == len(efforts)) or (requested == "off" and disabled)
+              else "unverified")
+    return {"seq": seq, "status": status, "observed_efforts": known,
+            "enabled": active, "disabled": disabled,
+            "unrecognized_effort": len(known) != len(efforts)}
+
+
+def _request_rows(path: Path, schema: str | None = None) -> tuple[list[dict[str, Any]], bool]:
+    """Read wire rows, or request snapshots from known native journals."""
+    rows = []
     unreadable = False
     try:
         with path.open(encoding="utf-8") as source:
@@ -71,55 +132,46 @@ def wire_effort_audit(path: Path, requested: str | None) -> dict[str, Any] | Non
                     continue
                 if not isinstance(event, dict):
                     continue
-                endpoint = str(event.get("path", "")).split("?", 1)[0].rstrip("/")
-                if not endpoint.endswith(("/chat/completions", "/responses", "/messages")):
-                    continue
-                body = event.get("body", event.get("params"))
-                if not isinstance(body, dict):
-                    unreadable = True
-                    continue
-                efforts = []
-                if "reasoning_effort" in body:
-                    efforts.append(body["reasoning_effort"])
-                for key in ("reasoning", "output_config"):
-                    value = body.get(key)
-                    if isinstance(value, dict) and "effort" in value:
-                        efforts.append(value["effort"])
-                efforts = ["off" if e == "none" else e for e in efforts]
-                thinking = body.get("thinking")
-                mode = thinking.get("type") if isinstance(thinking, dict) else None
-                enabled = body.get("enable_thinking")
-                template = body.get("chat_template_kwargs")
-                switches = [enabled]
-                if isinstance(template, dict):
-                    switches.append(template.get("enable_thinking"))
-                disabled = mode == "disabled" or any(v is False for v in switches)
-                active = mode in ("enabled", "adaptive") or any(v is True for v in switches)
-                known = [e for e in efforts if isinstance(e, str) and e in THINKING_LEVELS]
-                mismatch = any(e != requested for e in known)
-                mismatch |= (requested == "off" and active) or (requested != "off" and disabled)
-                if mismatch:
-                    status = "mismatch"
-                elif efforts and len(known) == len(efforts):
-                    status = "matched"
-                elif requested == "off" and disabled:
-                    status = "matched"
+                if schema is None:
+                    endpoint = str(event.get("path", "")).split("?", 1)[0].rstrip("/")
+                    if not endpoint.endswith(("/chat/completions", "/responses", "/messages")):
+                        continue
+                    body = event.get("body", event.get("params"))
+                elif event.get("type") == "request":
+                    if schema == "roller.hermes-events/v1":
+                        body = event
+                    elif schema in {"roller.pi-events/v1", "roller.deepseek-events/v1",
+                                    "roller.opencode-events/v1"}:
+                        body = event.get("body")
+                    else:
+                        continue
                 else:
-                    status = "unverified"  # omission/budget/enabled does not prove an exact effort
-                requests.append({
-                    "seq": event.get("seq"), "status": status,
-                    "observed_efforts": known,
-                    "enabled": active, "disabled": disabled,
-                    "unrecognized_effort": len(known) != len(efforts),
-                })
+                    continue
+                if isinstance(body, dict):
+                    rows.append({"body": body, "seq": event.get("seq")})
+                else:
+                    unreadable = True
     except (OSError, UnicodeError):
         unreadable = True
+    return rows, unreadable
+
+
+def wire_effort_audit(path: Path, requested: str | None, transport_effort: str | None = None,
+                      native_path: Path | None = None, native_schema: str | None = None) -> dict[str, Any] | None:
+    if requested is None:
+        return None
+    rows, unreadable = _request_rows(path)
+    source = "wire"
+    if not rows and native_path is not None and native_schema is not None:
+        rows, unreadable = _request_rows(native_path, native_schema)
+        source = "native"
+    requests = [_request_effort(row["body"], requested, transport_effort, row["seq"]) for row in rows]
     status = "not_observable"
-    if any(r["status"] == "mismatch" for r in requests):
+    if any(row["status"] == "mismatch" for row in requests):
         status = "mismatch"
     elif requests:
-        status = "matched" if not unreadable and all(r["status"] == "matched" for r in requests) else "unverified"
-    return {"requested_effort": requested, "status": status, "requests": requests}
+        status = "matched" if not unreadable and all(row["status"] == "matched" for row in requests) else "unverified"
+    return {"requested_effort": requested, "status": status, "requests": requests, "source": source}
 
 
 def completion_audit(trajectory: dict[str, Any]) -> dict[str, Any]:
@@ -205,7 +257,7 @@ def model_identity_audit(path: Path) -> dict[str, Any]:
                     requests[row["seq"]] = {
                         "request_seq": row["seq"], "requested_model": row["model"],
                         "response_models": [], "finish_reasons": [], "status": "not_observable",
-                        "response_statuses": [],
+                        "response_statuses": [], "capture_status": "not_observable",
                     }
     except (OSError, UnicodeError):
         unreadable = True
@@ -220,6 +272,7 @@ def model_identity_audit(path: Path) -> dict[str, Any]:
         request["response_models"] = models
         request["finish_reasons"] = response.get("finish_reasons", [])
         request["response_statuses"] = response.get("response_statuses", [])
+        request["capture_status"] = response.get("capture_status", "not_observable")
         request["status"] = (
             "name_mismatch" if any(m != request["requested_model"] for m in models)
             else "matched" if models and response.get("capture_status") == "observed"
@@ -230,11 +283,33 @@ def model_identity_audit(path: Path) -> dict[str, Any]:
     return {"status": status, "requests": list(requests.values())}
 
 
+def response_completion_audit(identity: dict[str, Any]) -> dict[str, Any]:
+    """Use the final observed request; an earlier truncated request may recover."""
+    requests = identity.get("requests", [])
+    if not requests:
+        return {"status": "not_observable", "source": "response_metadata"}
+    last = max(requests, key=lambda row: row["request_seq"])
+    if last.get("capture_status") not in {"observed", "partial"}:
+        return {"status": "not_observable", "source": "response_metadata"}
+    reasons = last.get("finish_reasons", [])
+    statuses = last.get("response_statuses", [])
+    if "incomplete" in statuses or any(
+        reason in {"length", "max_tokens", "max_output_tokens"} for reason in reasons
+    ):
+        return {"status": "incomplete", "reason": "token_limit", "source": "response_metadata",
+                "request_seq": last["request_seq"]}
+    return {"status": "not_flagged", "source": "response_metadata",
+            "request_seq": last["request_seq"]}
+
+
 def record_training_audits(metadata: dict[str, Any], trajectory: dict[str, Any] | None, wire_path: Path) -> None:
     settings = metadata.get("settings")
     settings = settings if isinstance(settings, dict) else {}
-    effort = metadata.get("reasoning_effort", settings.get("reasoning_effort"))
-    wire = wire_effort_audit(wire_path, effort)
+    effort = metadata.get("reasoning_effort")
+    if effort is None:
+        effort = settings.get("reasoning_effort")
+    wire = wire_effort_audit(wire_path, effort, metadata.get("transport_effort"),
+                             wire_path.with_name("trace.jsonl"), metadata.get("raw_trace_schema"))
     identity = model_identity_audit(wire_path)
     metadata["model_identity_audit"] = identity
     if identity["status"] == "name_mismatch":
@@ -246,6 +321,19 @@ def record_training_audits(metadata: dict[str, Any], trajectory: dict[str, Any] 
             warnings.append(warning)
             logging.getLogger(__name__).warning(warning)
     reasons = []
+    if trajectory is not None:
+        visible = thinking_audit(trajectory, metadata)
+        if visible is not None:
+            metadata["thinking_audit"] = visible
+            if visible["status"] == "mismatch":
+                reasons.append("thinking_effort_mismatch")
+                warning = "requested thinking effort 'off', but retained ACTF contains visible reasoning content"
+                warnings = metadata.get("warnings")
+                if not isinstance(warnings, list):
+                    warnings = metadata["warnings"] = []
+                if warning not in warnings:
+                    warnings.append(warning)
+                    logging.getLogger(__name__).warning(warning)
     if wire is not None:
         metadata["wire_effort_audit"] = wire
         if wire["status"] == "mismatch":
@@ -259,6 +347,13 @@ def record_training_audits(metadata: dict[str, Any], trajectory: dict[str, Any] 
     metadata["completion_audit"] = completion
     if completion["status"] == "incomplete":
         reasons.append(completion["reason"])
+    response_completion = response_completion_audit(identity)
+    metadata["response_completion_audit"] = response_completion
+    if response_completion["status"] == "incomplete":
+        if completion["status"] != "incomplete":
+            metadata["actf_completion_audit"] = completion
+            metadata["completion_audit"] = response_completion
+        reasons.append(response_completion["reason"])
     if reasons:
         existing = metadata.get("sft_eligibility")
         if isinstance(existing, dict) and existing.get("eligible") is False and existing.get("reason"):

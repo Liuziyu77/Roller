@@ -7,14 +7,19 @@ from typing import Any
 
 from roller.thinking import THINKING_LEVELS
 from roller.harness_registry import HARNESS_NAMES
+from roller.harnesses.claude_code import normalize_anthropic_base_url
 
 
 SCHEMA_VERSION = "roller.thinking-capabilities/v1"
 PROFILE_HARNESSES = frozenset(HARNESS_NAMES)
 
 
-def _endpoint(value: str | None) -> str | None:
-    return value.rstrip("/") if value else None
+def _endpoint(value: str | None, harness: str) -> str | None:
+    if not value:
+        return None
+    if harness == "claude-code":
+        return normalize_anthropic_base_url(value)
+    return value.rstrip("/")
 
 
 @dataclass(frozen=True)
@@ -32,7 +37,7 @@ class ThinkingCapabilities:
     def match(
         self, *, harness: str, model: str, api_base: str | None
     ) -> ThinkingCapability | None:
-        endpoint = _endpoint(api_base)
+        endpoint = _endpoint(api_base, harness)
         matches = [
             profile
             for profile in self.profiles
@@ -40,7 +45,7 @@ class ThinkingCapabilities:
             and profile.model == model
             and (
                 profile.api_base is None
-                or _endpoint(profile.api_base) == endpoint
+                or _endpoint(profile.api_base, harness) == endpoint
             )
         ]
         if not matches:
@@ -64,7 +69,7 @@ class ThinkingCapabilities:
                 for level in THINKING_LEVELS
                 if level in profile.supported_efforts
             )
-            endpoint = f" at {_endpoint(api_base)}" if api_base else ""
+            endpoint = f" at {_endpoint(api_base, harness)}" if api_base else ""
             raise ValueError(
                 f"thinking effort {effort!r} is not declared supported for "
                 f"{harness} model {model!r}{endpoint}; supported efforts: "
@@ -132,7 +137,7 @@ def load_thinking_capabilities(path: Path) -> ThinkingCapabilities:
             )
         if len(efforts) != len(set(efforts)):
             raise ValueError(f"{label}.supported_efforts contains duplicates")
-        key = (harness.strip(), model.strip(), _endpoint(api_base))
+        key = (harness.strip(), model.strip(), _endpoint(api_base, harness))
         if key in keys:
             raise ValueError(f"duplicate thinking capability profile: {key}")
         keys.add(key)
@@ -140,7 +145,7 @@ def load_thinking_capabilities(path: Path) -> ThinkingCapabilities:
             ThinkingCapability(
                 harness=harness.strip(),
                 model=model.strip(),
-                api_base=_endpoint(api_base),
+                api_base=_endpoint(api_base, harness),
                 supported_efforts=frozenset(efforts),
             )
         )

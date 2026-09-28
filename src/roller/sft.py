@@ -7,6 +7,7 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any, Mapping
 
+from roller.codex_tools import tool_index
 from roller.storage import atomic_write_json
 
 
@@ -49,8 +50,8 @@ def _normalize_tools(value: Any) -> list[dict[str, Any]]:
         function = tool.get("function")
         if function is None:
             # The Responses API flattens function fields onto each tool item;
-            # Chat Completions nests them below ``function``. SFT always uses
-            # the nested OpenAI-compatible representation.
+            # Chat Completions nests them below ``function``. This legacy path
+            # uses the nested representation; captured Codex tools bypass it.
             function = {key: deepcopy(item) for key, item in tool.items() if key != "type"}
         elif not isinstance(function, dict):
             raise SFTConversionError(f"tools[{index}].function must be an object")
@@ -104,6 +105,30 @@ def _normalize_tool_call(call: Any, field: str) -> dict[str, Any]:
             "arguments": _arguments_json(arguments, f"{field}.arguments"),
         },
     }
+
+
+def _responses_tool_call(call: Any, field: str) -> dict[str, Any]:
+    if isinstance(call, dict) and call.get("native_type") == "custom_tool_call":
+        call_id = call.get("id")
+        name = call.get("name")
+        value = call.get("input")
+        if (
+            not all(isinstance(x, str) and x for x in (call_id, name))
+            or not isinstance(value, str)
+        ):
+            raise SFTConversionError(f"{field} has invalid custom tool input")
+        result = {
+            "id": call_id, "type": "custom",
+            "custom": {"name": name, "input": value},
+        }
+    else:
+        result = _normalize_tool_call(call, field)
+    if isinstance(call, dict) and "namespace" in call:
+        namespace = call["namespace"]
+        if not isinstance(namespace, str) or not namespace:
+            raise SFTConversionError(f"{field}.namespace must be a non-empty string")
+        result[result["type"]]["namespace"] = namespace
+    return result
 
 
 def _image_media_type(value: Any, field: str) -> str:
@@ -249,8 +274,26 @@ def actf_to_sft(trajectory: Mapping[str, Any]) -> dict[str, Any]:
     system_prompt = trajectory.get("system_prompt", "")
     if not isinstance(system_prompt, str):
         raise SFTConversionError("system_prompt must be a string")
-    tools = _normalize_tools(trajectory.get("tools"))
-    tool_names = {tool["function"]["name"] for tool in tools}
+    responses_tools = trajectory.get("tools_format") == "responses"
+    native_names: dict[tuple[str, str], str] = {}
+    if responses_tools:
+        capture = trajectory.get("tools_capture", {})
+        if not isinstance(capture, Mapping):
+            raise SFTConversionError("Codex tools_capture must be an object")
+        if capture.get("status") != "captured":
+            raise SFTConversionError(
+                capture.get("error") or
+                "Codex tools were not captured; schema inference is disabled"
+            )
+        tools = deepcopy(trajectory.get("tools"))
+        try:
+            native_names = tool_index(tools)
+        except ValueError as exc:
+            raise SFTConversionError(str(exc)) from exc
+        tool_names = set()
+    else:
+        tools = _normalize_tools(trajectory.get("tools"))
+        tool_names = {tool["function"]["name"] for tool in tools}
 
     steps = trajectory.get("steps")
     if not isinstance(steps, list):
@@ -287,8 +330,9 @@ def actf_to_sft(trajectory: Mapping[str, Any]) -> dict[str, Any]:
             raise SFTConversionError(
                 f"{prefix}.assistant_content.tool_calls must be a list"
             )
+        normalize_call = _responses_tool_call if responses_tools else _normalize_tool_call
         calls = [
-            _normalize_tool_call(call, f"{prefix}.assistant_content.tool_calls[{index}]")
+            normalize_call(call, f"{prefix}.assistant_content.tool_calls[{index}]")
             for index, call in enumerate(raw_calls)
         ]
         if not reasoning and not content and not calls:
@@ -298,10 +342,21 @@ def actf_to_sft(trajectory: Mapping[str, Any]) -> dict[str, Any]:
         call_names: dict[str, str] = {}
         for call in calls:
             call_id = call["id"]
-            name = call["function"]["name"]
+            details = call[call["type"]]
+            name = details["name"]
             if call_id in seen_call_ids:
                 raise SFTConversionError(f"duplicate tool call id: {call_id}")
-            if name not in tool_names:
+            if responses_tools:
+                key = (details.get("namespace", ""), name)
+                if key not in native_names and not key[0] and "." in name:
+                    namespace, leaf = name.rsplit(".", 1)
+                    key = (namespace, leaf)
+                if key not in native_names:
+                    raise SFTConversionError(f"tool call references missing captured schema: {name}")
+                kind = native_names[key]
+                if (kind == "custom") != (call["type"] == "custom"):
+                    raise SFTConversionError(f"tool call type differs from captured schema: {name}")
+            elif name not in tool_names:
                 raise SFTConversionError(f"tool call references missing schema: {name}")
             seen_call_ids.add(call_id)
             expected_ids.add(call_id)

@@ -11,7 +11,7 @@ The Codex Harness supports:
 - Task Bundle, read-only inputs, Context, `runtime.setup`, and full `output_dir` collection.
 - parallelism, retry, run lock, and Resume integrity checks.
 - Codex native session JSONL, `ACTF_v1.0`, one SFT record, and run-level `sft.jsonl`.
-- request-side `--wire-trace full`.
+- original request-side tool capture in default `--wire-trace actf`, plus full requests with `--wire-trace full`.
 - dynamic User Simulator and Task Agent. The Simulator can be selected independently via `user_simulator.harness`
   and can use a different model.
 - Viewer display of visible reasoning, tool calls, tool results, and the final reply.
@@ -122,7 +122,7 @@ When `--api-base` is omitted, Roller reads `OPENAI_BASE_URL` from the host. The 
 
 With a custom API address, Roller creates an isolated Codex provider with `wire_api="responses"` and `supports_websockets=false` by default. This works with compatible services that implement Responses HTTP streaming only. Enable `--codex-websockets` only when the service supports Responses WebSocket.
 
-`--wire-trace full` uses a rollout-local HTTP proxy, so it requires an explicit API address, the default `--no-codex-websockets`, and `--network host`. Without a custom API address, Codex uses its built-in OpenAI provider and transport policy.
+`--wire-trace actf` (default) and `full` capture tools through a rollout-local HTTP proxy when an API address is configured. Capture requires `--network host` and the default `--no-codex-websockets`. Without an API address, Codex uses its built-in provider; native raw/ACTF remain available, but SFT is unavailable because the original tool definitions cannot be captured. `full` rejects missing API addresses or WebSocket transport.
 
 (codex-cli-flags)=
 ## 4. Codex-specific flags
@@ -227,6 +227,7 @@ The default Codex sample layout matches OpenClaw:
 <sample>/
 ├── trace.jsonl
 ├── trace_ACTF.json
+├── tools_capture.jsonl      # Original per-request tool definitions
 ├── trace_SFT.json
 ├── info.json
 └── results/                 # When output exists
@@ -247,15 +248,19 @@ output by `call_id`. The top-level system prompt comes from `session_meta.base_i
 messages, and the `<environment_context>` Codex injects before the first turn. User messages from the task are matched by
 content to avoid treating environment events as user messages or assigning them to the wrong turn.
 
-A Codex native session does not provide a complete original JSON Schema for each tool. To emit strict SFT, Roller
-generates a permissive function schema from the actual call names and argument fields. These schemas preserve tool-call names,
-arguments, and results, but do not contain the full definitions of Codex's built-in tool interfaces.
+Tool definitions come from the actual outgoing Responses requests, including tools never called by the model. Roller does not infer schemas from arguments. ACTF records `tools_format: "responses"`, the unmodified `tools` list, and `tools_capture` provenance with every request snapshot. Definitions, descriptions, required fields, enums, custom grammars, namespaces, and original ordering are preserved.
+
+`tools_capture.jsonl` survives normal sample pruning. It contains only tool-related fields (`tools`, `tool_choice`, `parallel_tool_calls`, and any `input` items of type `additional_tools`), without ordinary messages or HTTP headers. Schema contents are preserved verbatim as JSON values, including properties named `token`; they are not subjected to the generic sensitive-key redactor. Treat descriptions and defaults as original harness-provided content.
+
+On shutdown, capture ends with a `codex_tools_complete` record containing the Responses `request_count`. SFT requires this final record and a matching snapshot count. Truncated captures and older captures without completion evidence retain raw/ACTF and the available snapshots, but cannot produce SFT.
 
 ### `trace_SFT.json` and `sft.jsonl`
 
-As with OpenClaw, a single SFT record's top level is strictly `messages` and `tools`. The assistant always includes
+A text-only SFT record contains `messages` and `tools`; image records also contain `images`. Codex `tools` retains the native Responses format, including namespace/custom/built-in entries, instead of normalizing everything to nested Chat Completions functions. Custom calls retain their string `input` under a `type: "custom"` call; namespace fields are preserved. The assistant always includes
 `reasoning_content`, `content`, and `tool_calls`. Tool results become `role=tool`. Run-level `sft.jsonl`
 only aggregates successful or trusted Resume samples.
+
+Missing or invalid captures, changing tool definitions across requests, or programmatic `additional_tools` input items make SFT explicitly unavailable. The raw trajectory and exact request snapshots remain available. A single top-level SFT `tools` list cannot faithfully represent these changing or alternative definitions. Even a trajectory without tool calls needs capture; only a recorded request with empty/omitted tools proves that its tool list was empty. `--wire-trace off` therefore produces no Codex SFT.
 
 ## 9. Native raw and wire trace
 
@@ -268,9 +273,7 @@ rollout-local proxy and saves a redacted full JSON request body before forwardin
 Tool definitions can appear in an `additional_tools` item of `input`. The file is request-side evidence. It does not save
 the upstream response body, and it cannot say how the model service later truncates, routes, or tokenizes internally.
 
-Default `--wire-trace actf` does not keep an extra wire file. The Codex ACTF tool schema comes from a permissive projection of
-native actual calls, not the full request schema. To inspect the full request for a model call,
-you must pass `--wire-trace full` explicitly and pair it with sufficiently strict log access controls.
+Default `--wire-trace actf` keeps `tools_capture.jsonl` and removes the temporary wire file after conversion. It captures original tool definitions without storing full message bodies. To inspect the full request context for a model call, use `--wire-trace full` and appropriate log access controls. Tool capture observes the request sent to the API; it cannot verify any transformations inside the upstream service.
 
 ## 10. Common issues
 

@@ -60,6 +60,7 @@ from roller.harnesses.codex import (
     DEFAULT_CODEX_IMAGE,
     CodexConfig,
     CodexHarness,
+    codex_effort,
     redact_api_base,
 )
 from roller.harnesses.openclaw import (
@@ -944,7 +945,7 @@ def _collect(args: argparse.Namespace) -> int:
         _validate_thinking_requests(
             requests, cli_harness=cli_harness, harness="codex",
             api_base=codex_api_base, default_effort=args.thinking,
-            effort_validator=normalize_thinking, capabilities=thinking_capabilities,
+            effort_validator=codex_effort, capabilities=thinking_capabilities,
         )
     if "claude-code" in selected_harnesses:
         if args.collect_path and "openclaw" not in selected_harnesses:
@@ -973,7 +974,7 @@ def _collect(args: argparse.Namespace) -> int:
         )
         _validate_thinking_requests(
             requests, cli_harness=cli_harness, harness="claude-code",
-            api_base=claude_api_base, default_effort=args.thinking,
+            api_base=claude_code_config.api_base, default_effort=args.thinking,
             effort_validator=claude_effort, capabilities=thinking_capabilities,
         )
 

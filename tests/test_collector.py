@@ -319,7 +319,7 @@ class CollectorTests(unittest.TestCase):
                         lambda slot: FakeHarness(state, slot),
                     )
                     if warned:
-                        with self.assertLogs("roller.collector", level="WARNING"):
+                        with self.assertLogs("roller.trajectory_audit", level="WARNING"):
                             result = collector.collect(make_requests()[:1])[0]
                     else:
                         result = collector.collect(make_requests()[:1])[0]
