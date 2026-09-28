@@ -111,6 +111,29 @@ class FakeInteractiveHarness(InteractiveHarness):
 
 
 class ConversationManagerTests(unittest.TestCase):
+    def test_simulator_archive_audits_visible_reasoning_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            raw = root / "trace.jsonl"
+            raw.write_text("\n".join(json.dumps(row) for row in (
+                {"type": "message", "timestamp": 1,
+                 "message": {"role": "user", "content": "prompt"}},
+                {"type": "message", "timestamp": 2,
+                 "message": {"role": "assistant", "content": [
+                     {"type": "thinking", "thinking": "visible reasoning"},
+                     {"type": "text", "text": "answer"}], "stopReason": "stop"}},
+            )) + "\n")
+            actf = root / "source_ACTF.json"
+            convert_openclaw_trace(raw, actf, user_messages=["prompt"], keep_thinking=True)
+            result = HarnessResult(status="ok", elapsed_seconds=0.01,
+                                   trace_path="trace.jsonl", trajectory_path="source_ACTF.json",
+                                   metadata={"reasoning_effort": "off", "keep_thinking": True})
+            info = ConversationManager._archive_simulator(root, result, "model", "openclaw",
+                                                           keep_aux_traces=False)
+            self.assertEqual(info["runtime"]["thinking_audit"]["status"], "mismatch")
+            self.assertEqual(info["runtime"]["sft_eligibility"]["reason"],
+                             "thinking_effort_mismatch")
+
     def test_simulator_archive_exception_removes_partial_sft(self) -> None:
         agent = FakeInteractiveHarness(["answer"], [])
         simulator = FakeInteractiveHarness([

@@ -16,6 +16,35 @@ from roller.harnesses.codex import codex_effort
 
 
 class CliTests(unittest.TestCase):
+    def test_review_preflight_matrix_uses_runtime_endpoint_and_codex_rules(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            tasks = root / "tasks.jsonl"
+            tasks.write_text(json.dumps({"id": "hello", "prompt": "say hello"}) + "\n")
+            capabilities = root / "capabilities.json"
+            capabilities.write_text(json.dumps({
+                "schema_version": "roller.thinking-capabilities/v1",
+                "profiles": [{"harness": "claude-code", "model": "served-model",
+                              "api_base": "http://gateway.test", "supported_efforts": ["low"]}],
+            }))
+            for endpoint in ("http://gateway.test", "http://gateway.test/v1",
+                             "http://gateway.test/v1/messages"):
+                args = _build_parser().parse_args([
+                    "collect", "--tasks", str(tasks), "--harness", "claude-code",
+                    "--model", "served-model", "--thinking", "high",
+                    "--claude-api-base", endpoint,
+                    "--thinking-capabilities", str(capabilities), "--dry-run",
+                ])
+                with self.subTest(endpoint=endpoint), self.assertRaisesRegex(ValueError, "not declared supported"):
+                    _collect(args)
+            for effort in ("off", "adaptive"):
+                args = _build_parser().parse_args([
+                    "collect", "--tasks", str(tasks), "--harness", "codex",
+                    "--model", "served-model", "--thinking", effort, "--dry-run",
+                ])
+                with self.subTest(effort=effort), self.assertRaises(ValueError):
+                    _collect(args)
+
     def test_codex_preflight_rejects_runtime_unsupported_efforts(self):
         for effort in ("off", "adaptive"):
             with self.subTest(effort=effort), self.assertRaises(ValueError):

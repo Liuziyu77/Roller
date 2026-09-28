@@ -54,14 +54,23 @@ class TrajectoryAuditTests(unittest.TestCase):
     def test_native_request_mismatch_is_used_without_wire_trace(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            (root / "trace.jsonl").write_text(json.dumps({"type": "request", "turn": 1,
-                "body": {"reasoning_effort": "high"}}) + "\n")
-            metadata = {"reasoning_effort": "low", "raw_trace_schema": "roller.pi-events/v1"}
-            record_training_audits(metadata, {"steps": [{"assistant_content": {"content": "ok"}}]},
-                                   root / "wire_trace.jsonl")
-            self.assertEqual(metadata["wire_effort_audit"]["status"], "mismatch")
-            self.assertEqual(metadata["wire_effort_audit"]["source"], "native")
-            self.assertEqual(metadata["sft_eligibility"]["reason"], "wire_effort_mismatch")
+            for schema, event in (
+                ("roller.pi-events/v1", {"type": "request", "turn": 1,
+                                           "body": {"reasoning_effort": "high"}}),
+                ("roller.deepseek-events/v1", {"type": "request",
+                                                "body": {"reasoning": {"effort": "high"}}}),
+                ("roller.hermes-events/v1", {"type": "request", "reasoning_effort": "high"}),
+                ("roller.opencode-events/v1", {"type": "request",
+                                                "body": {"output_config": {"effort": "high"}}}),
+            ):
+                with self.subTest(schema=schema):
+                    (root / "trace.jsonl").write_text(json.dumps(event) + "\n")
+                    metadata = {"reasoning_effort": "low", "raw_trace_schema": schema}
+                    record_training_audits(metadata, {"steps": [{"assistant_content": {"content": "ok"}}]},
+                                           root / "wire_trace.jsonl")
+                    self.assertEqual(metadata["wire_effort_audit"]["status"], "mismatch")
+                    self.assertEqual(metadata["wire_effort_audit"]["source"], "native")
+                    self.assertEqual(metadata["sft_eligibility"]["reason"], "wire_effort_mismatch")
 
     def test_claude_ultra_keeps_logical_effort_and_matches_transport(self):
         with tempfile.TemporaryDirectory() as temporary:
