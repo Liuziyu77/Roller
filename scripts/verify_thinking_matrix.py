@@ -12,6 +12,8 @@ import sys
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+from roller.trajectory_audit import sft_exclusion_reason
 HARNESSES = ("hermes", "opencode", "deepseek", "codex", "claude-code", "pi", "openclaw")
 MODELS = ("qwen3.8-flash", "glm-5.3-flash", "kimi-k2.7-code-highspeed",
           "deepseek-v4-flash", "gpt-5.6-luna", "claude-opus-4-8", "gemini-3.8-flash")
@@ -54,17 +56,20 @@ def inputs(root: Path) -> None:
 
 def result_rows(root: Path, phase: str) -> list[dict]:
     rows = []
+    expected_models = (MODELS[0],) if phase in {"smoke", "control"} else MODELS
+    efforts = ("low",) if phase == "smoke" else EFFORTS
     for harness in HARNESSES:
-        for effort in EFFORTS:
+        for effort in efforts:
             run = root / phase / f"{harness}-{effort}"
             index = run / "info.json"
-            if not index.is_file():
-                continue
-            for sample in json.loads(index.read_text()).get("samples", []):
+            samples = json.loads(index.read_text()).get("samples", []) if index.is_file() else []
+            observed_models = set()
+            for sample in samples:
                 folder = run / sample["path"]
                 detail_path = folder / "info.json"
                 if not detail_path.is_file():
                     continue
+                observed_models.add(sample.get("model"))
                 detail = json.loads(detail_path.read_text())
                 runtime = detail.get("runtime") or {}
                 marker = f"EFFORT_{effort.upper()}_OK"
@@ -87,6 +92,7 @@ def result_rows(root: Path, phase: str) -> list[dict]:
                 row = {
                     "harness": harness, "model": sample.get("model"), "effort": effort,
                     "status": detail.get("status"),
+                    "sample_present": True,
                     "task_ok": answer == marker and final == marker,
                     "tools_ok": calls >= 1 and observations >= 1 and ids_match,
                     "tool_calls": calls, "tool_results": observations,
@@ -94,7 +100,10 @@ def result_rows(root: Path, phase: str) -> list[dict]:
                     "visible_status": (runtime.get("thinking_audit") or {}).get("status"),
                     "completion_status": (runtime.get("completion_audit") or {}).get("status"),
                     "response_completion_status": (runtime.get("response_completion_audit") or {}).get("status"),
-                    "sft_exclusion_reason": (runtime.get("sft_eligibility") or {}).get("reason"),
+                    "model_identity_status": (runtime.get("model_identity_audit") or {}).get("status"),
+                    "conversion_status": (runtime.get("trajectory_conversion") or {}).get("status"),
+                    "conversion_error": (runtime.get("trajectory_conversion") or {}).get("error"),
+                    "sft_exclusion_reason": sft_exclusion_reason(detail),
                     "sample_sft": (folder / "trace_SFT.json").is_file(),
                     "path": folder.relative_to(root).as_posix(),
                 }
@@ -103,9 +112,11 @@ def result_rows(root: Path, phase: str) -> list[dict]:
                 elif row["status"] == "timeout":
                     row["mark"] = "I"
                 elif row["status"] != "ok":
-                    row["mark"] = "X/H"
+                    row["mark"] = "X"
                 elif not row["task_ok"]:
                     row["mark"] = "T"
+                elif row["conversion_status"] == "unavailable":
+                    row["mark"] = "R"
                 elif not row["tools_ok"] or not row["sample_sft"]:
                     row["mark"] = "D"
                 elif row["sft_exclusion_reason"] or row["completion_status"] == "incomplete":
@@ -115,6 +126,33 @@ def result_rows(root: Path, phase: str) -> list[dict]:
                 else:
                     row["mark"] = "PASS"
                 rows.append(row)
+            log = root / phase / f"{harness}-{effort}.log"
+            if log.is_file():
+                log_text = log.read_text(errors="replace")
+                rejected = any(phrase in log_text.lower() for phrase in (
+                    "reasoning effort must be", "reasoning effort is not",
+                    "thinking effort must be", "not declared supported",
+                    "unsupported thinking", "unsupported reasoning",
+                    "reasoning-off mode",
+                ))
+                for model in expected_models:
+                    model_id = f"matrix/{model}" if harness == "openclaw" else model
+                    if model_id not in observed_models:
+                        rows.append({
+                            "harness": harness, "model": model_id, "effort": effort,
+                            "status": "preflight_rejected" if rejected else "driver_failure",
+                            "sample_present": False,
+                            "task_ok": False, "tools_ok": False, "tool_calls": 0,
+                            "tool_results": 0, "wire_status": None,
+                            "wire_source": None, "visible_status": None,
+                            "completion_status": None,
+                            "response_completion_status": None,
+                            "model_identity_status": None,
+                            "conversion_status": None, "conversion_error": None,
+                            "sft_exclusion_reason": None, "sample_sft": False,
+                            "path": log.relative_to(root).as_posix(),
+                            "mark": "H" if rejected else "X",
+                        })
     return rows
 
 
@@ -130,9 +168,13 @@ def report(root: Path, phase: str, token: str | None = None) -> dict:
         "wire_unverified": sum(r["wire_status"] == "unverified" for r in rows),
         "wire_not_observable": sum(r["wire_status"] == "not_observable" for r in rows),
         "native_request_audits": sum(r["wire_source"] == "native" for r in rows),
-        "sft_excluded": sum(bool(r["sft_exclusion_reason"]) for r in rows),
+        "model_identity_matched": sum(r["model_identity_status"] == "matched" for r in rows),
+        "model_identity_name_mismatch": sum(
+            r["model_identity_status"] == "name_mismatch" for r in rows),
+        "sft_excluded": sum(r["sample_present"] and bool(r["sft_exclusion_reason"])
+                            for r in rows),
         "marks": {mark: sum(r["mark"] == mark for r in rows)
-                  for mark in ("PASS", "S", "U", "T", "D", "C", "I", "X/H")},
+                  for mark in ("PASS", "S", "U", "T", "D", "R", "C", "I", "H", "X")},
     }
     aggregate_rows = 0
     for harness in HARNESSES:
