@@ -17,15 +17,9 @@ from roller.run_lock import (
 
 
 def _request(root: Path, digest: str = "bundle-a") -> RunRequest:
-    manifest = root / "task.json"
-    manifest.write_text("{}", encoding="utf-8")
     bundle = TaskBundle(
-        root=root,
         inputs_root=root,
         context_root=root,
-        manifest_path=manifest,
-        input_manifest_path=manifest,
-        context_manifest_path=manifest,
         manifest_digest=digest,
         input_tree_digest="input-tree",
         input_manifest_digest="input-manifest",
