@@ -293,6 +293,38 @@ class OpenClawHelpersTests(unittest.TestCase):
         self.assertEqual(saved["thinkingLevelMap"], model["thinkingLevelMap"])
         self.assertEqual(config, original)
 
+    def test_rollout_limits_preserve_explicit_and_unset_reasoning(self) -> None:
+        for capability in (None, False, True):
+            for enable_reasoning in (False, True):
+                with self.subTest(capability=capability, enabled=enable_reasoning):
+                    model = {"id": "selected", "maxTokens": 1024}
+                    if capability is not None:
+                        model["reasoning"] = capability
+                    config = {"providers": {"proxy": {
+                        "timeoutSeconds": 30,
+                        "models": [model, {"id": "other", "maxTokens": 2048}],
+                    }}}
+                    original = json.loads(json.dumps(config))
+                    prepared = prepare_model_config(
+                        config, "proxy/selected",
+                        enable_reasoning=enable_reasoning,
+                        request_timeout_seconds=90,
+                        max_tokens=8192,
+                    )
+                    provider = prepared["providers"]["proxy"]
+                    selected = provider["models"][0]
+                    self.assertEqual(provider["timeoutSeconds"], 90)
+                    self.assertEqual(selected["maxTokens"], 8192)
+                    if capability is None and not enable_reasoning:
+                        self.assertNotIn("reasoning", selected)
+                    else:
+                        self.assertIs(
+                            selected["reasoning"],
+                            True if capability is None else capability,
+                        )
+                    self.assertEqual(provider["models"][1], original["providers"]["proxy"]["models"][1])
+                    self.assertEqual(config, original)
+
 
     def test_no_keep_thinking_requires_interceptable_model_config(self) -> None:
         task = Task(id="task", prompts=("hello",), source_index=0)

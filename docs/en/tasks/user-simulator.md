@@ -1,7 +1,5 @@
 # User Simulator and dynamic conversation
 
-[Documentation home](../index.md) · [Task format](task-format.md) · [Examples](../start/examples.md#dynamic-user-simulator) · [Output files](../traces/trajectory-outputs.md)
-
 The User Simulator uses a model in a separate Harness to play the user. After the Task Agent completes an instruction, it reads the conversation so far and decides whether to make another request or end the task. The conversation develops one turn at a time.
 
 Use this mode for tasks that introduce requirements gradually or revise them in response to the Agent, such as drafting recruitment ads, requirements interviews, customer support, tutoring, and interactive code review.

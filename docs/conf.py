@@ -49,13 +49,15 @@ exclude_patterns = [
 templates_path: list[str] = []
 html_static_path = ["_static"]
 html_css_files = ["custom.css"]
-html_js_files = ["language-switcher.js"]
+html_js_files = ["ui-locales.js", "language-switcher.js", "sidebar-scroll.js"]
 
 html_theme = "sphinx_rtd_theme"
 html_theme_options = {
-    "navigation_depth": 3,
+    # Keep EN/ZH identical: pages expand once to show second-level chapters.
+    # collapse_navigation=False avoids the sidebar shrinking when switching pages.
+    "navigation_depth": 2,
     "collapse_navigation": False,
-    "sticky_navigation": True,
+    "sticky_navigation": False,
     "style_external_links": True,
 }
 html_show_sourcelink = False
@@ -64,10 +66,11 @@ html_show_sphinx = False
 
 suppress_warnings = ["myst.header"]
 
-# Keep old flat URLs working after files moved into topic folders.
+# Keep old URLs working after files are moved or consolidated.
 _HTML_REDIRECTS = {
     "getting-started.html": "start/getting-started.html",
-    "examples.html": "start/examples.html",
+    "examples.html": "start/getting-started.html",
+    "start/examples.html": "getting-started.html",
     "cli-reference.html": "start/cli-reference.html",
     "openclaw-configuration.html": "harnesses/openclaw-configuration.html",
     "codex-configuration.html": "harnesses/codex-configuration.html",

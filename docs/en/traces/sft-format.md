@@ -1,7 +1,5 @@
 # SFT data format
 
-[Documentation home](../index.md) · [Trajectory outputs](trajectory-outputs.md) · [Task format](../tasks/task-format.md)
-
 Roller generates a training file, `trace_SFT.json`, for each successful trajectory,
 alongside the raw trace and ACTF. Run-root `sft.jsonl` aggregates
 every successful sample in request-index order. Each line is identical to the
@@ -122,8 +120,8 @@ The contract is:
 - `tool` contains only `role`, `tool_call_id`, and string `content`.
 - The assistant after a tool call follows the matching tool message directly.
   No empty user message is inserted.
-- `tools` keeps the function schema the model actually saw. It is `[]` when no
-  schema is available and the trajectory did not call tools.
+- `tools` keeps captured tool definitions. Codex preserves the native Responses list (flat functions, namespaces, custom grammars, and built-in tools), including unused tools and all original schema fields; consumers must support this format. Other harnesses keep the existing nested function representation. Codex requires captured definitions even when no tools were called; missing capture never becomes an empty list.
+- Codex custom calls use `{"id":"...","type":"custom","custom":{"name":"...","input":"original string"}}`. Function/custom call namespace fields are preserved. Changing schemas or programmatic `additional_tools` items retain their exact snapshots in ACTF and make SFT explicitly unavailable.
 
 ## 3. ACTF mapping
 
@@ -148,7 +146,7 @@ The exporter requires:
 - Every assistant tool call has a non-empty, globally unique ID;
 - Every call has exactly one matching tool result in the same step;
 - The call's tool name exists in the top-level tools schema;
-- Arguments can be encoded as a JSON object;
+- Function arguments can be encoded as a JSON object; Codex custom input remains a string;
 - Tool results contain only strings, text blocks, or image blocks with
   embedded base64 bytes.
 
@@ -174,10 +172,22 @@ calling the model again. Roller never silently drops content. The converter itse
 or networks: a harness whose image tool only leaves a path must materialize
 the bytes into the ACTF layer while the file is still accessible.
 
-These are accepted SFT block shapes, not a claim that every Harness supports
-image export. OpenClaw and Claude Code retain image tool results. Pi/OpenCode
-reject images at the ACTF boundary. Codex still serializes image result blocks
-as text and does not produce `images`; that output is not lossless multimodal SFT.
+These are accepted SFT block shapes, not a claim that every Harness can invoke
+vision at runtime. Image tool results are handled as follows:
+
+| Harness | Runtime image path | ACTF/SFT image preservation |
+| --- | --- | --- |
+| OpenClaw | Image-capable model and image tool | Preserved |
+| Codex | `view_image` through Responses | Preserved |
+| Claude Code | `Read` image result | Preserved |
+| OpenCode | `read` attachment with an inline data URL | Preserved; non-image attachments retain bounded audit metadata |
+| Hermes | Roller enables the pinned profile's `vision_analyze` toolset | Preserved |
+| DeepSeek | Text-oriented Bash profile | Image content is rejected explicitly |
+| Pi | Native `read` image result with image-capable model registration | Preserved |
+
+An OpenCode image attachment that only carries a remote URL or path remains in
+ACTF but cannot form multimodal SFT, because export never reads files or
+networks. The sample therefore retains raw/ACTF and records SFT as unavailable.
 
 ## 5. File locations
 

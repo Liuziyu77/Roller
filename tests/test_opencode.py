@@ -23,7 +23,7 @@ from roller.harnesses.opencode import (
 )
 from roller.opencode_actf import convert_opencode_trace, extract_opencode_usage, opencode_events_to_actf
 from roller.models import RunRequest, Task
-from roller.sft import actf_to_sft
+from roller.sft import SFTConversionError, actf_to_sft
 
 TOOL = {"type": "function", "function": {"name": "bash", "description": "Run shell", "parameters": {"type": "object", "properties": {"command": {"type": "string"}}, "required": ["command"]}}}
 
@@ -167,7 +167,7 @@ class OpenCodeTraceTests(unittest.TestCase):
                 else:events[0]["body"]["messages"] = []
                 with self.assertRaises(ValueError):opencode_events_to_actf(events)
 
-    def test_tool_attachments_are_bounded_and_exportable_to_sft(self):
+    def test_tool_image_attachments_are_bounded_and_exported_to_sft(self):
         events = sample_events()
         data_url = "data:image/png;base64," + "A" * 5000
         tool = events[-1]["data"]["messages"][1]["parts"][1]
@@ -183,13 +183,75 @@ class OpenCodeTraceTests(unittest.TestCase):
         self.assertTrue(attachment["url"]["omitted"])
         self.assertEqual(attachment["url"]["scheme"], "data")
         self.assertEqual(attachment["url"]["payload_characters"], 5000)
-        self.assertNotIn(data_url, json.dumps(actf))
+        self.assertEqual(
+            observation["content"],
+            [
+                {"type": "text", "text": "TOKEN"},
+                {
+                    "type": "image",
+                    "data": data_url,
+                    "mimeType": "image/png",
+                },
+            ],
+        )
+        self.assertEqual(json.dumps(actf).count(data_url), 1)
 
         sft = actf_to_sft(actf)
         tool_result = next(m for m in sft["messages"] if m["role"] == "tool")
-        self.assertTrue(tool_result["content"].startswith("TOKEN\n"))
+        self.assertEqual(tool_result["content"], "TOKEN\n<image>")
+        self.assertEqual(sft["images"], [data_url])
+
+    def test_tool_image_attachments_keep_occurrence_order(self):
+        events = sample_events()
+        first = "data:image/png;base64,AA=="
+        second = "data:image/jpeg;base64,AQ=="
+        tool = events[-1]["data"]["messages"][1]["parts"][1]
+        tool["state"]["attachments"] = [
+            {"type": "file", "mime": "image/png", "url": first},
+            {"type": "file", "mime": "image/jpeg", "url": second},
+        ]
+
+        sft = actf_to_sft(opencode_events_to_actf(events))
+
+        tool_result = next(m for m in sft["messages"] if m["role"] == "tool")
+        self.assertEqual(tool_result["content"], "TOKEN\n<image>\n<image>")
+        self.assertEqual(sft["images"], [first, second])
+
+    def test_non_image_attachment_keeps_bounded_audit_summary(self):
+        events = sample_events()
+        tool = events[-1]["data"]["messages"][1]["parts"][1]
+        tool["state"]["attachments"] = [
+            {"type": "file", "mime": "application/pdf", "url": "file:///tmp/a.pdf"}
+        ]
+
+        actf = opencode_events_to_actf(events)
+        sft = actf_to_sft(actf)
+
+        observation = actf["steps"][0]["observation"][0]
+        self.assertEqual(observation["content"][0], {"type": "text", "text": "TOKEN"})
+        self.assertIn("OpenCode attachments omitted", observation["content"][1]["text"])
+        tool_result = next(m for m in sft["messages"] if m["role"] == "tool")
         self.assertIn("OpenCode attachments omitted", tool_result["content"])
-        self.assertNotIn(data_url, json.dumps(sft))
+
+    def test_image_attachment_without_embedded_bytes_fails_sft_export(self):
+        events = sample_events()
+        tool = events[-1]["data"]["messages"][1]["parts"][1]
+        tool["state"]["attachments"] = [
+            {"type": "file", "mime": "image/png", "url": "https://example.test/a.png"}
+        ]
+
+        actf = opencode_events_to_actf(events)
+
+        self.assertEqual(
+            actf["steps"][0]["observation"][0]["content"][1],
+            {
+                "type": "image",
+                "data": "https://example.test/a.png",
+                "mimeType": "image/png",
+            },
+        )
+        with self.assertRaisesRegex(SFTConversionError, "valid base64"):
+            actf_to_sft(actf)
 
     def test_corrupt_journal_fails(self):
         with tempfile.TemporaryDirectory() as tmp:

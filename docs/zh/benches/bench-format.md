@@ -1,7 +1,5 @@
 # Bench 接入与评分
 
-[文档中心](../index.md) · [Task 格式参考](../tasks/task-format.md) · [CLI 参数参考](../start/cli-reference.md) · [轨迹产出文件指南](../traces/trajectory-outputs.md)
-
 Roller 在 task 结束后销毁容器。Bench 层为采集流程增加任务导出和容器内评分：
 
 1. 把已 checkout 的 benchmark 转换为 `roller.task/v1` 任务清单（`roller bench export`）；
@@ -221,6 +219,8 @@ roller collect --bench wildclawbench --bench-root /path/to/WildClawBench \
 roller bench export wildclawbench /path/to/WildClawBench --output tasks/wcb.jsonl
 roller bench export wildclawbench /path/to/WildClawBench -o /tmp/one.jsonl \
     --category 03_Social_Interaction --task-id 03_Social_Interaction_task_2_group_chat_zh
+roller bench export qwenclawbench /path/to/QwenClawBench -o /tmp/qcb.jsonl \
+    --runs-per-task 3
 
 # 采集并评分。--task-timeouts 让每行用自己的 timeout_seconds
 roller collect --tasks tasks/wcb.jsonl --model <provider>/<model> \
@@ -253,6 +253,7 @@ grader 需要的环境变量要用 `--pass-env` 透传（哪些变量由 bench �
 | `wildclawbench` | `openclaw` | [WildClawBench](wildclawbench.md) | 60 个真实场景任务，6 类；grader 在容器里跑，26 个任务的 `gt/` 走 `stage` |
 | `skillsbench` | `opencode` | [SkillsBench](skillsbench.md) | 按 task 构建环境；支持 `with-skill` / `no-skill` 对照和官方 verifier |
 | `pinchbench` | `openclaw` | [PinchBench](pinchbench.md) | 从 manifest 导出，支持自动、LLM judge、hybrid 与多 session |
+| `qwenclawbench` | `openclaw` | [QwenClawBench](qwenclawbench.md) | 100 个任务，8 类；支持 automated/hybrid、惩罚式评分和每题重复运行 |
 
 运行前请核对对应 README 中的参数映射和未支持项。配置缺失不一定触发错误，
 却可能改变评测条件，使分数无法直接比较。

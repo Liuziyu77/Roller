@@ -1,7 +1,5 @@
 # Trajectory output file guide
 
-[Documentation home](../index.md) · [Getting started](../start/getting-started.md) · [SFT format](sft-format.md) · [Viewer](viewer.md)
-
 `roller collect` saves traces, training data, run information, and task outputs.
 This guide describes their contents, when they are created and retained, and how
 to use them for training, analysis, and debugging.
@@ -54,8 +52,8 @@ for all seven Harnesses:
 OpenClaw's default `actf` wire mode temporarily captures the tools schema, writes
 it into ACTF/SFT, then deletes the intermediate `wire_trace.jsonl` and
 `cache_trace.jsonl`, reducing the final sample size. Codex's default `actf`
-builds a permissive tool schema from the native session and does not start a
-request proxy. Claude Code temporarily captures the Anthropic system and full
+captures original Responses tools through an HTTP proxy when `--api-base` is configured,
+and retains `tools_capture.jsonl` after conversion. Claude Code temporarily captures the Anthropic system and full
 `input_schema` when `--api-base` is set explicitly; with no API base or with
 `--wire-trace off`, it derives a permissive schema from actual `tool_use`.
 
@@ -253,9 +251,9 @@ Generation conditions:
   `""` and tools is `null`;
 - Codex system comes from native base instructions, developer/system messages,
   and `<environment_context>` before the first turn. The task user message is
-  matched to the corresponding turn by content. The native session does not
-  contain a full tool schema, so a permissive schema is generated from actual
-  call names and argument fields.
+  matched to the corresponding turn by content. Original tools come from Responses request capture, including unused tools.
+  ACTF retains the native definitions and per-request snapshots in `tools_capture`;
+  missing, changing, or unsupported definitions make SFT unavailable.
 - Claude Code merges streamed native events that share the same `message.id`,
   writes plaintext `thinking/reasoning/analysis` into `reasoning_content`, and
   associates `tool_use_id` with a later `tool_result`. Ciphertext
@@ -265,11 +263,10 @@ Generation conditions:
 
 OpenClaw ACTF freezes only the first valid assembled system prompt from the
 cache trace and the first non-empty tools schema from the wire trace at the top
-level. Codex ACTF uses native system events and a schema derived from actual
-calls. Claude Code ACTF uses the first captured Anthropic system/tools, and
+level. Codex ACTF uses native system events and original request tool definitions. Claude Code ACTF uses the first captured Anthropic system/tools, and
 falls back to native derivation when there is no wire. None of them store the
-full messages/input of every request per step, and none of them express
-system/tools changing between calls. Use full wire to inspect those changes;
+full messages/input of every request per step. Codex additionally retains
+per-request tool snapshots and rejects changing tools in SFT. Use full wire to inspect those changes;
 OpenClaw can also combine it with the full cache trace.
 
 As long as raw exists, Roller attempts conversion, including samples whose
@@ -304,12 +301,12 @@ Generation conditions:
 - Every tool call has a non-empty, globally unique ID;
 - Every tool call has exactly one tool result in the same step;
 - The called tool exists in the top-level tools schema;
-- Arguments can be encoded as a JSON object;
+- Function arguments can be encoded as a JSON object; Codex custom input remains a string;
 - The tool result is a string, text blocks, or image blocks with embedded
   base64 bytes.
 
-Both GPT Responses flat tools and Chat Completions nested tools are unified to
-a nested function schema. An image tool result is exported as an `<image>`
+Codex preserves native Responses tool definitions, namespaces, and custom grammars.
+Other harnesses normalize flat/nested functions to nested function schemas. An image tool result is exported as an `<image>`
 placeholder plus a top-level `images` data-URI list; see
 [SFT data format](sft-format.md) for the alignment contract. Anything that
 cannot be exported losslessly — audio or other unknown block types,
@@ -455,8 +452,8 @@ service:
 - OpenClaw `actf` records only the model, non-message parameters, message count,
   and the first non-empty tools schema. It does not record full messages/input.
   That temporary file is deleted after conversion;
-- Codex `actf` does not start a proxy and builds ACTF directly from the native
-  session;
+- Codex `actf` captures original tool definitions over HTTP when an API base is configured;
+  `tools_capture.jsonl` is retained while the temporary wire file is deleted;
 - Claude Code `actf` temporarily records the first Anthropic system/tools and
   non-message parameters when an API base is set explicitly, then deletes the
   file after conversion;
@@ -496,11 +493,7 @@ Limits:
 - Multi-turn requests repeat history, so file size is close to O(N²). Use it
   only for audit and debugging.
 
-### 5.6 Historical CoT artifacts
-
-New runs no longer generate `signature_recovery.jsonl`. Existing files remain historical diagnostics; upgrading does not bulk-delete or rewrite saved trajectories.
-
-### 5.7 How to audit context compaction or rewriting
+### 5.6 How to audit context compaction or rewriting
 
 1. Run a minimal reproducible task with `--wire-trace full`. For OpenClaw, also
    keep the default `--cache-trace`. Do not use default `actf` as a substitute
@@ -524,7 +517,7 @@ After the audit, protect or delete cache/wire files separately. They may contain
 repeated user input, system prompts, tool results, reasoning, file contents, and
 runtime injections.
 
-### 5.8 `results/`
+### 5.7 `results/`
 
 Created only when the task output directory contains ordinary files or
 directories. Roller:
@@ -539,7 +532,7 @@ directories. Roller:
 `results/` is Agent deliverable output. It is not conversation training data and
 is not written into `sft.jsonl`.
 
-### 5.9 `conversation.json`
+### 5.8 `conversation.json`
 
 Created only for User Simulator tasks. It stores the user/assistant turns both
 sides can see, the termination reason, instructions that were pending but not
@@ -554,18 +547,19 @@ participant, use that participant's own raw/ACTF/SFT.
 | Harness / mode | Proxy requirement | ACTF tools | Final auxiliary files | When to use |
 | --- | --- | --- | --- | --- |
 | OpenClaw `actf` (default) | Enabled when a proxyable `baseUrl` exists; degrades when missing | Full schema when capture succeeds, otherwise `null` | cache/wire not kept | Regular batch collection |
-| Codex `actf` (default) | Does not start a proxy | Permissive schema from native actual calls | wire not kept | Regular batch collection |
+| Codex `actf` (default) | Configured API base, HTTP, host network | Original Responses definitions; no inference | `tools_capture.jsonl` | Regular batch collection |
 | Claude Code `actf` (default) | Starts when `--api-base` is set explicitly | Captures Anthropic `input_schema`; derives from native when there is no proxy | wire not kept | Regular batch collection |
 | OpenClaw `full` | Provider must have an absolute `baseUrl` | Full schema | `wire_trace`, plus `cache_trace` when cache is enabled | Request-level audit |
-| Codex `full` | Must set `--api-base --network host` explicitly | Native permissive schema | `wire_trace` | Request-level audit |
+| Codex `full` | API base, HTTP, host network required | Original Responses definitions | `wire_trace`, `tools_capture.jsonl` | Request-level audit |
 | Claude Code `full` | Must set `--api-base --network host` explicitly | Captures Anthropic `input_schema` | `wire_trace` | Request-level audit |
-| `off` | Does not start a proxy for recording | OpenClaw is `null`; Codex/Claude Code derive from native | none kept | Minimal diagnostics-off mode |
+| `off` | Does not start a proxy for recording | OpenClaw/Codex are `null`; Claude Code derives from native | none kept | Minimal diagnostics-off mode |
 
 After OpenClaw `off` or a degraded `actf`, SFT validation fails for missing tool
 schema if the trajectory actually called tools. When there are no tool calls,
-SFT `tools` is `[]`. Codex and Claude Code derive a schema from native actual
-calls, so they do not depend on wire for this structural check, but the derived
-schema does not contain the full tool interface definition.
+SFT `tools` is `[]`. Claude Code retains its native schema fallback. Codex never
+infers schemas: absent capture (including `off`, WebSockets, or no API base),
+changing definitions, and programmatic `additional_tools` make SFT unavailable.
+See [Codex tool capture](../harnesses/codex-configuration.md#8-trajectory-outputs).
 
 ### 6.2 Thinking
 
@@ -576,27 +570,21 @@ schema does not contain the full tool interface definition.
 
 `--thinking LEVEL` sets the reasoning level in the Harness/model request.
 Whether reasoning text can be saved depends on the service response. See
-[Thinking configuration](../harnesses/openclaw-configuration.md#thinking-system-prompt-and-wire-trace)
+[Thinking configuration](../harnesses/openclaw-configuration.md#5-thinking-system-prompt-and-wire-trace)
 for GPT native effort, open-model profiles, and OpenClaw image limits, and
-[Thinking and effort](../harnesses/claude-code-configuration.md#thinking-and-effort)
+[Thinking and effort](../harnesses/claude-code-configuration.md#5-thinking-and-effort)
 for the Claude Code mapping. When the backend reports only reasoning tokens and
 does not return a reasoning summary/content, ACTF/SFT have no
 `reasoning_content` to save. A GPT compacted summary enters that field as-is;
 encrypted reasoning does not enter SFT.
 
-Native reasoning is retained with the default `--keep-thinking`. This applies to GPT summaries, Claude visible thinking, and plaintext reasoning returned by open models.
+The default `--keep-thinking` retains visible reasoning returned by the service. This includes GPT summaries, Claude visible thinking, and plaintext reasoning returned by open models.
 
 Even with `--wire-trace off`, `--no-keep-thinking` must still start a proxy to
 strip request history, so OpenClaw still requires a proxyable `baseUrl` in
 `--model-config`. Codex and Claude Code do not perform that history stripping.
 
-### 6.3 Retired CoT acquisition modes
-
-`external` / `external_always` and Claude signature recovery are retired. Roller no longer injects thinking tools, rewrites THINK/ACT stages, calls signature recovery APIs, or folds tool arguments into reasoning. Ordinary tools with the same names remain tool calls.
-
-Old CLI flags are errors, including `off`; remove them from commands. Retired lock fields explicitly set to `off`, and the auxiliary parameters of disabled recovery, are ignored only during comparison. The saved lock is not rewritten. All other configuration and sample-integrity checks remain strict, so native runs can still resume. Runs that enabled retired modes require a new run directory. The CLI checks target Agent/Simulator samples before writing any lock or run metadata; direct Collector calls perform the same check. Existing raw/ACTF/SFT remain available for offline inspection; re-exporting ACTF no longer applies special tool-folding rules.
-
-### 6.4 Cache trace (OpenClaw)
+### 6.3 Cache trace (OpenClaw)
 
 | Flag | ACTF/SFT system | `cache_trace.jsonl` |
 | --- | --- | --- |

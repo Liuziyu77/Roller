@@ -1,19 +1,50 @@
 # Docker 构建与镜像源
 
-[文档中心](../index.md) · [快速上手](getting-started.md)
+本页解决一个具体问题：在本地构建 Roller 提供的 Harness 镜像时，怎样选择软件源、基础镜像和代理。
 
-Codex、Claude Code、Hermes、OpenCode、DeepSeek 和 Pi 的 Dockerfile 支持下面的构建参数。OpenClaw 使用上游镜像，准备方式见 [OpenClaw 指南](../harnesses/openclaw-configuration.md)。这些参数通过 `docker build --build-arg` 传入，不是 `roller collect` 参数。
+如果你正在按照快速上手使用 OpenClaw，通常不需要阅读后面的构建参数。Roller 直接使用固定版本的 OpenClaw 官方镜像，镜像准备和替换方法见 [OpenClaw Harness 指南](../harnesses/openclaw-configuration.md)。
 
-## Debian 软件源
+如果你使用 Codex、Claude Code、Hermes、OpenCode、DeepSeek 或 Pi，需要通过仓库中的 Dockerfile 构建对应镜像。公共网络可以正常访问时，直接按照各 Harness 指南中的默认命令构建即可。只有在下载缓慢、需要使用内部软件源、更换基础镜像或配置代理时，才需要继续阅读本页。
 
-六个 Dockerfile 均支持：
+## 1. 先确认镜像从哪里来
+
+| Harness | 镜像准备方式 | 本页哪些内容适用 |
+| --- | --- | --- |
+| [OpenClaw](../harnesses/openclaw-configuration.md) | 使用固定版本的上游官方镜像 | 下文的 Roller Dockerfile 构建参数不适用 |
+| [Codex](../harnesses/codex-configuration.md) | 使用 [`docker/codex/Dockerfile`](../../../docker/codex/Dockerfile) 本地构建 | Debian 软件源和 npm registry |
+| [Claude Code](../harnesses/claude-code-configuration.md) | 使用 [`docker/claude-code/Dockerfile`](../../../docker/claude-code/Dockerfile) 本地构建 | Debian 软件源和 npm registry |
+| [Hermes](../harnesses/hermes-configuration.md) | 使用 [`docker/hermes/Dockerfile`](../../../docker/hermes/Dockerfile) 本地构建 | Debian 软件源、Hermes Python 软件源、基础镜像和代理 |
+| [OpenCode](../harnesses/opencode-configuration.md) | 使用 [`docker/opencode/Dockerfile`](../../../docker/opencode/Dockerfile) 本地构建 | Debian 软件源、npm registry、基础镜像和代理 |
+| [DeepSeek](../harnesses/deepseek-configuration.md) | 使用 [`docker/deepseek/Dockerfile`](../../../docker/deepseek/Dockerfile) 本地构建 | Debian 软件源、基础镜像和代理 |
+| [Pi](../harnesses/pi-configuration.md) | 使用 [`docker/pi/Dockerfile`](../../../docker/pi/Dockerfile) 本地构建 | Debian 软件源、npm registry、基础镜像和代理 |
+
+默认镜像名称、版本和完整构建命令见上表链接的对应 Harness 指南。本页只解释构建时的下载源设置。这些设置通过 `docker build --build-arg` 传入，不是 `roller collect` 参数。
+
+## 2. 根据下载步骤选择配置
+
+下文的参数适用范围不同，不要把所有参数同时传给每个 Harness。
+
+| 构建时卡住的步骤 | 适用 Harness | 使用的配置 |
+| --- | --- | --- |
+| `apt-get` 下载 Debian 软件包 | 六个本地构建的 Harness | `DEBIAN_MIRROR` 和 `DEBIAN_SECURITY_MIRROR` |
+| npm 下载 Agent 或插件依赖 | Codex、Claude Code、OpenCode、Pi | `NPM_REGISTRY` |
+| pip 安装 uv | 仅 Hermes | `PIP_INDEX_URL` 和 `PIP_TRUSTED_HOST` |
+| uv 根据 `uv.lock` 下载 Hermes 依赖 | 仅 Hermes | `PYPI_DOWNLOAD_BASE` 和 `UV_INSECURE_HOST` |
+| 使用已经准备好的基础镜像 | Hermes、OpenCode、DeepSeek、Pi | `BASE_IMAGE` |
+| 拉取基础镜像、访问 GitHub 或进行其他下载 | 涉及对应下载的 Harness | Docker 代理和 Docker daemon 网络配置 |
+
+## 3. Debian 软件源
+
+六个本地 Dockerfile 都支持下面两个参数：
 
 | 参数 | 用途 | 未设置或为空时 |
 | --- | --- | --- |
 | `DEBIAN_MIRROR` | Debian 主仓库地址 | 保留基础镜像的主源配置 |
 | `DEBIAN_SECURITY_MIRROR` | Debian 安全仓库地址 | 保留基础镜像的安全源配置 |
 
-两个地址独立生效。只设置主源不会修改安全源；安全源也不必是主源地址加 `-security`。下面以 Pi 和两条不同路径的内部代理为例，请换成可用地址：
+两个地址独立生效。只设置主源不会修改安全源，安全源也不必是主源地址加 `-security`。
+
+下面以 Pi 为例，同时设置 Debian 主源、安全源和 npm registry。请将示例地址替换为实际可用的地址：
 
 ```bash
 docker build \
@@ -23,35 +54,44 @@ docker build \
   -t roller-pi:0.85.1 docker/pi
 ```
 
-构建时会检查 `/etc/apt/sources.list` 和 `/etc/apt/sources.list.d/` 下的 `.list`、`.sources` 文件，只替换完整的官方仓库 URL：主源为 `deb.debian.org/debian`，安全源为 `deb.debian.org/debian-security` 或 `security.debian.org/debian-security`。支持 HTTP、HTTPS 和末尾斜杠。发行版代号、组件及签名配置不变。
+构建会检查 `/etc/apt/sources.list` 和 `/etc/apt/sources.list.d/` 中的 `.list` 与 `.sources` 文件，只替换完整的 Debian 官方仓库地址。发行版代号、组件和签名配置保持不变。
 
-自定义基础镜像中已经改成其他地址的仓库、Ubuntu 仓库和第三方仓库保持原样；这两个参数不会将它们转换成 Debian 仓库。没有对应源文件时会跳过替换。OpenCode、Pi、DeepSeek 原有的工具检查仍决定是否执行 apt；Hermes、Codex 和 Claude Code 仍执行 apt 安装。
+已经指向其他地址的自定义仓库、Ubuntu 仓库和第三方仓库不会被修改。没有对应源文件时会跳过替换。OpenCode、Pi 和 DeepSeek 仅在基础镜像缺少所需工具时执行 apt。Hermes、Codex 和 Claude Code 会执行 apt 安装。
 
-Pi、Codex、Claude Code 使用的 Node slim 基础镜像可能没有系统 CA 证书包。构建会在替换软件源和首次执行 apt 之前，检查 `/etc/ssl/certs/ca-certificates.crt`；仅在文件缺失或为空时，用 [Node 内置的 Mozilla 根证书](https://nodejs.org/docs/latest-v22.x/api/tls.html#tlsrootcertificates) 初始化它。这个步骤不需要网络，已有的非空证书文件不会被覆盖，后续 apt 安装步骤仍包含 Debian 的 `ca-certificates` 包。HTTPS 证书验证和 apt 仓库签名校验保持开启。
+Pi、Codex 和 Claude Code 使用的 Node slim 基础镜像可能没有系统 CA 证书包。构建会在首次访问 HTTPS apt 软件源前检查 `/etc/ssl/certs/ca-certificates.crt`。文件缺失或为空时，会使用 [Node 内置的 Mozilla 根证书](https://nodejs.org/docs/latest-v22.x/api/tls.html#tlsrootcertificates) 初始化。已有的非空证书文件不会被覆盖，HTTPS 证书验证和 apt 仓库签名校验也不会被关闭。
 
-内部 HTTPS 镜像如果使用私有 CA，需要预先将该 CA 安装到基础镜像的系统信任库中；Node 内置根证书不包含企业私有 CA。
+## 4. npm registry
 
-## npm registry
+只有需要从 npm 下载内容的四个 Harness 使用 `NPM_REGISTRY`：
 
-| Harness | 参数 | 默认行为 |
-| --- | --- | --- |
-| Codex、Claude Code、Pi | `NPM_REGISTRY` | 未设置或为空时沿用 npm 配置，包括基础镜像的 `.npmrc` |
-| OpenCode | `NPM_REGISTRY` | 默认 `https://registry.npmjs.org`，用于二进制包下载和插件依赖安装 |
+| Harness | 未设置或为空时的行为 |
+| --- | --- |
+| Codex | 沿用 npm 配置，包括基础镜像中的 `.npmrc` |
+| Claude Code | 沿用 npm 配置，包括基础镜像中的 `.npmrc` |
+| Pi | 沿用 npm 配置，包括基础镜像中的 `.npmrc` |
+| OpenCode | 使用 `https://registry.npmjs.org` |
 
-Codex、Claude Code 和 Pi 在安装步骤中将非空参数传给 `npm_config_registry`。参数不会写成镜像的运行时 `ENV`。版本固定和现有校验规则保持不变。
+Codex、Claude Code 和 Pi 只在安装步骤中使用非空的 `NPM_REGISTRY`，不会把它保存为镜像运行时环境变量。
 
-OpenCode 的下载镜像需要同时提供 npm 包元数据与 tarball。Pi 的 `fd` 仍从 GitHub Releases 下载；修改 npm registry 不会改变该地址。
+OpenCode 的镜像源需要同时提供 npm 包元数据和 tarball。Pi 使用的 `fd` 仍从 GitHub Releases 下载，修改 npm registry 不会改变这个下载地址。
 
-## Hermes 的 Python 依赖
+## 5. Hermes 的 Python 软件源
+
+这一节只适用于 Hermes。Hermes 镜像的 Python 依赖分为两个下载步骤，所以需要两组配置：
+
+1. pip 安装固定版本的 uv。
+2. uv 按照 Hermes 的 `uv.lock` 下载锁定依赖。
 
 | 参数 | 控制的步骤 | 默认值 |
 | --- | --- | --- |
 | `PIP_INDEX_URL` | pip 安装固定版本的 uv | `https://pypi.org/simple` |
 | `PIP_TRUSTED_HOST` | pip 显式信任的主机或主机与端口 | 未设置 |
-| `PYPI_DOWNLOAD_BASE` | `uv.lock` 中 `files.pythonhosted.org` 下载地址的前缀 | `https://files.pythonhosted.org` |
+| `PYPI_DOWNLOAD_BASE` | 替换 `uv.lock` 中 `files.pythonhosted.org` 下载地址的前缀 | `https://files.pythonhosted.org` |
 | `UV_INSECURE_HOST` | uv 显式允许不安全连接的主机 | 未设置 |
 
-优先使用证书有效的 HTTPS 索引。pip 默认会忽略非回环主机上的纯 HTTP 索引，这可能表现为找不到固定版本的 uv。确需使用可信的内部 HTTP 索引时，显式设置其主机：
+`PIP_INDEX_URL` 只影响安装 uv，不会重定向 `uv.lock` 中已经锁定的依赖下载。`PYPI_DOWNLOAD_BASE` 只替换锁文件中的下载前缀，镜像需要保留 `/packages/` 路径布局。依赖版本和 SHA-256 校验保持不变。Hermes 源码仍从 GitHub 拉取。
+
+优先使用证书有效的 HTTPS 索引。如果必须使用可信的内部 HTTP 索引，需要显式配置对应主机：
 
 ```bash
 docker build \
@@ -60,29 +100,34 @@ docker build \
   -t roller-hermes:d15ed4445207 docker/hermes
 ```
 
-`PIP_TRUSTED_HOST` 只控制 pip，不会改变 uv 的校验。若 uv 下载端也需要显式放宽连接校验，单独设置 `UV_INSECURE_HOST`，仅填写要信任的主机。两者都不默认启用。具体规则见 [pip trusted-host](https://pip.pypa.io/en/stable/cli/pip/#cmdoption-trusted-host) 和 [uv insecure host](https://docs.astral.sh/uv/reference/environment/#uv_insecure_host)。
+`PIP_TRUSTED_HOST` 只控制 pip。如果 uv 下载端也需要放宽连接校验，需要单独设置 `UV_INSECURE_HOST`。两者默认都不开启。具体规则见 [pip trusted-host](https://pip.pypa.io/en/stable/cli/pip/#cmdoption-trusted-host) 和 [uv insecure host](https://docs.astral.sh/uv/reference/environment/#uv_insecure_host)。
 
-`PIP_INDEX_URL` 不会重定向已锁定的 Hermes 依赖下载。`uv sync --frozen` 仍使用 `uv.lock`；`PYPI_DOWNLOAD_BASE` 只替换下载前缀，镜像需保留 `/packages/` 路径布局，版本与 SHA-256 校验不变。Hermes 源码仍从 GitHub 拉取。
+DeepSeek 和 OpenCode 的 Dockerfile 也会安装 Python 组件，但当前没有提供这四个 Hermes 专属构建参数。它们使用正常的网络和代理设置，不能直接照搬本节参数。镜像要求和默认构建命令见各自的 Harness 指南。
 
-## 其他下载与代理
+## 6. 基础镜像、代理和私有 CA
 
-这些参数分别控制 apt、npm 或指定的 Python 下载步骤，不能让整个构建自动离线。基础镜像拉取、GitHub 下载和其他依赖仍需要网络：
+以上参数只控制 apt、npm 或 Hermes 的 Python 下载步骤，不能让整个构建自动离线。基础镜像、GitHub 下载和其他依赖仍需要可用的网络或内部代理。
 
-- `BASE_IMAGE` 可为 Hermes、OpenCode、DeepSeek、Pi 选择已准备好的基础镜像。
-- 构建中其他下载可使用 Docker 的 `HTTP_PROXY`、`HTTPS_PROXY` 和 `NO_PROXY` 构建参数。内部镜像通常需要加入 `NO_PROXY`。
-- 基础镜像的拉取由 Docker daemon 处理，需要在 daemon 侧配置相应网络。
+- Hermes、OpenCode、DeepSeek 和 Pi 可以通过 `BASE_IMAGE` 使用已经准备好的基础镜像。
+- 构建中的 HTTP 请求可以使用 Docker 的 `HTTP_PROXY`、`HTTPS_PROXY` 和 `NO_PROXY` 构建参数。
+- 内部镜像地址通常需要加入 `NO_PROXY`。
+- 基础镜像由 Docker daemon 拉取，需要单独配置 daemon 的网络和镜像源。
 
 代理参数用法见 [Docker 构建变量](https://docs.docker.com/build/building/variables/#proxy-arguments)。
 
-## 构建配置回归测试
+内部 HTTPS 软件源如果使用私有 CA，需要预先将该 CA 安装到基础镜像的系统信任库中。Node 内置根证书不包含企业私有 CA。
 
-在仓库根目录执行配置测试；CA 初始化测试需要 Node，npm 配置测试需要 npm：
+## 7. 维护者构建测试
+
+这一节用于修改 Dockerfile 或镜像源逻辑后的回归检查。普通用户构建 Harness 镜像时可以跳过。
+
+在仓库根目录运行配置测试。CA 初始化测试需要 Node，npm 配置测试需要 npm：
 
 ```bash
 python -m unittest discover -s tests -p test_docker_build_config.py -v
 ```
 
-真实 HTTPS 测试默认跳过，需要 Docker 和可访问 `deb.debian.org` 的网络。它使用三个 Node Harness 的默认基础镜像，执行 Dockerfile 中的证书初始化与镜像替换步骤，通过 HTTPS 下载 apt 索引、实际安装 `ca-certificates`，再模拟安装各 Harness 所需的 apt 包，不安装 Harness 的 npm 依赖，也不调用模型 API：
+真实 HTTPS 测试默认跳过。它需要 Docker 和能够访问 `deb.debian.org` 的网络：
 
 ```bash
 docker pull node:22.22.0-bookworm-slim
@@ -91,4 +136,6 @@ ROLLER_DOCKER_BUILD_NETWORK_TEST=1 python -m unittest discover \
   -s tests -p test_docker_build_https.py -v
 ```
 
-测试会向容器传递 `http_proxy`、`https_proxy`、`no_proxy` 及其大写形式。Linux 上使用宿主机回环地址的代理时，可额外设置 `ROLLER_DOCKER_TEST_NETWORK=host`；这只影响测试容器的网络，不修改 Docker daemon 配置。
+该测试会使用三个 Node Harness 的默认基础镜像，验证证书初始化、软件源替换和 apt 安装，不会安装 Harness 的 npm 依赖，也不会调用模型 API。
+
+测试会向容器传递 `http_proxy`、`https_proxy`、`no_proxy` 及其大写形式。Linux 上的代理位于宿主机回环地址时，可以设置 `ROLLER_DOCKER_TEST_NETWORK=host`。这个设置只影响测试容器的网络，不修改 Docker daemon 配置。

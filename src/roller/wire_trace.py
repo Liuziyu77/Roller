@@ -21,6 +21,8 @@ from typing import Any, Mapping, Sequence
 from urllib import request as urllib_request
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
+from roller.codex_tools import tool_snapshot
+
 
 HOP_BY_HOP_HEADERS = {
     "connection",
@@ -165,13 +167,14 @@ def redact_jsonl_file(path: Path) -> None:
 
 
 def extract_wire_tools(path: Path) -> list[Any] | None:
-    """Return the tools schema recorded in a wire trace file, if any."""
+    """Merge every tools schema recorded across wire-trace requests."""
     try:
         # JSONL records are separated by LF.  Unicode line separators can
         # legally occur inside string values and must not split a record.
         lines = path.read_text(encoding="utf-8", errors="replace").split("\n")
     except OSError:
         return None
+    merged: dict[str, Any] = {}
     for line in lines:
         try:
             entry = json.loads(line)
@@ -184,9 +187,17 @@ def extract_wire_tools(path: Path) -> list[Any] | None:
         else:
             body = entry.get("body")
             tools = body.get("tools") if isinstance(body, dict) else None
-        if isinstance(tools, list) and tools:
-            return tools
-    return None
+        if not isinstance(tools, list):
+            continue
+        for tool in tools:
+            if not isinstance(tool, dict):
+                continue
+            function = tool.get("function")
+            source = function if isinstance(function, dict) else tool
+            name = source.get("name")
+            if isinstance(name, str) and name:
+                merged[name] = tool
+    return list(merged.values()) or None
 
 
 class _ProxyHandler(BaseHTTPRequestHandler):
@@ -197,8 +208,13 @@ class _ProxyHandler(BaseHTTPRequestHandler):
 
     def _record(self, body: bytes | None) -> None:
         proxy: WireTraceProxy = self.server.proxy  # type: ignore[attr-defined]
+        capture_responses_tools = (
+            proxy.responses_tools_path is not None
+            and self.command == "POST"
+            and urlsplit(self.path).path.rstrip("/").endswith("/responses")
+        )
         entry: dict[str, Any] = {
-            "seq": proxy.next_seq(),
+            "seq": proxy.next_seq(responses_request=capture_responses_tools),
             "ts": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime()) + "Z",
             "kind": "request",
             "method": self.command,
@@ -221,8 +237,15 @@ class _ProxyHandler(BaseHTTPRequestHandler):
                 parsed = candidate if isinstance(candidate, dict) else None
             except (json.JSONDecodeError, UnicodeDecodeError):
                 parsed = None
+        if capture_responses_tools and parsed is None:
+            raise ValueError("Cannot capture tools from a non-object Responses request")
         if parsed is not None:
             entry["model"] = parsed.get("model")
+            if capture_responses_tools:
+                proxy.write_tools({
+                    "kind": "codex_tools", "seq": entry["seq"],
+                    "snapshot": tool_snapshot(parsed),
+                })
             if proxy.mode == "full":
                 entry["body"] = parsed
             else:
@@ -232,11 +255,18 @@ class _ProxyHandler(BaseHTTPRequestHandler):
                 if isinstance(messages, list):
                     entry["n_messages"] = len(messages)
                 tools = parsed.get("tools")
-                if isinstance(tools, list) and not proxy.tools_logged and tools:
-                    proxy.tools_logged = True
-                    entry["kind"] = "tools"
-                    entry["tools"] = tools
-                    entry["n_tools"] = len(tools)
+                if isinstance(tools, list) and tools:
+                    fingerprint = json.dumps(
+                        tools,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    )
+                    if fingerprint not in proxy.tool_schema_fingerprints:
+                        proxy.tool_schema_fingerprints.add(fingerprint)
+                        entry["kind"] = "tools"
+                        entry["tools"] = tools
+                        entry["n_tools"] = len(tools)
         proxy.write(entry)
 
     def _handle(self) -> None:
@@ -251,8 +281,9 @@ class _ProxyHandler(BaseHTTPRequestHandler):
                 pass
         try:
             self._record(body)
-        except Exception:
-            pass
+        except Exception as exc:
+            if proxy.responses_tools_path is not None:
+                proxy.recording_error = str(exc)
         self.close_connection = True
         url = proxy.upstream_origin + proxy.forward_path(self.path)
         outgoing = urllib_request.Request(url, data=body, method=self.command)
@@ -276,7 +307,10 @@ class _ProxyHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(payload)
             return
-        self.send_response(response.status if hasattr(response, "status") else response.code)
+        status = getattr(response, "status", None)
+        if not isinstance(status, int):
+            status = getattr(response, "code", None)
+        self.send_response(status if isinstance(status, int) else 502)
         for key, value in response.headers.items():
             if key.lower() not in HOP_BY_HOP_HEADERS:
                 self.send_header(key, value)
@@ -355,6 +389,7 @@ class WireTraceProxy:
 
         drop_query_parameters: Sequence[str] = (),
         drop_request_headers: Sequence[str] = (),
+        responses_tools_path: Path | None = None,
     ) -> None:
         if mode not in ("tools", "full"):
             raise ValueError(f"unknown wire trace mode: {mode}")
@@ -365,6 +400,8 @@ class WireTraceProxy:
         self.base_path = parts.path.rstrip("/")
         self.log_path = log_path
         self.mode = mode
+        self.responses_tools_path = responses_tools_path
+        self.recording_error: str | None = None
         self.strip_thinking = strip_thinking
         self.normalize_reasoning_replay = normalize_reasoning_replay
         self.drop_query_parameters = frozenset(drop_query_parameters)
@@ -374,7 +411,8 @@ class WireTraceProxy:
         self.timeout_seconds = timeout_seconds
         self._lock = threading.Lock()
         self._seq = 0
-        self.tools_logged = False
+        self.responses_request_count = 0
+        self.tool_schema_fingerprints: set[str] = set()
         self._server: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
         self._host = host
@@ -428,10 +466,17 @@ class WireTraceProxy:
         )
         return urlunsplit(("", "", parts.path, query, ""))
 
-    def next_seq(self) -> int:
+    def next_seq(self, *, responses_request: bool = False) -> int:
         with self._lock:
             self._seq += 1
+            if responses_request:
+                self.responses_request_count += 1
             return self._seq
+
+    def write_tools(self, entry: Mapping[str, Any]) -> None:
+        assert self.responses_tools_path is not None
+        with self._lock, self.responses_tools_path.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
     def write(self, entry: Mapping[str, Any]) -> None:
         line = json.dumps(entry, ensure_ascii=False)

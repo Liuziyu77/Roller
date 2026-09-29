@@ -1,7 +1,5 @@
 # 文件、Task Bundle 与结果存储
 
-[文档中心](../index.md) · [Task 格式](task-format.md) · [轨迹产物](../traces/trajectory-outputs.md) · [SFT 格式](../traces/sft-format.md)
-
 本页介绍 task 文件如何从宿主机进入 Agent 工作区、如何保存到 run/sample，以及快照、Context capture、结果回收、retry 与 Resume 的规则。Task 字段见 [Task 格式参考](task-format.md)。
 
 ## 1. 文件生命周期
@@ -137,6 +135,9 @@ results/
 ├── report.md
 └── assets/chart.png
 ```
+
+任意层级的生成型 `node_modules/` 目录都会被排除。包清单和 lockfile 仍会被回收，
+依赖树及其常规 `.bin` 符号链接不会放大产物或触发符号链接安全校验。
 
 每个结果文件会在 sample `info.json` 中记录：
 

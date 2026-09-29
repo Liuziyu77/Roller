@@ -9,8 +9,20 @@ from roller.codex_actf import (
     codex_events_to_actf,
     convert_codex_trace,
 )
-from roller.sft import actf_to_sft
+from roller.sft import SFTConversionError, actf_to_sft
 from roller.usage import extract_codex_usage
+
+
+_TOOLS = [
+    {"type": "function", "name": "exec_command", "description": "Run a command.",
+     "parameters": {"type": "object", "properties": {"cmd": {"type": "string"}}, "required": ["cmd"]}},
+    {"type": "function", "name": "view_image", "description": "View an image.",
+     "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}},
+    {"type": "function", "name": "deep_think", "description": "Ordinary fixture tool.",
+     "parameters": {"type": "object", "properties": {"note": {"type": "string"}}, "required": ["note"]}},
+    {"type": "function", "name": "unused", "parameters": {"type": "object", "properties": {}}},
+    {"type": "web_search"},
+]
 
 
 def _events() -> list[dict]:
@@ -147,9 +159,9 @@ class CodexActfTests(unittest.TestCase):
         events = _events()
         events[4]["payload"]["name"] = "deep_think"
         events[4]["payload"]["arguments"] = '{"note":"ordinary tool argument"}'
-        trajectory = codex_events_to_actf(events)
+        trajectory = codex_events_to_actf(events, tools=_TOOLS)
         record = actf_to_sft(trajectory)
-        tool = record["tools"][0]["function"]
+        tool = next(tool for tool in record["tools"] if tool.get("name") == "deep_think")
         self.assertEqual(tool["name"], "deep_think")
         self.assertEqual(tool["parameters"]["properties"], {"note": {"type": "string"}})
         assistant = next(m for m in record["messages"] if m["role"] == "assistant")
@@ -158,7 +170,7 @@ class CodexActfTests(unittest.TestCase):
 
     def test_groups_native_events_by_model_request(self) -> None:
         trajectory = codex_events_to_actf(
-            _events(), user_messages=["read input.txt"]
+            _events(), user_messages=["read input.txt"], tools=_TOOLS,
         )
 
         self.assertEqual(trajectory["schema_version"], "ACTF_v1.0")
@@ -176,7 +188,7 @@ class CodexActfTests(unittest.TestCase):
             second["assistant_content"]["reasoning_content"],
             "The file contains hello.",
         )
-        self.assertEqual(trajectory["tools"][0]["function"]["name"], "exec_command")
+        self.assertEqual(trajectory["tools"][0]["name"], "exec_command")
 
         sft = actf_to_sft(trajectory)
         self.assertEqual(set(sft), {"messages", "tools"})
@@ -212,6 +224,327 @@ class CodexActfTests(unittest.TestCase):
             self.assertEqual(usage["total_tokens"], 238)
             self.assertEqual(usage["request_count"], 2)
 
+    def test_preserves_view_image_output_for_multimodal_sft(self) -> None:
+        events = _events()
+        events[4]["payload"]["name"] = "view_image"
+        events[4]["payload"]["arguments"] = '{"path":"/workspace/image.png"}'
+        events[6]["payload"]["output"] = [
+            {
+                "type": "input_image",
+                "image_url": "data:image/png;base64,AA==",
+                "detail": "high",
+            }
+        ]
+
+        trajectory = codex_events_to_actf(events, user_messages=["inspect image.png"], tools=_TOOLS)
+
+        self.assertEqual(
+            trajectory["steps"][0]["observation"][0]["content"],
+            [
+                {
+                    "type": "image",
+                    "data": "data:image/png;base64,AA==",
+                    "detail": "high",
+                }
+            ],
+        )
+        sft = actf_to_sft(trajectory)
+        self.assertEqual(sft["images"], ["data:image/png;base64,AA=="])
+        tool_result = next(
+            message for message in sft["messages"] if message["role"] == "tool"
+        )
+        self.assertEqual(tool_result["content"], "<image>")
+
+    def test_preserves_text_and_multiple_view_images_in_order(self) -> None:
+        events = _events()
+        events[4]["payload"]["name"] = "view_image"
+        events[4]["payload"]["arguments"] = '{"path":"/workspace/images"}'
+        events[6]["payload"]["output"] = [
+            {"type": "text", "text": "two frames"},
+            {"type": "input_image", "image_url": "data:image/png;base64,AA=="},
+            {"type": "input_image", "image_url": "data:image/jpeg;base64,AQ=="},
+        ]
+
+        record = actf_to_sft(
+            codex_events_to_actf(events, user_messages=["inspect images"], tools=_TOOLS)
+        )
+        tool_result = next(
+            message for message in record["messages"] if message["role"] == "tool"
+        )
+        self.assertEqual(tool_result["content"], "two frames\n<image>\n<image>")
+        self.assertEqual(
+            record["images"],
+            ["data:image/png;base64,AA==", "data:image/jpeg;base64,AQ=="],
+        )
+
+    def test_preserves_ordinary_json_array_tool_outputs(self) -> None:
+        cases = (
+            ("[]", "[]"),
+            ("[1, 2]", "[1, 2]"),
+            ('["left", "right"]', '["left", "right"]'),
+            (
+                '{"output": [1, 2], "metadata": {"exit_code": 0}}',
+                "[1, 2]",
+            ),
+        )
+        for native_output, expected in cases:
+            with self.subTest(native_output=native_output):
+                events = _events()
+                events[6]["payload"]["output"] = native_output
+                trajectory = codex_events_to_actf(
+                    events, user_messages=["Read values"], tools=_TOOLS,
+                )
+                self.assertEqual(
+                    trajectory["steps"][0]["observation"][0]["content"],
+                    [{"type": "text", "text": expected}],
+                )
+                record = actf_to_sft(trajectory)
+                tool_result = next(
+                    message
+                    for message in record["messages"]
+                    if message["role"] == "tool"
+                )
+                self.assertEqual(tool_result["content"], expected)
+
+    def test_preserves_ordinary_non_content_block_arrays(self) -> None:
+        cases = (
+            ([1, 2], "[1, 2]"),
+            (["left", "right"], '["left", "right"]'),
+            (
+                [{"type": "text", "text": "left"}, {"value": "right"}],
+                '[{"type": "text", "text": "left"}, {"value": "right"}]',
+            ),
+        )
+        for native_output, expected in cases:
+            with self.subTest(native_output=native_output):
+                events = _events()
+                events[6]["payload"]["output"] = native_output
+                record = actf_to_sft(
+                    codex_events_to_actf(events, user_messages=["Read values"], tools=_TOOLS)
+                )
+                tool_result = next(
+                    message
+                    for message in record["messages"]
+                    if message["role"] == "tool"
+                )
+                self.assertEqual(tool_result["content"], expected)
+
+    def test_rejects_malformed_typed_text_block(self) -> None:
+        events = _events()
+        events[6]["payload"]["output"] = [
+            {"type": "text", "text": 7, "metadata": "not ACTF content"}
+        ]
+
+        trajectory = codex_events_to_actf(events, user_messages=["Read values"], tools=_TOOLS)
+
+        self.assertEqual(
+            trajectory["steps"][0]["observation"][0]["content"],
+            [{"type": "text", "text": 7}],
+        )
+        with self.assertRaisesRegex(SFTConversionError, "text must be a string"):
+            actf_to_sft(trajectory)
+
+    def test_rejects_missing_image_data_without_downgrading_media(self) -> None:
+        cases = (
+            (
+                "native missing image",
+                [{"type": "input_image"}],
+                [{"type": "image"}],
+            ),
+            (
+                "native valid and missing images",
+                [
+                    {
+                        "type": "input_image",
+                        "image_url": "data:image/png;base64,AA==",
+                    },
+                    {"type": "input_image"},
+                ],
+                [
+                    {"type": "image", "data": "data:image/png;base64,AA=="},
+                    {"type": "image"},
+                ],
+            ),
+            (
+                "JSON encoded valid and missing images",
+                json.dumps(
+                    [
+                        {
+                            "type": "input_image",
+                            "image_url": "data:image/png;base64,AA==",
+                        },
+                        {"type": "input_image"},
+                    ]
+                ),
+                [
+                    {"type": "image", "data": "data:image/png;base64,AA=="},
+                    {"type": "image"},
+                ],
+            ),
+            (
+                "JSON wrapper with valid and missing images",
+                json.dumps(
+                    {
+                        "output": [
+                            {
+                                "type": "input_image",
+                                "image_url": "data:image/png;base64,AA==",
+                            },
+                            {"type": "input_image"},
+                        ],
+                        "metadata": {"exit_code": 0},
+                    }
+                ),
+                [
+                    {"type": "image", "data": "data:image/png;base64,AA=="},
+                    {"type": "image"},
+                ],
+            ),
+        )
+        for label, native_output, expected_content in cases:
+            with self.subTest(label=label):
+                events = _events()
+                events[4]["payload"]["name"] = "view_image"
+                events[6]["payload"]["output"] = native_output
+
+                trajectory = codex_events_to_actf(
+                    events, user_messages=["Inspect images"], tools=_TOOLS,
+
+                )
+
+                self.assertEqual(
+                    trajectory["steps"][0]["observation"][0]["content"],
+                    expected_content,
+                )
+                with self.assertRaisesRegex(
+                    SFTConversionError, "base64 image bytes"
+                ):
+                    actf_to_sft(trajectory)
+
+    def test_preserves_image_with_losslessly_serialized_unknown_sibling(self) -> None:
+        image = {
+            "type": "input_image",
+            "image_url": "data:image/png;base64,AA==",
+        }
+        cases = (
+            (
+                [image, {"value": "not a content block"}],
+                '{"value": "not a content block"}',
+            ),
+            (json.dumps([image, {"value": 7}]), '{"value": 7}'),
+            ([image, 7], "7"),
+        )
+        for native_output, expected_text in cases:
+            with self.subTest(native_output=native_output):
+                events = _events()
+                events[4]["payload"]["name"] = "view_image"
+                events[6]["payload"]["output"] = native_output
+
+                trajectory = codex_events_to_actf(
+                    events, user_messages=["Inspect images"], tools=_TOOLS,
+
+                )
+
+                self.assertEqual(
+                    trajectory["steps"][0]["observation"][0]["content"],
+                    [
+                        {"type": "image", "data": "data:image/png;base64,AA=="},
+                        {"type": "text", "text": expected_text},
+                    ],
+                )
+                record = actf_to_sft(trajectory)
+                tool_result = next(
+                    message
+                    for message in record["messages"]
+                    if message["role"] == "tool"
+                )
+                self.assertEqual(tool_result["content"], f"<image>\n{expected_text}")
+                self.assertEqual(
+                    record["images"], ["data:image/png;base64,AA=="]
+                )
+
+    def test_rejects_unsupported_typed_file_and_audio_blocks(self) -> None:
+        cases = (
+            {
+                "type": "input_file",
+                "filename": "report.pdf",
+                "file_data": "AA==",
+            },
+            {"type": "input_audio", "input_audio": {"data": "AA=="}},
+        )
+        for block in cases:
+            for native_output in ([block], json.dumps([block])):
+                with self.subTest(native_output=native_output):
+                    events = _events()
+                    events[6]["payload"]["output"] = native_output
+
+                    trajectory = codex_events_to_actf(
+                        events, user_messages=["Inspect result"], tools=_TOOLS,
+
+                    )
+
+                    self.assertEqual(
+                        trajectory["steps"][0]["observation"][0]["content"],
+                        [block],
+                    )
+                    with self.assertRaisesRegex(SFTConversionError, "non-text"):
+                        actf_to_sft(trajectory)
+
+    def test_preserves_ordinary_json_object_tool_output(self) -> None:
+        events = _events()
+        events[6]["payload"]["output"] = '{"values": [1, 2]}'
+
+        record = actf_to_sft(
+            codex_events_to_actf(events, user_messages=["Read values"], tools=_TOOLS)
+        )
+        tool_result = next(
+            message for message in record["messages"] if message["role"] == "tool"
+        )
+
+        self.assertEqual(tool_result["content"], '{"values": [1, 2]}')
+
+    def test_distinguishes_json_empty_array_from_empty_content_blocks(self) -> None:
+        json_events = _events()
+        json_events[6]["payload"]["output"] = "[]"
+        block_events = _events()
+        block_events[6]["payload"]["output"] = []
+
+        json_trajectory = codex_events_to_actf(
+            json_events, user_messages=["Read values"], tools=_TOOLS,
+)
+        block_trajectory = codex_events_to_actf(
+            block_events, user_messages=["Read values"], tools=_TOOLS,
+)
+
+        self.assertEqual(
+            json_trajectory["steps"][0]["observation"][0]["content"],
+            [{"type": "text", "text": "[]"}],
+        )
+        self.assertEqual(
+            block_trajectory["steps"][0]["observation"][0]["content"], []
+        )
+
+    def test_expands_json_encoded_typed_image_blocks(self) -> None:
+        events = _events()
+        events[6]["payload"]["output"] = json.dumps(
+            [
+                {"type": "text", "text": "frame"},
+                {
+                    "type": "input_image",
+                    "image_url": "data:image/png;base64,AA==",
+                },
+            ]
+        )
+
+        record = actf_to_sft(
+            codex_events_to_actf(events, user_messages=["inspect frame"], tools=_TOOLS)
+        )
+        tool_result = next(
+            message for message in record["messages"] if message["role"] == "tool"
+        )
+        self.assertEqual(tool_result["content"], "frame\n<image>")
+        self.assertEqual(record["images"], ["data:image/png;base64,AA=="])
+
     def test_prefers_visible_reasoning_content_and_filters_codex_context(self) -> None:
         events = _events()
         events.insert(
@@ -239,7 +572,7 @@ class CodexActfTests(unittest.TestCase):
                 ]
                 break
 
-        trajectory = codex_events_to_actf(events, user_messages=["read input.txt"])
+        trajectory = codex_events_to_actf(events, user_messages=["read input.txt"], tools=_TOOLS)
 
         self.assertIn("<environment_context>", trajectory["system_prompt"])
         self.assertEqual(trajectory["steps"][0]["user_content"], "read input.txt")

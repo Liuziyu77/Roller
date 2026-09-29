@@ -1,7 +1,5 @@
 # SFT 数据格式
 
-[文档中心](../index.md) · [轨迹产物](trajectory-outputs.md) · [Task 格式](../tasks/task-format.md)
-
 Roller 为每条成功轨迹生成训练文件 `trace_SFT.json`，同时保留 raw trace 和 ACTF。Run 根目录的 `sft.jsonl` 按 request index 汇总所有成功 sample，
 每行与对应的 `trace_SFT.json` 内容相同。
 
@@ -110,7 +108,8 @@ SFT record 不包含 schema version、task/model、usage、时间戳、step ID�
 - `tool_calls[*]` 使用 function-call 结构，`function.arguments` 是紧凑 JSON 字符串。
 - `tool` 只包含 `role`、`tool_call_id` 和字符串 `content`。
 - 工具调用后的 assistant 直接跟在对应 tool message 后，不插入空 user message。
-- `tools` 保留模型实际看到的 function schema；没有可用 schema 且轨迹未调用工具时为 `[]`。
+- `tools` 保留捕获的工具定义。Codex 使用原始 Responses 列表（扁平 function、namespace、custom grammar、内置工具），包含未调用工具及原始 schema 全部字段；训练端需支持该格式。其他 harness 保持原有嵌套 function 表达。Codex 即使没有调用工具也必须捕获定义，缺少捕获不会被替换成空列表。
+- Codex custom call 使用 `{"id":"...","type":"custom","custom":{"name":"...","input":"原始字符串"}}`，function/custom call 的 namespace 字段保留。工具定义跨请求变化或存在 programmatic `additional_tools` item 时，ACTF 保留完整快照，SFT 明确不可用。
 
 ## 3. ACTF 映射
 
@@ -155,9 +154,21 @@ Roller 不会静默删除内容。转换器本身不读文件也不访问
 网络：若某 harness 的读图工具只留下路径，必须在文件仍可访问时由对应 ACTF 层把
 字节物化成 image block。
 
-上述是 SFT 层接受的内容块形态，不代表所有 Harness 已支持读图导出。目前 OpenClaw、
-Claude Code 可保留 image 工具结果；Pi/OpenCode 在 ACTF 层拒绝图片，Codex 的工具结果
-转换仍会把图像块序列化为文本，不会生成 `images`。后者不能作为无损多模态 SFT 使用。
+上述是 SFT 层接受的内容块形态，不代表所有 Harness 的运行时都能调用视觉能力。
+各 Harness 的 image 工具结果处理如下：
+
+| Harness | 运行时图片路径 | ACTF/SFT 图片保存 |
+| --- | --- | --- |
+| OpenClaw | 支持图片的模型与 image tool | 保留 |
+| Codex | 通过 Responses 调用 `view_image` | 保留 |
+| Claude Code | `Read` 图片结果 | 保留 |
+| OpenCode | `read` 返回内嵌 data URL 附件 | 保留；非图片附件只保留有界审计元数据 |
+| Hermes | Roller 为固定 profile 启用 `vision_analyze` 工具集 | 保留 |
+| DeepSeek | 面向文本的 Bash profile | 显式拒绝 image 内容 |
+| Pi | `read` 原生图片结果，并把所选模型注册为支持图片 | 保留 |
+
+OpenCode 图片附件若只有远程 URL 或文件路径，仍会保留在 ACTF，但无法形成多模态
+SFT，因为导出过程不会读取文件或网络。该样本会保留 raw/ACTF，并把 SFT 记录为不可用。
 
 ## 5. 文件位置
 

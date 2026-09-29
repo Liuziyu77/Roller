@@ -1,74 +1,71 @@
 # Roller 文档
 
-Roller 支持用多种模型和 Harness 采集 Agent 轨迹。每个 task 与模型的组合在独立的一次性 Docker 容器中运行，并保存：
+Roller 会在一次性的 Docker 容器中运行能够调用工具的 AI Agent，并记录完整过程，包括 prompt、reasoning、工具调用、工具结果、生成文件和运行信息。它适合需要重复采集和评测多种模型、多个 Agent 运行时的场景。
 
-- `trace.jsonl`：Harness 原始轨迹
-- `trace_ACTF.json`：统一分析与可视化格式（`ACTF_v1.0`）
-- `trace_SFT.json`：单条标准训练样本
-- `results/`：Agent 生成的文件
-- `info.json`：状态、usage 与运行来源
+**第一次接触 Roller？** 建议先阅读 [Roller 简介](start/introduction.md)。这部分不要求配置环境，会先解释几个核心概念。然后按照[快速上手](start/getting-started.md)生成第一条轨迹。
 
-```text
-tasks.jsonl × models
+## Roller 做什么
+
+你提供一组 Task、一个或多个模型，以及一个 Harness。Roller 会为每个 Task 与模型的组合创建独立 rollout，并把结果写入结构清晰的 run 目录。
+
+~~~text
+tasks.jsonl × 模型
         │
         ▼
 Docker 中的 Agent Harness
         │
-        ├─ trace.jsonl       Harness 原始轨迹
-        ├─ trace_ACTF.json   统一分析与可视化格式
-        ├─ trace_SFT.json    单条标准训练样本
+        ├─ trace.jsonl       Harness 原生事件
+        ├─ trace_ACTF.json   统一分析轨迹
+        ├─ trace_SFT.json    标准训练样本
         ├─ results/          Agent 生成的文件
         └─ info.json         状态、usage 与运行来源
-```
+~~~
 
-Roller 需要 Python 3.10+，使用 Task schema `roller.task/v1` 和轨迹格式 `ACTF_v1.0`。项目处于 Alpha 阶段，许可证为 Apache 2.0。源码见 [GitHub](https://github.com/Liuziyu77/Roller)。
+常见用途包括：
 
-## 核心用途
+- 采集单轮、多轮和工具型 Agent 轨迹。
+- 在同一批 Task 上比较模型或 Harness。
+- 检查 reasoning、工具调用、工具结果和生成文件。
+- 制作统一的 ACTF 轨迹或 SFT JSONL。
+- 继续中断的采集，并在内置 Viewer 中检查结果。
 
-- 批量采集单轮、多轮或工具型 Agent 轨迹
-- 同一批 task 对比多个模型或 Harness
-- 生成顶层严格为 `messages` 和 `tools` 的 SFT JSONL
-- 保存 reasoning、工具调用、工具结果与任务文件产物
-- 用 run lock 检查运行配置，通过重试和 Resume 继续采集
-- 在内置 Viewer 中逐步查看每个 task 的 reasoning 和工具操作
+Roller 需要 Python 3.10+。项目目前使用 Task schema <code>roller.task/v1</code> 和轨迹格式 <code>ACTF_v1.0</code>，处于 Alpha 阶段，采用 Apache 2.0 许可证。源码见 [GitHub](https://github.com/Liuziyu77/Roller)。
 
 ## 选择 Harness
 
-| Harness | 模型服务协议 | 适合场景 | 关键能力与限制 |
-| --- | --- | --- | --- |
-| OpenClaw（默认） | OpenAI Responses 或 Chat Completions | 自定义/开源模型、动态 User Simulator、多模态输入 | 模型通过 JSON 配置；保留原生 reasoning |
-| Codex | Responses | Codex CLI 工具轨迹、GPT 与兼容 Responses 服务 | 保留原生 reasoning；可作为 Task Agent 或 User Simulator |
-| Claude Code | Anthropic `/v1/messages` | Claude Code 工具轨迹与 native thinking | 保留原生 thinking；可作为 Task Agent 或 User Simulator |
-| Hermes | OpenAI Chat Completions | 原生请求与工具消息 → ACTF/SFT | 容器内 terminal/file；可作为 Agent 或 Simulator |
-| OpenCode | OpenAI Chat Completions | CLI session / tools → ACTF/SFT | 固定版本，文本与文件工具；支持 Agent / Simulator |
-| DeepSeek Harness | DeepSeek Chat Completions | 原生 SDK / 持久化 Bash → ACTF/SFT | sdk-minimal；支持 Agent / Simulator |
-| Pi Agent | OpenAI Chat Completions | 原生 AgentSession / 七种工具 → ACTF/SFT | 固定 SDK 版本；支持 Agent / Simulator |
+第一次运行的教程使用 **OpenClaw**。在成功生成第一条轨迹前，你可以一直沿用这条主线。需要特定 Agent 运行时或 API 协议时，再选择其他 Harness。
 
-七种 Harness 使用相同的 Task、Sample、ACTF 和 SFT 格式，也共用 Viewer、重试和 Resume 流程。镜像、API 和 reasoning 参数见对应 Harness 指南。
-
-## 阅读顺序
-
-| 阶段 | 阅读内容 | 完成标准 |
+| Harness | 模型服务协议 | 常见用途 |
 | --- | --- | --- |
-| 1. 跑通 | [快速上手](start/getting-started.md) | 完成 dry-run、采集并打开 Viewer |
-| 2. 选 Harness | [OpenClaw](harnesses/openclaw-configuration.md)、[Codex](harnesses/codex-configuration.md) 或 [Claude Code](harnesses/claude-code-configuration.md)、[Hermes](harnesses/hermes-configuration.md) · [OpenCode](harnesses/opencode-configuration.md) · [DeepSeek](harnesses/deepseek-configuration.md) · [Pi Agent](harnesses/pi-configuration.md) | 镜像、API 协议和 reasoning 参数匹配 |
-| 3. 写 Task | [Task 格式参考](tasks/task-format.md) | 能声明 prompt/messages、输入、Context 和输出目录 |
-| 4. 验收产物 | [轨迹产出文件指南](traces/trajectory-outputs.md) | 能区分 raw、ACTF、SFT、wire 与 results |
-| 5. 批量运行 | [Task Bundle 与结果存储](tasks/task-bundle-and-storage.md) | 理解快照、run lock、retry 与 Resume |
+| OpenClaw（默认） | OpenAI Responses 或 Chat Completions | 自定义/开源模型、多模态输入和动态 User Simulator |
+| Codex | Responses | Codex CLI 工具轨迹 |
+| Claude Code | Anthropic <code>/v1/messages</code> | Claude Code 工具和 native thinking |
+| Hermes | OpenAI Chat Completions | 原生请求与工具消息轨迹 |
+| OpenCode | OpenAI Chat Completions | 原生 CLI session 和文件工具 |
+| DeepSeek Harness | DeepSeek Chat Completions | 原生 SDK session 和持久 Bash |
+| Pi Agent | OpenAI Chat Completions | 原生 AgentSession 和编程工具 |
 
-仓库内可运行命令见 [Examples](start/examples.md)。
+七种 Harness 使用相同的 Task、Sample、ACTF 和 SFT 格式，也共用 Viewer、重试和 Resume 流程。它们的镜像、API、工具和 reasoning 参数不同。
 
-```{toctree}
+## 从哪里开始
+
+1. 阅读 [Roller 简介](start/introduction.md)，理解 Task、Harness、rollout、run 和 trace。
+2. 按照[快速上手](start/getting-started.md)安装 Roller、执行 dry-run、完成一次采集并打开 Viewer。
+3. 准备编写自己的 Task 时，阅读 [Task 格式](tasks/task-format.md)。
+4. 需要使用 OpenClaw 以外的运行时时，再阅读对应的 Harness 指南。
+5. 需要确认 ACTF、SFT、wire trace 或失败保留规则时，阅读[轨迹产出文件](traces/trajectory-outputs.md)。
+
+~~~{toctree}
 :maxdepth: 1
-:caption: 快速上手
+:caption: 开始使用
 
+start/introduction
 start/getting-started
-start/examples
 start/cli-reference
 start/docker-builds
-```
+~~~
 
-```{toctree}
+~~~{toctree}
 :maxdepth: 1
 :caption: Harness 配置
 
@@ -80,27 +77,27 @@ harnesses/hermes-configuration
 harnesses/opencode-configuration
 harnesses/deepseek-configuration
 harnesses/pi-configuration
-```
+~~~
 
-```{toctree}
+~~~{toctree}
 :maxdepth: 1
 :caption: Task 与运行
 
 tasks/task-format
 tasks/task-bundle-and-storage
 tasks/user-simulator
-```
+~~~
 
-```{toctree}
+~~~{toctree}
 :maxdepth: 1
 :caption: 轨迹与训练数据
 
 traces/trajectory-outputs
 traces/sft-format
 traces/viewer
-```
+~~~
 
-```{toctree}
+~~~{toctree}
 :maxdepth: 1
 :caption: Bench
 
@@ -108,4 +105,5 @@ benches/bench-format
 benches/wildclawbench
 benches/skillsbench
 benches/pinchbench
-```
+benches/qwenclawbench
+~~~

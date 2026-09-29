@@ -6,6 +6,7 @@ The append-only journal lives separately from Hermes' compressible history.
 from __future__ import annotations
 
 import argparse
+from copy import deepcopy
 from datetime import datetime, timezone
 import json
 import os
@@ -19,6 +20,51 @@ def plain(value):
     if hasattr(value, "model_dump"):
         return value.model_dump(mode="json", exclude_none=True)
     return value
+
+
+def openai_compatible_tool_media(messages):
+    """Move tool-result images to a following user message.
+
+    Several OpenAI-compatible gateways accept image_url only on user messages.
+    Keep Hermes' native tool result in the journal, but use this equivalent wire
+    shape for the next model request.
+    """
+    rewritten = []
+    pending_images = []
+
+    def flush_images():
+        if not pending_images:
+            return
+        rewritten.append({
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "Images returned by the preceding tool results:"},
+                *pending_images,
+            ],
+        })
+        pending_images.clear()
+
+    for message in messages:
+        copied = deepcopy(message)
+        if copied.get("role") == "tool":
+            content = copied.get("content")
+            if isinstance(content, list):
+                text_parts = []
+                for block in content:
+                    if isinstance(block, dict) and block.get("type") == "image_url":
+                        pending_images.append(deepcopy(block))
+                    elif isinstance(block, dict) and block.get("type") == "text" and isinstance(block.get("text"), str):
+                        text_parts.append(block["text"])
+                    elif isinstance(block, str):
+                        text_parts.append(block)
+                if pending_images:
+                    copied["content"] = "\n".join(text_parts) or "Image attached in the following user message."
+            rewritten.append(copied)
+            continue
+        flush_images()
+        rewritten.append(copied)
+    flush_images()
+    return rewritten
 
 
 class Journal:
@@ -57,11 +103,14 @@ class Journal:
 def journaled_agent(base_class, journal):
     class RecordedAgent(base_class):
         def _interruptible_api_call(self, api_kwargs):
-            journal.observe_tools(api_kwargs.get("messages", []))
+            native_messages = api_kwargs.get("messages", [])
+            journal.observe_tools(native_messages)
+            outgoing = dict(api_kwargs)
+            outgoing["messages"] = openai_compatible_tool_media(native_messages)
             # Capture untruncated assembled prompts and actual schemas, without
             # HTTP authorization headers or the SDK client configuration.
-            journal.write("request", messages=api_kwargs.get("messages", []), tools=api_kwargs.get("tools", []), model=api_kwargs.get("model"))
-            response = super()._interruptible_api_call(api_kwargs)
+            journal.write("request", messages=outgoing["messages"], tools=outgoing.get("tools", []), model=outgoing.get("model"))
+            response = super()._interruptible_api_call(outgoing)
             data = plain(response)
             journal.write("response", response=data)
             choices = data.get("choices", [])
@@ -83,9 +132,29 @@ def run_turn(config, state_dir):
     # Their lazy dependency installers must never run during a rollout.
     home = Path(os.environ["HERMES_HOME"])
     home.mkdir(parents=True, exist_ok=True)
-    settings = {"security": {"allow_lazy_installs": False}}
+    settings = {
+        "security": {"allow_lazy_installs": False},
+        "model": {"supports_vision": bool(config.get("vision", True))},
+        "agent": {
+            "image_input_mode": "native" if config.get("vision", True) else "text"
+        },
+    }
+    if config.get("vision", True):
+        # The vision tool's availability probe runs before the first model
+        # request establishes Hermes' runtime-main provider. Point the probe at
+        # the same disposable custom endpoint; the native fast path then keeps
+        # image bytes in the main model conversation instead of describing them
+        # through an unrelated auxiliary service.
+        settings["auxiliary"] = {
+            "vision": {
+                "provider": "openai",
+                "model": config["model"],
+                "base_url": os.environ["OPENAI_BASE_URL"],
+                "api_key": os.environ["OPENAI_API_KEY"],
+            }
+        }
     if config.get("context_length") is not None:
-        settings["model"] = {"context_length": config["context_length"]}
+        settings["model"]["context_length"] = config["context_length"]
     (home / "config.yaml").write_text(json.dumps(settings), encoding="utf-8")
     from run_agent import AIAgent
 
@@ -96,20 +165,38 @@ def run_turn(config, state_dir):
     journal.write("message", message={"role": "user", "content": config["message"]})
     effort = config.get("thinking")
     reasoning = None if effort is None else ({"enabled": False} if effort == "off" else {"enabled": True, "effort": effort})
-    agent = journaled_agent(AIAgent, journal)(
-        model=config["model"], provider="custom", api_mode="chat_completions",
-        base_url=os.environ["OPENAI_BASE_URL"], api_key=os.environ["OPENAI_API_KEY"],
-        max_iterations=config["max_iterations"], enabled_toolsets=["terminal", "file"],
-        quiet_mode=True, save_trajectories=False, session_id=config["session_id"],
-        ephemeral_system_prompt=config["system_prompt"],
-        skip_context_files=True, load_soul_identity=False, skip_memory=True,
-        skip_background_review=True, checkpoints_enabled=False,
-        reasoning_config=reasoning, run_budget_seconds=config["timeout_seconds"],
+    # Keep Hermes' capability-neutral custom transport for compatibility with
+    # arbitrary OpenAI-compatible models. The explicit model/image settings
+    # above opt only the vision tool into its native image path.
+    provider = "custom"
+    from agent.auxiliary_client import reset_runtime_main, set_runtime_main
+    runtime_token = set_runtime_main(
+        provider,
+        config["model"],
+        base_url=os.environ["OPENAI_BASE_URL"],
+        api_key=os.environ["OPENAI_API_KEY"],
+        api_mode="chat_completions",
     )
-    # This bridge captures the Chat Completions response atomically. Hermes'
-    # streaming path is a separate private API and is deliberately disabled.
-    agent._disable_streaming = True
-    result = agent.run_conversation(config["message"], conversation_history=history, task_id=config["session_id"])
+    try:
+        agent = journaled_agent(AIAgent, journal)(
+            model=config["model"], provider=provider, api_mode="chat_completions",
+            base_url=os.environ["OPENAI_BASE_URL"], api_key=os.environ["OPENAI_API_KEY"],
+            max_iterations=config["max_iterations"],
+            enabled_toolsets=["terminal", "file", *(["vision"] if config.get("vision", True) else [])],
+            quiet_mode=True, save_trajectories=False, session_id=config["session_id"],
+            ephemeral_system_prompt=config["system_prompt"],
+            skip_context_files=True, load_soul_identity=False, skip_memory=True,
+            skip_background_review=True, checkpoints_enabled=False,
+            reasoning_config=reasoning, run_budget_seconds=config["timeout_seconds"],
+        )
+        # This bridge captures the Chat Completions response atomically. Hermes'
+        # streaming path is a separate private API and is deliberately disabled.
+        agent._disable_streaming = True
+        result = agent.run_conversation(
+            config["message"], conversation_history=history, task_id=config["session_id"]
+        )
+    finally:
+        reset_runtime_main(runtime_token)
     journal.observe_tools(result.get("messages", []))
     temporary = history_path.with_suffix(".tmp")
     temporary.write_text(json.dumps(result.get("messages", []), ensure_ascii=False), encoding="utf-8")

@@ -25,9 +25,9 @@ They are not guarantees for every model in a family. Recheck after image upgrade
 | `openai/gpt-5.6-sol`, `openai-responses`, `agentRuntime.id: openclaw` | Profile accepts `off/minimal/low/medium/high/xhigh/max/ultra`; normally choose `low/medium/high/xhigh/max`. No `adaptive` | Responses accepts `none/low/medium/high/xhigh/max`; native `minimal/adaptive/ultra` return 400. Logical `minimal` maps to `low`. `ultra` is an OpenClaw policy, not an API effort; see below |
 | `gpt-5.6-sol` under a custom provider | Generic profile goes through `high`; declaring `xhigh` adds that level, not `max/ultra` | OpenClaw can reject the same API model based on its provider name. Prefer the GPT configuration above |
 | `glm-5.3-flash`, custom `openai-completions` | Use `low` or `high`, not a blanket `medium` | Service accepts `low/high/max`; `medium/off/none` return 400 because this model always thinks. Generic OpenClaw profile does not expose `max` even though the API accepts it |
-| `kimi-k3`, custom `openai-completions` | `medium/high` tested; disabling requires correctly declaring `none` support | Service accepts `none/medium/high`; `off` returns 400. With thinking on, `max_completion_tokens` must exceed this service's `thinking_budget` (32768 here); do not copy small output limits |
+| `kimi-k3`, custom `openai-completions` | `medium/high` tested; declaring `none` support still does not guarantee that `--thinking off` disables reasoning; see below | Service accepts `none/medium/high`; `off` returns 400. With thinking on, `max_completion_tokens` must exceed this service's `thinking_budget` (32768 here); do not copy small output limits |
 | `bailian/deepseek-v4.1-flash`, `openai-completions` | Generic profile can use `medium`; API `max` support does not imply CLI `max` support | Service accepts omitted effort and `none/medium/max`. Use the compatible endpoint's fields, not native DeepSeek `thinking` extensions without checking support |
-| `qwen3.8-flash`, Qwen-compatible Chat | Set `compat.thinkingFormat: qwen`; treat it as on/off, not multiple intensities | Service accepts `enable_thinking: false/true`. Non-`off` levels become enabled on this path; this does not establish distinct `low/medium/high` intensities |
+| `qwen3.8-flash`, Qwen-compatible Chat | `compat.thinkingFormat: qwen` selects a boolean parameter; this image still sends enabled thinking for `--thinking off`; see below | Service accepts `enable_thinking: false/true`, but the OpenClaw Agent path sent `true` for both `off/low`; this does not establish distinct `low/medium/high` intensities |
 | `claude-opus-4-8`, `anthropic-messages` | Profile accepts `off/minimal/low/medium/adaptive/high/xhigh/max`; no `ultra` | Service accepts disabled thinking, and adaptive thinking with `output_config.effort: low/medium/high/xhigh/max`. Simple prompts returned only text. The `claude-opus-4-8-thinking` alias was not successfully verified in this round |
 
 “API accepts” means a successful request, not proof that every level changes backend behavior or that
@@ -39,6 +39,26 @@ a subset. Configure compatibility and choose levels for the actual endpoint.
 
 - In the GPT/OpenClaw runtime combination above, `ultra` uses provider `max` with additional OpenClaw orchestration, not `effort: ultra`. Its absence from CLI help does not mean the profile rejects it. Roller no longer blocks it solely on version `2026.7.1`; OpenClaw validates support. A real `ultra` orchestration run was not completed in this check.
 - `off` **does not guarantee disabled GPT reasoning on every route**. This OpenClaw version strips `reasoning.effort: none` for non-native OpenAI URLs. Roller's local wire proxy also changes the URL seen by OpenClaw. A real rollout with `--thinking off` sent no `reasoning` field; a direct request without effort used this service's `medium` default. Inspect the wire request, not just the command line.
+
+### Chat Completions `off` limitations
+
+Disabling reasoning is also affected for Qwen and generic Chat models in this image. End-to-end checks
+using the unmodified image, Roller, and a local mock Chat Completions service produced:
+
+| Model configuration | Logical level | Actual request |
+| --- | --- | --- |
+| Qwen, `compat.thinkingFormat: qwen` | `off` | `enable_thinking: true` |
+| Kimi, `compat.supportedReasoningEfforts: ["none", "medium", "high"]` | `off` | `reasoning_effort: high` |
+
+Both tasks recorded `thinkingLevel: off` in their native sessions and exported ACTF/SFT successfully.
+For these configurations, the OpenClaw Agent converts `off` to an absent reasoning option. The Chat
+adapter then defaults to `high`, which also makes Qwen's boolean parameter `true`. Declaring `none`
+or `thinkingFormat: qwen` does not bypass this behavior. Passing `off` directly to the low-level
+transport skips that Agent step and cannot establish that the Roller path disables reasoning.
+
+These checks verify request parameters and export of mock responses, not real-model reasoning behavior
+or CoT. Before batch collection or comparing thinking on/off, check that the complete path's wire request
+actually contains the disabled value accepted by your service.
 
 ## 3. Configuration
 
@@ -82,8 +102,8 @@ Use `--thinking low` or `high`. To deliberately map logical `medium` to API `hig
 `"reasoningEffortMap": {"medium": "high"}` inside `compat`. This changes semantics; do not apply it to all models.
 
 - `supportsReasoningEffort: false` prevents this adapter from sending `reasoning_effort`; it does not turn off backend thinking.
-- Add `none` to `supportedReasoningEfforts` for `off` mapping only if the service accepts it. Do not declare it for always-thinking models.
-- Qwen's boolean switch uses `compat: {"thinkingFormat": "qwen"}`. Do not use it on endpoints that reject `enable_thinking`.
+- Add `none` to `supportedReasoningEfforts` only if the service accepts it. This declares API capability but does not guarantee that this image's Agent forwards `off` to the adapter. Do not declare it for always-thinking models.
+- Qwen's boolean parameter uses `compat: {"thinkingFormat": "qwen"}`. This setting does not fix the `off` limitation above. Do not use it on endpoints that reject `enable_thinking`.
 - For DeepSeek-compatible endpoints accepting only OpenAI fields, explicitly use `compat.thinkingFormat: openai`. Native DeepSeek field policies do not apply to all proxies.
 - This image's schema accepts `compat.supportedReasoningEfforts` and `compat.reasoningEffortMap`; the previous documentation said otherwise incorrectly. Top-level `thinkingLevelMap` is not a substitute for the Chat adapter's `reasoningEffortMap`, nor does it enable `max` in the generic profile.
 
@@ -107,4 +127,4 @@ contained `reasoning.effort: max` and `reasoning_effort: low`, respectively. Nei
 task's SFT contained visible reasoning text.
 
 This integration does not patch image sources or inject effort in the proxy to bypass OpenClaw's
-capability checks; the proxy-route `off` behavior remains a known limitation.
+capability checks. The GPT proxy-route and Chat Agent `off` behaviors above remain known limitations.

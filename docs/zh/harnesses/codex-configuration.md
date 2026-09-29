@@ -1,32 +1,28 @@
 # Codex Harness 指南
 
-[文档中心](../index.md) · [快速上手](../start/getting-started.md) · [OpenClaw](openclaw-configuration.md) · [Claude Code](claude-code-configuration.md) · [CLI 参数](../start/cli-reference.md)
-
 本页介绍 Codex 专属的镜像、Responses API、reasoning、native session 和排错。Task 字段见 [Task 格式参考](../tasks/task-format.md)，各 Harness 的产物说明见 [轨迹产出文件指南](../traces/trajectory-outputs.md)。
 
-> 快速定位：支持范围（第 1 节）· 镜像（第 2 节）· API（第 3 节）· reasoning（第 4 节）· native/ACTF/SFT/wire（第 7–8 节）· 排错（第 9 节）
-
-## 1. 当前支持范围
+## 1. 适用范围
 
 Codex Harness 支持：
 
-- 单轮 `prompt`；
-- 预定义多轮 `messages`，后续消息使用 `codex exec resume --last` 延续同一 session；
-- Task Bundle、只读 inputs、Context、`runtime.setup` 和完整 `output_dir` 回收；
-- 并行、retry、run lock、Resume 完整性检查；
-- Codex native session JSONL、`ACTF_v1.0`、单条 SFT 和 run 级 `sft.jsonl`；
-- request-side `--wire-trace full`；
-- 动态 User Simulator 和 Task Agent；Simulator 可通过 `user_simulator.harness`
-  独立选择并使用不同 model；
+- 单轮 `prompt`。
+- 预定义多轮 `messages`，后续消息使用 `codex exec resume --last` 延续同一 session。
+- Task Bundle、只读 inputs、Context、`runtime.setup` 和完整 `output_dir` 回收。
+- 并行、retry、run lock、Resume 完整性检查。
+- Codex native session JSONL、`ACTF_v1.0`、单条 SFT 和 run 级 `sft.jsonl`。
+- 默认 `--wire-trace actf` 捕获原始请求工具定义，`--wire-trace full` 额外保留完整请求。
+- 动态 User Simulator 和 Task Agent。Simulator 可通过 `user_simulator.harness`
+  独立选择并使用不同 model。
 - Viewer 展示可见 reasoning、工具调用、工具结果和最终回复。
 
 当前不支持：
 
-- OpenClaw 专属的 cache trace；
-- 从 native session 恢复未公开或加密的完整内部 reasoning；
+- OpenClaw 专属的 cache trace。
+- API 未以明文或可见 summary 返回的内部 reasoning。
 - 仅提供 Chat Completions、没有 Codex 所需 Responses 接口的模型服务。
 
-## 2. 构建固定版本镜像
+## 2. 镜像准备
 
 Roller 使用 [`docker/codex/Dockerfile`](../../../docker/codex/Dockerfile)，基础镜像为
 `node:22-bookworm-slim`，默认固定安装 `@openai/codex@0.149.0`。镜像还包含 Git、ripgrep、
@@ -56,7 +52,7 @@ docker build \
   .
 ```
 
-Debian 镜像参数 `DEBIAN_MIRROR`、`DEBIAN_SECURITY_MIRROR` 的用法见 [Docker 构建与镜像源](../start/docker-builds.md)。npm 下载可通过 `NPM_REGISTRY` 指定镜像；未设置时沿用 npm 原有配置。
+Debian 镜像参数 `DEBIAN_MIRROR`、`DEBIAN_SECURITY_MIRROR` 的用法见 [Docker 构建与镜像源](../start/docker-builds.md)。npm 下载可通过 `NPM_REGISTRY` 指定镜像。未设置时沿用 npm 原有配置。
 
 如果默认 Debian 软件源在当前网络较慢，可在构建时覆盖镜像地址，而无需修改
 Dockerfile：
@@ -93,12 +89,20 @@ export ROLLER_CODEX_IMAGE=roller-codex:0.149.0
 ```
 
 不要在正式数据集中使用未锁定的 `@openai/codex@latest`。Codex native event 会随 CLI
-演进；Roller 会把实际 `codex_version`、镜像 tag 和镜像 ID 写入 run/sample 信息及运行锁。
+演进。Roller 会把实际 `codex_version`、镜像 tag 和镜像 ID 写入 run/sample 信息及运行锁。
 
-## 3. API 与 Key
+## 3. 环境变量与 API
 
-推荐把 Key 放在自定义宿主机环境变量中，再用 `--api-key-env` 映射为容器内短期存在的
-`OPENAI_API_KEY`：
+Codex Harness 使用 Responses 风格的 agentic API。服务需要正确处理 Responses streaming、reasoning、tool call 和 tool result。`/v1/chat/completions` 请求成功不能证明该服务可供 Codex 使用。
+
+| 配置项 | 默认读取 | CLI 覆盖 |
+| --- | --- | --- |
+| API 地址 | `OPENAI_BASE_URL` | `--codex-api-base`，单一 Harness 运行也可用 `--api-base` |
+| API Key | `OPENAI_API_KEY` | `--codex-api-key-env`，单一 Harness 运行也可用 `--api-key-env` |
+| 模型 ID | task 的 `model` 或 `--model` | 原样交给 Codex |
+| API transport | Codex 内置策略 | 自定义 API 地址默认使用 Responses HTTP streaming |
+
+推荐把 Key 放在自定义宿主机环境变量中，再把变量名传给 Roller：
 
 ```bash
 export ROLLER_CODEX_KEY='...'
@@ -114,32 +118,37 @@ roller collect \
   --run-name codex-gpt
 ```
 
-`--api-base` 未提供时读取宿主机 `OPENAI_BASE_URL`。Key 值不会写入 `info.json` 或
-`lock.json`；运行锁只记录 Key 的环境变量名。API base 会删除 query 和凭据后写入
-provenance。
+`--api-base` 未提供时读取宿主机 `OPENAI_BASE_URL`。`--api-key-env` 的值是环境变量名，不是 Key 本身。Key 不会写入 `info.json` 或 `lock.json`。运行锁只记录变量名，provenance 中的 API 地址会移除 query 和凭据。
 
-提供 `--api-base` 时，Roller 会创建一个隔离的 Codex custom provider，固定使用
-`wire_api="responses"`，并默认设置 `supports_websockets=false`。这可兼容只实现
-Responses HTTP streaming、没有 WebSocket 握手的 OpenAI-compatible 服务。只有确认服务
-支持 Responses WebSocket 时才增加 `--codex-websockets`。`--wire-trace full` 使用 rollout-local HTTP 代理，因此必须显式提供 `--api-base`、保持
-`--no-codex-websockets` 与默认 `--network host`。未设置 `--api-base` 时，Codex 使用自己的
-内置 OpenAI provider 和 transport 策略。
+提供自定义 API 地址时，Roller 会创建隔离的 Codex provider，固定使用 `wire_api="responses"`，并默认设置 `supports_websockets=false`。这适用于只实现 Responses HTTP streaming 的兼容服务。只有确认服务支持 Responses WebSocket 时才使用 `--codex-websockets`。
 
-Codex CLI 使用 Responses 风格的 agentic API。`curl /v1/chat/completions` 成功并不能证明
-服务可供 Codex 使用；服务还必须正确处理 Codex 发出的 Responses streaming、reasoning、
-tool call 和 tool result。若需要特殊 model provider、MCP 或其他 Codex 配置，可以提供：
+默认 `--wire-trace actf` 和 `full` 在配置 API 地址时通过当前 rollout 的 HTTP 代理捕获工具，需要 `--network host` 和默认的 `--no-codex-websockets`。未配置 API 地址时仍使用 Codex 内置 provider，可保留 native raw/ACTF，但因无法获取原始工具定义而不导出 SFT。`full` 会拒绝缺少 API 地址或启用 WebSocket 的配置。
+
+(codex-cli-flags)=
+## 4. Codex 专属参数
+
+下面只列 Codex 专属运行参数。API 地址和 Key 的配置方式见第 3 节。所有 Harness 共用的参数见 [CLI 参数参考](../start/cli-reference.md)。
+
+| 参数 | 默认值 | 用途 |
+| --- | --- | --- |
+| `--docker-image` / `--codex-image` | `ROLLER_CODEX_IMAGE` 或 `roller-codex:0.149.0` | 覆盖 Codex 镜像 |
+| `--codex-config` | 无 | 注入隔离容器的原生 `config.toml` |
+| `--reasoning-summary` | Codex 默认值 | `auto`、`concise`、`detailed` 或 `none` |
+| `--codex-web-search` | `disabled` | `disabled`、`cached` 或 `live` |
+| `--codex-websockets` / `--no-codex-websockets` | 关闭 | 自定义 provider 是否使用 Responses WebSocket |
+
+单一 Codex 运行可以使用通用参数形式。混合 Harness 运行应使用 `--codex-image`、`--codex-api-base` 和 `--codex-api-key-env` 等专属形式，避免把设置应用到其他参与者。
+
+若需要特殊 model provider、MCP 或其他 Codex 配置，可以提供：
 
 ```bash
 roller collect ... \
   --codex-config examples/config/codex/config.toml.example
 ```
 
-该文件原样复制到 rollout 容器的 `$CODEX_HOME/config.toml`。Resume 锁保存配置内容的
-SHA-256，而不把可能含密钥的 TOML 内容复制进 run；显式 CLI 的 API base、model、effort、
-summary 和 web-search 设置仍覆盖对应运行项。仓库示例设置了 Roller 未覆盖的
-`model_verbosity`，并提供一个默认注释掉的 MCP server 模板；不要在其中保存 API Key。
+该文件原样复制到 rollout 容器的 `$CODEX_HOME/config.toml`。Resume 锁保存配置内容的 SHA-256，不把可能含密钥的 TOML 内容复制进 run。显式 CLI 的 API 地址、model、effort、summary 和 web search 设置仍覆盖对应运行项。示例文件包含 Roller 未覆盖的 `model_verbosity`，并提供默认注释掉的 MCP server 模板。不要在其中保存 API Key。
 
-## 4. Reasoning 配置
+## 5. Reasoning 配置
 
 `--thinking LEVEL` 在 Codex Harness 中映射为：
 
@@ -157,8 +166,8 @@ roller collect ... \
 ```
 
 Task 的 `runtime.thinking` 优先于 CLI。Roller 会把
-`minimal/low/medium/high/xhigh` 交给 Codex，再由模型和 API 服务验证；其中 `xhigh` 取决于
-模型是否支持。Codex CLI 0.149.0 不接受 `max`/`ultra`，Roller 会提前报错；OpenClaw 专用的
+`minimal/low/medium/high/xhigh` 交给 Codex，再由模型和 API 服务验证。其中 `xhigh` 取决于
+模型是否支持。Codex CLI 0.149.0 不接受 `max`/`ultra`，Roller 会提前报错。OpenClaw 专用的
 `adaptive` 也会提前拒绝。`off`/`none` 同样会拒绝，因为 Codex Harness 没有
 一个能对所有 reasoning 模型关闭推理的通用开关。若要使用模型/CLI 默认值，
 直接省略 `--thinking`。
@@ -172,7 +181,7 @@ Task 的 `runtime.thinking` 优先于 CLI。Roller 会把
 
 Codex native session 可能保存明文 `response_item.reasoning.content`、可见的
 `response_item.reasoning.summary`，以及不可公开的加密 reasoning。Roller 优先保留实际存在的
-明文 content；没有明文时保留 summary；不会解密、猜测或伪造内部 CoT。OpenAI reasoning
+明文 content，没有明文时保留 summary。不可公开的内容只保留在 native raw 中。OpenAI reasoning
 模型通常只暴露 summary，开源 Responses 服务也可能直接返回明文 reasoning content。
 选择 `none` 时没有 summary 是预期行为，但若服务另行返回明文 content，Roller 仍会按
 `--keep-thinking` 保存它。
@@ -181,10 +190,10 @@ Codex native session 可能保存明文 `response_item.reasoning.content`、可�
 ACTF/SFT `reasoning_content`。
 
 `--no-keep-thinking` 会在 native raw→ACTF 时清空 `reasoning_content`。Codex native
-`trace.jsonl` 仍保持原样，而且该选项目前不改写 Codex 自己用于后续 `resume` 的上下文；
+`trace.jsonl` 仍保持原样，而且该选项目前不改写 Codex 自己用于后续 `resume` 的上下文。
 因此它是导出控制，不是 raw 脱敏或双向 context 剥离开关。
 
-## 5. Web search
+## 6. Web Search
 
 为了减少不可重放的外部依赖，Codex Harness 默认设置：
 
@@ -196,21 +205,21 @@ ACTF/SFT `reasoning_content`。
 query/action 和记录到的 results 转成一个 `web_search` tool call/result，供 ACTF、SFT 和
 Viewer 使用。
 
-## 6. Context 与工作区
+## 7. Context 与工作区
 
 Codex 容器工作目录为 `/roller/workspace`：
 
-- inputs 保持 Task Bundle 中的相对路径并以只读方式挂载；
-- Context 文件复制到 workspace，`AGENTS.md` 会按 Codex 的正常发现规则生效；
-- `role=skill` 的 `skills/` 内容还会复制到 `$HOME/.agents/skills/`；
-- `runtime.setup` 在 workspace 中、首个 Codex turn 之前执行；
+- inputs 保持 Task Bundle 中的相对路径并以只读方式挂载。
+- Context 文件复制到 workspace，`AGENTS.md` 会按 Codex 的正常发现规则生效。
+- `role=skill` 的 `skills/` 内容还会复制到 `$HOME/.agents/skills/`。
+- `runtime.setup` 在 workspace 中、首个 Codex turn 之前执行。
 - `files.output_dir` 在 workspace 内保持可写，结束时安全回收到 sample 的 `results/`。
 
 预定义 `messages` 的第一条调用 `codex exec`，后续消息调用 `codex exec resume --last`，共用
 同一个隔离的 `$CODEX_HOME`。每个 rollout 使用独立容器和 Codex home，不会读取宿主机
 `~/.codex` 的账号、session 或全局配置。
 
-## 7. 轨迹产物
+## 8. 轨迹产物
 
 Codex sample 的默认结构与 OpenClaw 相同：
 
@@ -218,6 +227,7 @@ Codex sample 的默认结构与 OpenClaw 相同：
 <sample>/
 ├── trace.jsonl
 ├── trace_ACTF.json
+├── tools_capture.jsonl      # 每次请求的原始工具定义
 ├── trace_SFT.json
 ├── info.json
 └── results/                 # 有输出时
@@ -238,17 +248,21 @@ output。顶层 system prompt 来自 `session_meta.base_instructions`、native d
 message，以及 Codex 在首轮前注入的 `<environment_context>`。Task 中的用户消息按内容
 匹配，避免把环境事件当作用户消息或分配到错误轮次。
 
-Codex native session 不提供每个工具的完整原始 JSON Schema。为了产出严格 SFT，Roller 会
-基于实际调用名和参数字段生成 permissive function schema；这些 schema 保留 tool call 的名称、
-参数和结果，但不包含 Codex 内置工具接口的完整定义。
+工具定义来自实际发出的 Responses 请求，包括模型未调用的工具，不再根据调用参数推导 schema。ACTF 保存 `tools_format: "responses"`、原样的 `tools` 列表，以及含每次请求快照的 `tools_capture` 来源信息。description、required、enum、custom grammar、namespace 和原始顺序均保留。
+
+`tools_capture.jsonl` 在常规清理后仍保留，仅保存工具相关字段：`tools`、`tool_choice`、`parallel_tool_calls` 和类型为 `additional_tools` 的 input item，不包含普通消息和 HTTP header。schema 按原始 JSON 值保存，不经过通用敏感字段名脱敏，以免破坏名为 `token` 的合法参数。description 和 default 等内容也属于原始 harness 数据。
+
+代理关闭时，捕获文件以 `codex_tools_complete` 记录结束，其中 `request_count` 是 Responses 请求总数。导出 SFT 必须存在该末尾记录且快照数量一致。截断文件和没有完成凭据的旧捕获文件仍保留 raw/ACTF 与已有快照，但不能生成 SFT。
 
 ### `trace_SFT.json` 与 `sft.jsonl`
 
-和 OpenClaw 一样，单条 SFT 顶层严格只有 `messages` 和 `tools`。Assistant 固定包含
-`reasoning_content`、`content`、`tool_calls`；工具结果转成 `role=tool`。Run 级 `sft.jsonl`
+纯文本 SFT 顶层包含 `messages` 和 `tools`，图片样本额外包含 `images`。Codex 的 `tools` 保持原始 Responses 格式，包括 namespace、custom 和内置工具，不统一改写成 Chat Completions 的嵌套 function。custom call 使用 `type: "custom"` 并保留原始字符串 `input`，namespace 字段也原样保留。Assistant 固定包含
+`reasoning_content`、`content`、`tool_calls`。工具结果转成 `role=tool`。Run 级 `sft.jsonl`
 只汇总成功或可信 Resume 的样本。
 
-## 8. Native raw 不是 wire trace
+捕获缺失或损坏、各请求间工具定义变化、存在 programmatic `additional_tools` input item 时，SFT 会明确标记为不可用，保留 raw 与完整请求快照。单个顶层 `tools` 无法忠实表达这些变化或其他定义形式。即使模型没有调用工具，也必须捕获到请求才能确认工具列表为空；`--wire-trace off` 因此不产出 Codex SFT。
+
+## 9. Native raw 与 wire trace
 
 Codex 可能在 native session 与真实模型请求之间加入 instruction、压缩历史、选择性重放
 tool result，或把内部事件转换为 Responses input。`trace.jsonl` 和由它生成的 ACTF/SFT 只能
@@ -259,11 +273,9 @@ rollout-local 代理，在转发给真实 `--api-base` 前保存脱敏后的完�
 Codex 请求中的工具定义可位于 `input` 的 `additional_tools` item。该文件是 request-side 证据，不保存
 上游 response body，也不能说明模型服务内部如何再次截断、路由或 tokenize。
 
-默认 `--wire-trace actf` 不保留额外 wire 文件；Codex ACTF 的工具 schema 来自 native 实际
-调用的 permissive 投影，而不是完整 request schema。需要检查某次模型调用的完整请求时
-必须显式使用 `--wire-trace full`，并配合足够严格的日志访问权限。
+默认 `--wire-trace actf` 保留 `tools_capture.jsonl`，转换后删除临时 wire 文件，在不记录完整消息正文的情况下捕获原始工具定义。检查完整请求上下文需使用 `--wire-trace full` 并设置合适的日志访问权限。捕获证明的是发往 API 的请求，不能验证上游服务内部的再次改写。
 
-## 9. 常见错误
+## 10. 常见问题
 
 ### `Codex requires a non-empty API key`
 
@@ -272,16 +284,16 @@ Codex 请求中的工具定义可位于 `input` 的 `additional_tools` item。�
 ### `/responses` 返回 404 或协议错误
 
 API 服务只有 Chat Completions，或 Responses streaming/tool protocol 不兼容。换用支持
-Responses 的服务；OpenClaw Harness 可继续用于只支持 Chat Completions 的模型服务。
+Responses 的服务。OpenClaw Harness 可继续用于只支持 Chat Completions 的模型服务。
 
 ### `Codex native trace produced no assistant steps`
 
 CLI 在产生有效模型事件前退出，或所用 Codex 版本的 native event schema 已变化。先查看
-sample 保留的错误和 `--keep-container-on-error` 容器，再核对 `codex_version`；升级 CLI 时要
+sample 保留的错误和 `--keep-container-on-error` 容器，再核对 `codex_version`。升级 CLI 时要
 同步更新转换器测试。
 
 ### User Simulator
 
 Codex 可作为 Task Agent 或 User Simulator。Task Agent 在 task 顶层设置
-`"harness": "codex"`，Simulator 则在 `user_simulator.harness` 设置；两者的
+`"harness": "codex"`，Simulator 则在 `user_simulator.harness` 设置。两者的
 `model` 也可以分别指定。动态 session 使用 Codex 的 `resume --last` 保持上下文。

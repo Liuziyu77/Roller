@@ -183,6 +183,7 @@ class Collector:
             "trace.jsonl",
             "trace_ACTF.json",
             "trace_SFT.json",
+            "tools_capture.jsonl",  # Exact Codex Responses tool snapshots.
             "signature_recovery.jsonl",  # Preserve historical artifacts; never generated now.
             "info.json",
             "results",

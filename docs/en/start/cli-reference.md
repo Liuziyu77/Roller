@@ -1,8 +1,15 @@
 # CLI reference
 
-[Documentation home](../index.md) · [Getting started](getting-started.md) · [Task format](../tasks/task-format.md) · [Trajectory outputs](../traces/trajectory-outputs.md)
+Use this page to look up Roller command-line flags. If this is your first run, complete [Getting started](getting-started.md) first. Return here when you need to change tasks, concurrency, output paths, or Harness behavior.
 
-This page lists Roller CLI flags by scope. For the flags in your installed version, trust the command output:
+For a first pass, remember four things:
+
+- `--tasks` selects what Roller will run.
+- `--model` and `--harness` select the model and Agent runtime.
+- `--output` and `--run-name` decide where results are saved.
+- `--dry-run` checks the configuration without starting containers.
+
+The command output for the current checkout is always authoritative:
 
 ```bash
 roller --help
@@ -12,261 +19,229 @@ roller view --help
 
 ## 1. Command structure
 
-```text
-roller collect [OPTIONS]   # 采集轨迹
-roller view RUN_DIR        # 浏览已有 run
-roller bench ...           # bench 翻译与评分汇总，见 §11
-roller --version
-```
+Choose the command for the job first, then add that command's flags.
 
-The smallest collect command needs `--tasks`, and the model must come from repeated `--model` flags or each task's own `model` field:
+| Command | Purpose |
+| --- | --- |
+| `roller collect [OPTIONS]` | Reads tasks, runs a Harness, and collects trajectories |
+| `roller view RUN_DIR` | Opens an existing run in the Viewer |
+| `roller bench ...` | Lists, exports, or summarizes benchmarks, with collection flags in section 8 |
+| `roller --version` | Shows the installed Roller version |
+
+The smallest collect command needs a task list. Set the model with `--model` or in each task's `model` field.
 
 ```bash
-roller collect --tasks tasks.jsonl --model provider/model ...
+roller collect --tasks tasks.jsonl --model provider/model
 ```
 
 ## 2. Configuration precedence
 
-When a value can be set on both the task and the global CLI:
+The same setting can appear in both a task and the command line. Roller uses the following rules to choose the final value.
 
-| Setting | Precedence |
+| Setting | Final value |
 | --- | --- |
-| Model | If any `--model` is on the command line, use the CLI models; otherwise use each task's `model` |
-| Thinking | task `runtime.thinking` wins; otherwise use `--thinking`; if both are omitted, the Harness/model default applies |
-| Workspace | task `workspace` wins; otherwise use the global `--workspace` |
-| User Simulator model | `user_simulator.model` wins; otherwise follow the current task Agent model |
+| Model | Command-line `--model` values win when present, otherwise use each task's `model` |
+| Thinking | task `runtime.thinking` wins, followed by `--thinking`, then the Harness or model default |
+| Workspace | task `workspace` wins, otherwise use the global `--workspace` |
+| User Simulator model | `user_simulator.model` wins, otherwise follow the current task Agent model |
 
-Roller removes duplicate `--model` values and runs each task with each remaining model. `--start-index` and `--limit` select tasks from the normalized list before pairing them with models.
+Roller removes duplicate `--model` values. When you specify multiple models, every selected task runs once for each model. `--start-index` and `--limit` select tasks before Roller expands those model combinations.
 
 ## 3. Shared collection flags
 
-These flags apply to all seven Harnesses:
+These flags decide which tasks to run, how many runs to create, and where to save the results. They work with every Harness.
 
-| Flag | Default | Description |
+### Inputs and runtime selection
+
+These flags tell Roller where to read tasks and which model and Harness should execute them.
+
+| Flag | Default | Purpose |
 | --- | --- | --- |
-| `--tasks PATH` | Required | JSON or JSONL task list |
-| `--model MODEL` | task `model` | Repeatable; run every listed model for each task |
-| `--model-label LABEL` | Served model ID | Safe local label for sample directories and container names; requires one resolved model and does not alter the ID sent upstream |
-| `--harness NAME` | task `harness` or `openclaw` | `openclaw`, `codex`, `claude-code`, `hermes`, `opencode`, `deepseek`, or `pi`; when set explicitly, overrides the Task Agent field for the whole run |
-| `--docker-image IMAGE` | Default image for that Harness | Global image override; mixed participants can set `--openclaw-image`, `--codex-image`, `--claude-code-image`, `--hermes-image`, `--opencode-image`, `--deepseek-image`, and `--pi-image` separately |
-| `--api-base URL` / `--api-key-env NAME` | Harness-specific defaults | Legacy-compatible; mixed runs can set `--codex-api-base`, `--claude-api-base`, `--hermes-api-base`, `--opencode-api-base`, `--deepseek-api-base`, `--pi-api-base`, and the matching `*-api-key-env` separately |
-| `--parallel N` | `1` | Maximum parallel rollouts; must be at least 1 |
-| `--grader-parallel N` | `--parallel` | Maximum concurrent graders; lower it independently for a loaded judge service |
-| `--samples N` | `3` for SkillsBench; `1` otherwise | Independent repetitions per task/model pair, each in its own sample directory |
-| `--retries N` | `0` | Extra attempts after the first failure |
-| `--timeout SECONDS` | `600` | Total timeout per rollout; must be greater than 0 |
-| `--task-timeouts` | Off | Use each task's own `timeout_seconds`, falling back to `--timeout` when missing. Bench runs usually must enable this; see [Bench integration and scoring](../benches/bench-format.md#7-cli) |
-| `--start-index N` | `0` | Start from the Nth normalized task |
-| `--limit N` | Unlimited | Select at most N tasks |
-| `--output DIR` | `runs` | Parent directory of the run root |
-| `--run-name NAME` | UTC timestamp name | Directory name for this run |
-| `--resume` | Off | Validate the run lock and skip complete successful samples |
-| `--dry-run` | Off | Validate tasks and files and print the plan; do not start Docker |
-| `--workspace DIR` | None | Legacy global workspace; new tasks use `file_root`/`files` |
-| `--prompt-key NAME` | `prompt` | Prompt field name in legacy data |
-| `--id-key NAME` | `id` | ID field name in legacy data |
-| `--log-level LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, or `ERROR` |
+| `--tasks PATH` | Required | Selects a JSON or JSONL task list |
+| `--model MODEL` | task `model` | Selects a model and can be repeated for multiple models |
+| `--model-label LABEL` | Actual service model ID | Sets a safe local name for sample directories and containers without changing the upstream model ID, only for runs with one final model |
+| `--harness NAME` | task `harness` or `openclaw` | Selects `openclaw`, `codex`, `claude-code`, `hermes`, `opencode`, `deepseek`, or `pi` |
 
-File limits:
+### Execution scale and task range
 
-| Flag | Default | Description |
+These flags control concurrency, repetitions, retries, and which part of the task list runs.
+
+| Flag | Default | Purpose |
 | --- | --- | --- |
-| `--max-input-file-bytes` | 10 GiB | Per input/context file cap |
-| `--max-task-input-bytes` | 50 GiB | Total input cap for one task |
+| `--parallel N` | `1` | Sets the maximum number of concurrent rollouts |
+| `--grader-parallel N` | `--parallel` | Limits concurrent graders separately to avoid overloading a judge service |
+| `--samples N` | `3` for SkillsBench, otherwise `1` | Creates N independent samples for each task/model pair |
+| `--retries N` | `0` | Sets additional attempts after the first failure |
+| `--timeout SECONDS` | `600` | Sets the total timeout for one rollout |
+| `--task-timeouts` | Off | Prefers each task's `timeout_seconds` and falls back to `--timeout` |
+| `--start-index N` | `0` | Starts at task N in the normalized task list |
+| `--limit N` | Unlimited | Selects at most N tasks |
 
-## 4. Shared Harness runtime flags
+### Output, validation, and continuation
 
-These flags are shared by all seven Harnesses, but allowed values and semantics are validated by each Harness:
+These flags control the result directory and whether Roller validates, starts, or continues a run.
 
-| Flag | Default | Description |
+| Flag | Default | Purpose |
 | --- | --- | --- |
-| `--docker-image IMAGE` | Fixed image for that Harness | Override the image for this run |
-| `--container-user USER` | `0` | One-shot container user; `image` keeps the image default user |
-| `--docker-binary PATH` | `docker` | Docker CLI name or path |
-| `--network MODE` | `host` | Container network; the local wire proxy requires host network |
-| `--pass-env NAME` | None | Repeatable; pass through extra non-empty host environment variables |
-| `--thinking LEVEL` | Unset | Harness reasoning/thinking level |
-| `--keep-thinking` / `--no-keep-thinking` | On | Whether ACTF/SFT export reasoning; for OpenClaw also controls stripping it from request history |
-| `--wire-trace MODE` | `actf` | `off`, `actf`, or `full` |
-| `--keep-container-on-error` | Off | Keep the stopped one-shot container on failure without holding its gateway port |
+| `--output DIR` | `runs` | Sets the parent directory for all run roots |
+| `--run-name NAME` | UTC timestamp | Sets the directory name for this run |
+| `--dry-run` | Off | Checks tasks, files, and the run plan without starting Docker |
+| `--resume` | Off | Continues the same run and skips complete successful samples, see section 6 |
 
-Parsed values for `--thinking`:
+### Compatibility and debugging
+
+These flags mainly support legacy data or logging. New task files usually do not need the first three.
+
+| Flag | Default | Purpose |
+| --- | --- | --- |
+| `--workspace DIR` | None | Sets a global workspace for legacy tasks, new tasks use `file_root` and `files` |
+| `--prompt-key NAME` | `prompt` | Selects the prompt field in legacy data |
+| `--id-key NAME` | `id` | Selects the ID field in legacy data |
+| `--log-level LEVEL` | `INFO` | Sets `DEBUG`, `INFO`, `WARNING`, or `ERROR` logging |
+
+### Input file limits
+
+These flags limit the files that one task can bring into a container and help prevent unexpectedly large inputs.
+
+| Flag | Default | Purpose |
+| --- | --- | --- |
+| `--max-input-file-bytes` | 10 GiB | Limits one input or context file |
+| `--max-task-input-bytes` | 50 GiB | Limits the total input size for one task |
+
+## 4. Common Harness runtime flags
+
+These flags control how a Harness container starts, connects to a model service, and records trajectory data. The selected Harness still determines the supported values.
+
+### Container and connection
+
+These flags select the image, Docker runtime settings, and model-service connection.
+
+| Flag | Default | Purpose |
+| --- | --- | --- |
+| `--docker-image IMAGE` | Pinned image for the Harness | Overrides the Harness image for this run |
+| `--container-user USER` | `0` | Sets the disposable container user, `image` keeps the image default |
+| `--docker-binary PATH` | `docker` | Selects the Docker CLI name or path |
+| `--network MODE` | `host` | Sets the container network mode, some full wire-trace paths require host networking |
+| `--api-base URL` | Harness environment variable | Sets the API address for a single-Harness run, OpenClaw keeps this in its model config |
+| `--api-key-env NAME` | Harness default variable | Selects the host environment variable that contains the model API key |
+| `--pass-env NAME` | None | Passes one additional non-empty environment variable into the Harness container and can be repeated |
+| `--keep-container-on-error` | Off | Keeps the stopped container after failure for inspection |
+
+### Reasoning and traces
+
+These flags control reasoning levels and trace retention. Supported levels and wire-trace modes differ by Harness.
+
+| Flag | Default | Purpose |
+| --- | --- | --- |
+| `--thinking LEVEL` | Unset | Sets the Harness reasoning or thinking level |
+| `--keep-thinking` / `--no-keep-thinking` | On | Decides whether ACTF and SFT export visible reasoning |
+| `--wire-trace MODE` | `actf` | Selects `off`, `actf`, or `full` request recording |
+
+The CLI can parse the following logical thinking values. Each Harness guide defines its supported subset, defaults, and mappings.
 
 ```text
 off | minimal | low | medium | high | xhigh | adaptive | max | ultra
 ```
 
-Input `none` is normalized to `off`. The available levels depend on the Harness and model:
+Input `none` is normalized to `off`. Unsupported values fail before the rollout starts.
 
-| Harness | Current Roller mapping |
+### Wire trace modes
+
+Wire trace controls whether Roller records the actual HTTP requests sent to the model service. The default `actf` mode is sufficient for normal collection.
+
+| Mode | Output and purpose |
 | --- | --- |
-| OpenClaw 2026.7.1 | Accepts up to `max`; the selected model profile still validates further |
-| Codex 0.149.0 | `minimal/low/medium/high/xhigh`; omit to use the default |
-| Claude Code 2.1.222 | `low/medium/high/xhigh/max/ultra`, where `ultra` maps to `ultracode` |
+| `off` | Does not capture HTTP requests through the local reverse proxy |
+| `actf` | Writes the actual tools schema into ACTF and keeps no extra wire file |
+| `full` | Also keeps `wire_trace.jsonl` for auditing actual HTTP requests |
 
-See each Harness guide for reasoning level mappings.
+`full` can retain complete request text including prompts, reasoning, tool arguments, and results. This makes the output larger and more sensitive. See the matching Harness guide for support and network requirements, and see {ref}`Trajectory outputs <wire-trace-jsonl>` for the file format.
 
-### Wire trace
+### Compatibility note
 
-| Mode | Outputs and purpose | DeepSeek Harness |
-| --- | --- | --- |
-| `off` | No HTTP proxy capture; OpenCode/Hermes/DeepSeek still journal native request schemas | Native reasoning |
-| `actf` | Default; retain system/tools needed for ACTF and remove intermediate wire files | Not supported |
-| `full` | Also retain `wire_trace.jsonl` for auditing the actual HTTP requests | Not supported |
+`--external-thinking` has been removed. Replace it with `--thinking` and delete obsolete arguments from old commands.
 
-`full` stores complete request text including prompts, reasoning, tool arguments, and results, so size and sensitivity are both higher. See {ref}`Trajectory outputs <wire-trace-jsonl>`.
+## 5. Harness-specific flag index
 
-## 5. OpenClaw-only flags
+When a flag belongs to one Harness, look it up in that Harness guide. Each guide owns its image, API, key, execution limit, and native configuration flags.
 
-| Flag | Default | Description |
-| --- | --- | --- |
-| `--model-config PATH` | None | OpenClaw providers/models JSON; supports `${ENV_NAME}` |
-| `--gateway-port N` | `18789` | Starting gateway port for worker 0 |
-| `--gateway-port-step N` | `10` | Port stride between worker slots |
-| `--gateway-startup-timeout SEC` | `30` | How long to wait for the gateway to become ready |
-| `--session-id NAME` | `roller` | OpenClaw session ID prefix |
-| `--search-provider NAME` | None | OpenClaw web search provider |
-| `--cache-trace` / `--no-cache-trace` | On | Record the assembled system prompt each time |
-| `--set-image-model` / `--no-set-image-model` | On | Whether to also try setting the image model |
-| `--collect-path PATH` | None | Legacy: also collect a container path into `results/legacy` |
+| Harness | Flag and configuration guide |
+| --- | --- |
+| OpenClaw | {ref}`OpenClaw Harness guide <openclaw-cli-flags>` |
+| Codex | {ref}`Codex Harness guide <codex-cli-flags>` |
+| Claude Code | {ref}`Claude Code Harness guide <claude-code-cli-flags>` |
+| Hermes | {ref}`Hermes Harness guide <hermes-cli-flags>` |
+| OpenCode | {ref}`OpenCode Harness guide <opencode-cli-flags>` |
+| DeepSeek | {ref}`DeepSeek Harness guide <deepseek-cli-flags>` |
+| Pi Agent | {ref}`Pi Agent Harness guide <pi-cli-flags>` |
 
-Default image precedence: `--docker-image` → `ROLLER_OPENCLAW_IMAGE` → `ghcr.io/openclaw/openclaw:2026.7.1-2`.
-
-## 6. Codex-only flags
-
-| Flag | Default | Description |
-| --- | --- | --- |
-| `--api-base URL` | `OPENAI_BASE_URL` | Responses API base |
-| `--api-key-env NAME` | `OPENAI_API_KEY` | Host environment variable that holds the API Key |
-| `--codex-config PATH` | None | Config copied into an isolated `$CODEX_HOME/config.toml` |
-| `--reasoning-summary MODE` | Codex default | `auto`, `concise`, `detailed`, or `none` |
-| `--codex-web-search MODE` | `disabled` | `disabled`, `cached`, or `live` |
-| `--codex-websockets` / `--no-codex-websockets` | Off | Whether a custom provider may use Responses WebSocket |
-
-Default image precedence: `--docker-image` → `ROLLER_CODEX_IMAGE` → `roller-codex:0.149.0`.
-
-Custom OpenAI-compatible APIs default to Responses HTTP streaming. Full wire trace requires an explicit `--api-base`, the default host network, and `--no-codex-websockets`.
-
-## 7. Claude Code-only flags
-
-| Flag | Default | Description |
-| --- | --- | --- |
-| `--api-base URL` / `--anthropic-base-url URL` | `ANTHROPIC_BASE_URL` | Anthropic origin, `/v1` base, or `/v1/messages` endpoint |
-| `--api-key-env NAME` | `ANTHROPIC_API_KEY` | Host environment variable that holds the API Key |
-| `--claude-settings PATH` | None | Settings JSON injected into the isolated container |
-| `--claude-max-turns N` | None | Claude agent turn cap per predefined user message |
-| `--claude-max-thinking-tokens N` | None | `MAX_THINKING_TOKENS` inside the container |
-| `--claude-permission-mode MODE` | `bypassPermissions` | Claude Code permission mode |
-
-Default image precedence: `--docker-image` → `ROLLER_CLAUDE_CODE_IMAGE` → `roller-claude-code:2.1.222`.
-
-## 8. Retired CoT options
-
-`--external-thinking` (including `off`) and `--claude-signature-recovery*` have been removed. Delete them from old commands; passing them is an argument error. Native `--thinking`, `--reasoning-summary`, and `--keep-thinking` are unchanged.
-
-## 9. Resume
+To inspect the complete flag set for the current checkout, run:
 
 ```bash
-roller collect [原命令] --resume
+roller collect --help
 ```
 
-Resume first compares the settings that affect execution and the input digests in `lock.json`, then checks the required artifacts of successful samples. It skips a successful sample only when the settings and inputs match and the artifacts are complete. Changed settings or inputs are rejected; samples with damaged artifacts are rerun.
+## 6. Resume flags
 
-Use `--resume` to continue the same run; use a new `--run-name` when you change the model, image, thinking, wire, or any other semantic setting.
+Use `--resume` to continue the same run after interruption or partial failure while reusing complete successful samples.
 
-## 10. Viewer flags
+```bash
+roller collect [original command] --resume
+```
+
+Resume first compares the execution settings and input digests in `lock.json`, then checks the required artifacts of successful samples. A sample is skipped when its settings and inputs match and its artifacts are complete. Damaged artifacts are rerun. Changed settings or inputs cause Resume to stop.
+
+Use `--resume` only for the same experiment. Start a new `--run-name` after changing the model, image, thinking, wire, or any other setting that affects execution.
+
+## 7. Viewer flags
+
+Viewer flags select the run to open and configure the local web server's listen address and port.
 
 ```bash
 roller view RUN_DIR [--host HOST] [--port PORT]
 ```
 
-| Flag | Default | Description |
+| Flag | Default | Purpose |
 | --- | --- | --- |
-| `RUN_DIR` | Required | A Roller run that contains `info.json` and `samples/` |
-| `--host` | `127.0.0.1` | Listen address |
-| `--port` | `8765` | Listen port |
+| `RUN_DIR` | Required | Selects a Roller run containing `info.json` and `samples/` |
+| `--host` | `127.0.0.1` | Sets the listen address |
+| `--port` | `8765` | Sets the listen port |
 
-Listening on `0.0.0.0` exposes trajectory contents to the network. For remote access, use the default address and SSH port forwarding.
+Listening on `0.0.0.0` exposes trajectory contents to the network. For remote access, keep the default address and use SSH port forwarding.
 
-## 11. Bench flags
+## 8. Bench flags
+
+Bench flags convert an external benchmark into Roller tasks, run collection, grade the results, and produce a summary.
+
+| Command | Purpose |
+| --- | --- |
+| `roller bench list` | Lists the available benchmark adapters |
+| `roller collect --bench ...` | Converts, runs, grades, and summarizes a benchmark, recommended for most users |
+| `roller bench export ...` | Converts a benchmark to task JSONL without running tasks |
+| `roller bench report RUN_DIR` | Regenerates a grading summary for an existing run |
+
+Common command forms:
 
 ```bash
-roller bench list
 roller collect --bench NAME --bench-root ROOT [--bench-category CAT]... [--bench-task-id ID]... [--bench-variant NAME] [--bench-timeout-multiplier N] ...
 roller bench export NAME ROOT --output TASKS.jsonl [--category CAT]... [--task-id ID]... [--variant NAME] [--timeout-multiplier N]
 roller bench report RUN_DIR [--output REPORT.json]
 ```
 
-Prefer `collect --bench`: one command converts tasks, runs containers, grades, and
-aggregates, saving `tasks.jsonl` and `bench-report.json` in the run directory. It
-automatically honors each benchmark task's timeout. `--bench-category` and
-`--bench-task-id` are repeatable; `--bench-variant` and
-`--bench-timeout-multiplier` correspond to the export flags below.
-
-| Flag | Default | Description |
-| --- | --- | --- |
-| `NAME` | Required | Adapter name from `roller bench list` |
-| `ROOT` | Required | Checked-out benchmark directory |
-| `--output` / `-o` | Required for export | Task JSONL written by export; optional report JSON for report |
-| `--category CAT` | Unlimited | Export only this category; repeatable |
-| `--task-id ID` | Unlimited | Export only this task; repeatable; a wrong id errors instead of being skipped silently |
-| `--variant NAME` | Adapter default | Select a bench condition, such as SkillsBench `with-skill` / `no-skill` |
-| `RUN_DIR` | Required | Completed run directory; a **positional argument** (not `--run`) |
-
-`bench export` only translates; it does not run any task, go online, or start a container.
-`--timeout-multiplier` must be finite and positive and scales each task's own timeout at export time.
-For the manual export + collect workflow, remember `--task-timeouts` on collect. Both
-workflows use `--pass-env` to pass through variables the grader needs.
-
-Field semantics, scoring timeline, `stage` leak-prevention rules, and aggregation rules are in [Bench integration and scoring](../benches/bench-format.md).
-
-## Hermes
+Prefer `collect --bench`. It converts tasks, runs containers, grades results, and aggregates them in one command, then saves `tasks.jsonl` and `bench-report.json` in the run directory.
 
 | Flag | Default | Purpose |
 | --- | --- | --- |
-| `--hermes-image` | `ROLLER_HERMES_IMAGE` or `roller-hermes:d15ed4445207` | Pinned container image |
-| `--hermes-api-base` | `--api-base`, then `OPENAI_BASE_URL`, then OpenAI `/v1` | Chat Completions API base |
-| `--hermes-api-key-env` | `--api-key-env`, then `OPENAI_API_KEY` | Host key variable name |
-| `--hermes-context-length` | Provider metadata | Optional context window override, at least 64000 tokens |
-| `--hermes-max-iterations` | `12` | Model iterations per user turn; must be positive |
+| `--bench NAME` / `NAME` | Required | Selects an adapter from `roller bench list` |
+| `--bench-root ROOT` / `ROOT` | Required | Selects the checked-out benchmark directory |
+| `--bench-category CAT` / `--category CAT` | Unlimited | Selects one category and can be repeated |
+| `--bench-task-id ID` / `--task-id ID` | Unlimited | Selects one task and can be repeated, invalid IDs fail immediately |
+| `--bench-variant NAME` / `--variant NAME` | Adapter default | Selects a benchmark condition such as SkillsBench `with-skill` or `no-skill` |
+| `--bench-timeout-multiplier N` / `--timeout-multiplier N` | Adapter default | Scales each benchmark task timeout by a finite positive number |
+| `--output` / `-o` | Required for export | Sets the exported task JSONL or report JSON |
+| `RUN_DIR` | Required for report | Selects a completed run and is a positional argument |
+| `--rebuild-task-images` | Off | Rebuilds task-specific benchmark images even when they already exist |
 
-Hermes accepts `off/minimal/low/medium/high/xhigh` thinking hints, subject to native provider/model handling. Native request snapshots preserve tool schemas in every wire mode; `full` also retains the HTTP trace and requires an explicit API base and host networking. See [Hermes configuration](../harnesses/hermes-configuration.md).
+`collect --bench` automatically uses each benchmark task's timeout. For a manual export followed by collect, add `--task-timeouts` to collect. Both workflows can use `--pass-env` for environment variables required by the grader.
 
-## OpenCode
-
-| Option | Default |
-| --- | --- |
-| `--opencode-image` | `roller-opencode:1.18.30` |
-| `--opencode-api-base` | `--api-base` / `OPENAI_BASE_URL` |
-| `--opencode-api-key-env` | `--api-key-env` / `OPENAI_API_KEY` |
-| `--opencode-max-steps` | `100` for SkillsBench; `12` otherwise |
-| `--opencode-context-length` | 128000 |
-| `--opencode-output-tokens` | 32768 for SkillsBench, 8192 otherwise |
-
-See [native sessions, request capture, and limitations](../harnesses/opencode-configuration.md).
-
-## DeepSeek Harness
-
-| Option | Default |
-| --- | --- |
-| `--deepseek-image` | `roller-deepseek:0.1.5rc1` |
-| `--deepseek-api-base` | `--api-base` / `DEEPSEEK_BASE_URL` / `https://api.deepseek.com` |
-| `--deepseek-api-key-env` | `--api-key-env` / `DEEPSEEK_API_KEY` |
-| `--deepseek-max-steps` | 12 |
-| `--deepseek-context-length` | 128000 |
-| `--deepseek-output-tokens` | 8192 |
-
-[DeepSeek Harness](../harnesses/deepseek-configuration.md): `sdk-minimal`, persistent Bash, `off/low/high/max` thinking.
-
-## Pi Agent Harness
-
-| Flag | Default |
-| --- | --- |
-| `--pi-image` | `roller-pi:0.85.1` |
-| `--pi-api-base` | `--api-base` / `OPENAI_BASE_URL` / `https://api.openai.com/v1` |
-| `--pi-api-key-env` | `--api-key-env` / `OPENAI_API_KEY` |
-| `--pi-max-steps` | 12 |
-| `--pi-context-length` | 128000 |
-| `--pi-output-tokens` | 8192 |
-
-[Pi Agent](../harnesses/pi-configuration.md): `off/minimal/low/medium/high/xhigh/max` thinking; default `off`.
+See [Bench integration and scoring](../benches/bench-format.md) for field semantics, scoring order, `stage` leak prevention, and aggregation rules.

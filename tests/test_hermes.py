@@ -93,6 +93,41 @@ class HermesTraceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "non-text"):
             hermes_events_to_actf(events)
 
+    def test_preserves_image_tool_result_and_exports_multimodal_sft(self):
+        events = sample_events()
+        data_url = "data:image/png;base64,AA=="
+        events[3]["message"]["content"] = [
+            {"type": "text", "text": "image"},
+            {"type": "image", "data": data_url},
+        ]
+
+        trajectory = hermes_events_to_actf(events)
+
+        self.assertEqual(
+            trajectory["steps"][0]["observation"][0]["content"][1],
+            {"type": "image", "data": data_url},
+        )
+        sft = actf_to_sft(trajectory)
+        tool_result = next(m for m in sft["messages"] if m["role"] == "tool")
+        self.assertEqual(tool_result["content"], "image\n<image>")
+        self.assertEqual(sft["images"], [data_url])
+
+    def test_normalizes_openai_image_url_tool_result(self):
+        events = sample_events()
+        data_url = "data:image/png;base64,AA=="
+        events[3]["message"]["content"] = [
+            {"type": "text", "text": "image"},
+            {"type": "image_url", "image_url": {"url": data_url}},
+        ]
+
+        trajectory = hermes_events_to_actf(events)
+
+        self.assertEqual(
+            trajectory["steps"][0]["observation"][0]["content"][1],
+            {"type": "image", "data": data_url},
+        )
+        self.assertEqual(actf_to_sft(trajectory)["images"], [data_url])
+
     def test_corrupt_jsonl_is_not_accepted(self):
         with tempfile.TemporaryDirectory() as tmp:
             source = Path(tmp) / "trace.jsonl"
@@ -127,6 +162,30 @@ class HermesTraceTests(unittest.TestCase):
 
 
 class HermesBridgeTests(unittest.TestCase):
+    def test_tool_images_are_moved_to_following_user_message_on_wire(self):
+        spec = importlib.util.spec_from_file_location("roller_hermes_runner_test", RUNNER_PATH)
+        runner = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(runner)
+        data_url = "data:image/png;base64,AA=="
+        messages = [
+            {"role": "assistant", "tool_calls": [{"id": "call-1"}]},
+            {
+                "role": "tool",
+                "tool_call_id": "call-1",
+                "content": [
+                    {"type": "text", "text": "loaded"},
+                    {"type": "image_url", "image_url": {"url": data_url}},
+                ],
+            },
+        ]
+
+        rewritten = runner.openai_compatible_tool_media(messages)
+
+        self.assertEqual([message["role"] for message in rewritten], ["assistant", "tool", "user"])
+        self.assertEqual(rewritten[1]["content"], "loaded")
+        self.assertEqual(rewritten[2]["content"][1]["image_url"]["url"], data_url)
+        self.assertIsInstance(messages[1]["content"], list)
+
     def test_persistence_hook_keeps_tools_before_compaction_and_across_processes(self):
         spec = importlib.util.spec_from_file_location("roller_hermes_runner_test", RUNNER_PATH)
         runner = importlib.util.module_from_spec(spec)

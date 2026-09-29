@@ -1,0 +1,107 @@
+[32m[sphinx-autobuild] [36mStarting initial build[0m
+[32m[sphinx-autobuild] [34m> python -m sphinx build . _build/html -b html[0m
+Running Sphinx v9.0.4
+loading translations [en]... done
+loading pickled environment... failed: source directory has changed
+done
+myst v5.1.0: MdParserConfig(commonmark_only=False, gfm_only=False, enable_extensions={'deflist', 'colon_fence'}, disable_syntax=[], all_links_external=False, links_external_new_tab=False, url_schemes=('http', 'https', 'mailto', 'ftp'), ref_domains=None, fence_as_directive=set(), number_code_blocks=[], title_to_header=False, heading_anchors=3, heading_slug_func=None, html_meta={}, footnote_sort=True, footnote_transition=True, words_per_minute=200, substitutions={}, linkify_fuzzy_links=True, dmath_allow_labels=True, dmath_allow_space=True, dmath_allow_digits=True, dmath_double_inline=False, update_mathjax=True, mathjax_classes='tex2jax_process|mathjax_process|math|output_area', enable_checkboxes=False, strikethrough_single_tilde=False, colon_fence_exact_match=False, suppress_warnings=[], highlight_code_blocks=True)
+building [mo]: targets for 0 po files that are out of date
+writing output... 
+building [html]: targets for 38 source files that are out of date
+updating environment: [new config] 38 added, 0 changed, 0 removed
+reading sources... [  3%] en/benches/bench-format
+reading sources... [  5%] en/benches/wildclawbench
+reading sources... [  8%] en/harnesses/claude-code-configuration
+reading sources... [ 11%] en/harnesses/codex-configuration
+reading sources... [ 13%] en/harnesses/deepseek-configuration
+reading sources... [ 16%] en/harnesses/hermes-configuration
+reading sources... [ 18%] en/harnesses/openclaw-configuration
+reading sources... [ 21%] en/harnesses/opencode-configuration
+reading sources... [ 24%] en/harnesses/pi-configuration
+reading sources... [ 26%] en/index
+reading sources... [ 29%] en/start/cli-reference
+reading sources... [ 32%] en/start/examples
+reading sources... [ 34%] en/start/getting-started
+reading sources... [ 37%] en/tasks/task-bundle-and-storage
+reading sources... [ 39%] en/tasks/task-format
+reading sources... [ 42%] en/tasks/user-simulator
+reading sources... [ 45%] en/traces/sft-format
+reading sources... [ 47%] en/traces/trajectory-outputs
+reading sources... [ 50%] en/traces/viewer
+reading sources... [ 53%] zh/benches/bench-format
+reading sources... [ 55%] zh/benches/wildclawbench
+reading sources... [ 58%] zh/harnesses/claude-code-configuration
+reading sources... [ 61%] zh/harnesses/codex-configuration
+reading sources... [ 63%] zh/harnesses/deepseek-configuration
+reading sources... [ 66%] zh/harnesses/hermes-configuration
+reading sources... [ 68%] zh/harnesses/openclaw-configuration
+reading sources... [ 71%] zh/harnesses/opencode-configuration
+reading sources... [ 74%] zh/harnesses/pi-configuration
+reading sources... [ 76%] zh/index
+reading sources... [ 79%] zh/start/cli-reference
+reading sources... [ 82%] zh/start/examples
+reading sources... [ 84%] zh/start/getting-started
+reading sources... [ 87%] zh/tasks/task-bundle-and-storage
+reading sources... [ 89%] zh/tasks/task-format
+reading sources... [ 92%] zh/tasks/user-simulator
+reading sources... [ 95%] zh/traces/sft-format
+reading sources... [ 97%] zh/traces/trajectory-outputs
+reading sources... [100%] zh/traces/viewer
+
+/hpc2hdd/home/yhuang767/Roller/docs/zh/traces/trajectory-outputs.md:361: WARNING: duplicate label wire-trace-jsonl, other instance in /hpc2hdd/home/yhuang767/Roller/docs/en/traces/trajectory-outputs.md
+
+Sphinx error!
+
+Versions
+========
+
+* Platform:         linux; (Linux-5.4.0-155-generic-x86_64-with-glibc2.31)
+* Python version:   3.11.16 (CPython)
+* Sphinx version:   9.0.4
+* Docutils version: 0.22.4
+* Jinja2 version:   3.1.6
+* Pygments version: 2.21.0
+
+Last Messages
+=============
+
+    reading sources... [ 95%]
+    zh/traces/sft-format
+
+    reading sources... [ 97%]
+    zh/traces/trajectory-outputs
+
+    reading sources... [100%]
+    zh/traces/viewer
+
+Loaded Extensions
+=================
+
+* sphinx.ext.mathjax (9.0.4)
+* alabaster (1.0.0)
+* sphinxcontrib.applehelp (2.0.0)
+* sphinxcontrib.devhelp (2.0.0)
+* sphinxcontrib.htmlhelp (2.1.0)
+* sphinxcontrib.serializinghtml (2.0.0)
+* sphinxcontrib.qthelp (2.0.0)
+* myst_parser (5.1.0)
+* sphinxcontrib.jquery (4.1)
+* sphinx_rtd_theme (unknown version)
+
+Traceback
+=========
+
+      File "/hpc2hdd/home/yhuang767/.conda/envs/roller-docs/lib/python3.11/site-packages/sphinx/builders/__init__.py", line 567, in read
+        raise SphinxError(msg % master_doc_path)
+    sphinx.errors.SphinxError: Sphinx is unable to load the master document (/hpc2hdd/home/yhuang767/Roller/docs/index.rst). The master document must be within the source directory or a subdirectory of it.
+
+
+The full traceback has been saved in:
+/tmp/sphinx-err-s1lqe8t5.log
+
+To report this error to the developers, please open an issue at <https://github.com/sphinx-doc/sphinx/issues/>. Thanks!
+Please also report this if it was a user error, so that a better error message can be provided next time.
+Sphinx exited with exit code: 2
+The server will continue serving the build folder, but the contents being served are no longer in sync with the documentation sources. Please fix the cause of the error above or press Ctrl+C to stop the server.
+[32m[sphinx-autobuild] [36mServing on http://0.0.0.0:8000[0m
+[32m[sphinx-autobuild] [36mWaiting to detect changes...[0m
