@@ -16,20 +16,29 @@ class CodexIntegrityTests(unittest.TestCase):
                  for name in ("exec_command", "unused_tool")]
         trajectory = codex_events_to_actf(_events(), tools=tools)
         self.assertEqual(trajectory["tools"], tools)
-        self.assertEqual(trajectory["tool_schema_source"], "wire")
+        self.assertEqual(trajectory["tools_format"], "responses")
+        self.assertEqual(trajectory["tools_capture"], {"source": "provided", "status": "captured"})
         self.assertEqual(len(actf_to_sft(trajectory)["tools"]), 2)
         self.assertIsNot(trajectory["tools"], tools)
         with tempfile.TemporaryDirectory() as tmp:
             source = Path(tmp) / "native.jsonl"
             source.write_text("".join(json.dumps(row) + "\n" for row in _events()))
-            actual = convert_codex_trace(source, Path(tmp) / "actf.json", tools=tools)
+            capture = Path(tmp) / "tools_capture.jsonl"
+            capture.write_text(json.dumps({"kind": "codex_tools", "seq": 1, "snapshot": {"tools": tools}}) + "\n" +
+                               json.dumps({"kind": "codex_tools_complete", "request_count": 1}) + "\n")
+            actual = convert_codex_trace(source, Path(tmp) / "actf.json", tools_trace=capture)
             self.assertEqual(actual["tools"], tools)
+            self.assertEqual(actual["tools_capture"]["source"], "responses_request")
 
-    def test_missing_schema_is_explicitly_inferred_not_claimed_native(self):
-        self.assertEqual(codex_events_to_actf(_events())["tool_schema_source"], "inferred_from_calls")
+    def test_missing_schema_follows_upstream_no_inference(self):
+        missing = codex_events_to_actf(_events())
+        self.assertIsNone(missing["tools"])
+        self.assertEqual(missing["tools_capture"]["status"], "missing")
+        with self.assertRaisesRegex(SFTConversionError, "not captured"):
+            actf_to_sft(missing)
         trajectory = codex_events_to_actf(_events(), tools=[])
         self.assertEqual(trajectory["tools"], [])
-        with self.assertRaisesRegex(SFTConversionError, "missing schema"):
+        with self.assertRaisesRegex(SFTConversionError, "missing captured schema"):
             actf_to_sft(trajectory)
 
     def test_synthetic_missing_result_remains_diagnostic_only(self):
