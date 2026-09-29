@@ -63,6 +63,51 @@ def _tool_call(block: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _user_content(value: Any, text: str, *, native_text: str | None = None) -> str | list[Any]:
+    """Keep upstream prompt cleanup and retain native image positions.
+
+    A single text block has an unambiguous replacement location. If cleanup
+    would replace zero or multiple text blocks in an image-bearing message,
+    keep the native blocks rather than discard images or guess their placement.
+    Text-only and non-image fallback behavior stays unchanged.
+    """
+    if not isinstance(value, list):
+        return text
+    if all(isinstance(item, str) or (isinstance(item, dict)
+           and item.get("type") in {"text", "input_text", "output_text"}) for item in value):
+        return text
+    if (native_text if native_text is not None else _text(value)) != text:
+        text_indexes = [index for index, item in enumerate(value)
+                        if isinstance(item, str) or (isinstance(item, dict)
+                            and item.get("type") in {"text", "input_text", "output_text"}
+                            and isinstance(item.get("text"), str))]
+        if len(text_indexes) == 1:
+            result = deepcopy(value)
+            index = text_indexes[0]
+            if isinstance(result[index], str):
+                result[index] = text
+            else:
+                result[index]["text"] = text
+            return result
+        if any(isinstance(item, dict) and item.get("type") in {"image", "input_image", "image_url"}
+               for item in value):
+            return deepcopy(value)
+        return text
+    return deepcopy(value)
+
+
+def _merge_user_content(previous: str | list[Any], value: str | list[Any]) -> str | list[Any]:
+    if not previous:
+        return deepcopy(value)
+    if not value:
+        return previous
+    if isinstance(previous, str) and isinstance(value, str):
+        return f"{previous}\n\n{value}"
+    left = [{"type": "text", "text": previous}] if isinstance(previous, str) else deepcopy(previous)
+    right = [{"type": "text", "text": value}] if isinstance(value, str) else deepcopy(value)
+    return [*left, *right]
+
+
 def _assistant_parts(content: Any) -> tuple[str, str, list[dict[str, Any]]]:
     if isinstance(content, str):
         return content, "", []
@@ -186,7 +231,7 @@ def openclaw_events_to_actf(
         (_timestamp(row.get("timestamp")) for row in rows if _timestamp(row.get("timestamp"))),
         None,
     )
-    pending_user = ""
+    pending_user: str | list[Any] = ""
     pending_user_time: str | None = None
     expected_users = tuple(user_messages) if user_messages is not None else ()
     user_index = 0
@@ -220,6 +265,7 @@ def openclaw_events_to_actf(
                 if user_index < len(expected_users)
                 else _text(message.get("content"))
             )
+            value = _user_content(message.get("content"), value)
             if retry_after_empty_error and pending_user and value == pending_user:
                 # OpenClaw records its internal provider retry as the same user
                 # message again. Keep that transport detail in the raw trace,
@@ -229,7 +275,7 @@ def openclaw_events_to_actf(
             retry_after_empty_error = False
             finish_current(message_time)
             user_index += 1
-            pending_user = f"{pending_user}\n\n{value}" if pending_user and value else value
+            pending_user = _merge_user_content(pending_user, value)
             pending_user_time = pending_user_time or message_time
             continue
         if role == "assistant":
@@ -300,7 +346,9 @@ def openclaw_events_to_actf(
             pending_user = ""
             pending_user_time = None
             continue
-        if role == "toolResult" and current is not None:
+        if role == "toolResult":
+            if current is None:
+                raise ValueError("orphan tool result: native assistant tool call is missing")
             tool_call_namespace = (
                 f"session-{session_index}" if multiple_sessions else None
             )

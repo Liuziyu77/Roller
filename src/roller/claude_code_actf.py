@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 from roller.storage import atomic_write_json
+from roller.actf import _merge_user_content, _user_content
+from roller.tool_id_identity import scope_claude_events
 
 
 def _read_events(path: Path) -> list[dict[str, Any]]:
@@ -133,6 +135,8 @@ def _assistant_parts(
                 "id": call_id,
                 "name": name,
                 "arguments": deepcopy(arguments),
+                **({"original_tool_call_id": block["roller_original_tool_id"]}
+                   if "roller_original_tool_id" in block else {}),
             }
         )
     return "\n\n".join(visible), "\n\n".join(reasoning), calls
@@ -327,10 +331,11 @@ def claude_code_events_to_actf(
             seen_uuids.add(event_uuid)
         rows.append(row)
     rows.sort(key=lambda row: str(row.get("timestamp", "")))
+    rows = scope_claude_events(rows)
 
     expected_users = tuple(user_messages) if user_messages is not None else None
     expected_index = 0
-    pending_user = ""
+    pending_user: str | list[Any] = ""
     pending_user_time: str | None = None
     turns: list[dict[str, Any]] = []
     turns_by_message_id: dict[str, dict[str, Any]] = {}
@@ -475,7 +480,9 @@ def claude_code_events_to_actf(
         if sidechain or tool_results:
             continue
         raw_text = "\n\n".join(part for part in text_parts if part)
-        if not raw_text.strip():
+        if not raw_text.strip() and not (isinstance(content, list) and any(
+            isinstance(block, Mapping) and block.get("type") == "image" for block in content
+        )):
             continue
         selected: str | None = None
         if expected_users is None:
@@ -486,8 +493,8 @@ def claude_code_events_to_actf(
                 selected = expected
                 expected_index += 1
         if selected is not None:
-            pending_user = (
-                f"{pending_user}\n\n{selected}" if pending_user else selected
+            pending_user = _merge_user_content(
+                pending_user, _user_content(content, selected, native_text=raw_text)
             )
             pending_user_time = pending_user_time or timestamp
 

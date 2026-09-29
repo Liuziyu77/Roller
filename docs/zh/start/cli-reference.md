@@ -72,7 +72,7 @@ roller collect --tasks tasks.jsonl --model provider/model
 | `--grader-parallel N` | `--parallel` | 单独限制同时运行的 grader 数，避免 judge 服务过载 |
 | `--samples N` | SkillsBench 为 `3`，其他为 `1` | 为每个 task/model 组合创建 N 个独立 sample |
 | `--retries N` | `0` | 设置首次失败后的额外尝试次数 |
-| `--timeout SECONDS` | `600` | 设置每条 rollout 的总超时 |
+| `--timeout SECONDS` | `600` | 设置每次 attempt 的超时上限，不因重试等待而缩短 |
 | `--task-timeouts` | 关闭 | 优先使用每条 task 的 `timeout_seconds`，缺失时使用 `--timeout` |
 | `--start-index N` | `0` | 从规范化 task 列表的第 N 条开始 |
 | `--limit N` | 不限制 | 最多选择 N 条 task |
@@ -161,6 +161,17 @@ Wire trace 用于决定是否记录模型服务的实际 HTTP 请求，常规采
 
 `--external-thinking` 已移除。旧命令应改用 `--thinking`，不再需要的参数应直接删除。
 
+以下兼容选项需显式选择，不因使用自定义 API 地址自动启用：
+
+| 参数 | 行为 |
+| --- | --- |
+| `--claude-unique-tool-ids` | 修复返回给 Claude CLI 的重复工具 ID；需 API base，映射保存在 `tool_id_mappings.jsonl`，wire 关闭时仍生效 |
+| `--codex-image-detail auto\|low\|high\|original` | 只补 Responses 图片缺失的 detail；需 API base、host 网络及 HTTP；wire 关闭时只做兼容改写，不开启工具捕获 |
+| `--deepseek-profile sdk-minimal\|sdk` | 默认 `sdk-minimal`；`sdk` 使用原生 SDK prompt 和工具目录 |
+| `--deepseek-permission-mode danger-full-access` | 显式授予原生工具权限，不设置时不覆盖 SDK/环境策略 |
+| `--deepseek-vision` | 声明读图能力；显式附件也会声明图片输入 |
+| `--deepseek-telemetry-disabled` / `--no-deepseek-telemetry-disabled` | 显式覆盖 telemetry；默认不覆盖 |
+
 ## 5. Harness 专属参数索引
 
 当参数只属于某个 Harness 时，请在对应指南中查询。镜像、API、Key、执行上限和原生配置都由各指南单独维护。
@@ -184,6 +195,10 @@ roller collect --help
 ## 6. Resume 参数
 
 `--resume` 用于在中断或部分失败后继续同一个 run，并复用已经完整成功的 sample。
+
+`info.json` 分开记录执行 `status`、转换 `conversion` 和训练资格 `training.eligible`。
+有完整 raw 且转换明确为 `unavailable` 的成功执行可以复用，但不会进入 SFT；
+`failed` 的缺失/损坏产物不可复用。`skipped` 记录另用 `resumed_from_status` 保存原执行状态。
 
 ```bash
 roller collect [原命令] --resume

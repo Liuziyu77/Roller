@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+from copy import deepcopy
 import json
 import tempfile
 import unittest
@@ -87,6 +88,24 @@ def _events() -> list[dict]:
 
 
 class ClaudeCodeActfTests(unittest.TestCase):
+    def test_reused_tool_ids_are_scoped_and_keep_result_pairing(self) -> None:
+        events = _events()
+        repeated = deepcopy(events[1:3])
+        repeated[0]["message"]["id"] = "another-request"
+        repeated[0]["uuid"] = "another-assistant"
+        repeated[1]["uuid"] = "another-result"
+        events[3:3] = repeated
+        for index, event in enumerate(events):
+            event["timestamp"] = f"2026-08-22T01:00:{index:02d}Z"
+        original = deepcopy(events)
+        trajectory = claude_code_events_to_actf(events)
+        calls = [c for s in trajectory["steps"] for c in s["assistant_content"]["tool_calls"]]
+        results = [o for s in trajectory["steps"] for o in s["observation"]]
+        self.assertNotEqual(calls[0]["id"], calls[1]["id"])
+        self.assertEqual([c["id"] for c in calls], [o["toolCallId"] for o in results])
+        self.assertEqual(calls[1]["original_tool_call_id"], calls[0]["id"])
+        self.assertEqual(events, original)
+
     def test_signed_thinking_preserves_only_native_text_and_does_not_mutate_raw(self) -> None:
         for native in ("", "Visible summary."):
             with self.subTest(native=native):

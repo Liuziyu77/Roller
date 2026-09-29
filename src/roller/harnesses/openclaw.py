@@ -22,6 +22,7 @@ from roller.artifacts import ArtifactCollectionResult, collect_output_directory
 from roller.harnesses.base import InteractiveHarness, InteractiveSession, TurnResult
 from roller.harnesses.docker import DockerRuntime, remove_container
 from roller.models import HarnessResult, RunRequest
+from roller.native_images import openclaw_message
 from roller.storage import safe_component
 from roller.thinking import normalize_thinking, resolve_thinking
 from roller.usage import ZERO_USAGE, extract_openclaw_usage
@@ -51,7 +52,6 @@ ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 COMMON_ENV_NAMES = (
     "OPENROUTER_API_KEY",
     "OPENROUTER_BASE_URL",
-    "BRAVE_API_KEY",
     "TAVILY_API_KEY",
     "HTTP_PROXY",
     "HTTPS_PROXY",
@@ -1294,7 +1294,9 @@ class OpenClawSession(InteractiveSession):
             # The CLI flag reaches this live session; changing the default after
             # gateway startup does not reliably affect an existing agent turn.
             command += ["--thinking", thinking]
-        command += ["--message", message]
+        native_message = openclaw_message(self.request, message, self.harness.config.workspace_container_path,
+                                         first_turn=self._assistant_count == 0)
+        command += ["--message", native_message]
         agent_log_path = (
             self.output_dir / "rollout" / f"agent.attempt-{self.attempt}.log"
         )
@@ -1444,9 +1446,9 @@ class OpenClawSession(InteractiveSession):
                     "error": conversion_error,
                 }
 
-        if status == "ok" and trace_path is None:
-            status = "error"
-            error = "OpenClaw finished but no session trace was found"
+        if trace_path is None:
+            trajectory_conversion = {"status": "failed", "target": "raw",
+                                     "error": "OpenClaw finished but no session trace was found"}
         if status == "ok" and output_copy_error is not None:
             status = "error"
             error = f"output collection failed: {output_copy_error}"

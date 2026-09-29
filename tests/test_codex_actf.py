@@ -155,6 +155,37 @@ def _events() -> list[dict]:
 
 
 class CodexActfTests(unittest.TestCase):
+    def test_image_wrappers_survive_task_prompt_cleanup(self) -> None:
+        events = _events()
+        content = [{"type": "input_text", "text": '<image name="attached">'},
+                   {"type": "input_image", "image_url": "data:image/png;base64,AA=="},
+                   {"type": "input_text", "text": "</image>"},
+                   {"type": "input_text", "text": "Describe this image."}]
+        events[2]["payload"]["content"] = content
+        trajectory = codex_events_to_actf(events, user_messages=["Describe this image."], tools=_TOOLS)
+        self.assertEqual(trajectory["steps"][0]["user_content"], content)
+        record = actf_to_sft(trajectory)
+        self.assertEqual(record["images"], ["data:image/png;base64,AA=="])
+        self.assertIn("<image>\n</image>\nDescribe this image.", record["messages"][1]["content"])
+
+    def test_missing_result_is_diagnostic_but_orphan_or_duplicate_is_rejected(self) -> None:
+        events = _events()
+        events.pop(6)
+        trajectory = codex_events_to_actf(events, tools=_TOOLS)
+        self.assertEqual(trajectory["projection"]["missing_tool_call_ids"], ["call-1"])
+        with self.assertRaisesRegex(SFTConversionError, "incomplete diagnostic"):
+            actf_to_sft(trajectory)
+        for case in ("orphan", "duplicate_call", "duplicate_result"):
+            with self.subTest(case=case):
+                events = _events()
+                if case == "orphan":
+                    events[6]["payload"]["call_id"] = "unknown"
+                else:
+                    index = 4 if case == "duplicate_call" else 6
+                    events.insert(index, events[index])
+                with self.assertRaises(ValueError):
+                    codex_events_to_actf(events, tools=_TOOLS)
+
     def test_deep_think_name_has_no_special_schema_or_reasoning_projection(self) -> None:
         events = _events()
         events[4]["payload"]["name"] = "deep_think"

@@ -48,6 +48,24 @@ def write_events(path, events=None):
 
 
 class DeepSeekTraceTests(unittest.TestCase):
+    def test_journal_recovers_user_and_tool_images_and_rejects_corrupt_bytes(self):
+        ref = {"attachmentId": "image-1", "mediaType": "image/png"}
+        blocks = [{"type": "text", "text": "before"}, {"type": "image", "attachment": ref},
+                  {"type": "text", "text": "after"}]
+        events = sample_events()
+        events[2]["payload"]["event"]["data"]["content"] = deepcopy(blocks)
+        events[4]["payload"]["event"]["data"]["message"]["content"][0]["content"] = deepcopy(blocks)
+        events = [{"type": "metadata", "session_id": "s1"},
+                  {"type": "attachment", "attachment": ref, "mimeType": "image/png", "data": "AA=="}, *events]
+        original = deepcopy(events)
+        record = actf_to_sft(deepseek_events_to_actf(events))
+        self.assertEqual(record["images"], ["data:image/png;base64,AA=="] * 2)
+        self.assertEqual([record["messages"][i]["content"] for i in (1, 3)], ["before\n<image>\nafter"] * 2)
+        self.assertEqual(events, original)
+        for bad in ({"data": "!"}, {"sha256": "0" * 64}, {"session_id": "foreign"}):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                deepseek_events_to_actf([events[0], {**events[1], **bad}, *events[2:]])
+
     def test_native_tools_reasoning_and_usage(self):
         events = sample_events()
         actf = deepseek_events_to_actf(events)
@@ -173,8 +191,9 @@ class DeepSeekHarnessTests(unittest.TestCase):
         harness = DeepSeekHarness(DeepSeekConfig(api_key_env="LOCAL_TEST_KEY", wire_trace_mode="off"), 0, runtime)
         with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {"LOCAL_TEST_KEY": "test-secret"}), patch("roller.harnesses.deepseek.convert_deepseek_trace", side_effect=ValueError("invalid journal")):
             result = harness.run(RunRequest(0, Task("test", ("one",), 0), "model", 60), Path(tmp), 1)
-            self.assertEqual(result.status, "error")
-            self.assertIn("invalid journal", result.error)
+            self.assertEqual(result.status, "ok")
+            self.assertIsNone(result.error)
+            self.assertIn("invalid journal", result.metadata["trajectory_conversion"]["error"])
             self.assertIsNone(result.trajectory_path)
             self.assertTrue((Path(tmp)/result.trace_path).is_file())
             self.assertEqual((Path(tmp)/"results/answer.txt").read_text(), "TOKEN")

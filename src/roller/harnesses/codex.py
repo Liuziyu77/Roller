@@ -20,6 +20,7 @@ from roller.codex_actf import convert_codex_trace
 from roller.harnesses.base import Harness, InteractiveHarness, InteractiveSession, TurnResult
 from roller.harnesses.docker import DockerRuntime, remove_container
 from roller.models import HarnessResult, RunRequest
+from roller.native_images import attachment_specs
 from roller.storage import safe_component
 from roller.thinking import normalize_thinking, resolve_thinking
 from roller.usage import ZERO_USAGE, extract_codex_usage
@@ -91,6 +92,7 @@ class CodexConfig:
     keep_thinking: bool = True
     keep_container_on_error: bool = False
     docker_binary: str = "docker"
+    responses_image_detail: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -124,6 +126,10 @@ class CodexConfig:
             raise ValueError("Codex web search must be disabled|cached|live")
         if self.wire_trace_mode not in {"off", "actf", "full"}:
             raise ValueError("Codex wire trace mode must be off|actf|full")
+        if self.responses_image_detail not in {None, "auto", "low", "high", "original"}:
+            raise ValueError("Codex responses image detail must be auto|low|high|original")
+        if self.responses_image_detail and (not self.api_base or self.network != "host" or self.supports_websockets):
+            raise ValueError("Codex image detail compatibility requires api_base, host network, and HTTP (no WebSockets)")
         if self.wire_trace_mode == "full" and not self.api_base:
             raise ValueError("Codex --wire-trace full requires --api-base")
         if self.wire_trace_mode == "full" and self.supports_websockets:
@@ -170,19 +176,21 @@ class CodexHarness(InteractiveHarness):
         self._wire_proxy = None
         tools_path = output_dir / "tools_capture.jsonl"
         tools_path.unlink(missing_ok=True)
-        if (
-            self.config.wire_trace_mode == "off"
-            or not self.config.api_base
-            or self.config.supports_websockets
-        ):
+        capture_tools = (
+            self.config.wire_trace_mode != "off"
+            and bool(self.config.api_base)
+            and not self.config.supports_websockets
+        )
+        if not capture_tools and not self.config.responses_image_detail:
             return
         log_path = output_dir / "wire_trace.jsonl"
         log_path.unlink(missing_ok=True)
         self._wire_proxy = WireTraceProxy(
             self.config.api_base,
             log_path,
-            mode="full" if self.config.wire_trace_mode == "full" else "tools",
-            responses_tools_path=tools_path,
+            mode="full" if self.config.wire_trace_mode == "full" else "tools" if capture_tools else "off",
+            responses_image_detail=self.config.responses_image_detail,
+            responses_tools_path=tools_path if capture_tools else None,
         )
         self._wire_proxy.start()
 
@@ -456,6 +464,8 @@ class CodexHarness(InteractiveHarness):
                     "disable_response_storage=true",
                 ]
             )
+        for image in attachment_specs(request, self.config.workspace_container_path, first_turn=not resume):
+            command.extend(["--image", image["path"]])
         command.extend(["--", prompt])
         return command
 
@@ -562,6 +572,7 @@ class CodexHarness(InteractiveHarness):
         return_codes: list[int] = []
         trace_path: Path | None = None
         trajectory_path: Path | None = None
+        trajectory_conversion = None
         artifact_result: ArtifactCollectionResult | None = None
         output_copy_error: str | None = None
         codex_version = ""
@@ -638,13 +649,11 @@ class CodexHarness(InteractiveHarness):
                     raise ValueError("Codex native trace produced no assistant steps")
             except Exception as exc:
                 trajectory_path = None
-                if status == "ok":
-                    status = "error"
-                    error = f"Codex trajectory conversion failed: {exc}"
+                trajectory_conversion = {"status": "unavailable", "target": "actf", "error": str(exc)}
 
-        if status == "ok" and trace_path is None:
-            status = "error"
-            error = "Codex finished but no native session trace was found"
+        if trace_path is None:
+            trajectory_conversion = {"status": "failed", "target": "raw",
+                                     "error": "Codex finished but no native session trace was found"}
         if status == "ok" and output_copy_error is not None:
             status = "error"
             error = f"output collection failed: {output_copy_error}"
@@ -727,6 +736,7 @@ class CodexHarness(InteractiveHarness):
             ),
             metadata={
                 "raw_trace_schema": "codex-session-jsonl",
+                "trajectory_conversion": trajectory_conversion,
                 "codex_version": codex_version,
                 "container": retained_container,
                 "agent_return_codes": return_codes,
@@ -735,6 +745,7 @@ class CodexHarness(InteractiveHarness):
                     request.task.thinking, self.config.reasoning_effort
                 ),
                 "wire_trace": self.config.wire_trace_mode,
+                "responses_image_detail": self.config.responses_image_detail,
                 "reasoning_summary": self.config.reasoning_summary,
                 "keep_thinking": self.config.keep_thinking,
                 "web_search": self.config.web_search,
@@ -874,6 +885,7 @@ class CodexSession(InteractiveSession):
         output_copy_error: str | None = None
         final_status = status
         final_error = error
+        trajectory_conversion = None
         try:
             self.harness._stop_wire_proxy()
         except Exception as exc:
@@ -905,10 +917,10 @@ class CodexSession(InteractiveSession):
                     raise ValueError("Codex native trace produced no assistant steps")
             except Exception as exc:
                 trajectory_path = None
-                if final_status == "ok":
-                    final_status, final_error = "error", f"Codex trajectory conversion failed: {exc}"
-        if final_status == "ok" and trace_path is None:
-            final_status, final_error = "error", "Codex finished but no native session trace was found"
+                trajectory_conversion = {"status": "unavailable", "target": "actf", "error": str(exc)}
+        if trace_path is None:
+            trajectory_conversion = {"status": "failed", "target": "raw",
+                                     "error": "Codex finished but no native session trace was found"}
         if final_status == "ok" and output_copy_error is not None:
             final_status, final_error = "error", f"output collection failed: {output_copy_error}"
         if final_status == "ok" and artifact_result is not None and not artifact_result.passed:
@@ -974,12 +986,14 @@ class CodexSession(InteractiveSession):
             trajectory_path=trajectory_path.relative_to(self.output_dir).as_posix() if trajectory_path else None,
             metadata={
                 "raw_trace_schema": "codex-session-jsonl",
+                "trajectory_conversion": trajectory_conversion,
                 "codex_version": self.codex_version,
                 "container": retained_container,
                 "agent_return_codes": self.return_codes,
                 "turns": len(self.messages),
                 "reasoning_effort": reasoning_effort,
                 "wire_trace": config.wire_trace_mode,
+                "responses_image_detail": config.responses_image_detail,
                 "reasoning_summary": config.reasoning_summary,
                 "keep_thinking": config.keep_thinking,
                 "web_search": config.web_search,

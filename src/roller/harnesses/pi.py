@@ -20,6 +20,8 @@ from roller.harnesses.base import InteractiveHarness, InteractiveSession, TurnRe
 from roller.harnesses.docker import DockerRuntime, remove_container
 from roller.pi_actf import convert_pi_trace, extract_pi_usage
 from roller.models import HarnessResult, RunRequest
+from roller.native_images import attachment_specs
+from roller.redaction import redact_file_literals
 from roller.storage import atomic_write_json
 from roller.thinking import normalize_thinking, resolve_thinking
 from roller.usage import ZERO_USAGE
@@ -153,6 +155,10 @@ class PiSession(InteractiveSession):
         key = os.environ.get(self.harness.config.api_key_env)
         return text.replace(key, "[REDACTED]") if key else text
 
+    def redact_file(self, path: Path, *, errors: str = "strict") -> None:
+        key = os.environ.get(self.harness.config.api_key_env, "")
+        redact_file_literals(path, [key], errors=errors)
+
     def checked(
         self, args: Sequence[str], description: str, *, timeout: float = 60,
     ) -> subprocess.CompletedProcess[str]:
@@ -243,6 +249,7 @@ class PiSession(InteractiveSession):
             "max_steps": config.max_steps, "timeout_seconds": timeout,
             "context_length": config.context_length, "output_tokens": config.output_tokens,
             "tools": list(PI_TOOLS),
+            "images": attachment_specs(self.request, config.workspace_container_path, first_turn=self.turns == 1),
             "context_paths": [item.target for item in self.request.task.context_files if item.role != "skill"],
             "system_prompt": f"You are running a Roller task. Work in {config.workspace_container_path}. "
                 f"Task inputs are in the workspace. Save deliverables under {self.request.task.output_dir}. "
@@ -277,7 +284,7 @@ class PiSession(InteractiveSession):
             config_path.unlink(missing_ok=True)
             self.harness.runtime.close_log(process)
             if log_path.exists():
-                log_path.write_text(self.redact(log_path.read_text(encoding="utf-8", errors="replace")), encoding="utf-8")
+                self.redact_file(log_path, errors="replace")
 
     def finish(self, status: str, error: str | None = None) -> HarnessResult:
         if self._result is not None:
@@ -287,6 +294,7 @@ class PiSession(InteractiveSession):
         output_metadata = None
         usage = dict(ZERO_USAGE)
         problems = []
+        trajectory_conversion = None
         try:
             if self.container_started:
                 # Startup/import failures may precede the native journal.
@@ -295,7 +303,7 @@ class PiSession(InteractiveSession):
                     log.parent.mkdir(parents=True, exist_ok=True)
                     runtime.run(["cp", f"{self.container}:{STATE}/runtime.log", str(log)], timeout=30)
                     if log.is_file():
-                        log.write_text(self.redact(log.read_text(encoding="utf-8", errors="replace")), encoding="utf-8")
+                        self.redact_file(log, errors="replace")
                 except Exception:
                     logger.warning("Pi runtime log collection failed", exc_info=True)
                 try:
@@ -304,17 +312,22 @@ class PiSession(InteractiveSession):
                     copied = runtime.run(["cp", f"{self.container}:{self.transcript_container_path}", str(trace)], timeout=30)
                     if copied.returncode or not trace.is_file() or not trace.stat().st_size:
                         trace = None
-                        problems.append("no Pi journal was collected")
+                        trajectory_conversion = {"status": "failed", "target": "raw",
+                                                 "error": "no Pi journal was collected"}
                     else:
-                        trace.write_text(self.redact(trace.read_text(encoding="utf-8")), encoding="utf-8")
+                        self.redact_file(trace)
                         usage = extract_pi_usage(trace)
                         trajectory = trace.with_name("trace_ACTF.json")
-                        converted = convert_pi_trace(trace, trajectory, keep_thinking=config.keep_thinking)
+                        converted = convert_pi_trace(trace, trajectory, keep_thinking=config.keep_thinking,
+                                                     allow_incomplete=status != "ok")
                         if not converted.get("steps"):
                             raise ValueError("Pi journal produced no assistant steps")
                 except Exception as exc:
                     trajectory = None
-                    problems.append("Pi trace conversion failed: " + self.redact(str(exc)))
+                    if trace is not None and trace.is_file() and trace.stat().st_size:
+                        trajectory_conversion = {"status": "unavailable", "target": "actf", "error": self.redact(str(exc))}
+                    else:
+                        trajectory_conversion = {"status": "failed", "target": "raw", "error": self.redact(str(exc))}
                 if self.collect_outputs:
                     staging = self.output_dir / ".runtime-outputs"
                     staging.mkdir(parents=True, exist_ok=True)
@@ -372,6 +385,7 @@ class PiSession(InteractiveSession):
             metadata={"raw_trace_schema": "roller.pi-events/v1", "pi_version": self.pi_version, "api_mode": "openai-completions",
                 "provenance": provenance, "output_collection": output_metadata, "turn_count": self.turns,
                 "retained_container": self.container if retained else None,
+                "trajectory_conversion": trajectory_conversion,
                 "settings": {"reasoning_effort": resolve_thinking(self.request.task.thinking, config.reasoning_effort), "max_steps": config.max_steps, "context_length": config.context_length, "output_tokens": config.output_tokens, "tools": list(PI_TOOLS), "keep_thinking": config.keep_thinking}},
         )
         return self._result

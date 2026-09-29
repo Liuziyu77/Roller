@@ -5,6 +5,7 @@ import dataclasses
 import hashlib
 import json
 import logging
+import math
 import os
 import shutil
 import subprocess
@@ -229,6 +230,10 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     collect.add_argument("--retries", type=int, default=0)
+    collect.add_argument(
+        "--retry-backoff", type=float, default=0.0,
+        help="initial exponential wait between failed attempts; timeout remains per attempt",
+    )
     collect.add_argument("--start-index", type=int, default=0, help="first normalized task index")
     collect.add_argument("--limit", type=int, help="maximum number of tasks")
     collect.add_argument("--output", default="runs", help="root directory for collections")
@@ -437,6 +442,12 @@ def _build_parser() -> argparse.ArgumentParser:
     deepseek.add_argument("--deepseek-max-steps", type=int, default=12, help="maximum model steps per DeepSeek user turn (default: 12)")
     deepseek.add_argument("--deepseek-context-length", type=int, default=128000, help="DeepSeek model context window (default: 128000 tokens)")
     deepseek.add_argument("--deepseek-output-tokens", type=int, default=8192, help="DeepSeek maximum output tokens (default: 8192)")
+    deepseek.add_argument("--deepseek-profile", choices=("sdk-minimal", "sdk"), default="sdk-minimal")
+    deepseek.add_argument("--deepseek-permission-mode", choices=("danger-full-access",),
+                          help="explicit SDK permission override; default leaves native policy unchanged")
+    deepseek.add_argument("--deepseek-telemetry-disabled", action=argparse.BooleanOptionalAction, default=None)
+    deepseek.add_argument("--deepseek-vision", action=argparse.BooleanOptionalAction, default=False,
+                          help="declare native tool image support; explicit initial attachments also enable vision")
 
     pi = collect.add_argument_group("Pi")
     pi.add_argument("--pi-max-steps", type=int, default=12, help="maximum model steps per Pi user turn (default: 12)")
@@ -444,6 +455,8 @@ def _build_parser() -> argparse.ArgumentParser:
     pi.add_argument("--pi-output-tokens", type=int, default=8192, help="Pi maximum output tokens (default: 8192)")
 
     codex = collect.add_argument_group("Codex")
+    codex.add_argument("--codex-image-detail", choices=("auto", "low", "high", "original"),
+                       help="fill missing Responses image detail via explicit HTTP compatibility proxy")
     codex.add_argument(
         "--codex-config",
         help="optional Codex config.toml copied into the disposable container",
@@ -488,6 +501,8 @@ def _build_parser() -> argparse.ArgumentParser:
         choices=CLAUDE_PERMISSION_MODES,
         default="bypassPermissions",
     )
+    claude.add_argument("--claude-unique-tool-ids", action=argparse.BooleanOptionalAction,
+                       default=False, help="repair duplicate tool IDs from the configured Claude endpoint")
     return parser
 
 
@@ -589,6 +604,7 @@ def _dry_run_payload(args: argparse.Namespace, requests: list) -> dict:
                 "context_files": len(request.task.context_files),
                 "output_dir": request.task.output_dir,
                 "input_mode": request.task.input_mode,
+                "attach_images": list(request.task.attach_images),
                 "docker_image": request.task.docker_image,
                 "image_build": request.task.image_build is not None,
                 "workspace_container_path": request.task.workspace_container_path,
@@ -631,6 +647,8 @@ def _collect(args: argparse.Namespace) -> int:
         raise ValueError("--samples must be at least 1")
     if args.retries < 0:
         raise ValueError("--retries cannot be negative")
+    if not math.isfinite(args.retry_backoff) or args.retry_backoff < 0:
+        raise ValueError("--retry-backoff must be finite and non-negative")
     if args.timeout <= 0:
         raise ValueError("--timeout must be greater than zero")
     if args.start_index < 0:
@@ -864,6 +882,7 @@ def _collect(args: argparse.Namespace) -> int:
             reasoning_summary=args.reasoning_summary,
             web_search=args.codex_web_search,
             supports_websockets=args.codex_websockets,
+            responses_image_detail=args.codex_image_detail,
             wire_trace_mode=args.wire_trace,
             keep_thinking=args.keep_thinking,
             keep_container_on_error=args.keep_container_on_error,
@@ -889,6 +908,7 @@ def _collect(args: argparse.Namespace) -> int:
             max_thinking_tokens=args.claude_max_thinking_tokens,
             max_turns=args.claude_max_turns,
             permission_mode=args.claude_permission_mode,
+            unique_tool_ids=args.claude_unique_tool_ids,
             wire_trace_mode=args.wire_trace,
             keep_thinking=args.keep_thinking,
             keep_container_on_error=args.keep_container_on_error,
@@ -946,6 +966,8 @@ def _collect(args: argparse.Namespace) -> int:
             pass_env=_deduplicate((*DEEPSEEK_COMMON_ENV_NAMES, *args.pass_env)),
             reasoning_effort=args.thinking, max_steps=args.deepseek_max_steps,
             context_length=args.deepseek_context_length, output_tokens=args.deepseek_output_tokens,
+            profile=args.deepseek_profile, permission_mode=args.deepseek_permission_mode,
+            telemetry_disabled=args.deepseek_telemetry_disabled, vision=args.deepseek_vision,
             wire_trace_mode=args.wire_trace, keep_thinking=args.keep_thinking,
             keep_container_on_error=args.keep_container_on_error, docker_binary=args.docker_binary,
         )
@@ -1071,6 +1093,7 @@ def _collect(args: argparse.Namespace) -> int:
             "keep_thinking": args.keep_thinking,
             "web_search": args.codex_web_search,
             "supports_websockets": args.codex_websockets,
+            "responses_image_detail": codex_config.responses_image_detail,
             "pass_env_names": list(codex_config.pass_env),
         }
     if claude_code_config is not None:
@@ -1092,6 +1115,7 @@ def _collect(args: argparse.Namespace) -> int:
             "max_thinking_tokens": args.claude_max_thinking_tokens,
             "max_turns": args.claude_max_turns,
             "permission_mode": args.claude_permission_mode,
+            "unique_tool_ids": args.claude_unique_tool_ids,
             "wire_trace": args.wire_trace,
             "keep_thinking": args.keep_thinking,
             "pass_env_names": list(claude_code_config.pass_env),
@@ -1130,10 +1154,14 @@ def _collect(args: argparse.Namespace) -> int:
             "api_key_env": deepseek_api_key_env, "reasoning_effort": args.thinking,
             "max_steps": args.deepseek_max_steps, "deepseek_version": DEEPSEEK_VERSION,
             "context_length": args.deepseek_context_length, "output_tokens": args.deepseek_output_tokens,
-            "tools": list(DEEPSEEK_TOOLS), "api_mode": "chat_completions",
+            "tools": list(DEEPSEEK_TOOLS) if deepseek_config.profile == "sdk-minimal" else None, "api_mode": "chat_completions",
             "wire_trace": args.wire_trace,
             "keep_thinking": args.keep_thinking, "pass_env_names": list(deepseek_config.pass_env),
-            "profile": "sdk-minimal", "retry_count": 0,
+            "profile": deepseek_config.profile, "retry_count": 0,
+            "permission_mode": deepseek_config.permission_mode,
+            "telemetry_disabled": deepseek_config.telemetry_disabled,
+            "vision": deepseek_config.vision,
+            "initial_attachments_enable_vision": True,
         }
 
     if pi_config is not None:
@@ -1170,6 +1198,7 @@ def _collect(args: argparse.Namespace) -> int:
             "grader_parallel": args.grader_parallel or args.parallel,
             "samples": args.samples,
             "retries": args.retries,
+            "retry_backoff_seconds": args.retry_backoff,
             "start_index": args.start_index,
             "limit": args.limit,
             "resume": args.resume,
@@ -1356,6 +1385,7 @@ def _collect(args: argparse.Namespace) -> int:
                     run_dir=run_dir,
                     parallel=args.parallel,
                     retries=args.retries,
+                    retry_backoff_seconds=args.retry_backoff,
                     resume=lock_decision.reuse_existing_samples,
                     keep_aux_traces=keep_aux_traces,
                     capture_cache_trace=(

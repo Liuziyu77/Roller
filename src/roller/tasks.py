@@ -540,6 +540,12 @@ def load_tasks(
                 f"task {index}: files.input_mode must be 'mount' or 'copy'"
             )
         _validate_output_input_paths(output_dir, inputs, index)
+        attachments = files.get("attach_images", [])
+        if not isinstance(attachments, list) or not all(isinstance(path, str) for path in attachments):
+            raise TaskFormatError(f"task {index}: files.attach_images must be a list of input paths")
+        attach_images = tuple(normalize_relative_path(path, "files.attach_images") for path in attachments)
+        if len(set(attach_images)) != len(attach_images):
+            raise TaskFormatError(f"task {index}: files.attach_images contains duplicate paths")
         legacy_workspace = workspace is not None and not inputs
         if legacy_workspace:
             inputs = (InputFile(workspace, ".", True, None),)
@@ -634,6 +640,7 @@ def load_tasks(
                 output_dir=output_dir,
                 legacy_workspace=legacy_workspace,
                 input_mode=input_mode,
+                attach_images=attach_images,
                 workspace=workspace,
                 harness=task_harness,
                 model=model.strip() if isinstance(model, str) else None,

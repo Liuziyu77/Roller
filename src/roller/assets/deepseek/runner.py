@@ -6,6 +6,7 @@ across Roller turns. The host owns the hard deadline and container cleanup.
 from __future__ import annotations
 
 import argparse
+import base64
 from importlib.metadata import version
 import json
 import os
@@ -48,19 +49,49 @@ def write_result(value):
     temp.replace(STATE / "result.json")
 
 
-def serve(config):
-    from deepseek_harness import DeepSeekHarness
-    check()
-    os.environ["DSH_SYSTEM_PROMPT"] = config["system_prompt"]
+def sdk_input(config):
+    images = config.get("images", [])
+    if not images:
+        return config["message"]
+    content = [{"type": "text", "text": config["message"]}]
+    for image in images:
+        path = Path(image["path"])
+        if path.stat().st_size > 20 * 1024 * 1024:
+            raise ValueError("DeepSeek image exceeds input bound")
+        content.append({"type": "image", "data": base64.b64encode(path.read_bytes()).decode("ascii"),
+                        "mimeType": image["mime_type"]})
+    return content
+
+
+def configure_environment(config):
+    profile = config.get("profile", "sdk-minimal")
+    if profile not in {"sdk-minimal", "sdk"}:
+        raise ValueError("unsupported DeepSeek SDK profile")
+    if profile == "sdk-minimal":
+        os.environ["DSH_SYSTEM_PROMPT"] = config["system_prompt"]
+    # Standard sdk keeps its native prompt unless the caller explicitly
+    # supplied DSH_SYSTEM_PROMPT through the existing task environment API.
+    if config.get("permission_mode") is not None:
+        os.environ["DSH_PERMISSION_MODE"] = config["permission_mode"]
+    if config.get("telemetry_disabled") is not None:
+        os.environ["DSH_TELEMETRY_DISABLED"] = "1" if config["telemetry_disabled"] else "0"
+    os.environ["ROLLER_DEEPSEEK_VISION"] = "1" if config.get("vision", False) else "0"
     os.environ["DSH_CONTEXT_WINDOW"] = str(config["context_length"])
     os.environ["ROLLER_DEEPSEEK_MODEL"] = config["model"]
     os.environ["ROLLER_DEEPSEEK_OUTPUT_TOKENS"] = str(config["output_tokens"])
+    return profile
+
+
+def serve(config):
+    from deepseek_harness import DeepSeekHarness
+    check()
+    profile = configure_environment(config)
     journal({"type": "metadata", "schema": "roller.deepseek-events/v1", "version": VERSION,
-             "profile": "sdk-minimal", "session_id": config["session_id"], "model": config["model"]})
+             "profile": profile, "session_id": config["session_id"], "model": config["model"]})
     # Keep initialization errors reviewable even when there is no native turn.
     with DeepSeekHarness(
         model=config["model"], provider="deepseek-official", cwd=os.getcwd(),
-        profile="sdk-minimal", dsh_home="/roller/deepseek-home",
+        profile=profile, dsh_home="/roller/deepseek-home",
         patches=(str(STATE / "roller.patch.yml"),),
         reasoning_effort=config["thinking"], max_tokens=config["output_tokens"],
         initialize_timeout_seconds=min(60, config["timeout_seconds"]),
@@ -75,7 +106,7 @@ def serve(config):
                 with connection, connection.makefile("r", encoding="utf-8") as stream:
                     payload = json.loads(stream.readline())
                     try:
-                        result = session.run(payload["message"], on_notification=lambda n: journal(
+                        result = session.run(sdk_input(payload), on_notification=lambda n: journal(
                             {"type": "notification", "method": n.method, "payload": n.payload}))
                         limit_path = STATE / "limit.json"
                         if limit_path.exists():
