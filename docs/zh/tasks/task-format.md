@@ -247,7 +247,7 @@ dataset/
 | `role` | 是 | Context 的语义角色 |
 | `source` | 是 | 相对于 `file_root` 的路径，也可以是绝对路径 |
 | `target` | 否 | 注入后的相对路径；省略时根据 role 推导 |
-| `capture` | 否 | `full`、`hash` 或 `none` |
+| `capture` | 否 | `full` 在 run 中持久化原文，`hash` 只记录摘要，`none` 两者均不记录 |
 | `required` | 否 | 默认 `true` |
 
 默认 target：

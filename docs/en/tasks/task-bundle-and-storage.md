@@ -50,7 +50,7 @@ Two entry points in OpenClaw:
 /roller/task/inputs/<source>     # 完整输入快照的只读入口
 ```
 
-The Task Bundle lives in a runtime temp directory and is deleted after collection finishes. With `--resume`, Roller rereads the current task and files, rebuilds the digest, and then decides whether an old sample can be reused.
+The runtime Task Bundle lives in a temporary directory and is deleted after collection finishes. Context declared with `capture=full` is the exception: its source content is archived in the final run. With `--resume`, Roller rereads the current task and files, rebuilds the digest, and then decides whether an old sample can be reused.
 
 ## 3. Context injection and capture
 
@@ -73,15 +73,17 @@ OpenClaw paths are:
 
 So the default `USER.md` for `role: "user"`, the default `MEMORY.md` for `role: "memory"`, and the skills directory can all be found by OpenClaw's usual conventions.
 
-`capture` controls how the Task Bundle records Context content:
+`capture` controls how Roller records and retains Context content:
 
-| Strategy | Record hash | Save content-addressed blob | Allow safe Resume |
+| Strategy | Record hash | Persist source in run | Allow safe Resume |
 | --- | --- | --- | --- |
 | `full` | yes | yes | yes |
 | `hash` | yes | no | yes |
 | `none` | no | no | no |
 
-All three strategies still provide Context to the current rollout. The difference only affects what the runtime Bundle retains and how later Resume decisions are made; the final sample does not keep Context source text.
+All three strategies still provide Context to the current rollout. `full` stores each unique source file at `<run>/context/sha256/<file-sha256>`. An audit manifest at `<run>/context/manifests/<context-manifest-digest>.json` maps roles and logical paths to those blobs; the matching digest is recorded in each sample's `provenance.context_manifest_digest`. Archive manifests include only declarations captured as `full`.
+
+The runtime Context manifest remains unchanged, so its digest and existing run locks stay compatible. Resuming a run created before Context archives were introduced backfills missing `full` blobs without rerunning valid samples.
 
 By default, `user` and `memory` use `hash`, and other roles use `full`. Use `hash` when the content is private but you still need reliable change detection; use `none` when you do not want even a content hash recorded, and accept that the task cannot safely Resume.
 
@@ -160,6 +162,11 @@ Final layout of an ordinary rollout:
 ├── info.json
 ├── lock.json
 ├── sft.jsonl
+├── context/                     # only when capture=full is used
+│   ├── manifests/
+│   │   └── <context-manifest-digest>.json
+│   └── sha256/
+│       └── <file-sha256>
 └── samples/
     └── <model>/
         └── <index>_<task>/
@@ -203,7 +210,7 @@ Sample `info.json` stores:
 - Output file inventory
 - raw/ACTF/SFT paths
 
-Runtime gateway/agent logs, temporary model config, the Task Bundle, intermediate retry traces, and uncollected workspace files are not kept in the final sample.
+Runtime gateway/agent logs, temporary model config, the Task Bundle, intermediate retry traces, and uncollected workspace files are not kept in the final sample. Run-level Context archives created by `capture=full` remain under `context/`.
 
 A User Simulator sample adds:
 
@@ -286,7 +293,7 @@ Do not put real keys in tasks, JSON examples, or READMEs in the repository. Pref
 
 ### Context
 
-`capture=hash` still stores an irreversible content hash; if even the hash must not be kept, use `capture=none`. That turns off safe Resume for the task, because Roller cannot confirm whether Context changed.
+`capture=full` persists the original Context source in the run, so treat the run directory as sensitive. `capture=hash` stores only an irreversible content hash; if even the hash must not be kept, use `capture=none`. That turns off safe Resume for the task, because Roller cannot confirm whether Context changed.
 
 ## 9. Retry and Resume
 

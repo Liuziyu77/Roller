@@ -50,7 +50,7 @@ OpenClaw 中的两个入口：
 /roller/task/inputs/<source>     # 完整输入快照的只读入口
 ```
 
-Task Bundle 位于运行期临时目录，采集结束后删除。使用 `--resume` 时，Roller 会重新读取当前 task 和文件，重建 digest 后再判断能否复用旧 sample。
+运行期 Task Bundle 位于临时目录，采集结束后删除。声明为 `capture=full` 的 Context 是例外：其原文会归档到最终 run。使用 `--resume` 时，Roller 会重新读取当前 task 和文件，重建 digest 后再判断能否复用旧 sample。
 
 ## 3. Context 注入与 capture
 
@@ -73,15 +73,17 @@ OpenClaw 的具体路径为：
 
 因此 `role: "user"` 的默认 `USER.md`、`role: "memory"` 的默认 `MEMORY.md`，以及 skills 目录都能按 OpenClaw 的常用约定被发现。
 
-`capture` 决定 Task Bundle 如何记录 Context 内容：
+`capture` 决定 Roller 如何记录和保留 Context 内容：
 
-| 策略 | 记录 hash | 保存内容寻址 blob | 允许安全 Resume |
+| 策略 | 记录 hash | 在 run 中持久化原文 | 允许安全 Resume |
 | --- | --- | --- | --- |
 | `full` | 是 | 是 | 是 |
 | `hash` | 是 | 否 | 是 |
 | `none` | 否 | 否 | 否 |
 
-三种策略都会把 Context 提供给当前 rollout。区别只影响运行期 Bundle 的内容留存和之后的 Resume 判断；最终 sample 不保存 Context 原文。
+三种策略都会把 Context 提供给当前 rollout。`full` 会把每个不重复的源文件保存到 `<run>/context/sha256/<file-sha256>`。审计清单位于 `<run>/context/manifests/<context-manifest-digest>.json`，将 role 和逻辑路径映射到这些 blob；每个 sample 的 `provenance.context_manifest_digest` 可定位对应清单。审计清单只包含使用 `full` 的声明。
+
+运行期 Context manifest 保持不变，因此其 digest 和已有 run lock 继续兼容。对由旧版本创建、尚无 Context 归档的 run 执行 Resume 时，Roller 会补齐缺失的 `full` blob，而不会重新执行已通过校验的 sample。
 
 默认情况下，`user` 和 `memory` 使用 `hash`，其他 role 使用 `full`。包含隐私内容但仍需可靠检测变化时，可以使用 `hash`；完全不希望记录内容 hash 时使用 `none`，同时接受该 task 无法安全 Resume。
 
@@ -159,6 +161,11 @@ results/
 ├── info.json
 ├── lock.json
 ├── sft.jsonl
+├── context/                     # 仅在使用 capture=full 时存在
+│   ├── manifests/
+│   │   └── <context-manifest-digest>.json
+│   └── sha256/
+│       └── <file-sha256>
 └── samples/
     └── <model>/
         └── <index>_<task>/
@@ -201,7 +208,7 @@ Sample `info.json` 保存：
 - 输出文件清单
 - raw/ACTF/SFT 路径
 
-运行期 gateway/agent 日志、临时模型配置、Task Bundle、retry 中间 trace 和未回收的工作区文件不会留在最终 sample。
+运行期 gateway/agent 日志、临时模型配置、Task Bundle、retry 中间 trace 和未回收的工作区文件不会留在最终 sample。由 `capture=full` 创建的 run 级 Context 归档会保留在 `context/` 下。
 
 User Simulator sample 会增加：
 
@@ -285,7 +292,7 @@ task/model、usage、时间戳或其他运行 metadata。Run 根目录的 `sft.j
 
 ### Context
 
-`capture=hash` 仍会保存不可逆内容 hash；如果连 hash 都不能保留，应使用 `capture=none`。这样做会关闭该 task 的安全 Resume，因为 Roller 无法确认 Context 是否变化。
+`capture=full` 会在 run 中持久化 Context 原文，因此应将 run 目录视为敏感数据。`capture=hash` 只保存不可逆内容 hash；如果连 hash 都不能保留，应使用 `capture=none`。这样做会关闭该 task 的安全 Resume，因为 Roller 无法确认 Context 是否变化。
 
 ## 9. Retry 与 Resume
 

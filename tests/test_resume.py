@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-import json
 import contextlib
+import hashlib
 import io
+import json
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -165,6 +167,81 @@ class CliResumeCompatibilityTests(unittest.TestCase):
         for agent, simulator in (("codex", "claude-code"), ("claude-code", "codex")):
             with self.subTest(agent=agent, simulator=simulator):
                 self.assert_disabled_legacy_run_resumes(*self.seed(agent, agent, simulator))
+
+    def test_full_context_archive_is_backfilled_without_rerunning(self) -> None:
+        full = self.root / "SYSTEM.md"
+        hashed = self.root / "USER.md"
+        full.write_text("persist me", encoding="utf-8")
+        hashed.write_text("hash me", encoding="utf-8")
+        tasks = self.root / "context.jsonl"
+        tasks.write_text(
+            json.dumps(
+                {
+                    "id": "task",
+                    "harness": "codex",
+                    "model": "provider/model",
+                    "prompt": "say done",
+                    "files": {
+                        "context": [
+                            {
+                                "role": "system",
+                                "source": "SYSTEM.md",
+                                "capture": "full",
+                            },
+                            {
+                                "role": "user",
+                                "source": "USER.md",
+                                "capture": "hash",
+                            },
+                        ]
+                    },
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        run = self.root / "runs" / "context"
+        args = [
+            "collect",
+            "--tasks",
+            str(tasks),
+            "--api-base",
+            "http://example.test/v1",
+            "--api-key-env",
+            "TEST_KEY",
+            "--output",
+            str(self.root / "runs"),
+            "--run-name",
+            "context",
+        ]
+
+        self.assertEqual(self.invoke(args), 0)
+
+        full_digest = hashlib.sha256(b"persist me").hexdigest()
+        hash_digest = hashlib.sha256(b"hash me").hexdigest()
+        blob_root = run / "context" / "sha256"
+        self.assertEqual(
+            (blob_root / full_digest).read_text(encoding="utf-8"), "persist me"
+        )
+        self.assertFalse((blob_root / hash_digest).exists())
+        sample_info_path = next((run / "samples").rglob("info.json"))
+        context_digest = json.loads(sample_info_path.read_text(encoding="utf-8"))[
+            "provenance"
+        ]["context_manifest_digest"]
+        archive_path = run / "context" / "manifests" / f"{context_digest}.json"
+        archive = json.loads(archive_path.read_text(encoding="utf-8"))
+        self.assertEqual(
+            archive["declarations"][0]["files"][0]["blob"],
+            f"context/sha256/{full_digest}",
+        )
+
+        calls_before_resume = list(self.calls)
+        shutil.rmtree(run / "context")
+        self.assertEqual(self.invoke(args, resume=True), 0)
+
+        self.assertEqual(self.calls, calls_before_resume)
+        self.assertTrue((blob_root / full_digest).is_file())
+        self.assertTrue(archive_path.is_file())
 
     def test_cli_still_recaptures_and_adopts_an_unlocked_native_run(self):
         args, run = self.seed("unlocked-native", "codex")
