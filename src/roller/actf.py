@@ -66,9 +66,10 @@ def _tool_call(block: dict[str, Any]) -> dict[str, Any]:
 def _user_content(value: Any, text: str, *, native_text: str | None = None) -> str | list[Any]:
     """Keep upstream prompt cleanup and retain native image positions.
 
-    A single text block has an unambiguous replacement location. Multiple
-    unchanged text blocks can stay as-is. Otherwise use the upstream-selected
-    text, without adding a rejection or inventing a block-placement policy.
+    A single text block has an unambiguous replacement location. If cleanup
+    would replace zero or multiple text blocks in an image-bearing message,
+    keep the native blocks rather than discard images or guess their placement.
+    Text-only and non-image fallback behavior stays unchanged.
     """
     if not isinstance(value, list):
         return text
@@ -88,6 +89,9 @@ def _user_content(value: Any, text: str, *, native_text: str | None = None) -> s
             else:
                 result[index]["text"] = text
             return result
+        if any(isinstance(item, dict) and item.get("type") in {"image", "input_image", "image_url"}
+               for item in value):
+            return deepcopy(value)
         return text
     return deepcopy(value)
 
