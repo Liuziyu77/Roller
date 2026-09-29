@@ -191,6 +191,7 @@ Locked content includes:
 API keys, tokens, and other credentials are replaced with `<redacted>`; userinfo and fragments are
 stripped from URLs, and sensitive query values are replaced, while non-sensitive query keys such as `api-version` are kept for consistency checks.
 The lock prevents samples from different configurations entering the same run. It neither stores secrets nor verifies that credentials still work.
+Each rollout inspects the image ID again. If an image tag resolves to a different ID than it did during preflight, Roller warns and records the rollout-time ID in sample provenance.
 
 Sample `info.json` stores:
 
@@ -307,8 +308,8 @@ After the run lock matches, only samples that meet every condition are reused:
 3. `trace.jsonl` contains a valid message. Normally the ACTF schema is also correct and step IDs are consecutive from 1.
 4. Normally `trace_SFT.json` matches the current ACTF's canonical SFT projection exactly. A structured `trajectory_conversion` downgrade may instead omit ACTF/SFT or only SFT; Resume validates every retained layer and the explicit marker.
 5. The current Task Bundle digest matches the old sample, and Context did not use `capture=none`.
-6. Recorded output files are still under `results/`, exist, and have the same size. The stored SHA-256 can still be used for
-   deep audit; Resume only checks path, existence, and size so large files are not reread.
+6. Recorded output files are still under `results/`, exist, and have the same size. The stored SHA-256 is computed while
+   copying bytes into `results/` and can be used for deep audit; Resume only checks path, existence, and size so large files are not reread.
 7. A User Simulator task must also have a valid `conversation.json`, participant info, and Simulator
    raw/ACTF/SFT.
 8. `--wire-trace full` also requires both sides' `wire_trace.jsonl` to exist. When cache trace is enabled,

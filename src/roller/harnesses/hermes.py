@@ -17,7 +17,7 @@ import uuid
 
 from roller.artifacts import collect_output_directory
 from roller.harnesses.base import InteractiveHarness, InteractiveSession, TurnResult
-from roller.harnesses.docker import DockerRuntime, remove_container
+from roller.harnesses.docker import DockerRuntime, remove_container, warn_if_image_changed
 from roller.hermes_actf import convert_hermes_trace, extract_hermes_usage
 from roller.models import HarnessResult, RunRequest
 from roller.storage import atomic_write_json
@@ -60,6 +60,7 @@ class HermesConfig:
     keep_thinking: bool = True
     keep_container_on_error: bool = False
     docker_binary: str = "docker"
+    preflight_image_digest: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "reasoning_effort", hermes_effort(self.reasoning_effort))
@@ -180,6 +181,7 @@ class HermesSession(InteractiveSession):
         environment.update(OPENAI_BASE_URL=api_base, HERMES_HOME="/roller/hermes-home", HERMES_DISABLE_LAZY_INSTALLS="1", TERMINAL_ENV="local", TERMINAL_CWD=config.workspace_container_path)
         self.environment = environment
         self.image_digest = self.checked(["image", "inspect", config.docker_image, "--format", "{{.Id}}"], "Hermes image inspection").stdout.strip()
+        warn_if_image_changed(logger, config.docker_image, config.preflight_image_digest, self.image_digest)
         args = ["run", "-d", "--name", self.container, "--label", "ai.roller.harness=hermes"]
         if config.container_user is not None:
             args += ["--user", config.container_user]

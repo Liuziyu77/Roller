@@ -274,6 +274,16 @@ class HermesSessionTests(unittest.TestCase):
         self.assertEqual(len([c for c in self.runtime.calls if c[:2] == ["rm", "-f"]]), 1)
         self.assertNotIn("test-private-key", json.dumps(result.metadata))
 
+    def test_warns_if_image_changes_after_preflight(self):
+        session = self.session(preflight_image_digest="sha256:preflight")
+
+        with self.assertLogs("roller.harnesses.hermes", level="WARNING") as captured:
+            session.start()
+
+        self.assertIn("changed after preflight", captured.output[0])
+        self.assertEqual(session.image_digest, "sha256:test")
+        session.finish("error", "test cleanup")
+
     def test_native_failure_is_error_and_key_is_redacted(self):
         self.runtime.turn_result = {"ok": False, "error": "rejected test-private-key"}
         harness = HermesHarness(HermesConfig(api_key_env="ROLLER_TEST_KEY"), 0, self.runtime)
@@ -370,6 +380,9 @@ class HermesCliTests(unittest.TestCase):
                 self.assertEqual(configurations[0].api_base, "https://hermes.example/v1")
                 self.assertEqual(configurations[0].api_key_env, "HERMES_KEY")
                 self.assertEqual(configurations[0].max_iterations, 5)
+                self.assertEqual(
+                    configurations[0].preflight_image_digest, "sha256:test"
+                )
                 self.assertEqual(_collect(_build_parser().parse_args(command + ["--resume"])), 0)
                 self.assertEqual(len(configurations), 1)
                 with self.assertRaisesRegex(Exception, "lock|configuration|mismatch"):

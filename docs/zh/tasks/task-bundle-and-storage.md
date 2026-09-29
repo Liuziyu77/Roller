@@ -189,6 +189,7 @@ Run `lock.json` 保存脱敏后的运行配置，供 Resume 比较。配置以�
 API Key、token 等 credential 被替换为 `<redacted>`；URL 中的 userinfo 和 fragment 被
 移除，敏感 query value 被替换，但 `api-version` 等非敏感 query 会保留用于一致性比较。
 锁用来防止不同配置的数据混入同一 run。它不保存密钥，也不验证 credential 是否仍可用。
+每个 rollout 会再次检查镜像 ID；如果镜像 tag 解析出的 ID 与 preflight 时不同，Roller 会告警，并在 sample provenance 中记录 rollout 时的实际 ID。
 
 Sample `info.json` 保存：
 
@@ -307,8 +308,8 @@ credential 与 pass-through environment 的值不会保存到锁，也不会触�
 3. `trace.jsonl` 含有效 message；通常还要求 ACTF schema 正确且 step ID 从 1 连续。
 4. 通常 `trace_SFT.json` 与当前 ACTF 的 canonical SFT 投影完全一致。存在结构化 `trajectory_conversion` 降级时可以缺少 ACTF/SFT 或仅缺少 SFT；Resume 会校验所有已保留层以及该显式标记。
 5. 当前 Task Bundle digest 与旧 sample 一致，且 Context 没有使用 `capture=none`。
-6. 已记录的输出文件仍位于 `results/` 内，文件存在且大小一致。保存的 SHA-256 仍可用于
-   深度审计；Resume 为避免重新读取大文件，只做路径、存在性和大小检查。
+6. 已记录的输出文件仍位于 `results/` 内，文件存在且大小一致。保存的 SHA-256 在文件复制到
+   `results/` 的同时计算，可用于深度审计；Resume 为避免重新读取大文件，只做路径、存在性和大小检查。
 7. User Simulator task 还必须有有效的 `conversation.json`、participant info 和 Simulator
    raw/ACTF/SFT。
 8. `--wire-trace full` 还要求双方的 `wire_trace.jsonl` 存在；同时启用 cache trace 时，

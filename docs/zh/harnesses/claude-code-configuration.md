@@ -199,8 +199,8 @@ roller collect ... \
 ```
 
 文件复制到隔离的 `$CLAUDE_CONFIG_DIR/settings.json`，并通过 `--settings` 显式加载。为避免把
-可能含环境变量或 hook 的 settings 内容复制进 run，运行锁只保存一个短 BLAKE2b 内容指纹。
-文件改变时 Resume 会拒绝混用旧 sample。仓库示例不包含 Key、hook 或权限放宽，只关闭 commit
+可能含环境变量或 hook 的 settings 内容复制进 run，运行锁只保存其 SHA-256。
+包含旧 BLAKE2b 指纹的已有 lock 仍可 Resume。文件改变时 Resume 会拒绝混用旧 sample。仓库示例不包含 Key、hook 或权限放宽，只关闭 commit
 co-author 标记。按需复制后再增加自己的 Claude Code 设置。
 
 自动化采集默认使用：

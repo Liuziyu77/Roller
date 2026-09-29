@@ -20,7 +20,11 @@ from urllib.parse import urlsplit, urlunsplit
 from roller.actf import convert_openclaw_trace
 from roller.artifacts import ArtifactCollectionResult, collect_output_directory
 from roller.harnesses.base import InteractiveHarness, InteractiveSession, TurnResult
-from roller.harnesses.docker import DockerRuntime, remove_container
+from roller.harnesses.docker import (
+    DockerRuntime,
+    remove_container,
+    warn_if_image_changed,
+)
 from roller.models import HarnessResult, RunRequest
 from roller.storage import safe_component
 from roller.thinking import normalize_thinking, resolve_thinking
@@ -220,6 +224,7 @@ class OpenClawConfig:
     keep_container_on_error: bool = False
     set_image_model: bool = True
     docker_binary: str = "docker"
+    preflight_image_digest: str | None = None
 
     def __post_init__(self) -> None:
         if not self.docker_image.strip():
@@ -1117,7 +1122,14 @@ exec node --input-type=module -e "$1"
         )
         if result.returncode != 0:
             return None
-        return result.stdout.strip() or None
+        digest = result.stdout.strip() or None
+        warn_if_image_changed(
+            logger,
+            self.config.docker_image,
+            self.config.preflight_image_digest,
+            digest,
+        )
+        return digest
 
     @staticmethod
     def _stop_process(process: subprocess.Popen[str] | None) -> None:

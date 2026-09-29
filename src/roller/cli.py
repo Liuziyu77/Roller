@@ -802,7 +802,8 @@ def _collect(args: argparse.Namespace) -> int:
         codex_config_digest = hashlib.sha256(codex_config_path.read_bytes()).hexdigest()
 
     claude_settings_path: Path | None = None
-    claude_settings_fingerprint: str | None = None
+    claude_settings_content: bytes | None = None
+    claude_settings_sha256: str | None = None
     if args.claude_settings:
         if "claude-code" not in selected_harnesses:
             raise ValueError("--claude-settings is only valid when a Claude Code participant is selected")
@@ -811,8 +812,9 @@ def _collect(args: argparse.Namespace) -> int:
             raise FileNotFoundError(
                 f"Claude Code settings file not found: {claude_settings_path}"
             )
-        claude_settings_fingerprint = hashlib.blake2b(
-            claude_settings_path.read_bytes(), digest_size=16
+        claude_settings_content = claude_settings_path.read_bytes()
+        claude_settings_sha256 = hashlib.sha256(
+            claude_settings_content
         ).hexdigest()
 
     hermes_config: HermesConfig | None = None
@@ -879,7 +881,7 @@ def _collect(args: argparse.Namespace) -> int:
             ),
             network=args.network,
             settings_path=claude_settings_path,
-            settings_fingerprint=claude_settings_fingerprint,
+            config_sha256=claude_settings_sha256,
             api_base=claude_api_base,
             api_key_env=claude_api_key_env,
             pass_env=_deduplicate(
@@ -1080,7 +1082,7 @@ def _collect(args: argparse.Namespace) -> int:
             "settings_path": (
                 str(claude_settings_path) if claude_settings_path else None
             ),
-            "settings_fingerprint": claude_settings_fingerprint,
+            "config_sha256": claude_settings_sha256,
             "network": args.network,
             "api_base": (
                 redact_anthropic_base_url(claude_api_base)
@@ -1217,39 +1219,69 @@ def _collect(args: argparse.Namespace) -> int:
             run_dir.mkdir(parents=True, exist_ok=True)
             if tasks_snapshot is not None and not tasks_snapshot.exists():
                 tasks_snapshot.write_bytes(bench_manifest or b"")
+            execution = {
+                "harness": run_label,
+                "agent_harnesses": sorted(agent_harnesses),
+                "simulator_harnesses": sorted(simulator_harnesses),
+                "task_schema": "roller.task/v1",
+                "output_collection": "all",
+                "task_images": {
+                    task.id: {
+                        "image": task.docker_image,
+                        "digest": task_image_digests.get(task.id),
+                    }
+                    for task in tasks
+                    if task.docker_image is not None
+                },
+                **{
+                    name: {
+                        **payload,
+                        "docker_image": images[name],
+                        "docker_image_digest": docker_image_digests[name],
+                    }
+                    for name, payload in harness_configurations.items()
+                },
+            }
+            lock_model_config = (
+                model_config if "openclaw" in selected_harnesses else None
+            )
             run_lock = build_run_lock(
                 requests,
                 roller_version=__version__,
-                execution={
-                    "harness": run_label,
-                    "agent_harnesses": sorted(agent_harnesses),
-                    "simulator_harnesses": sorted(simulator_harnesses),
-                    "task_schema": "roller.task/v1",
-                    "output_collection": "all",
-                    "task_images": {
-                        task.id: {
-                            "image": task.docker_image,
-                            "digest": task_image_digests.get(task.id),
-                        }
-                        for task in tasks
-                        if task.docker_image is not None
-                    },
-                    **{
-                        name: {
-                            **payload,
-                            "docker_image": images[name],
-                            "docker_image_digest": docker_image_digests[name],
-                        }
-                        for name, payload in harness_configurations.items()
-                    },
-                },
-                model_config=model_config if "openclaw" in selected_harnesses else None,
+                execution=execution,
+                model_config=lock_model_config,
             )
+            compatible_run_locks = []
+            claude_execution = execution.get("claude-code")
+            if args.resume and existing_run and isinstance(claude_execution, dict):
+                # Previous v1 locks used a short BLAKE2b settings fingerprint.
+                legacy_fingerprint = (
+                    hashlib.blake2b(
+                        claude_settings_content, digest_size=16
+                    ).hexdigest()
+                    if claude_settings_content is not None
+                    else None
+                )
+                legacy_claude_execution = dict(claude_execution)
+                legacy_claude_execution.pop("config_sha256", None)
+                legacy_claude_execution["settings_fingerprint"] = legacy_fingerprint
+                compatible_run_locks.append(
+                    build_run_lock(
+                        requests,
+                        roller_version=__version__,
+                        execution={
+                            **execution,
+                            "claude-code": legacy_claude_execution,
+                        },
+                        model_config=lock_model_config,
+                    )
+                )
             lock_decision = ensure_run_lock(
                 run_dir / "lock.json",
                 run_lock,
                 resume=args.resume,
                 existing_run=existing_run,
+                compatible_expected=compatible_run_locks,
             )
             if lock_decision.legacy_run:
                 logger.warning(
@@ -1281,8 +1313,17 @@ def _collect(args: argparse.Namespace) -> int:
                 slot: int,
                 task_image: str | None = None,
                 task_workspace: str | None = None,
+                task_image_digest: str | None = None,
             ):
-                replacements = {"docker_image": task_image} if task_image else {}
+                replacements = {
+                    "preflight_image_digest": (
+                        task_image_digest
+                        if task_image is not None
+                        else docker_image_digests[name]
+                    )
+                }
+                if task_image:
+                    replacements["docker_image"] = task_image
                 if task_workspace:
                     replacements["workspace_container_path"] = task_workspace
                 if name == "openclaw":
@@ -1321,6 +1362,11 @@ def _collect(args: argparse.Namespace) -> int:
                     slot,
                     request.task.docker_image,
                     request.task.workspace_container_path,
+                    (
+                        task_image_digests[request.task.id]
+                        if request.task.docker_image is not None
+                        else None
+                    ),
                 )
                 binding = binding_from_task_row(getattr(request.task, "raw", None) or {})
                 if binding is not None and binding.grade is not None:

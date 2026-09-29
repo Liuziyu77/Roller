@@ -162,6 +162,36 @@ class RunLockTests(unittest.TestCase):
             with self.assertRaisesRegex(FileExistsError, r"execution.thinking"):
                 ensure_run_lock(path, changed, resume=True, existing_run=True)
 
+    def test_accepts_an_explicit_historical_lock_without_rewriting_it(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "lock.json"
+            expected = {
+                "schema_version": "roller.run-lock/v1",
+                "execution": {
+                    "claude-code": {"config_sha256": "new-sha256"}
+                },
+            }
+            historical = {
+                "schema_version": "roller.run-lock/v1",
+                "execution": {
+                    "claude-code": {"settings_fingerprint": "old-blake2b"}
+                },
+            }
+            path.write_text(json.dumps(historical), encoding="utf-8")
+            before = path.read_bytes(), path.stat().st_mtime_ns
+
+            decision = ensure_run_lock(
+                path,
+                expected,
+                resume=True,
+                existing_run=True,
+                compatible_expected=[historical],
+            )
+
+            self.assertTrue(decision.reuse_existing_samples)
+            self.assertFalse(decision.created)
+            self.assertEqual((path.read_bytes(), path.stat().st_mtime_ns), before)
+
     def test_adopts_legacy_run_without_reusing_unlocked_samples(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
