@@ -686,7 +686,6 @@ class CollectorTests(unittest.TestCase):
                 bundle_root = run_dir / "tasks" / digest
                 bundle_root.mkdir(parents=True, exist_ok=True)
                 return TaskBundle(
-                    root=bundle_root,
                     inputs_root=bundle_root,
                     context_root=bundle_root,
                     manifest_digest=digest,

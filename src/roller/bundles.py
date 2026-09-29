@@ -76,10 +76,9 @@ class TaskBundleStore:
         self.run_dir = run_dir.expanduser().resolve()
         self.policy = policy or BundlePolicy()
         self.trees_root = self.run_dir / "trees" / "sha256"
-        self.tasks_root = self.run_dir / "tasks"
         self.runtime_root = self.run_dir / ".runtime"
         self._scan_cache: dict[Path, _ScannedSource] = {}
-        for path in (self.trees_root, self.tasks_root, self.runtime_root):
+        for path in (self.trees_root, self.runtime_root):
             path.mkdir(parents=True, exist_ok=True)
         try:
             self.runtime_root.chmod(0o700)
@@ -211,8 +210,8 @@ class TaskBundleStore:
 
     def _prepare_inputs(self, task: Task) -> tuple[Path, dict[str, Any]]:
         file_records: list[dict[str, Any]] = []
-        # Source paths and inline bytes are materialization details, never digest inputs.
-        sources: dict[str, _ScannedFile | bytes] = {}
+        # Source paths and inline strings are materialization details, never digest inputs.
+        sources: dict[str, _ScannedFile | str] = {}
         directories: set[str] = set()
         occupied_files: set[str] = set()
         declarations: list[dict[str, Any]] = []
@@ -234,6 +233,7 @@ class TaskBundleStore:
                         f"({total_bytes} > {self.policy.max_task_input_bytes})"
                     )
                 digest = hashlib.sha256(encoded).hexdigest()
+                del encoded  # Retain only the original string, not every UTF-8 encoding.
                 if spec.expected_sha256 and digest != spec.expected_sha256:
                     raise BundleError(
                         f"task {task.id} input {index} sha256 mismatch: "
@@ -245,7 +245,7 @@ class TaskBundleStore:
                     directories,
                     f"task {task.id} input",
                 )
-                sources[spec.path] = encoded
+                sources[spec.path] = spec.content
                 declarations.append(
                     {
                         "path": spec.path,
@@ -347,8 +347,8 @@ class TaskBundleStore:
                     destination = temporary_root / record["logical_path"]
                     destination.parent.mkdir(parents=True, exist_ok=True)
                     source = sources[record["logical_path"]]
-                    if isinstance(source, bytes):
-                        destination.write_bytes(source)
+                    if isinstance(source, str):
+                        destination.write_bytes(source.encode("utf-8"))
                         destination.chmod(record["mode"])
                     else:
                         self._copy_snapshot(source, destination, "source")
@@ -476,8 +476,6 @@ class TaskBundleStore:
 
     def prepare(self, task: Task) -> TaskBundle:
         task_key = f"{task.source_index:08d}_{safe_component(task.id)}"
-        task_root = self.tasks_root / task_key
-        task_root.mkdir(parents=True, exist_ok=True)
         inputs_root, input_manifest = self._prepare_inputs(task)
         context_root, context_manifest = self._prepare_context(task, task_key)
         input_manifest_digest = _canonical_digest(input_manifest)
@@ -524,7 +522,6 @@ class TaskBundleStore:
         }
         manifest_digest = _canonical_digest(manifest)
         return TaskBundle(
-            root=task_root,
             inputs_root=inputs_root,
             context_root=context_root,
             manifest_digest=manifest_digest,

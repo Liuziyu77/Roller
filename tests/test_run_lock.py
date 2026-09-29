@@ -18,7 +18,6 @@ from roller.run_lock import (
 
 def _request(root: Path, digest: str = "bundle-a") -> RunRequest:
     bundle = TaskBundle(
-        root=root,
         inputs_root=root,
         context_root=root,
         manifest_digest=digest,

@@ -56,7 +56,6 @@ class ContextFile:
 class TaskBundle:
     """Materialized, content-addressed files shared by all models for one task."""
 
-    root: Path
     inputs_root: Path
     context_root: Path
     manifest_digest: str

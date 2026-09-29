@@ -4,6 +4,7 @@ import hashlib
 from collections import Counter
 import json
 import tempfile
+import tracemalloc
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -212,6 +213,7 @@ class TaskBundleTests(unittest.TestCase):
                 sum(path.stat().st_size for path in sources) + len("你好\n".encode()),
             )
             self.assertFalse((store.run_dir / "blobs").exists())
+            self.assertFalse((store.run_dir / "tasks").exists())
             self.assertEqual((bundle.inputs_root / "data" / "run.sh").read_bytes(), sources[0].read_bytes())
             for name in ("full", "hash", "none"):
                 self.assertEqual((bundle.context_root / (name + ".md")).read_bytes(), name.encode())
@@ -221,6 +223,41 @@ class TaskBundleTests(unittest.TestCase):
                 store.prepare(task)
             self.assertNotIn((sources[0], "rb"), opened)
             self.assertEqual(sum(count for (_, mode), count in opened.items() if mode == "wb"), 3)
+
+    def test_inline_snapshot_memory_is_bounded_for_new_and_reused_trees(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            # Create strings before tracing, as Task already owns them at prepare time.
+            task = Task(
+                id="inline-memory",
+                prompts=("read",),
+                source_index=0,
+                inputs=tuple(
+                    InputFile(None, f"{index}.txt", content=f"{index}:" + "你好" * 32768)
+                    for index in range(32)
+                ),
+            )
+            largest_file = max(len(spec.content.encode("utf-8")) for spec in task.inputs)
+            store = TaskBundleStore(root / "bundle")
+            first_bundle = None
+            for reused in (False, True):
+                with self.subTest(reused=reused):
+                    tracemalloc.start()
+                    try:
+                        bundle = store.prepare(task)
+                        _, peak = tracemalloc.get_traced_memory()
+                    finally:
+                        tracemalloc.stop()
+                    # Allow metadata and transient allocations, but not all 32 encodings.
+                    self.assertLess(peak, largest_file * 4)
+                    if first_bundle is not None:
+                        self.assertEqual(bundle.inputs_root, first_bundle.inputs_root)
+                        self.assertEqual(bundle.manifest_digest, first_bundle.manifest_digest)
+                    first_bundle = bundle
+            for spec in task.inputs:
+                self.assertEqual(
+                    (bundle.inputs_root / spec.path).read_bytes(), spec.content.encode("utf-8")
+                )
 
     def test_rejects_source_changes_and_cleans_partial_snapshots(self) -> None:
         for kind in ("input", "full", "hash", "none"):
