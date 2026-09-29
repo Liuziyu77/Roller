@@ -35,6 +35,10 @@ class GradeSpec:
     workspace_path: str | None = None
     transcript_path: str | None = None
     score_key: str = "overall_score"
+    # Some benchmark protocols grade the workspace even when the agent times
+    # out or exits with an error. Keep the conservative default for benches
+    # whose grader assumes a clean agent exit.
+    grade_on_agent_failure: bool = False
     # Host paths copied into the container immediately before grading, keyed by
     # their destination relative to the grading workspace. Answer keys live here
     # rather than in the task's workspace: anything the agent can read it can
@@ -62,6 +66,8 @@ class GradeSpec:
             payload["transcript_path"] = self.transcript_path
         if self.score_key != "overall_score":
             payload["score_key"] = self.score_key
+        if self.grade_on_agent_failure:
+            payload["grade_on_agent_failure"] = True
         if self.stage:
             payload["stage"] = [
                 {"source": source, "target": target} for source, target in self.stage
@@ -114,6 +120,11 @@ class GradeSpec:
         score_key = payload.get("score_key", "overall_score")
         if not isinstance(score_key, str) or not score_key.strip():
             raise BenchFormatError(f"{label}.score_key: must be a non-empty string")
+        grade_on_agent_failure = payload.get("grade_on_agent_failure", False)
+        if not isinstance(grade_on_agent_failure, bool):
+            raise BenchFormatError(
+                f"{label}.grade_on_agent_failure: must be boolean"
+            )
         return cls(
             code=code,
             entrypoint=entrypoint,
@@ -125,6 +136,7 @@ class GradeSpec:
             workspace_path=workspace_path,
             transcript_path=transcript_path,
             score_key=score_key.strip(),
+            grade_on_agent_failure=grade_on_agent_failure,
             stage=_stage_files(payload.get("stage"), f"{label}.stage"),
         )
 

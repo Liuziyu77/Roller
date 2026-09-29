@@ -4,30 +4,44 @@
 <https://github.com/InternLM/WildClawBench>.
 
 This guide maps WildClawBench's upstream parameters to Roller settings and
-identifies options not yet supported. Generic bench-layer mechanics (`bench` block, grading timing, `stage`
-leak prevention, aggregation) are in
-[Bench integration and scoring](bench-format.md).
+identifies options not yet supported. The shared configuration contract is in
+[Benchmark run standard](benchmark-standard.md). Generic bench-layer mechanics (`bench` block, grading timing,
+`stage` leak prevention, aggregation) are in [Bench integration and scoring](bench-format.md).
 
 ## 1. Shortest path
 
 ```bash
-# 1) Check out upstream
-git clone https://github.com/InternLM/WildClawBench ~/WildClawBench
+# 1) Fetch task data, prepare assets, and load the selected Harness image.
+export WILDCLAWBENCH_ROOT="$PWD/.benchmarks/wildclawbench"
+export WILDCLAW_HARNESS=openclaw
+scripts/prepare-benchmark.sh wildclawbench "$WILDCLAWBENCH_ROOT"
 
-# 2) 上游的环境变量照常 source —— Roller 复用同一批变量名，见 §3
-set -a; . ~/WildClawBench/.env; set +a
+# 2) Set the shared model and output variables.
+export ROLLER_MODEL_ID=example/model
+export ROLLER_MODEL_BASE_URL=https://api.example.com/v1
+export ROLLER_MODEL_API_KEY=replace-with-your-api-key
+export ROLLER_BENCH_OUTPUT="$PWD/runs/wildclawbench"
 
-# 3) Translate + collect + grade + report in one command
-roller collect --bench wildclawbench --bench-root ~/WildClawBench \
-  --model <provider>/<model> \
-  --harness openclaw --openclaw-image wildclawbench-ubuntu:v1.3 \
-  --model-config my_api.json --parallel 4 \
-  --output /tmp/wcb --run-name run1 \
-  --pass-env NODE_EXTRA_CA_CERTS
+# 3) Set the judge variables used by the public example configuration.
+export ROLLER_JUDGE_BASE_URL=https://judge.example.com/v1
+export ROLLER_JUDGE_API_KEY=replace-with-your-judge-key
+export ROLLER_JUDGE_MODEL=example-judge
+export ROLLER_SEARCH_API_KEY=replace-with-your-search-key
+
+# 4) Resolve the complete plan, then run it.
+scripts/run-benchmark.sh --config examples/benchmarks/base.yaml \
+  --extra-config examples/benchmarks/wildclawbench.yaml --dry-run
+scripts/run-benchmark.sh --config examples/benchmarks/base.yaml \
+  --extra-config examples/benchmarks/wildclawbench.yaml
 ```
 
-The task snapshot and report are saved as `run1/tasks.jsonl` and
-`run1/bench-report.json`.
+The task snapshot and report are saved under
+`$ROLLER_BENCH_OUTPUT/wildclawbench/`. Source the upstream `.env` before the
+dry run when using its search shim. The direct `roller collect --bench` flags
+listed below remain available for one-off runs.
+
+The preparation script pins revision `41bfe78a4d04369887687397708504882a80c17a`. If the target
+directory already contains another revision, the script stops without changing the checkout.
 
 ## 2. Upstream knobs → Roller equivalents
 
@@ -164,7 +178,9 @@ Mounting the entire `<declared>` directory adds an unwanted path level: skills
 and warmup refer to `/tmp_workspace/utils.py`, but the file sits under
 `/tmp_workspace/exec/`. It also exposes `gt/` to the Agent. Pointing `workspace`
 at `<declared>/exec` isolates the answers through the mount layout, without
-filtering individual files.
+filtering individual files. The adapter also pins every Harness container
+workspace to `/tmp_workspace`, matching the absolute paths in task prompts and
+graders.
 
 ## 8. Section mapping
 
@@ -180,6 +196,13 @@ filtering individual files.
 
 ## 9. Known pitfalls
 
+- The upstream `.env` commonly sets `SEARCH_SHIM_HOST_IP=172.17.0.1`, which
+  assumes Docker's default bridge. Roller uses host networking by default, and
+  Podman's bridge does not necessarily expose that address. When the shim is
+  listening on the same machine as the containers, use
+  `SEARCH_SHIM_HOST_IP=127.0.0.1` with `execution.network: host`. A quick
+  request from a container should return an HTTP response before a full run;
+  a connection timeout means the shim address or network mode is still wrong.
 - An image may preset `http_proxy`. For example, `wildclawbench-ubuntu:v1.3`
   sets it without a matching `no_proxy`. Requests to a self-hosted gateway
   may time out, leaving `request_count=0` and all tasks exiting in the same
@@ -200,3 +223,6 @@ filtering individual files.
   three still have valid scores: images in observations, timeouts during tool
   calls, and a final turn with only a tool call and no closing text. See
   [Bench integration and scoring §3.2](bench-format.md#32-a-grading-failure-is-not-a-0-score).
+- WildClawBench still grades a live workspace after the agent times out or
+  errors, matching the upstream runner. These samples are not rerun just for
+  timing out; the task grader decides their final score.

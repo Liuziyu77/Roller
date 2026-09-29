@@ -722,9 +722,11 @@ def _pinch_judge(transcript, workspace_path):
     scores = normalized["scores"]
     total = normalized["total"]
     notes = normalized["notes"]
+    judge_error = None
     if total is None:
         total = 0.0
         notes = failure_notes if not parsed else "LLM judge failed: response parsed but no score extracted"
+        judge_error = notes
     provenance = {
         "judge_model": model,
         "judge_protocol": "openai_chat_completions",
@@ -736,6 +738,8 @@ def _pinch_judge(transcript, workspace_path):
         "judge_content_source": content_source,
         "judge_finish_reason": finish_reason,
     }
+    if judge_error:
+        provenance["judge_error"] = notes
     return (
         scores,
         total,
@@ -781,6 +785,10 @@ def roller_grade(transcript, workspace_path):
     result.update(judge_provenance)
     if notes:
         result["judge_notes"] = notes
+    judge_error = result.pop("judge_error", None)
+    if judge_error:
+        result["score_eligible"] = False
+        result["error"] = judge_error
     return result
 '''
 

@@ -10,7 +10,7 @@ from unittest import mock
 
 from roller.benches import BenchFormatError, binding_from_task_row
 from roller.benches.base import BenchBinding, GradeSpec
-from roller.benches.grading import GradedHarness
+from roller.benches.grading import GradedHarness, prepare_benchmark_workspace
 from roller.benches.pinchbench import PinchBenchAdapter
 from roller.benches.skillsbench import (
     SkillsBenchAdapter,
@@ -422,11 +422,19 @@ categories:
             with mock.patch.dict(namespace["_pinch_os"].environ, judge_env, clear=False), mock.patch.object(
                 namespace["_pinch_request"], "build_opener", return_value=opener
             ):
-                _, total, notes, _ = namespace["_pinch_judge"]([], str(root))
+                _, total, notes, provenance = namespace["_pinch_judge"]([], str(root))
 
         self.assertEqual(opener.calls, 1)
         self.assertEqual(total, 0.0)
         self.assertIn("after 1 attempt(s)", notes)
+        self.assertEqual(provenance["judge_error"], notes)
+
+        with mock.patch.dict(namespace["_pinch_os"].environ, judge_env, clear=False), mock.patch.object(
+            namespace["_pinch_request"], "build_opener", return_value=FailingOpener()
+        ):
+            result = namespace["roller_grade"]([], str(root))
+        self.assertFalse(result["score_eligible"])
+        self.assertEqual(result["error"], result["judge_notes"])
 
     def test_timeout_multiplier_scales_pinch_task_budget(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -438,6 +446,18 @@ categories:
 
 
 class SkillsBenchAdapterTests(unittest.TestCase):
+    def test_container_root_grading_workspace_needs_no_alias(self) -> None:
+        session = mock.Mock()
+        session.harness.config.workspace_container_path = "/root"
+        spec = GradeSpec(
+            "def grade(workspace_path): return {'overall_score': 1}",
+            workspace_path="/",
+        )
+
+        prepare_benchmark_workspace(session, spec)
+
+        session.harness.runtime.run.assert_not_called()
+
     def test_agent_failure_skips_live_container_grading(self) -> None:
         class StubHarness(InteractiveHarness):
             name = "opencode"
@@ -465,6 +485,26 @@ class SkillsBenchAdapterTests(unittest.TestCase):
         self.assertEqual(outcome.scores["overall_score"], 0.0)
         self.assertFalse(outcome.scores["score_eligible"])
         self.assertIn("grading skipped", outcome.error)
+
+    def test_grade_spec_round_trips_agent_failure_policy(self) -> None:
+        spec = GradeSpec(
+            "def grade(workspace_path): return {'overall_score': 1}",
+            grade_on_agent_failure=True,
+        )
+
+        payload = spec.as_dict()
+
+        self.assertTrue(payload["grade_on_agent_failure"])
+        self.assertTrue(GradeSpec.from_dict(payload).grade_on_agent_failure)
+
+    def test_grade_spec_rejects_non_boolean_agent_failure_policy(self) -> None:
+        with self.assertRaisesRegex(BenchFormatError, "must be boolean"):
+            GradeSpec.from_dict(
+                {
+                    "code": "def grade(workspace_path): return {'overall_score': 1}",
+                    "grade_on_agent_failure": "yes",
+                }
+            )
 
     def _root(self, temporary: str) -> Path:
         root = Path(temporary)

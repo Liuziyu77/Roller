@@ -1,6 +1,6 @@
 # SkillsBench
 
-[Documentation](../index.md) · [Bench integration and scoring](bench-format.md) · [OpenCode configuration](../harnesses/opencode-configuration.md)
+[Documentation](../index.md) · [Benchmark run standard](benchmark-standard.md) · [Bench integration and scoring](bench-format.md) · [OpenCode configuration](../harnesses/opencode-configuration.md)
 
 Roller runs both SkillsBench conditions, `with-skill` and `no-skill`. The upstream data is at
 <https://github.com/benchflow-ai/skillsbench>.
@@ -13,26 +13,27 @@ verifiers but produces a score for that model.
 ## Set up and run
 
 ```bash
-# Fetch and verify SkillsBench v1.1, then build Roller's OpenCode base image.
-scripts/prepare-skillsbench.sh "$PWD/.benchmarks/skillsbench-v1.1"
 export SKILLSBENCH_ROOT="$PWD/.benchmarks/skillsbench-v1.1"
+scripts/prepare-benchmark.sh skillsbench "$SKILLSBENCH_ROOT"
 
-export MODEL_API_BASE_URL=https://api.example.com/v1
-export MODEL_API_KEY=replace-with-your-api-key
-export ROLLER_RUN_ROOT="$PWD/runs/skillsbench"
-mkdir -p "$ROLLER_RUN_ROOT"
+export ROLLER_MODEL_ID=example-model
+export ROLLER_MODEL_BASE_URL=https://api.example.com/v1
+export ROLLER_MODEL_API_KEY=replace-with-your-api-key
+export ROLLER_BENCH_OUTPUT="$PWD/runs/skillsbench"
 
-roller collect --bench skillsbench --bench-root "$SKILLSBENCH_ROOT" \
-  --bench-variant with-skill --model example-model \
-  --opencode-api-base "$MODEL_API_BASE_URL" \
-  --opencode-api-key-env MODEL_API_KEY --parallel 1 --grader-parallel 1 \
-  --output "$ROLLER_RUN_ROOT" --run-name with-skill
+# Check and run with-skill.
+scripts/run-benchmark.sh --config examples/benchmarks/base.yaml \
+  --extra-config examples/benchmarks/skillsbench.yaml --dry-run
+scripts/run-benchmark.sh --config examples/benchmarks/base.yaml \
+  --extra-config examples/benchmarks/skillsbench.yaml
 
-roller collect --bench skillsbench --bench-root "$SKILLSBENCH_ROOT" \
-  --bench-variant no-skill --model example-model \
-  --opencode-api-base "$MODEL_API_BASE_URL" \
-  --opencode-api-key-env MODEL_API_KEY --parallel 1 --grader-parallel 1 \
-  --output "$ROLLER_RUN_ROOT" --run-name no-skill
+# Add one small overlay for no-skill.
+scripts/run-benchmark.sh --config examples/benchmarks/base.yaml \
+  --extra-config examples/benchmarks/skillsbench.yaml \
+  --extra-config examples/benchmarks/skillsbench-no-skill.yaml --dry-run
+scripts/run-benchmark.sh --config examples/benchmarks/base.yaml \
+  --extra-config examples/benchmarks/skillsbench.yaml \
+  --extra-config examples/benchmarks/skillsbench-no-skill.yaml
 ```
 
 `prepare-skillsbench.sh` accepts any persistent directory. It clones v1.1 when the directory is
@@ -43,16 +44,16 @@ check out the `v1.1` tag and build `docker/opencode`.
 Replace the example API URL, key, and model ID with values from your model provider before running
 the commands.
 
-Each `collect` command writes `tasks.jsonl` and `bench-report.json` to its run directory.
+Each run writes `tasks.jsonl` and `bench-report.json` to its run directory.
 SkillsBench defaults to three samples per task, 100 OpenCode steps per turn, and 32768 output tokens
-per model response. Change these with `--samples`, `--opencode-max-steps`, and
-`--opencode-output-tokens`.
+per model response. Override `execution.samples`, `harness.extra.max_steps`, or
+`harness.extra.output_tokens` in another `--extra-config` layer.
 
 For comparable runs, use the `v1.1` tag at commit
 `b63b7b2850226b6aa4fb5929a8c1ac7bc4d9a6af`. Start with
-`--bench-task-id 3d-scan-calc` to check the model endpoint, image, and output directory.
-`--bench-category` and `--bench-task-id` may be repeated. For a slow model,
-`--bench-timeout-multiplier 2` increases both the agent and verifier time limits.
+select `3d-scan-calc` through `benchmark.task_ids` to check the model endpoint, image, and output
+directory. `benchmark.categories` and `benchmark.task_ids` are lists. For a slow model, set
+`benchmark.timeout_multiplier: 2` to increase both the agent and verifier time limits.
 
 ## How Roller runs a task
 

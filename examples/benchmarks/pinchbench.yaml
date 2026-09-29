@@ -1,0 +1,20 @@
+benchmark:
+  id: pinchbench
+  root: ${PINCHBENCH_ROOT}
+  variant: core
+  timeout_multiplier: 1
+  environment:
+    PINCHBENCH_JUDGE_BASE_URL: ${ROLLER_JUDGE_BASE_URL}
+    PINCHBENCH_JUDGE_API_KEY: ${ROLLER_JUDGE_API_KEY}
+    PINCHBENCH_JUDGE_MODEL: ${ROLLER_JUDGE_MODEL}
+
+harness:
+  id: openclaw
+  image: ghcr.io/openclaw/openclaw:2026.7.1-2
+  extra:
+    model_request_timeout: 600
+    max_tokens: 32768
+
+execution:
+  run_name: pinchbench-core
+  samples: 1

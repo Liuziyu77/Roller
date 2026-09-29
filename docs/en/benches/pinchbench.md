@@ -1,6 +1,6 @@
 # PinchBench
 
-[Documentation](../index.md) · [Bench integration and scoring](bench-format.md) · [OpenClaw configuration](../harnesses/openclaw-configuration.md)
+[Documentation](../index.md) · [Benchmark run standard](benchmark-standard.md) · [Bench integration and scoring](bench-format.md) · [OpenClaw configuration](../harnesses/openclaw-configuration.md)
 
 Roller reads PinchBench tasks from `tasks/manifest.yaml`. It supports automated grading, LLM
 judging, hybrid grading, and multiple sessions. The upstream repository is
@@ -9,13 +9,13 @@ judging, hybrid grading, and multiple sessions. The upstream repository is
 ## Prepare the environment
 
 ```bash
-scripts/prepare-pinchbench.sh "$PWD/.benchmarks/pinchbench"
 export PINCHBENCH_ROOT="$PWD/.benchmarks/pinchbench"
+scripts/prepare-benchmark.sh pinchbench "$PINCHBENCH_ROOT"
 
-export MODEL_API_BASE_URL=https://api.example.com/v1
-export MODEL_API_KEY=replace-with-your-api-key
-export ROLLER_RUN_ROOT="$PWD/runs/pinchbench"
-mkdir -p "$ROLLER_RUN_ROOT"
+export ROLLER_MODEL_ID=example/model
+export ROLLER_MODEL_BASE_URL=https://api.example.com/v1
+export ROLLER_MODEL_API_KEY=replace-with-your-api-key
+export ROLLER_BENCH_OUTPUT="$PWD/runs/pinchbench"
 ```
 
 `prepare-pinchbench.sh` clones the upstream data when the target directory is missing and pulls
@@ -24,52 +24,40 @@ prints the commit for experiment records and does not read or write API keys. To
 environment by hand, clone <https://github.com/pinchbench/skill> and pull
 `ghcr.io/openclaw/openclaw:2026.7.1-2`.
 
-OpenClaw also needs a model configuration. Save the following as `example.models.json`, then
-replace the API URL, key, and model ID with values from your model provider:
-
-```json
-{
-  "mode": "merge",
-  "providers": {
-    "example": {
-      "baseUrl": "${MODEL_API_BASE_URL}",
-      "apiKey": "${MODEL_API_KEY}",
-      "api": "openai-completions",
-      "timeoutSeconds": 600,
-      "models": [{"id": "example-model", "name": "Example model"}]
-    }
-  }
-}
-```
+The preparation script pins revision `819384ae830492365b8363fc26bc2602e73f216d`. It stops without
+changing the checkout when an existing directory is at another revision.
 
 Run two automatically graded tasks before starting a larger job. They do not need a judge:
 
 ```bash
-roller collect --bench pinchbench --bench-root "$PINCHBENCH_ROOT" \
-  --bench-variant automated-only \
-  --bench-task-id task_sanity --bench-task-id task_files \
-  --model example/example-model --model-config example.models.json \
-  --parallel 1 --grader-parallel 1 \
-  --output "$ROLLER_RUN_ROOT" --run-name smoke
+scripts/run-benchmark.sh --config examples/benchmarks/base.yaml \
+  --extra-config examples/benchmarks/pinchbench.yaml \
+  --extra-config '{"benchmark":{"variant":"automated-only","task_ids":["task_sanity","task_files"]},"execution":{"parallel":1,"grader_parallel":1,"run_name":"pinchbench-smoke"}}' \
+  --dry-run
+
+scripts/run-benchmark.sh --config examples/benchmarks/base.yaml \
+  --extra-config examples/benchmarks/pinchbench.yaml \
+  --extra-config '{"benchmark":{"variant":"automated-only","task_ids":["task_sanity","task_files"]},"execution":{"parallel":1,"grader_parallel":1,"run_name":"pinchbench-smoke"}}'
 ```
 
-The command writes `smoke/tasks.jsonl` and
-`smoke/bench-report.json`.
+The command writes `tasks.jsonl` and `bench-report.json` under
+`$ROLLER_BENCH_OUTPUT/pinchbench-smoke/`.
 
-The `all` and `core` variants contain LLM and hybrid grading tasks. For a result comparable to
-the upstream PinchBench setup, keep the default judge,
-`anthropic/claude-haiku-4.5`. Roller sends judge requests to
-`https://openrouter.ai/api/v1`, so this run only needs an OpenRouter key:
+The `all` and `core` variants contain LLM and hybrid grading tasks. The checked-in configuration
+maps three shared judge variables to PinchBench's environment names. Set them before the dry run:
 
 ```bash
-export OPENROUTER_API_KEY=...
+export ROLLER_JUDGE_BASE_URL=https://judge.example.com/v1
+export ROLLER_JUDGE_API_KEY=replace-with-your-judge-key
+export ROLLER_JUDGE_MODEL=example-judge
 
-roller collect --bench pinchbench --bench-root "$PINCHBENCH_ROOT" \
-  --bench-variant core --bench-timeout-multiplier 2 \
-  --model example/example-model --model-config example.models.json \
-  --samples 1 --parallel 1 --grader-parallel 1 \
-  --output "$ROLLER_RUN_ROOT" --run-name core
+scripts/run-benchmark.sh --config examples/benchmarks/base.yaml \
+  --extra-config examples/benchmarks/pinchbench.yaml --dry-run
+scripts/run-benchmark.sh --config examples/benchmarks/base.yaml \
+  --extra-config examples/benchmarks/pinchbench.yaml
 ```
+
+Roller generates the OpenClaw models file from the common model fields; no separate models JSON is needed.
 
 ## Variants
 
@@ -102,6 +90,8 @@ A reasoning model may use the default 2048-token budget before it emits JSON. In
 with `PINCHBENCH_JUDGE_MAX_TOKENS=8192`. When `PINCHBENCH_JUDGE_RETRIES` is greater than zero,
 Roller retries network errors and successful responses without a parseable score. If streamed
 `content` is empty, the grader also checks `reasoning_content`.
+If every judge attempt fails, the sample is marked ineligible instead of being counted as a
+genuine zero score.
 
 Roller keeps frontmatter `prerequisites` in bench metadata. For the four FWS/GWS/GitHub
 integration tasks, it installs pinned versions of `fws`, `gws`, and `gh` in the disposable

@@ -1,6 +1,6 @@
 # SkillsBench
 
-[文档中心](../index.md) · [Bench 接入与评分](bench-format.md) · [OpenCode 配置](../harnesses/opencode-configuration.md)
+[文档中心](../index.md) · [Benchmark 运行规范](benchmark-standard.md) · [Bench 接入与评分](bench-format.md) · [OpenCode 配置](../harnesses/opencode-configuration.md)
 
 Roller 可以直接运行 SkillsBench 的 `with-skill` 和 `no-skill` 两组实验。数据来自
 <https://github.com/benchflow-ai/skillsbench>。
@@ -12,26 +12,27 @@ README 里的 GPT-5.5 指被测 Agent。只有把 `collect --model` 接到 GPT-5
 ## 准备并运行
 
 ```bash
-# 下载并校验 SkillsBench v1.1，然后构建 Roller OpenCode 基础镜像。
-scripts/prepare-skillsbench.sh "$PWD/.benchmarks/skillsbench-v1.1"
 export SKILLSBENCH_ROOT="$PWD/.benchmarks/skillsbench-v1.1"
+scripts/prepare-benchmark.sh skillsbench "$SKILLSBENCH_ROOT"
 
-export MODEL_API_BASE_URL=https://api.example.com/v1
-export MODEL_API_KEY=replace-with-your-api-key
-export ROLLER_RUN_ROOT="$PWD/runs/skillsbench"
-mkdir -p "$ROLLER_RUN_ROOT"
+export ROLLER_MODEL_ID=example-model
+export ROLLER_MODEL_BASE_URL=https://api.example.com/v1
+export ROLLER_MODEL_API_KEY=replace-with-your-api-key
+export ROLLER_BENCH_OUTPUT="$PWD/runs/skillsbench"
 
-roller collect --bench skillsbench --bench-root "$SKILLSBENCH_ROOT" \
-  --bench-variant with-skill --model example-model \
-  --opencode-api-base "$MODEL_API_BASE_URL" \
-  --opencode-api-key-env MODEL_API_KEY --parallel 1 --grader-parallel 1 \
-  --output "$ROLLER_RUN_ROOT" --run-name with-skill
+# 检查并运行 with-skill
+scripts/run-benchmark.sh --config examples/benchmarks/base.yaml \
+  --extra-config examples/benchmarks/skillsbench.yaml --dry-run
+scripts/run-benchmark.sh --config examples/benchmarks/base.yaml \
+  --extra-config examples/benchmarks/skillsbench.yaml
 
-roller collect --bench skillsbench --bench-root "$SKILLSBENCH_ROOT" \
-  --bench-variant no-skill --model example-model \
-  --opencode-api-base "$MODEL_API_BASE_URL" \
-  --opencode-api-key-env MODEL_API_KEY --parallel 1 --grader-parallel 1 \
-  --output "$ROLLER_RUN_ROOT" --run-name no-skill
+# no-skill 只多一层小配置
+scripts/run-benchmark.sh --config examples/benchmarks/base.yaml \
+  --extra-config examples/benchmarks/skillsbench.yaml \
+  --extra-config examples/benchmarks/skillsbench-no-skill.yaml --dry-run
+scripts/run-benchmark.sh --config examples/benchmarks/base.yaml \
+  --extra-config examples/benchmarks/skillsbench.yaml \
+  --extra-config examples/benchmarks/skillsbench-no-skill.yaml
 ```
 
 `prepare-skillsbench.sh` 接受任意持久化目录。目录不存在时，它会下载 v1.1；目录已存在时，
@@ -41,16 +42,16 @@ API key。手工准备也可以：checkout SkillsBench 的 `v1.1` tag，再构�
 
 运行前，请把示例 API 地址、key 和模型 ID 换成模型服务商提供的值。
 
-两条 `collect` 命令会在各自的 run 目录写入 `tasks.jsonl` 和 `bench-report.json`。
+两条运行命令会在各自的 run 目录写入 `tasks.jsonl` 和 `bench-report.json`。
 SkillsBench 默认每题跑 3 次，每个 OpenCode turn 最多 100 步，单次模型响应最多
-32768 tokens。可用 `--samples`、`--opencode-max-steps` 和
-`--opencode-output-tokens` 修改这些值。
+32768 tokens。需要修改时，在额外的 `--extra-config` 层覆盖 `execution.samples`、
+`harness.extra.max_steps` 或 `harness.extra.output_tokens`。
 
 正式对比请固定在 `v1.1` tag，对应 commit
-`b63b7b2850226b6aa4fb5929a8c1ac7bc4d9a6af`。建议先加
-`--bench-task-id 3d-scan-calc` 跑一题，确认模型、镜像和输出目录都正常。
-`--bench-category` 与 `--bench-task-id` 可以重复传入。慢模型可用
-`--bench-timeout-multiplier 2` 同时放大 Agent 和 verifier 的时间上限。
+`b63b7b2850226b6aa4fb5929a8c1ac7bc4d9a6af`。建议先在 `benchmark.task_ids`
+中只选 `3d-scan-calc`，确认模型、镜像和输出目录都正常。
+`benchmark.categories` 和 `benchmark.task_ids` 都是列表。模型较慢时可设置
+`benchmark.timeout_multiplier: 2`，同时延长 Agent 与 verifier 的时间上限。
 
 ## Roller 如何执行任务
 

@@ -25,7 +25,7 @@ Choose the command for the job first, then add that command's flags.
 | --- | --- |
 | `roller collect [OPTIONS]` | Reads tasks, runs a Harness, and collects trajectories |
 | `roller view RUN_DIR` | Opens an existing run in the Viewer |
-| `roller bench ...` | Lists, exports, or summarizes benchmarks, with collection flags in section 8 |
+| `roller bench ...` | Runs, lists, exports, or summarizes benchmarks, with options in section 8 |
 | `roller --version` | Shows the installed Roller version |
 
 The smallest collect command needs a task list. Set the model with `--model` or in each task's `model` field.
@@ -216,19 +216,24 @@ Bench flags convert an external benchmark into Roller tasks, run collection, gra
 | Command | Purpose |
 | --- | --- |
 | `roller bench list` | Lists the available benchmark adapters |
-| `roller collect --bench ...` | Converts, runs, grades, and summarizes a benchmark, recommended for most users |
+| `roller bench run --config BASE --extra-config BENCH` | Resolves layered YAML/JSON, then converts, runs, grades, and summarizes a benchmark |
+| `roller collect --bench ...` | Direct low-level benchmark entry point |
 | `roller bench export ...` | Converts a benchmark to task JSONL without running tasks |
 | `roller bench report RUN_DIR` | Regenerates a grading summary for an existing run |
 
 Common command forms:
 
 ```bash
-roller collect --bench NAME --bench-root ROOT [--bench-category CAT]... [--bench-task-id ID]... [--bench-variant NAME] [--bench-timeout-multiplier N] ...
+roller bench run --config BASE.yaml [--extra-config FILE_OR_JSON]... [--dry-run]
+roller collect --bench NAME --bench-root ROOT [--bench-category CAT]... [--bench-task-id ID]... [--bench-variant NAME] [--bench-timeout-multiplier N] [--bench-runs-per-task N] ...
 roller bench export NAME ROOT --output TASKS.jsonl [--category CAT]... [--task-id ID]... [--variant NAME] [--timeout-multiplier N]
 roller bench report RUN_DIR [--output REPORT.json]
 ```
 
-Prefer `collect --bench`. It converts tasks, runs containers, grades results, and aggregates them in one command, then saves `tasks.jsonl` and `bench-report.json` in the run directory.
+See [Benchmark run standard](../benches/benchmark-standard.md) for the configuration schema,
+merge rules, and maintained examples.
+
+Use `bench run` for repeatable benchmark jobs. It resolves the shared and benchmark-specific configuration, then follows the same conversion, container, grading, and aggregation path as `collect --bench`. The direct command remains useful for one-off runs.
 
 | Flag | Default | Purpose |
 | --- | --- | --- |
@@ -238,6 +243,7 @@ Prefer `collect --bench`. It converts tasks, runs containers, grades results, an
 | `--bench-task-id ID` / `--task-id ID` | Unlimited | Selects one task and can be repeated, invalid IDs fail immediately |
 | `--bench-variant NAME` / `--variant NAME` | Adapter default | Selects a benchmark condition such as SkillsBench `with-skill` or `no-skill` |
 | `--bench-timeout-multiplier N` / `--timeout-multiplier N` | Adapter default | Scales each benchmark task timeout by a finite positive number |
+| `--bench-runs-per-task N` / `--runs-per-task N` | `1` | Duplicates selected benchmark tasks and records their upstream run indices |
 | `--output` / `-o` | Required for export | Sets the exported task JSONL or report JSON |
 | `RUN_DIR` | Required for report | Selects a completed run and is a positional argument |
 | `--rebuild-task-images` | Off | Rebuilds task-specific benchmark images even when they already exist |

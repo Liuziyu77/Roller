@@ -5,7 +5,9 @@ Roller 在 task 结束后销毁容器。Bench 层为采集流程增加任务导�
 1. 把已 checkout 的 benchmark 转换为 `roller.task/v1` 任务清单（`roller bench export`）；
 2. 在容器销毁前、Agent 最后一轮之后，在同一个容器里执行该 bench 自带的 grader，将分数写入 `score.json`。
 
-`roller collect --bench NAME --bench-root ROOT` 会一键完成转换、采集、评分和聚合；
+面向用户的标准入口是 `roller bench run --config BASE --extra-config BENCH`，详见
+[Benchmark 运行规范](benchmark-standard.md)。它最终调用
+`roller collect --bench NAME --bench-root ROOT`，一条命令完成转换、采集、评分和聚合；
 `bench export` / 普通 `collect` / `bench report` 三步接口仍保留给需要检查或修改中间
 task JSONL 的高级流程。已注册的 adapter 见 `roller bench list`。
 
@@ -173,7 +175,9 @@ class MyBenchAdapter(BenchAdapter):
         return rows
 ```
 
-然后在 `src/roller/benches/__init__.py` 的注册表里加一行。可选覆盖 `categories()`
+然后在 `src/roller/benches/__init__.py` 的注册表里加一行，并补齐
+[新 benchmark 合入清单](benchmark-standard.md#新-benchmark-的合入要求)中的准备脚本、示例配置、
+中英文文档和测试。可选覆盖 `categories()`
 和 `aggregate()`（要匹配上游报法时才需要）。
 
 实现时需要处理以下情况：

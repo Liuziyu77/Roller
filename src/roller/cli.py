@@ -113,6 +113,29 @@ def _build_parser() -> argparse.ArgumentParser:
 
     bench_sub.add_parser("list", help="list registered benchmark adapters")
 
+    bench_run = bench_sub.add_parser(
+        "run", help="run a benchmark from layered YAML/JSON configuration"
+    )
+    bench_run.add_argument(
+        "--config",
+        required=True,
+        help="base benchmark run configuration (YAML or JSON)",
+    )
+    bench_run.add_argument(
+        "--extra-config",
+        action="append",
+        default=[],
+        help=(
+            "YAML/JSON overlay path or inline JSON object; repeatable and applied "
+            "from left to right"
+        ),
+    )
+    bench_run.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="resolve and validate the complete plan without starting containers",
+    )
+
     bench_export = bench_sub.add_parser(
         "export", help="convert a checked-out bench into a Roller task list"
     )
@@ -189,6 +212,12 @@ def _build_parser() -> argparse.ArgumentParser:
         type=float,
         default=1.0,
         help="multiply benchmark task timeouts (default: 1.0)",
+    )
+    collect.add_argument(
+        "--bench-runs-per-task",
+        type=int,
+        default=1,
+        help="duplicate each selected benchmark task before collection (default: 1)",
     )
     collect.add_argument(
         "--model",
@@ -542,7 +571,7 @@ def _dry_run_payload(args: argparse.Namespace, requests: list) -> dict:
         cli_harness or getattr(request.task, "harness", "openclaw")
         for request in requests
     }
-    return {
+    payload = {
         "dry_run": True,
         "harness": next(iter(agent_harnesses)) if len(agent_harnesses) == 1 else "mixed",
         "docker_image": args.docker_image,
@@ -598,6 +627,10 @@ def _dry_run_payload(args: argparse.Namespace, requests: list) -> dict:
             for request in requests
         ],
     }
+    bench_run_config = getattr(args, "_bench_run_config", None)
+    if isinstance(bench_run_config, dict):
+        payload["bench_run_config"] = bench_run_config
+    return payload
 
 
 def _with_task_timeout(request):
@@ -614,6 +647,49 @@ def _with_task_timeout(request):
     if declared == request.timeout_seconds:
         return request
     return dataclasses.replace(request, timeout_seconds=declared)
+
+
+def _repeat_bench_rows(
+    rows: list[dict[str, Any]], runs_per_task: int, adapter_name: str
+) -> list[dict[str, Any]]:
+    """Duplicate benchmark rows while preserving upstream run provenance."""
+
+    if runs_per_task < 1:
+        raise TaskFormatError("runs per task must be positive")
+    if runs_per_task == 1:
+        return rows
+    repeated: list[dict[str, Any]] = []
+    width = max(2, len(str(runs_per_task)))
+    for row in rows:
+        task_id = row.get("id")
+        bench = row.get("bench")
+        if not isinstance(task_id, str) or not task_id:
+            raise TaskFormatError(
+                f"{adapter_name}: exported task has no valid id"
+            )
+        if not isinstance(bench, dict):
+            raise TaskFormatError(
+                f"{adapter_name}: exported task {task_id!r} has no bench block"
+            )
+        metadata = bench.get("metadata", {})
+        if not isinstance(metadata, dict):
+            raise TaskFormatError(
+                f"{adapter_name}: exported task {task_id!r} has invalid metadata"
+            )
+        upstream_task_id = metadata.get("upstream_task_id") or task_id
+        for run_index in range(1, runs_per_task + 1):
+            clone = json.loads(json.dumps(row))
+            clone["id"] = f"{task_id}__run_{run_index:0{width}d}"
+            clone_metadata = clone["bench"].setdefault("metadata", {})
+            clone_metadata.update(
+                {
+                    "upstream_task_id": upstream_task_id,
+                    "run_index": run_index,
+                    "runs_per_task": runs_per_task,
+                }
+            )
+            repeated.append(clone)
+    return repeated
 
 
 def _collect(args: argparse.Namespace) -> int:
@@ -637,6 +713,8 @@ def _collect(args: argparse.Namespace) -> int:
         raise ValueError("--start-index cannot be negative")
     if args.limit is not None and args.limit <= 0:
         raise ValueError("--limit must be greater than zero")
+    if args.bench_runs_per_task < 1:
+        raise ValueError("--bench-runs-per-task must be at least 1")
     bundle_policy = BundlePolicy(
         max_file_bytes=args.max_input_file_bytes,
         max_task_input_bytes=args.max_task_input_bytes,
@@ -665,6 +743,7 @@ def _collect(args: argparse.Namespace) -> int:
         )
         if not rows:
             raise TaskFormatError(f"{adapter.name}: selection matched no tasks")
+        rows = _repeat_bench_rows(rows, args.bench_runs_per_task, adapter.name)
         bench_manifest = "".join(
             json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n" for row in rows
         ).encode("utf-8")
@@ -678,6 +757,7 @@ def _collect(args: argparse.Namespace) -> int:
             "categories": list(args.bench_category),
             "task_ids": list(args.bench_task_id),
             "timeout_multiplier": args.bench_timeout_multiplier,
+            "runs_per_task": args.bench_runs_per_task,
             "exported_task_count": len(rows),
         }
     else:
@@ -685,6 +765,8 @@ def _collect(args: argparse.Namespace) -> int:
             raise ValueError("--bench-* selection options require --bench")
         if args.bench_timeout_multiplier != 1.0:
             raise ValueError("--bench-timeout-multiplier requires --bench")
+        if args.bench_runs_per_task != 1:
+            raise ValueError("--bench-runs-per-task requires --bench")
         tasks_path = Path(args.tasks).expanduser().resolve()
     tasks = load_tasks(
         tasks_path,
@@ -1162,6 +1244,7 @@ def _collect(args: argparse.Namespace) -> int:
                 if bench_context is not None
                 else None
             ),
+            "bench_run_config": getattr(args, "_bench_run_config", None),
             "models": args.model,
             "trajectory_count": len(requests),
             "workspace": str(workspace) if workspace else None,
@@ -1400,6 +1483,25 @@ def _bench(args: argparse.Namespace) -> int:
             )
             print(f"{adapter.name:<16} {adapter.description}{variants}")
         return 0
+    if args.bench_command == "run":
+        from roller.benches.run_config import (
+            load_bench_run_plan,
+            temporary_environment,
+        )
+
+        with tempfile.TemporaryDirectory(prefix="roller-bench-run-") as temporary:
+            plan = load_bench_run_plan(
+                args.config,
+                args.extra_config,
+                temporary_root=Path(temporary),
+            )
+            collect_argv = list(plan.collect_argv)
+            if args.dry_run:
+                collect_argv.append("--dry-run")
+            collect_args = _build_parser().parse_args(collect_argv)
+            collect_args._bench_run_config = plan.provenance
+            with temporary_environment(plan.environment):
+                return _collect(collect_args)
     if args.bench_command == "export":
         adapter = get_bench(args.name)
         root = Path(args.root).expanduser().resolve()
@@ -1414,41 +1516,7 @@ def _bench(args: argparse.Namespace) -> int:
         )
         if not rows:
             raise TaskFormatError(f"{adapter.name}: selection matched no tasks")
-        if args.runs_per_task < 1:
-            raise TaskFormatError("--runs-per-task must be positive")
-        if args.runs_per_task > 1:
-            repeated: list[dict[str, Any]] = []
-            width = max(2, len(str(args.runs_per_task)))
-            for row in rows:
-                task_id = row.get("id")
-                bench = row.get("bench")
-                if not isinstance(task_id, str) or not task_id:
-                    raise TaskFormatError(
-                        f"{adapter.name}: exported task has no valid id"
-                    )
-                if not isinstance(bench, dict):
-                    raise TaskFormatError(
-                        f"{adapter.name}: exported task {task_id!r} has no bench block"
-                    )
-                metadata = bench.get("metadata", {})
-                if not isinstance(metadata, dict):
-                    raise TaskFormatError(
-                        f"{adapter.name}: exported task {task_id!r} has invalid metadata"
-                    )
-                upstream_task_id = metadata.get("upstream_task_id") or task_id
-                for run_index in range(1, args.runs_per_task + 1):
-                    clone = json.loads(json.dumps(row))
-                    clone["id"] = f"{task_id}__run_{run_index:0{width}d}"
-                    clone_metadata = clone["bench"].setdefault("metadata", {})
-                    clone_metadata.update(
-                        {
-                            "upstream_task_id": upstream_task_id,
-                            "run_index": run_index,
-                            "runs_per_task": args.runs_per_task,
-                        }
-                    )
-                    repeated.append(clone)
-            rows = repeated
+        rows = _repeat_bench_rows(rows, args.runs_per_task, adapter.name)
         output = Path(args.output).expanduser().resolve()
         output.parent.mkdir(parents=True, exist_ok=True)
         with output.open("w", encoding="utf-8") as handle:

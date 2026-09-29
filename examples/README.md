@@ -27,6 +27,13 @@ examples/
 │   └── suite.py                    列表、校验、分组运行与验收
 ├── env/
 │   └── api.env.example
+├── benchmarks/
+│   ├── base.yaml
+│   ├── wildclawbench.yaml
+│   ├── pinchbench.yaml
+│   ├── knclawbench.yaml
+│   ├── skillsbench.yaml
+│   └── skillsbench-no-skill.yaml
 ├── config/
 │   ├── openclaw/
 │   │   ├── models.json
@@ -50,29 +57,29 @@ examples/
 
 ## Benchmark 一键运行
 
-项目根目录的脚本会依次执行 `bench export`、`collect` 和
-`bench report`，临时 task 清单退出时自动删除，报告写入
-`<OUTPUT_ROOT>/<RUN_NAME>/report.json`：
+标准入口会合并公共配置和 benchmark 配置，然后完成任务转换、运行、评分和报告：
 
 ```bash
-# QwenClawBench：纯 automated task 的最小 smoke。
-QWENCLAW_ROOT=/path/to/QwenClawBench \
-MODEL=local-vllm/qwen3-30b-a3b-local \
-MODEL_CONFIG=examples/config/openclaw/models-local-vllm.json \
-LOCAL_VLLM_API_KEY=local \
-QWENCLAW_REQUIRE_JUDGE=0 \
-TASK_IDS=task_00036_find_largest_file_in_downloads_directory \
-RUNS_PER_TASK=1 \
-./scripts/run-qwenclawbench.sh
+export ROLLER_MODEL_ID=example/model
+export ROLLER_MODEL_BASE_URL=https://api.example.com/v1
+export ROLLER_MODEL_API_KEY=replace-with-your-api-key
+export ROLLER_JUDGE_BASE_URL=https://judge.example.com/v1
+export ROLLER_JUDGE_API_KEY=replace-with-your-judge-key
+export ROLLER_JUDGE_MODEL=example-judge
+export ROLLER_BENCH_OUTPUT="$PWD/runs"
+export QWENCLAWBENCH_ROOT="$PWD/.benchmarks/knclawbench-v1.1"
+
+scripts/prepare-benchmark.sh qwenclawbench "$QWENCLAWBENCH_ROOT"
+scripts/run-benchmark.sh \
+  --config examples/benchmarks/base.yaml \
+  --extra-config examples/benchmarks/knclawbench.yaml \
+  --dry-run
 ```
 
-`HARNESS` 默认为 `openclaw`。使用其他 Harness 时设置 `API_BASE` 和
-`API_KEY_ENV`；后者是保存 Key 的环境变量名，不是 Key 本身。通用变量还有
-`PARALLEL`、`RETRIES`、`OUTPUT_ROOT`、`RUN_NAME`、`TASK_IDS`、
-`CATEGORIES` 和可选的 `MAX_STEPS`。QwenClawBench 的 `RUNS_PER_TASK`
-默认为 3；运行 hybrid task 前必须设置 `QWENCLAW_JUDGE_BASE_URL`、
-`QWENCLAW_JUDGE_API_KEY` 和 `QWENCLAW_JUDGE_MODEL`。脚本后的参数会原样追加
-给 `roller collect`，例如 `./scripts/run-qwenclawbench.sh --resume`。
+确认计划后删除 `--dry-run`。替换最后一个 extra config 即可运行 WildClawBench、
+PinchBench 或 SkillsBench。QwenClawBench 的模板按官方设置每题运行 3 次；可在后续
+`--extra-config` 中覆盖 `benchmark.extra.runs_per_task`。旧的
+`scripts/run-qwenclawbench.sh` 继续保留，已有调用无需迁移。
 
 完整的运行与评分约束见
 [QwenClawBench 文档](../docs/zh/benches/qwenclawbench.md)。

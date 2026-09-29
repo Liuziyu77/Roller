@@ -1,6 +1,6 @@
 # PinchBench
 
-[文档中心](../index.md) · [Bench 接入与评分](bench-format.md) · [OpenClaw 配置](../harnesses/openclaw-configuration.md)
+[文档中心](../index.md) · [Benchmark 运行规范](benchmark-standard.md) · [Bench 接入与评分](bench-format.md) · [OpenClaw 配置](../harnesses/openclaw-configuration.md)
 
 Roller 从 PinchBench 的 `tasks/manifest.yaml` 读取任务。目前支持 automated、LLM judge、
 hybrid grader 和多 session。上游仓库是 <https://github.com/pinchbench/skill>。
@@ -8,13 +8,13 @@ hybrid grader 和多 session。上游仓库是 <https://github.com/pinchbench/sk
 ## 准备环境
 
 ```bash
-scripts/prepare-pinchbench.sh "$PWD/.benchmarks/pinchbench"
 export PINCHBENCH_ROOT="$PWD/.benchmarks/pinchbench"
+scripts/prepare-benchmark.sh pinchbench "$PINCHBENCH_ROOT"
 
-export MODEL_API_BASE_URL=https://api.example.com/v1
-export MODEL_API_KEY=replace-with-your-api-key
-export ROLLER_RUN_ROOT="$PWD/runs/pinchbench"
-mkdir -p "$ROLLER_RUN_ROOT"
+export ROLLER_MODEL_ID=example/model
+export ROLLER_MODEL_BASE_URL=https://api.example.com/v1
+export ROLLER_MODEL_API_KEY=replace-with-your-api-key
+export ROLLER_BENCH_OUTPUT="$PWD/runs/pinchbench"
 ```
 
 `prepare-pinchbench.sh` 会在目录不存在时 clone 上游数据，并拉取固定的
@@ -23,51 +23,40 @@ mkdir -p "$ROLLER_RUN_ROOT"
 <https://github.com/pinchbench/skill>，再拉取
 `ghcr.io/openclaw/openclaw:2026.7.1-2`。
 
-OpenClaw 还需要一份模型配置。把下面的内容保存为 `example.models.json`，再把 API 地址、
-key 和模型 ID 换成模型服务商提供的值：
-
-```json
-{
-  "mode": "merge",
-  "providers": {
-    "example": {
-      "baseUrl": "${MODEL_API_BASE_URL}",
-      "apiKey": "${MODEL_API_KEY}",
-      "api": "openai-completions",
-      "timeoutSeconds": 600,
-      "models": [{"id": "example-model", "name": "Example model"}]
-    }
-  }
-}
-```
+准备脚本固定使用 revision `819384ae830492365b8363fc26bc2602e73f216d`。已有 checkout 的
+revision 不一致时，脚本会报错，不会自动切换版本。
 
 先跑两道自动评分题。这一步不需要 judge：
 
 ```bash
-roller collect --bench pinchbench --bench-root "$PINCHBENCH_ROOT" \
-  --bench-variant automated-only \
-  --bench-task-id task_sanity --bench-task-id task_files \
-  --model example/example-model --model-config example.models.json \
-  --parallel 1 --grader-parallel 1 \
-  --output "$ROLLER_RUN_ROOT" --run-name smoke
+scripts/run-benchmark.sh --config examples/benchmarks/base.yaml \
+  --extra-config examples/benchmarks/pinchbench.yaml \
+  --extra-config '{"benchmark":{"variant":"automated-only","task_ids":["task_sanity","task_files"]},"execution":{"parallel":1,"grader_parallel":1,"run_name":"pinchbench-smoke"}}' \
+  --dry-run
+
+scripts/run-benchmark.sh --config examples/benchmarks/base.yaml \
+  --extra-config examples/benchmarks/pinchbench.yaml \
+  --extra-config '{"benchmark":{"variant":"automated-only","task_ids":["task_sanity","task_files"]},"execution":{"parallel":1,"grader_parallel":1,"run_name":"pinchbench-smoke"}}'
 ```
 
-命令完成后，结果在 `smoke/tasks.jsonl` 和
-`smoke/bench-report.json`。
+命令完成后，结果在 `$ROLLER_BENCH_OUTPUT/pinchbench-smoke/` 下的 `tasks.jsonl`
+和 `bench-report.json`。
 
-`all` 和 `core` 中有 LLM/hybrid 任务。需要和 PinchBench 官方设置比较时，使用默认 judge
-`anthropic/claude-haiku-4.5`。Roller 默认请求
-`https://openrouter.ai/api/v1`，因此只需设置 OpenRouter key：
+`all` 和 `core` 中有 LLM/hybrid 任务。仓库内配置把三个公共 judge 变量映射为 PinchBench
+使用的环境变量。dry-run 前先设置：
 
 ```bash
-export OPENROUTER_API_KEY=...
+export ROLLER_JUDGE_BASE_URL=https://judge.example.com/v1
+export ROLLER_JUDGE_API_KEY=replace-with-your-judge-key
+export ROLLER_JUDGE_MODEL=example-judge
 
-roller collect --bench pinchbench --bench-root "$PINCHBENCH_ROOT" \
-  --bench-variant core --bench-timeout-multiplier 2 \
-  --model example/example-model --model-config example.models.json \
-  --samples 1 --parallel 1 --grader-parallel 1 \
-  --output "$ROLLER_RUN_ROOT" --run-name core
+scripts/run-benchmark.sh --config examples/benchmarks/base.yaml \
+  --extra-config examples/benchmarks/pinchbench.yaml --dry-run
+scripts/run-benchmark.sh --config examples/benchmarks/base.yaml \
+  --extra-config examples/benchmarks/pinchbench.yaml
 ```
+
+Roller 会从公共模型字段生成临时 OpenClaw models 文件，不需要另写一份 JSON。
 
 ## Variant
 
@@ -98,6 +87,7 @@ roller collect --bench pinchbench --bench-root "$PINCHBENCH_ROOT" \
 `PINCHBENCH_JUDGE_MAX_TOKENS=8192` 提高上限。`PINCHBENCH_JUDGE_RETRIES` 大于 0
 时，Roller 会重试网络错误和没有可解析分数的成功响应。流式响应的 `content` 为空时，
 grader 也会尝试读取 `reasoning_content`。
+如果所有 judge 请求都失败，该样本会标记为不可计分，不会被当作真实 0 分计入报告。
 
 Roller 会保留 frontmatter 中的 `prerequisites`。四个 FWS/GWS/GitHub integration 任务会在
 临时任务容器中安装固定版本的 `fws`、`gws` 和 `gh`，然后启动上游 FWS mock service。

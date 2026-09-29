@@ -25,7 +25,7 @@ roller view --help
 | --- | --- |
 | `roller collect [OPTIONS]` | 读取 task，运行 Harness 并采集轨迹 |
 | `roller view RUN_DIR` | 在 Viewer 中浏览已有 run |
-| `roller bench ...` | 列出、导出或汇总 benchmark，采集参数见第 8 节 |
+| `roller bench ...` | 运行、列出、导出或汇总 benchmark，参数见第 8 节 |
 | `roller --version` | 查看当前安装的 Roller 版本 |
 
 最小的 collect 命令需要 task 清单。模型可以通过 `--model` 指定，也可以写在每条 task 的 `model` 字段中：
@@ -216,19 +216,23 @@ Bench 参数用于把外部 benchmark 转换为 Roller task、运行采集、执
 | 命令 | 用途 |
 | --- | --- |
 | `roller bench list` | 查看当前可用的 benchmark adapter |
-| `roller collect --bench ...` | 转换、运行、评分并汇总 benchmark，推荐大多数用户使用 |
+| `roller bench run --config BASE --extra-config BENCH` | 解析分层 YAML/JSON，再转换、运行、评分并汇总 benchmark |
+| `roller collect --bench ...` | 直接调用底层 benchmark 入口 |
 | `roller bench export ...` | 只把 benchmark 转换为 task JSONL，不运行任务 |
 | `roller bench report RUN_DIR` | 为已有 run 重新生成评分汇总 |
 
 常用命令形式如下：
 
 ```bash
-roller collect --bench NAME --bench-root ROOT [--bench-category CAT]... [--bench-task-id ID]... [--bench-variant NAME] [--bench-timeout-multiplier N] ...
+roller bench run --config BASE.yaml [--extra-config FILE_OR_JSON]... [--dry-run]
+roller collect --bench NAME --bench-root ROOT [--bench-category CAT]... [--bench-task-id ID]... [--bench-variant NAME] [--bench-timeout-multiplier N] [--bench-runs-per-task N] ...
 roller bench export NAME ROOT --output TASKS.jsonl [--category CAT]... [--task-id ID]... [--variant NAME] [--timeout-multiplier N]
 roller bench report RUN_DIR [--output REPORT.json]
 ```
 
-推荐使用 `collect --bench`。它会在一条命令中完成任务转换、容器执行、评分和聚合，并在 run 目录保存 `tasks.jsonl` 与 `bench-report.json`。
+配置字段、合并规则和仓库内示例见 [Benchmark 运行规范](../benches/benchmark-standard.md)。
+
+需要复现实验时使用 `bench run`。它先合并公共配置和 benchmark 专属配置，再进入与 `collect --bench` 相同的任务转换、容器执行、评分和聚合流程。临时跑一次时仍可直接使用 `collect --bench`。
 
 | 参数 | 默认值 | 用途 |
 | --- | --- | --- |
@@ -238,6 +242,7 @@ roller bench report RUN_DIR [--output REPORT.json]
 | `--bench-task-id ID` / `--task-id ID` | 不限制 | 只选择指定 task，可重复，错误 ID 会直接报错 |
 | `--bench-variant NAME` / `--variant NAME` | adapter 默认值 | 选择 benchmark 条件，例如 SkillsBench 的 `with-skill` 或 `no-skill` |
 | `--bench-timeout-multiplier N` / `--timeout-multiplier N` | adapter 默认值 | 按有限正数倍数缩放每条 benchmark task 的超时 |
+| `--bench-runs-per-task N` / `--runs-per-task N` | `1` | 复制选中的 benchmark task，并记录对应的上游运行序号 |
 | `--output` / `-o` | export 时必填 | 设置 export 的 task JSONL 或 report 的报告 JSON |
 | `RUN_DIR` | report 时必填 | 指定已完成的 run，属于位置参数 |
 | `--rebuild-task-images` | 关闭 | 即使 task-specific benchmark 镜像已经存在也重新构建 |

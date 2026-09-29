@@ -1,0 +1,203 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://roller.dev/schemas/bench-run.schema.json",
+  "title": "Roller Benchmark Run Configuration v1",
+  "description": "One layer of a Roller benchmark run configuration. Roller deep-merges all layers and performs context-dependent validation on the result.",
+  "type": "object",
+  "properties": {
+    "schema_version": {"const": "roller.bench-run/v1"},
+    "benchmark": {
+      "type": "object",
+      "properties": {
+        "id": {"$ref": "#/$defs/nonEmptyString"},
+        "root": {"$ref": "#/$defs/nonEmptyString"},
+        "variant": {
+          "type": ["string", "null"],
+          "minLength": 1
+        },
+        "categories": {"$ref": "#/$defs/stringList"},
+        "task_ids": {"$ref": "#/$defs/stringList"},
+        "timeout_multiplier": {
+          "anyOf": [
+            {"type": "number", "exclusiveMinimum": 0},
+            {"$ref": "#/$defs/environmentReference"}
+          ]
+        },
+        "environment": {
+          "type": "object",
+          "propertyNames": {"pattern": "^[A-Za-z_][A-Za-z0-9_]*$"},
+          "additionalProperties": {"type": "string"}
+        },
+        "extra": {
+          "type": ["object", "null"],
+          "description": "Benchmark-specific options. Roller validates fields against the selected benchmark.",
+          "properties": {
+            "runs_per_task": {"$ref": "#/$defs/positiveIntegerOrEnv"}
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "model": {
+      "type": "object",
+      "properties": {
+        "id": {"$ref": "#/$defs/nonEmptyString"},
+        "label": {"$ref": "#/$defs/nullableNonEmptyString"},
+        "provider": {"$ref": "#/$defs/nullableNonEmptyString"},
+        "base_url": {"$ref": "#/$defs/nullableNonEmptyString"},
+        "api_key_env": {
+          "type": ["string", "null"],
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+        },
+        "api_protocol": {"$ref": "#/$defs/nullableNonEmptyString"},
+        "thinking": {
+          "enum": [
+            null,
+            "off",
+            "none",
+            "minimal",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "adaptive",
+            "max",
+            "ultra"
+          ]
+        },
+        "params": {"type": "object"}
+      },
+      "additionalProperties": false
+    },
+    "harness": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "enum": [
+            "openclaw",
+            "codex",
+            "claude-code",
+            "hermes",
+            "opencode",
+            "deepseek",
+            "pi"
+          ]
+        },
+        "image": {"$ref": "#/$defs/nullableNonEmptyString"},
+        "extra": {
+          "type": ["object", "null"],
+          "description": "Harness-specific options. Roller checks that each option belongs to the selected Harness after merging layers.",
+          "properties": {
+            "model_config": {"$ref": "#/$defs/nonEmptyString"},
+            "gateway_port": {"$ref": "#/$defs/positiveIntegerOrEnv"},
+            "gateway_port_step": {"$ref": "#/$defs/positiveIntegerOrEnv"},
+            "gateway_startup_timeout": {"$ref": "#/$defs/positiveNumberOrEnv"},
+            "model_request_timeout": {"$ref": "#/$defs/positiveIntegerOrEnv"},
+            "max_tokens": {"$ref": "#/$defs/positiveIntegerOrEnv"},
+            "session_id": {"$ref": "#/$defs/nonEmptyString"},
+            "search_provider": {"$ref": "#/$defs/nonEmptyString"},
+            "collect_paths": {"$ref": "#/$defs/stringList"},
+            "set_image_model": {"type": "boolean"},
+            "cache_trace": {"type": "boolean"},
+            "config": {"$ref": "#/$defs/nonEmptyString"},
+            "reasoning_summary": {"enum": ["auto", "concise", "detailed", "none"]},
+            "web_search": {"enum": ["disabled", "cached", "live"]},
+            "websockets": {"type": "boolean"},
+            "settings": {"$ref": "#/$defs/nonEmptyString"},
+            "max_turns": {"$ref": "#/$defs/positiveIntegerOrEnv"},
+            "max_thinking_tokens": {"$ref": "#/$defs/positiveIntegerOrEnv"},
+            "permission_mode": {
+              "enum": [
+                "default",
+                "acceptEdits",
+                "plan",
+                "auto",
+                "dontAsk",
+                "bypassPermissions"
+              ]
+            },
+            "max_iterations": {"$ref": "#/$defs/positiveIntegerOrEnv"},
+            "max_steps": {"$ref": "#/$defs/positiveIntegerOrEnv"},
+            "context_length": {"$ref": "#/$defs/positiveIntegerOrEnv"},
+            "output_tokens": {"$ref": "#/$defs/positiveIntegerOrEnv"},
+            "vision": {"type": "boolean"}
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "execution": {
+      "type": "object",
+      "properties": {
+        "output": {"$ref": "#/$defs/nonEmptyString"},
+        "run_name": {"$ref": "#/$defs/nonEmptyString"},
+        "parallel": {"$ref": "#/$defs/positiveIntegerOrEnv"},
+        "grader_parallel": {"$ref": "#/$defs/positiveIntegerOrEnv"},
+        "samples": {"$ref": "#/$defs/positiveIntegerOrEnv"},
+        "retries": {"$ref": "#/$defs/nonNegativeIntegerOrEnv"},
+        "timeout": {"$ref": "#/$defs/positiveIntegerOrEnv"},
+        "start_index": {"$ref": "#/$defs/nonNegativeIntegerOrEnv"},
+        "limit": {"$ref": "#/$defs/positiveIntegerOrEnv"},
+        "resume": {"type": "boolean"},
+        "wire_trace": {"enum": ["off", "actf", "full"]},
+        "keep_thinking": {"type": "boolean"},
+        "pass_env": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+          },
+          "uniqueItems": true
+        },
+        "keep_container_on_error": {"type": "boolean"},
+        "rebuild_task_images": {"type": "boolean"},
+        "container_user": {"$ref": "#/$defs/nonEmptyString"},
+        "network": {"$ref": "#/$defs/nonEmptyString"},
+        "docker_binary": {"$ref": "#/$defs/nonEmptyString"},
+        "max_input_file_bytes": {"$ref": "#/$defs/positiveIntegerOrEnv"},
+        "max_task_input_bytes": {"$ref": "#/$defs/positiveIntegerOrEnv"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "$defs": {
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "nullableNonEmptyString": {
+      "type": ["string", "null"],
+      "minLength": 1
+    },
+    "environmentReference": {
+      "type": "string",
+      "pattern": "^\\$\\{[A-Za-z_][A-Za-z0-9_]*\\}$"
+    },
+    "nonNegativeIntegerOrEnv": {
+      "anyOf": [
+        {"type": "integer", "minimum": 0},
+        {"$ref": "#/$defs/environmentReference"}
+      ]
+    },
+    "positiveIntegerOrEnv": {
+      "anyOf": [
+        {"type": "integer", "minimum": 1},
+        {"$ref": "#/$defs/environmentReference"}
+      ]
+    },
+    "positiveNumberOrEnv": {
+      "anyOf": [
+        {"type": "number", "exclusiveMinimum": 0},
+        {"$ref": "#/$defs/environmentReference"}
+      ]
+    },
+    "stringList": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/nonEmptyString"},
+      "uniqueItems": true
+    }
+  },
+  "additionalProperties": false
+}

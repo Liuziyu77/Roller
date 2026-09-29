@@ -2,29 +2,42 @@
 
 60 个真实场景 OpenClaw 任务，6 个类别。上游：<https://github.com/InternLM/WildClawBench>。
 
-本页介绍 WildClawBench 的上游参数、对应的 Roller 配置，以及尚未支持的设置。
-bench 层通用机制（`bench` 块、grading 时序、`stage` 防泄漏、聚合口径）见
-[Bench 接入与评分](bench-format.md)。
+本页介绍 WildClawBench 的上游参数、对应的 Roller 配置，以及尚未支持的设置。统一配置约定见
+[Benchmark 运行规范](benchmark-standard.md)，bench 层通用机制（`bench` 块、grading 时序、
+`stage` 防泄漏、聚合口径）见 [Bench 接入与评分](bench-format.md)。
 
 ## 1. 最短路径
 
 ```bash
-# 1) 上游 checkout
-git clone https://github.com/InternLM/WildClawBench ~/WildClawBench
+# 1) 获取任务数据、准备资源，并加载选定 Harness 的镜像
+export WILDCLAWBENCH_ROOT="$PWD/.benchmarks/wildclawbench"
+export WILDCLAW_HARNESS=openclaw
+scripts/prepare-benchmark.sh wildclawbench "$WILDCLAWBENCH_ROOT"
 
-# 2) 上游的环境变量照常 source —— Roller 复用同一批变量名，见 §3
-set -a; . ~/WildClawBench/.env; set +a
+# 2) 设置公共模型和输出变量
+export ROLLER_MODEL_ID=example/model
+export ROLLER_MODEL_BASE_URL=https://api.example.com/v1
+export ROLLER_MODEL_API_KEY=replace-with-your-api-key
+export ROLLER_BENCH_OUTPUT="$PWD/runs/wildclawbench"
 
-# 3) 一键转换 + 采集 + 判分 + 汇总
-roller collect --bench wildclawbench --bench-root ~/WildClawBench \
-  --model <provider>/<model> \
-  --harness openclaw --openclaw-image wildclawbench-ubuntu:v1.3 \
-  --model-config my_api.json --parallel 4 \
-  --output /tmp/wcb --run-name run1 \
-  --pass-env NODE_EXTRA_CA_CERTS
+# 3) 设置公开示例配置需要的 judge 变量
+export ROLLER_JUDGE_BASE_URL=https://judge.example.com/v1
+export ROLLER_JUDGE_API_KEY=replace-with-your-judge-key
+export ROLLER_JUDGE_MODEL=example-judge
+export ROLLER_SEARCH_API_KEY=replace-with-your-search-key
+
+# 4) 先检查完整计划，再正式运行
+scripts/run-benchmark.sh --config examples/benchmarks/base.yaml \
+  --extra-config examples/benchmarks/wildclawbench.yaml --dry-run
+scripts/run-benchmark.sh --config examples/benchmarks/base.yaml \
+  --extra-config examples/benchmarks/wildclawbench.yaml
 ```
 
-任务快照与报告分别保存在 `run1/tasks.jsonl` 和 `run1/bench-report.json`。
+任务快照与报告保存在 `$ROLLER_BENCH_OUTPUT/wildclawbench/`。使用上游 search shim 时，
+应在 dry-run 前 source 上游 `.env`。下文列出的 `roller collect --bench` 参数仍可用于临时运行。
+
+准备脚本固定使用 revision `41bfe78a4d04369887687397708504882a80c17a`。如果目标目录已有其他
+revision，脚本会报错，不会改动 checkout。
 
 ## 2. 上游旋钮 → Roller 对应
 
@@ -145,7 +158,8 @@ Adapter 保留这段前缀，使导出的 prompt 与上游逐字节一致；遗�
 挂载整个 `<declared>` 目录会使种子文件多出一层路径：skill 和 warmup 引用
 `/tmp_workspace/utils.py`，文件却位于 `/tmp_workspace/exec/` 下。同时，Agent 会获得
 读取 `gt/` 的权限。因此 `workspace` 指向 `<declared>/exec`，通过挂载范围隔离答案，
-无需再过滤文件。
+无需再过滤文件。Adapter 同时把所有 Harness 的容器工作目录固定为 `/tmp_workspace`，
+与任务 prompt 和 grader 中的绝对路径一致。
 
 ## 8. 段落映射总表
 
@@ -161,6 +175,11 @@ Adapter 保留这段前缀，使导出的 prompt 与上游逐字节一致；遗�
 
 ## 9. 已知坑
 
+- 上游 `.env` 常用 `SEARCH_SHIM_HOST_IP=172.17.0.1`，这个地址依赖 Docker 默认
+  bridge；Podman 的 bridge 不一定能访问它。Roller 默认使用 host network。如果 shim
+  和容器在同一台机器，应配置 `SEARCH_SHIM_HOST_IP=127.0.0.1` 和
+  `execution.network: host`。正式运行前可先从容器发一次请求确认能收到 HTTP 响应；
+  如果连接超时，说明 shim 地址或网络模式仍不正确。
 - 镜像可能预设 `http_proxy`。例如 `wildclawbench-ubuntu:v1.3` 设置了代理，却未配置
   `no_proxy`，可能使自建 gateway 的请求超时，出现 `request_count=0` 和全部任务
   在同一秒退出的情况。可使用 WCB `.env` 中的 `*_INNER` 代理配置，其 `NO_PROXY_INNER`
@@ -177,3 +196,5 @@ Adapter 保留这段前缀，使导出的 prompt 与上游逐字节一致；遗�
   四种常见的 `status: error` 情况中，有三种仍有有效分数：observation 包含图片、
   工具调用中途超时、末轮只有工具调用而没有收尾文本。见
   [Bench 接入与评分 §3.2](bench-format.md#32-grading-失败--0-分)。
+- WildClawBench 会在 agent 超时或报错后继续评分仍然存活的 workspace，与上游 runner
+  对齐。此类样本不因超时自动重跑；最终是否得分由任务 grader 判断。

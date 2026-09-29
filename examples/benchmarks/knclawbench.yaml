@@ -1,0 +1,21 @@
+benchmark:
+  id: qwenclawbench
+  root: ${QWENCLAWBENCH_ROOT}
+  timeout_multiplier: 1
+  extra:
+    runs_per_task: 3
+  environment:
+    QWENCLAW_JUDGE_BASE_URL: ${ROLLER_JUDGE_BASE_URL}
+    QWENCLAW_JUDGE_API_KEY: ${ROLLER_JUDGE_API_KEY}
+    QWENCLAW_JUDGE_MODEL: ${ROLLER_JUDGE_MODEL}
+
+harness:
+  id: openclaw
+  image: ghcr.io/openclaw/openclaw:2026.7.1-2
+  extra:
+    model_request_timeout: 300
+    max_tokens: 32768
+
+execution:
+  run_name: knclawbench
+  samples: 1
