@@ -1,7 +1,7 @@
 from copy import deepcopy
 import unittest
 
-from roller.actf import openclaw_events_to_actf
+from roller.actf import _user_content, openclaw_events_to_actf
 from roller.claude_code_actf import claude_code_events_to_actf
 from roller.codex_actf import codex_events_to_actf, _arguments
 from roller.pi_actf import pi_events_to_actf
@@ -45,21 +45,103 @@ class MultimodalIntegrityTests(unittest.TestCase):
         with self.assertRaisesRegex(SFTConversionError, "incomplete"):
             actf_to_sft(trajectory)
 
-    def test_non_single_text_replacement_keeps_upstream_text_only_behavior(self):
-        picture = {"type": "image", "data": "AA==", "mimeType": "image/png"}
-        for content in ([picture], [{"type": "text", "text": "before"}, picture,
-                                    {"type": "text", "text": "after"}]):
+    def test_ambiguous_cleanup_preserves_image_blocks_instead_of_dropping_them(self):
+        pictures = [
+            {"type": "image", "data": "AA==", "mimeType": "image/png"},
+            {"type": "input_image", "image_url": "data:image/png;base64,AA=="},
+            {"type": "image_url", "image_url": {"url": "data:image/png;base64,AA=="}},
+        ]
+        for picture in pictures:
+            for content, expected_text in (
+                ([picture], "<image>"),
+                ([{"type": "text", "text": "before"}, picture,
+                  {"type": "text", "text": "after"}], "before\n<image>\nafter"),
+            ):
+                with self.subTest(content=content):
+                    original = deepcopy(content)
+                    actf = openclaw_events_to_actf(self.events(content), user_messages=["different"])
+                    self.assertEqual(actf["steps"][0]["user_content"], original)
+                    sft = actf_to_sft(actf)
+                    self.assertEqual(sft["messages"][1]["content"], expected_text)
+                    self.assertEqual(sft["images"], ["data:image/png;base64,AA=="])
+                    self.assertEqual(content, original)
+                    updated = _user_content(content, "different")
+                    updated[0]["test_mutation"] = True
+                    self.assertEqual(content, original)
+
+    def test_text_only_cleanup_keeps_existing_behavior_without_media_flag(self):
+        for content in ("wrapped", [], ["before", "after"],
+                        [{"type": "text", "text": "before"}, {"type": "text", "text": "after"}],
+                        [{"type": "input_text", "text": "<image> is literal text"},
+                         {"type": "output_text", "text": "</image>"}]):
             with self.subTest(content=content):
                 original = deepcopy(content)
-                actf = openclaw_events_to_actf(self.events(content), user_messages=["different"])
-                self.assertEqual(actf["steps"][0]["user_content"], "different")
+                actf = openclaw_events_to_actf(self.events(content), user_messages=["clean prompt"])
+                self.assertEqual(actf["steps"][0]["user_content"], "clean prompt")
                 sft = actf_to_sft(actf)
-                self.assertEqual(sft["messages"][1]["content"], "different")
-                self.assertFalse(sft.get("images"))
+                self.assertEqual(sft["messages"][1]["content"], "clean prompt")
+                self.assertEqual(set(sft), {"messages", "tools"})
                 self.assertEqual(content, original)
 
+    def test_non_image_media_cleanup_keeps_existing_fallback(self):
+        for media in ({"type": "video", "url": "clip.mp4"},
+                      {"type": "input_audio", "input_audio": {"data": "AA==", "format": "wav"}}):
+            for content in ([media], ["before", media, "after"]):
+                with self.subTest(content=content):
+                    original = deepcopy(content)
+                    self.assertEqual(_user_content(content, "clean prompt"), "clean prompt")
+                    self.assertEqual(content, original)
+
+    def test_ambiguous_cleanup_preserves_duplicate_images_across_turns(self):
+        first = {"type": "input_image", "image_url": "data:image/png;base64,AA=="}
+        second = {"type": "image_url", "image_url": {"url": "data:image/png;base64,AQ=="}}
+        content = ["before", first, "between", second, first, "after"]
+        events = self.events(content) + self.events([second, "next", first, "end"])
+        original = deepcopy(events)
+        sft = actf_to_sft(openclaw_events_to_actf(events, user_messages=["clean 1", "clean 2"]))
+        self.assertEqual([m["content"] for m in sft["messages"] if m["role"] == "user"],
+                         ["before\n<image>\nbetween\n<image>\n<image>\nafter",
+                          "<image>\nnext\n<image>\nend"])
+        self.assertEqual(sft["images"], ["data:image/png;base64," + value
+                                       for value in ("AA==", "AQ==", "AA==", "AQ==", "AA==")])
+        self.assertEqual(events, original)
+
+    def test_codex_image_wrapper_cleanup_preserves_image_for_ordinary_prompt(self):
+        from test_codex_actf import _events
+        events = _events()
+        prompt = "Describe this image."
+        content = [
+            {"type": "input_text", "text": '<image name=[Image #1] path="/workspace/input.png">'},
+            {"type": "input_image", "image_url": "data:image/png;base64,AA=="},
+            {"type": "input_text", "text": "</image>"},
+            {"type": "input_text", "text": prompt},
+        ]
+        events[2]["payload"]["content"] = content
+        original = deepcopy(events)
+        actf = codex_events_to_actf(events, user_messages=[prompt])
+        self.assertEqual(actf["steps"][0]["user_content"], content)
+        sft = actf_to_sft(actf)
+        self.assertEqual(sft["messages"][1]["content"],
+                         content[0]["text"] + "\n<image>\n</image>\n" + prompt)
+        self.assertEqual(sft["images"], ["data:image/png;base64,AA=="])
+        self.assertEqual(events, original)
+
+    def test_claude_multiblock_whitespace_cleanup_preserves_image(self):
+        from test_claude_code_actf import _events
+        events = _events()
+        content = [{"type": "text", "text": "  First paragraph"},
+                   {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "AA=="}},
+                   {"type": "text", "text": "Second paragraph  "}]
+        events[0]["message"]["content"] = content
+        original = deepcopy(events)
+        actf = claude_code_events_to_actf(events, user_messages=["First paragraph\n\nSecond paragraph"])
+        self.assertEqual(actf["steps"][0]["user_content"], content)
+        sft = actf_to_sft(actf)
+        self.assertEqual(sft["messages"][1]["content"], "  First paragraph\n<image>\nSecond paragraph  ")
+        self.assertEqual(sft["images"], ["data:image/png;base64,AA=="])
+        self.assertEqual(events, original)
+
     def test_prompt_cleanup_replaces_one_text_block_without_moving_images(self):
-        from roller.actf import _user_content
         for original_text in ("wrapper\nclean prompt", {"type": "text", "text": "wrapper\nclean prompt", "extra": "keep"}):
             for image_first in (False, True):
                 with self.subTest(text=original_text, image_first=image_first):
