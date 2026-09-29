@@ -220,6 +220,13 @@ dataset/
 需要让 Agent 原地修改 seed 文件时，在 `files` 中设置 `"input_mode": "copy"`；Roller 会先把
 完整输入树复制为工作区私有可写副本。默认值 `mount` 仍使用只读挂载。
 
+图片作为首轮模型输入时，在 `files.attach_images` 中按顺序列出已声明 input 的目标路径，
+例如 `"attach_images": ["inputs/reference.png"]`。默认不附图；存在 PNG 文件或选择
+`input_mode` 不等于向模型发送图片。选图变化也会改变 bundle 的 Resume 身份。
+Codex、Claude Code、OpenClaw、Pi、OpenCode、DeepSeek 支持此字段，Hermes 尚不支持；
+OpenCode 还需启用 vision。附件仅在会话首轮发送，OpenClaw/OpenCode reset 后重新发送。
+导出保留用户图片顺序；文字清洗位置有歧义时保留原多模态块，纯文本路径不变。
+
 ## 6. Context 与系统文件
 
 `files.context` 声明由 Harness 加载的 Context 文件：

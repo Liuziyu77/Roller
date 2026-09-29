@@ -7,11 +7,13 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 from roller.actf import convert_openclaw_trace
 from roller.collector import CollectionConfig, Collector
 from roller.harnesses.base import Harness
 from roller.models import HarnessResult, RunRequest, Task, TaskBundle
+from roller.trajectory_status import export_sft
 
 
 class FakeHarness(Harness):
@@ -471,34 +473,64 @@ class CollectorTests(unittest.TestCase):
             self.assertEqual(state["calls"][("task-0", "provider/model")], 2)
 
     def test_raw_only_conversion_failure_stays_ok_and_resumes(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            run_dir = Path(temporary) / "run"
+        for name in ("codex", "claude-code", "pi", "deepseek", "opencode", "openclaw"):
+            with self.subTest(harness=name), tempfile.TemporaryDirectory() as temporary:
+                run_dir = Path(temporary) / "run"
+                state = self._state()
+                state.update(raw_only=True, harness_name=name)
+                requests = make_requests()[:1]
+                first = Collector(CollectionConfig(run_dir=run_dir),
+                                  lambda slot: FakeHarness(state, slot)).collect(requests)
+                self.assertEqual(first[0]["status"], "ok")
+                self.assertFalse(first[0]["training"]["eligible"])
+                self.assertEqual(first[0]["conversion"]["status"], "unavailable")
+                self.assertIsNone(first[0]["trajectory"]["actf"])
+                self.assertIsNone(first[0]["trajectory"]["sft"])
+                self.assertEqual((run_dir / "sft.jsonl").read_text(), "")
+                sample = next((run_dir / "samples").glob("*/*"))
+                self.assertTrue((sample / "trace.jsonl").is_file())
+                self.assertFalse((sample / "trace_ACTF.json").exists())
+                resumed = Collector(CollectionConfig(run_dir=run_dir, resume=True),
+                                    lambda slot: FakeHarness(state, slot)).collect(requests)
+                self.assertEqual(resumed[0]["status"], "skipped")
+                self.assertEqual(resumed[0]["resumed_from_status"], "ok")
+                self.assertFalse(resumed[0]["training"]["eligible"])
+                self.assertEqual(state["calls"][("task-0", "provider/model")], 1)
+
+    def test_incomplete_projection_invalidates_existing_sft(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
             state = self._state()
-            state["raw_only"] = True
-            state["harness_name"] = "opencode"
-            requests = make_requests()[:1]
+            collector = Collector(CollectionConfig(run_dir=Path(tmp)), lambda slot: FakeHarness(state, slot))
+            request = make_requests()[0]
+            result = collector.collect([request])[0]
+            sample = collector._sample_dir(request)
+            path = sample / "trace_ACTF.json"
+            trajectory = json.loads(path.read_text())
+            trajectory["projection"] = {"complete": False}
+            path.write_text(json.dumps(trajectory))
+            with self.assertRaisesRegex(RuntimeError, "incomplete diagnostic"):
+                collector._write_sft_dataset([result])
+            metadata = {}
+            export_sft(sample, metadata)
+            self.assertEqual(metadata["trajectory_conversion"]["status"], "unavailable")
+            self.assertFalse((sample / "trace_SFT.json").exists())
 
-            first = Collector(
-                CollectionConfig(run_dir=run_dir),
-                lambda slot: FakeHarness(state, slot),
-            ).collect(requests)
+    def test_retry_backoff_does_not_reduce_each_attempt_timeout(self) -> None:
+        for retries, delays in ((0, []), (2, [3, 6])):
+            with self.subTest(retries=retries), tempfile.TemporaryDirectory() as tmp:
+                harness = Mock()
+                harness.run.return_value = HarnessResult.error_result("failed")
+                collector = Collector(CollectionConfig(Path(tmp), retries=retries, retry_backoff_seconds=3),
+                                      lambda slot: harness)
+                request = RunRequest(0, Task("sample", ("hello",), 0), "model", 10)
+                with patch.object(collector, "_finalize_sample", return_value={}), \
+                        patch("roller.collector.time.sleep") as sleep:
+                    collector._run_one(request, 0)
+                self.assertEqual([call.args[0] for call in sleep.call_args_list], delays)
+                self.assertEqual(harness.run.call_count, retries + 1)
+                self.assertTrue(all(call.args[0].timeout_seconds == 10 for call in harness.run.call_args_list))
 
-            self.assertEqual(first[0]["status"], "ok")
-            self.assertIsNone(first[0]["trajectory"]["actf"])
-            self.assertIsNone(first[0]["trajectory"]["sft"])
-            self.assertEqual((run_dir / "sft.jsonl").read_text(), "")
-            sample = next((run_dir / "samples").glob("*/*"))
-            self.assertTrue((sample / "trace.jsonl").is_file())
-            self.assertFalse((sample / "trace_ACTF.json").exists())
-
-            resumed = Collector(
-                CollectionConfig(run_dir=run_dir, resume=True),
-                lambda slot: FakeHarness(state, slot),
-            ).collect(requests)
-            self.assertEqual(resumed[0]["status"], "skipped")
-            self.assertEqual(state["calls"][("task-0", "provider/model")], 1)
-
-    def test_missing_actf_without_structured_conversion_error_is_an_error(self) -> None:
+    def test_missing_actf_is_conversion_failure_not_execution_failure(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             run_dir = Path(temporary) / "run"
             state = self._state()
@@ -511,9 +543,12 @@ class CollectorTests(unittest.TestCase):
                 lambda slot: FakeHarness(state, slot),
             ).collect(make_requests()[:1])[0]
 
-            self.assertEqual(result["status"], "error")
+            self.assertEqual(result["status"], "ok")
+            self.assertIsNone(result["error"])
+            self.assertFalse(result["training"]["eligible"])
+            self.assertEqual(result["conversion"]["status"], "failed")
             self.assertEqual(
-                result["error"],
+                result["conversion"]["error"],
                 "harness finished but no canonical ACTF trajectory was found",
             )
 

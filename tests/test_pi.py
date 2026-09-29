@@ -13,7 +13,8 @@ from unittest.mock import Mock, patch
 
 from roller.cli import _build_parser, _collect
 from roller.harnesses.pi import PiConfig, PiHarness, RUNNER_PATH
-from roller.pi_actf import convert_pi_trace, extract_pi_usage, pi_events_to_actf
+from roller.pi_actf import convert_pi_trace, extract_pi_usage, pi_events_to_actf, read_pi_events
+from roller.redaction import redact_file_literals
 from roller.models import RunRequest, Task
 from roller.sft import actf_to_sft
 
@@ -49,6 +50,29 @@ def write_events(path, events=None):
 
 
 class PiTraceTests(unittest.TestCase):
+    def test_large_trace_reader_discards_partial_snapshots_without_changing_raw(self):
+        rows = [{"type": "turn_start", "turn": 1},
+                {"type": "event", "event": {"type": "message_update", "text": "x" * 10000}},
+                {"type": "event", "event": {"type": "message_end", "message": {"content": "a\u2028b"}}}]
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "trace.jsonl"
+            raw = "\n".join(json.dumps(row, ensure_ascii=False) for row in rows)
+            path.write_text(raw)
+            with patch.object(Path, "read_text", side_effect=AssertionError("whole file read")):
+                actual = read_pi_events(path)
+            self.assertEqual(actual, [rows[0], {"type": "event", "event": {"type": "message_update"}}, rows[2]])
+            self.assertEqual(path.read_text(), raw)
+
+    def test_streaming_redaction_handles_secrets_across_chunks(self):
+        for size in (1, 3, 8, 64):
+            with self.subTest(chunk_size=size), tempfile.TemporaryDirectory() as tmp:
+                path = Path(tmp) / "trace"
+                raw = "prefix\r\nsecret\nvalue\u2028suffix" * 3
+                path.write_bytes(raw.encode())
+                with patch.object(Path, "read_text", side_effect=AssertionError("whole file read")):
+                    redact_file_literals(path, ["secret\nvalue"], chunk_size=size)
+                self.assertEqual(path.read_bytes().decode(), raw.replace("secret\nvalue", "[REDACTED]"))
+
     def test_native_tools_reasoning_and_cache_usage(self):
         actf = pi_events_to_actf(sample_events())
         self.assertEqual(actf["tools"], [TOOL])
@@ -203,8 +227,9 @@ class PiHarnessTests(unittest.TestCase):
         harness = PiHarness(PiConfig(api_key_env="LOCAL_TEST_KEY", wire_trace_mode="off"), 0, runtime)
         with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {"LOCAL_TEST_KEY": "test-secret"}), patch("roller.harnesses.pi.convert_pi_trace", side_effect=ValueError("invalid journal")):
             result = harness.run(RunRequest(0, Task("test", ("one",), 0), "model", 60), Path(tmp), 1)
-            self.assertEqual(result.status, "error")
-            self.assertIn("invalid journal", result.error)
+            self.assertEqual(result.status, "ok")
+            self.assertIsNone(result.error)
+            self.assertIn("invalid journal", result.metadata["trajectory_conversion"]["error"])
             self.assertIsNone(result.trajectory_path)
             self.assertTrue((Path(tmp)/result.trace_path).is_file())
             self.assertEqual((Path(tmp)/"results/answer.txt").read_text(), "TOKEN")

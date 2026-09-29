@@ -119,6 +119,8 @@ class Task:
     # Explicit inputs are immutable bind mounts by default. Benchmarks that
     # ask the agent to edit seed files can request a writable workspace copy.
     input_mode: str = "mount"
+    # Workspace-relative input paths explicitly sent as native first-turn images.
+    attach_images: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(

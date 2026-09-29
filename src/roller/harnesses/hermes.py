@@ -159,6 +159,8 @@ class HermesSession(InteractiveSession):
         return result
 
     def start(self) -> None:
+        if self.request.task.attach_images:
+            raise ValueError("Hermes does not support files.attach_images; select a supported native image harness")
         if self.container_started or self._result is not None:
             raise RuntimeError("Hermes session has already started or finished")
         config, task, bundle = self.harness.config, self.request.task, self.request.bundle

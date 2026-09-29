@@ -20,6 +20,34 @@ from roller.wire_trace import (
 
 
 class ForwardPathTests(unittest.TestCase):
+    def test_explicit_tool_id_repair_works_without_wire_logging(self) -> None:
+        for streaming in (False, True):
+            with self.subTest(streaming=streaming), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                proxy = WireTraceProxy("http://example.test", root / "wire.jsonl", mode="off", unique_anthropic_tool_ids=True)
+                event = ({"type": "content_block_start", "content_block": {"type": "tool_use", "id": "x"}}
+                         if streaming else {"type": "message", "content": [{"type": "tool_use", "id": "x"}]})
+                ids = []
+                for _ in range(2):
+                    body = json.dumps(event).encode()
+                    response = io.BytesIO(b"data: " + body + b"\n\n" if streaming else body)
+                    response.status = 200
+                    response.headers = {"Content-Type": "text/event-stream" if streaming else "application/json"}
+                    handler = MagicMock()
+                    handler.server.proxy = proxy
+                    handler.path, handler.command = "/v1/messages", "POST"
+                    handler.headers = {"Content-Length": "2"}
+                    handler.rfile, handler.wfile = io.BytesIO(b"{}"), io.BytesIO()
+                    with patch("roller.wire_trace.urllib_request.urlopen", return_value=response):
+                        _ProxyHandler._handle(handler)
+                    raw = handler.wfile.getvalue()
+                    result = json.loads(raw[6:].strip() if streaming else raw)
+                    ids.append(result["content_block"]["id"] if streaming else result["content"][0]["id"])
+                self.assertEqual(ids[0], "x")
+                self.assertNotEqual(ids[0], ids[1])
+                self.assertTrue((root / "tool_id_mappings.jsonl").is_file())
+                self.assertFalse((root / "wire.jsonl").exists())
+
     def test_native_request_is_forwarded_once_without_cot_rewrites(self) -> None:
         body = json.dumps({
             "model": "model",
@@ -189,6 +217,16 @@ class NormalizeReasoningReplayTests(unittest.TestCase):
 
 
 class ExtractWireToolsTests(unittest.TestCase):
+    def test_reads_additional_tool_declarations_without_loading_whole_file(self) -> None:
+        tools = [{"type": "function", "name": "read"}]
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "wire.jsonl"
+            body = {"input": [{"additional_tools": tools},
+                              {"content": {"additional_tools": [{"name": "not_a_declaration"}]}}]}
+            path.write_text(json.dumps({"kind": "request", "body": body}))
+            with patch.object(Path, "read_text", side_effect=AssertionError("whole file read")):
+                self.assertEqual(extract_wire_tools(path), tools)
+
     def test_extracts_from_tools_entry(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "wire.jsonl"

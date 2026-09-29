@@ -46,6 +46,26 @@ def write_events(path, events=None):
 
 
 class OpenCodeTraceTests(unittest.TestCase):
+    def test_journal_images_survive_container_file_removal(self):
+        spec = importlib.util.spec_from_file_location("image_journal_runner", RUNNER_PATH)
+        runner = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(runner)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "image with spaces.png"
+            path.write_bytes(b"\0")
+            events = sample_events()
+            messages = events[-1]["data"]["messages"]
+            messages[0]["parts"].append({"id": "image-1", "messageID": "m1", "type": "file",
+                                         "mime": "image/png", "url": path.as_uri()})
+            messages[1]["parts"][1]["state"]["attachments"] = [{"mime": "image/png", "url": path.as_uri()}]
+            records = list(runner.attachment_records(events[-1]["data"]))
+            events.extend(records)
+        self.assertFalse(path.exists())
+        self.assertEqual(len(records), 2)
+        self.assertEqual(actf_to_sft(opencode_events_to_actf(events))["images"], ["data:image/png;base64,AA=="] * 2)
+        with self.assertRaises(ValueError):
+            opencode_events_to_actf(events + [{**records[0], "sha256": "0" * 64}])
+
     def test_native_tools_reasoning_and_usage(self):
         events = sample_events()
         actf = opencode_events_to_actf(events)

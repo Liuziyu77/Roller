@@ -20,6 +20,7 @@ from roller.claude_code_actf import convert_claude_code_trace
 from roller.harnesses.base import Harness, InteractiveHarness, InteractiveSession, TurnResult
 from roller.harnesses.docker import DockerRuntime, remove_container
 from roller.models import HarnessResult, RunRequest
+from roller.native_images import claude_message
 from roller.storage import safe_component
 from roller.thinking import normalize_thinking, resolve_thinking
 from roller.usage import ZERO_USAGE, extract_claude_code_usage
@@ -128,8 +129,11 @@ class ClaudeCodeConfig:
     keep_thinking: bool = True
     keep_container_on_error: bool = False
     docker_binary: str = "docker"
+    unique_tool_ids: bool = False
 
     def __post_init__(self) -> None:
+        if self.unique_tool_ids and not self.api_base:
+            raise ValueError("Claude tool ID repair requires an explicit api_base")
         object.__setattr__(
             self,
             "reasoning_effort",
@@ -223,14 +227,16 @@ class ClaudeCodeHarness(InteractiveHarness):
 
     def _start_wire_proxy(self, output_dir: Path) -> None:
         self._wire_proxy = None
-        if self.config.wire_trace_mode == "off" or not self.config.api_base:
+        if not self.config.api_base or (self.config.wire_trace_mode == "off" and not self.config.unique_tool_ids):
             return
         log_path = output_dir / "wire_trace.jsonl"
         log_path.unlink(missing_ok=True)
         self._wire_proxy = WireTraceProxy(
             self.config.api_base,
             log_path,
-            mode="full" if self.config.wire_trace_mode == "full" else "tools",
+            mode=("off" if self.config.wire_trace_mode == "off" else
+                  "full" if self.config.wire_trace_mode == "full" else "tools"),
+            unique_anthropic_tool_ids=self.config.unique_tool_ids,
             # Claude Code 2.1.222 uses an SDK-internal ``?beta=true`` route.
             # Anthropic-compatible gateways commonly implement the stable
             # Messages path but reject this transport-only query flag.
@@ -504,8 +510,21 @@ class ClaudeCodeHarness(InteractiveHarness):
         timeout_seconds: float,
         log_path: Path,
     ) -> int:
+        command = self._claude_command(container, request, prompt, resume=resume)
+        if request.task.attach_images:
+            payload_path = log_path.parent / ".claude-input.jsonl"
+            payload_path.parent.mkdir(parents=True, exist_ok=True)
+            payload_path.write_text(json.dumps(claude_message(request, prompt, first_turn=not resume)) + "\n")
+            target = f"{CLAUDE_HOME_CONTAINER_PATH}/input.jsonl"
+            try:
+                self._checked(["cp", str(payload_path), f"{container}:{target}"], "Claude native image input")
+            finally:
+                payload_path.unlink(missing_ok=True)
+            command = command[:-2] + ["--print", "--input-format=stream-json", "--replay-user-messages"]
+            index = command.index("claude")
+            command = command[:index] + ["/bin/sh", "-c", 'exec "$@" < "$0"', target, *command[index:]]
         process = self.runtime.popen(
-            self._claude_command(container, request, prompt, resume=resume),
+            command,
             log_path,
             append=resume,
         )
@@ -641,6 +660,7 @@ class ClaudeCodeHarness(InteractiveHarness):
         return_codes: list[int] = []
         trace_path: Path | None = None
         trajectory_path: Path | None = None
+        trajectory_conversion = None
         artifact_result: ArtifactCollectionResult | None = None
         output_copy_error: str | None = None
         claude_version = ""
@@ -728,13 +748,11 @@ class ClaudeCodeHarness(InteractiveHarness):
                     )
             except Exception as exc:
                 trajectory_path = None
-                if status == "ok":
-                    status = "error"
-                    error = f"Claude Code trajectory conversion failed: {exc}"
+                trajectory_conversion = {"status": "unavailable", "target": "actf", "error": str(exc)}
 
-        if status == "ok" and trace_path is None:
-            status = "error"
-            error = "Claude Code finished but no native session trace was found"
+        if trace_path is None:
+            trajectory_conversion = {"status": "failed", "target": "raw",
+                                     "error": "Claude Code finished but no native session trace was found"}
         if status == "ok" and output_copy_error is not None:
             status = "error"
             error = f"output collection failed: {output_copy_error}"
@@ -829,6 +847,7 @@ class ClaudeCodeHarness(InteractiveHarness):
             ),
             metadata={
                 "raw_trace_schema": "claude-code-session-jsonl",
+                "trajectory_conversion": trajectory_conversion,
                 "claude_code_version": claude_version,
                 "container": retained_container,
                 "agent_return_codes": return_codes,
@@ -963,6 +982,7 @@ class ClaudeCodeSession(InteractiveSession):
         output_copy_error: str | None = None
         final_status = status
         final_error = error
+        trajectory_conversion = None
         try:
             self.harness._stop_wire_proxy()
         except Exception as exc:
@@ -994,10 +1014,10 @@ class ClaudeCodeSession(InteractiveSession):
                     raise ValueError("Claude Code native trace produced no assistant steps")
             except Exception as exc:
                 trajectory_path = None
-                if final_status == "ok":
-                    final_status, final_error = "error", f"Claude Code trajectory conversion failed: {exc}"
-        if final_status == "ok" and trace_path is None:
-            final_status, final_error = "error", "Claude Code finished but no native session trace was found"
+                trajectory_conversion = {"status": "unavailable", "target": "actf", "error": str(exc)}
+        if trace_path is None:
+            trajectory_conversion = {"status": "failed", "target": "raw",
+                                     "error": "Claude Code finished but no native session trace was found"}
         if final_status == "ok" and output_copy_error is not None:
             final_status, final_error = "error", f"output collection failed: {output_copy_error}"
         if final_status == "ok" and artifact_result is not None and not artifact_result.passed:
@@ -1064,6 +1084,7 @@ class ClaudeCodeSession(InteractiveSession):
             trajectory_path=trajectory_path.relative_to(self.output_dir).as_posix() if trajectory_path else None,
             metadata={
                 "raw_trace_schema": "claude-code-session-jsonl",
+                "trajectory_conversion": trajectory_conversion,
                 "claude_code_version": self.claude_version,
                 "container": retained_container,
                 "agent_return_codes": self.return_codes,

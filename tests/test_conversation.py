@@ -110,7 +110,7 @@ class FakeInteractiveHarness(InteractiveHarness):
 
 
 class ConversationManagerTests(unittest.TestCase):
-    def test_simulator_archive_rejects_success_without_raw_trace(self) -> None:
+    def test_simulator_archive_marks_missing_raw_nontrainable_without_rewriting_execution(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             result = HarnessResult(
                 status="ok",
@@ -120,14 +120,13 @@ class ConversationManagerTests(unittest.TestCase):
                 metadata={},
             )
 
-            with self.assertRaisesRegex(RuntimeError, "no raw trace"):
-                ConversationManager._archive_simulator(
-                    Path(temporary),
-                    result,
-                    "provider/model",
-                    "openclaw",
-                    keep_aux_traces=False,
-                )
+            info = ConversationManager._archive_simulator(
+                Path(temporary), result, "provider/model", "openclaw", keep_aux_traces=False,
+            )
+            self.assertEqual(info["status"], "ok")
+            self.assertEqual(info["conversion"]["status"], "failed")
+            self.assertEqual(info["conversion"]["target"], "raw")
+            self.assertFalse(info["training"]["eligible"])
 
     def test_simulator_archive_applies_actf_trace_options(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

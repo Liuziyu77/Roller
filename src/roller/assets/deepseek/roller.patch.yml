@@ -6,7 +6,7 @@
   disabled: true
 - id: llm-deepseek
   config:
-    models: !!js "[{id: process.env.ROLLER_DEEPSEEK_MODEL, contextWindow: Number(process.env.DSH_CONTEXT_WINDOW), maxTokens: Number(process.env.ROLLER_DEEPSEEK_OUTPUT_TOKENS)}]"
+    models: !!js "[{id: process.env.ROLLER_DEEPSEEK_MODEL, contextWindow: Number(process.env.DSH_CONTEXT_WINDOW), maxTokens: Number(process.env.ROLLER_DEEPSEEK_OUTPUT_TOKENS), ...(process.env.ROLLER_DEEPSEEK_VISION === '1' ? {inputModalities: ['text', 'image']} : {})}]"
     retryPolicy:
       mode: normal
       maxRetries: 0

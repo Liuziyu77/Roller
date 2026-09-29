@@ -20,6 +20,7 @@ from roller.harnesses.base import InteractiveHarness, InteractiveSession, TurnRe
 from roller.harnesses.docker import DockerRuntime, remove_container
 from roller.deepseek_actf import convert_deepseek_trace, extract_deepseek_usage
 from roller.models import HarnessResult, RunRequest
+from roller.native_images import attachment_specs
 from roller.storage import atomic_write_json
 from roller.thinking import normalize_thinking, resolve_thinking
 from roller.usage import ZERO_USAGE
@@ -62,8 +63,20 @@ class DeepSeekConfig:
     keep_thinking: bool = True
     keep_container_on_error: bool = False
     docker_binary: str = "docker"
+    profile: str = "sdk-minimal"
+    permission_mode: str | None = None
+    telemetry_disabled: bool | None = None
+    vision: bool = False
 
     def __post_init__(self) -> None:
+        if self.profile not in {"sdk-minimal", "sdk"}:
+            raise ValueError("DeepSeek profile must be sdk-minimal|sdk")
+        if self.permission_mode not in {None, "danger-full-access"}:
+            raise ValueError("DeepSeek permission override supports only explicit danger-full-access")
+        if self.telemetry_disabled is not None and not isinstance(self.telemetry_disabled, bool):
+            raise ValueError("DeepSeek telemetry_disabled must be a bool or None")
+        if not isinstance(self.vision, bool):
+            raise ValueError("DeepSeek vision must be a bool")
         object.__setattr__(self, "reasoning_effort", deepseek_effort(self.reasoning_effort))
         if not self.docker_image.strip():
             raise ValueError("DeepSeek docker image must be non-empty")
@@ -95,7 +108,7 @@ class DeepSeekConfig:
 
 
 class DeepSeekHarness(InteractiveHarness):
-    """Run the official DeepSeek SDK minimal profile in a task Docker container."""
+    """Run an explicitly selected official DeepSeek SDK profile in Docker."""
 
     name = "deepseek"
 
@@ -244,7 +257,11 @@ class DeepSeekSession(InteractiveSession):
             "thinking": deepseek_effort(resolve_thinking(self.request.task.thinking, config.reasoning_effort)),
             "max_steps": config.max_steps, "timeout_seconds": timeout,
             "context_length": config.context_length, "output_tokens": config.output_tokens,
+            "profile": config.profile, "permission_mode": config.permission_mode,
+            "telemetry_disabled": config.telemetry_disabled,
+            "vision": config.vision or bool(self.request.task.attach_images),
             "tool_env_names": sorted(set((*config.pass_env, *self.request.task.env_names))),
+            "images": attachment_specs(self.request, config.workspace_container_path, first_turn=self.turns == 1),
             "system_prompt": f"You are running a Roller task. Work in {config.workspace_container_path}. "
                 f"Task inputs are in the workspace. Save deliverables under {self.request.task.output_dir}. "
                 f"Task context files (read when relevant): {context or '(none)'}. "
@@ -288,6 +305,7 @@ class DeepSeekSession(InteractiveSession):
         output_metadata = None
         usage = dict(ZERO_USAGE)
         problems = []
+        trajectory_conversion = None
         try:
             if self.container_started:
                 try:
@@ -296,7 +314,8 @@ class DeepSeekSession(InteractiveSession):
                     copied = runtime.run(["cp", f"{self.container}:{self.transcript_container_path}", str(trace)], timeout=30)
                     if copied.returncode or not trace.is_file() or not trace.stat().st_size:
                         trace = None
-                        problems.append("no DeepSeek journal was collected")
+                        trajectory_conversion = {"status": "failed", "target": "raw",
+                                                 "error": "no DeepSeek journal was collected"}
                     else:
                         trace.write_text(self.redact(trace.read_text(encoding="utf-8")), encoding="utf-8")
                         usage = extract_deepseek_usage(trace)
@@ -306,7 +325,10 @@ class DeepSeekSession(InteractiveSession):
                             raise ValueError("DeepSeek journal produced no assistant steps")
                 except Exception as exc:
                     trajectory = None
-                    problems.append("DeepSeek trace conversion failed: " + self.redact(str(exc)))
+                    if trace is not None and trace.is_file() and trace.stat().st_size:
+                        trajectory_conversion = {"status": "unavailable", "target": "actf", "error": self.redact(str(exc))}
+                    else:
+                        trajectory_conversion = {"status": "failed", "target": "raw", "error": self.redact(str(exc))}
                 if self.collect_outputs:
                     staging = self.output_dir / ".runtime-outputs"
                     staging.mkdir(parents=True, exist_ok=True)
@@ -349,7 +371,7 @@ class DeepSeekSession(InteractiveSession):
         provenance = {
             "schema_version": "roller.provenance/v1", "roller_version": __version__,
             "task_id": self.request.task.id, "harness": "deepseek", "model": self.request.model,
-            "deepseek_version": self.deepseek_version, "profile": "sdk-minimal",
+            "deepseek_version": self.deepseek_version, "profile": config.profile,
             "docker_image": config.docker_image, "docker_image_digest": self.image_digest,
             "api_base_urls": [config.api_base or "https://api.deepseek.com"],
             "environment_names": sorted(self.environment), "attempt": self.attempt,
@@ -361,9 +383,10 @@ class DeepSeekSession(InteractiveSession):
             status=status, error=self.redact(error) if error else None, elapsed_seconds=elapsed, usage=usage,
             trace_path=trace.relative_to(self.output_dir).as_posix() if trace else None,
             trajectory_path=trajectory.relative_to(self.output_dir).as_posix() if trajectory else None,
-            metadata={"raw_trace_schema": "roller.deepseek-events/v1", "deepseek_version": self.deepseek_version, "profile": "sdk-minimal",
+            metadata={"raw_trace_schema": "roller.deepseek-events/v1", "deepseek_version": self.deepseek_version, "profile": config.profile,
                 "provenance": provenance, "output_collection": output_metadata, "turn_count": self.turns,
                 "retained_container": self.container if retained else None,
-                "settings": {"reasoning_effort": resolve_thinking(self.request.task.thinking, config.reasoning_effort), "max_steps": config.max_steps, "context_length": config.context_length, "output_tokens": config.output_tokens, "tools": list(DEEPSEEK_TOOLS), "keep_thinking": config.keep_thinking}},
+                "trajectory_conversion": trajectory_conversion,
+                "settings": {"reasoning_effort": resolve_thinking(self.request.task.thinking, config.reasoning_effort), "max_steps": config.max_steps, "context_length": config.context_length, "output_tokens": config.output_tokens, "tools": list(DEEPSEEK_TOOLS) if config.profile == "sdk-minimal" else None, "tool_policy": "native-profile", "permission_mode": config.permission_mode, "telemetry_disabled": config.telemetry_disabled, "vision": config.vision or bool(self.request.task.attach_images), "keep_thinking": config.keep_thinking}},
         )
         return self._result

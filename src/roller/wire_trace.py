@@ -13,6 +13,7 @@ OpenAI-compatible HTTP layer, it works for harness versions that honour
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -22,6 +23,7 @@ from urllib import request as urllib_request
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from roller.codex_tools import tool_snapshot
+from roller.tool_id_identity import ToolIdRegistry
 
 
 HOP_BY_HOP_HEADERS = {
@@ -166,38 +168,67 @@ def redact_jsonl_file(path: Path) -> None:
         temporary.unlink(missing_ok=True)
 
 
+def request_tool_schemas(body: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Locate declarations without scanning arbitrary tool arguments/history."""
+    groups = []
+    if isinstance(body.get("tools"), list):
+        groups.append({"path": "tools", "tools": body["tools"]})
+    inputs = body.get("input")
+    if isinstance(inputs, list):
+        for index, item in enumerate(inputs):
+            if isinstance(item, dict) and isinstance(item.get("additional_tools"), list):
+                groups.append({"path": f"input[{index}].additional_tools", "tools": item["additional_tools"]})
+    return groups
+
+
 def extract_wire_tools(path: Path) -> list[Any] | None:
-    """Merge every tools schema recorded across wire-trace requests."""
+    """Summarize recorded tools, retaining the historical last-name-wins API.
+
+    This summary is not a per-request schema history. The wire trace retains
+    the actual declarations and their locations, including changing schemas.
+    """
+    merged: dict[str, Any] = {}
     try:
-        # JSONL records are separated by LF.  Unicode line separators can
-        # legally occur inside string values and must not split a record.
-        lines = path.read_text(encoding="utf-8", errors="replace").split("\n")
+        with path.open(encoding="utf-8", errors="replace") as stream:
+            for line in stream:
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(entry, dict):
+                    continue
+                body = entry if entry.get("kind") == "tools" else entry.get("body")
+                if not isinstance(body, dict):
+                    continue
+                for group in request_tool_schemas(body):
+                    for tool in group["tools"]:
+                        if not isinstance(tool, dict):
+                            continue
+                        function = tool.get("function")
+                        source = function if isinstance(function, dict) else tool
+                        name = source.get("name")
+                        if isinstance(name, str) and name:
+                            merged[name] = tool
     except OSError:
         return None
-    merged: dict[str, Any] = {}
-    for line in lines:
-        try:
-            entry = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if not isinstance(entry, dict):
-            continue
-        if entry.get("kind") == "tools":
-            tools = entry.get("tools")
-        else:
-            body = entry.get("body")
-            tools = body.get("tools") if isinstance(body, dict) else None
-        if not isinstance(tools, list):
-            continue
-        for tool in tools:
-            if not isinstance(tool, dict):
-                continue
-            function = tool.get("function")
-            source = function if isinstance(function, dict) else tool
-            name = source.get("name")
-            if isinstance(name, str) and name:
-                merged[name] = tool
     return list(merged.values()) or None
+
+
+def default_responses_image_detail(body: Any, detail: str) -> Any:
+    """Fill only missing image detail fields in a Responses input block list."""
+    if not isinstance(body, Mapping):
+        return body
+    result = deepcopy(dict(body))
+    for item in result.get("input", []) if isinstance(result.get("input"), list) else []:
+        if not isinstance(item, dict):
+            continue
+        blocks = item.get("content")
+        if not isinstance(blocks, list):
+            continue
+        for block in blocks:
+            if isinstance(block, dict) and block.get("type") == "input_image" and "detail" not in block:
+                block["detail"] = detail
+    return result
 
 
 class _ProxyHandler(BaseHTTPRequestHandler):
@@ -208,6 +239,8 @@ class _ProxyHandler(BaseHTTPRequestHandler):
 
     def _record(self, body: bytes | None) -> None:
         proxy: WireTraceProxy = self.server.proxy  # type: ignore[attr-defined]
+        if proxy.mode == "off" and proxy.responses_tools_path is None:
+            return
         capture_responses_tools = (
             proxy.responses_tools_path is not None
             and self.command == "POST"
@@ -254,8 +287,12 @@ class _ProxyHandler(BaseHTTPRequestHandler):
                 messages = parsed.get("messages")
                 if isinstance(messages, list):
                     entry["n_messages"] = len(messages)
-                tools = parsed.get("tools")
-                if isinstance(tools, list) and tools:
+                groups = request_tool_schemas(parsed)
+                tools = [tool for group in groups for tool in group["tools"]]
+                if tools:
+                    # Capture provenance on every request, including repeated
+                    # declarations. This is not a rewritten outgoing payload.
+                    entry["tool_schema_sources"] = groups
                     fingerprint = json.dumps(
                         tools,
                         ensure_ascii=False,
@@ -273,9 +310,14 @@ class _ProxyHandler(BaseHTTPRequestHandler):
         proxy: WireTraceProxy = self.server.proxy  # type: ignore[attr-defined]
         length = self.headers.get("Content-Length")
         body = self.rfile.read(int(length)) if length and length.isdigit() else None
-        if body and proxy.strip_thinking:
+        patch_detail = proxy.responses_image_detail and urlsplit(self.path).path.rstrip("/").endswith("/responses")
+        if body and (proxy.strip_thinking or patch_detail):
             try:
-                parsed = strip_thinking_from_body(json.loads(body))
+                parsed = json.loads(body)
+                if proxy.strip_thinking:
+                    parsed = strip_thinking_from_body(parsed)
+                if patch_detail:
+                    parsed = default_responses_image_detail(parsed, proxy.responses_image_detail)
                 body = json.dumps(parsed, ensure_ascii=False).encode("utf-8")
             except (json.JSONDecodeError, UnicodeDecodeError):
                 pass
@@ -295,6 +337,8 @@ class _ProxyHandler(BaseHTTPRequestHandler):
                 and normalized_key not in proxy.drop_request_headers
             ):
                 outgoing.add_header(key, value)
+        if proxy.unique_anthropic_tool_ids:
+            outgoing.add_header("Accept-Encoding", "identity")
         try:
             response = urllib_request.urlopen(outgoing, timeout=proxy.timeout_seconds)
         except urllib_request.HTTPError as exc:  # 4xx/5xx still carry a body
@@ -318,6 +362,32 @@ class _ProxyHandler(BaseHTTPRequestHandler):
         self.end_headers()
         content_type = response.headers.get("Content-Type", "").lower()
         content_encoding = response.headers.get("Content-Encoding", "").lower()
+        normalize_ids = (proxy.unique_anthropic_tool_ids
+                         and self.path.split("?", 1)[0].rstrip("/").endswith("/messages")
+                         and content_encoding in ("", "identity"))
+        if normalize_ids and "text/event-stream" in content_type:
+            while line := response.readline():
+                if line.startswith(b"data:"):
+                    try:
+                        event = json.loads(line[5:])
+                    except (ValueError, UnicodeDecodeError):
+                        pass
+                    else:
+                        line = b"data: " + json.dumps(proxy.repair_tool_ids(event)).encode("utf-8") + b"\n"
+                self.wfile.write(line)
+                self.wfile.flush()
+            return
+        if normalize_ids and "json" in content_type:
+            payload = response.read()
+            try:
+                event = json.loads(payload)
+            except (ValueError, UnicodeDecodeError):
+                pass
+            else:
+                payload = json.dumps(proxy.repair_tool_ids(event)).encode("utf-8")
+            self.wfile.write(payload)
+            self.wfile.flush()
+            return
         normalize_reasoning = (
             proxy.normalize_reasoning_replay
             and self.path.split("?", 1)[0].rstrip("/").endswith("/chat/completions")
@@ -389,10 +459,15 @@ class WireTraceProxy:
 
         drop_query_parameters: Sequence[str] = (),
         drop_request_headers: Sequence[str] = (),
+        unique_anthropic_tool_ids: bool = False,
+        responses_image_detail: str | None = None,
         responses_tools_path: Path | None = None,
     ) -> None:
-        if mode not in ("tools", "full"):
+        if mode not in ("off", "tools", "full"):
             raise ValueError(f"unknown wire trace mode: {mode}")
+        if responses_image_detail not in {None, "auto", "low", "high", "original"}:
+            raise ValueError("responses_image_detail must be auto|low|high|original or None")
+        self.responses_image_detail = responses_image_detail
         parts = urlsplit(upstream_base_url)
         if not parts.scheme or not parts.netloc:
             raise ValueError(f"upstream base URL must be absolute: {upstream_base_url}")
@@ -400,6 +475,8 @@ class WireTraceProxy:
         self.base_path = parts.path.rstrip("/")
         self.log_path = log_path
         self.mode = mode
+        self.unique_anthropic_tool_ids = unique_anthropic_tool_ids
+        self.tool_id_registry = ToolIdRegistry()
         self.responses_tools_path = responses_tools_path
         self.recording_error: str | None = None
         self.strip_thinking = strip_thinking
@@ -479,10 +556,22 @@ class WireTraceProxy:
             stream.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
     def write(self, entry: Mapping[str, Any]) -> None:
+        if self.mode == "off":
+            return
         line = json.dumps(entry, ensure_ascii=False)
         with self._lock:
             with self.log_path.open("a", encoding="utf-8") as stream:
                 stream.write(line + "\n")
+
+    def repair_tool_ids(self, event: Any) -> Any:
+        mappings: list[dict[str, str]] = []
+        with self._lock:
+            normalized = self.tool_id_registry.response(event, mappings)
+            if mappings:
+                # Identity provenance is part of the repair, not optional wire logging.
+                with self.log_path.with_name("tool_id_mappings.jsonl").open("a", encoding="utf-8") as stream:
+                    stream.write(json.dumps({"mappings": mappings}) + "\n")
+        return normalized
 
 
 def rewrite_model_config(

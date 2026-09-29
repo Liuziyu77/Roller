@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
+from roller.actf import _merge_user_content, _user_content
 from roller.codex_tools import read_tool_capture
 from roller.storage import atomic_write_json
 
@@ -97,6 +98,8 @@ def _reasoning_text(payload: Mapping[str, Any]) -> str:
 def _arguments(payload: Mapping[str, Any]) -> tuple[dict[str, Any], Any]:
     payload_type = payload.get("type")
     raw = payload.get("arguments") if payload_type == "function_call" else payload.get("input")
+    if payload_type == "custom_tool_call" and isinstance(raw, str):
+        return {"input": raw}, raw
     if isinstance(raw, str):
         try:
             parsed = json.loads(raw)
@@ -262,7 +265,7 @@ def codex_events_to_actf(
     rows = list(events)
     expected_users = tuple(user_messages or ())
     user_index = 0
-    pending_user = ""
+    pending_user: str | list[Any] = ""
     pending_user_time: str | None = None
     pending_reasoning: list[str] = []
     system_parts: list[str] = []
@@ -401,10 +404,9 @@ def codex_events_to_actf(
                         continue
                 else:
                     value = content
+                value = _user_content(payload.get("content"), value, native_text=content)
                 if value:
-                    pending_user = (
-                        f"{pending_user}\n\n{value}" if pending_user else value
-                    )
+                    pending_user = _merge_user_content(pending_user, value)
                     pending_user_time = pending_user_time or timestamp
             elif role == "assistant":
                 target = group(timestamp)
@@ -415,8 +417,8 @@ def codex_events_to_actf(
         if payload_type in {"function_call", "custom_tool_call"}:
             call_id = payload.get("call_id")
             name = payload.get("name")
-            if not isinstance(call_id, str) or not call_id:
-                continue
+            if not isinstance(call_id, str) or not call_id or call_id in calls_by_id:
+                raise ValueError("Codex tool call ID is missing or repeated")
             if not isinstance(name, str) or not name:
                 name = "unknown_tool"
             arguments, raw_arguments = _arguments(payload)
@@ -440,7 +442,9 @@ def codex_events_to_actf(
             call_id = payload.get("call_id")
             call = calls_by_id.get(call_id) if isinstance(call_id, str) else None
             if call is None:
-                continue
+                raise ValueError("Codex tool result has no matching call")
+            if call["output"] is not None:
+                raise ValueError("Codex tool call has repeated results")
             output, metadata = _output_content(payload.get("output"))
             call["output"] = output
             call["output_time"] = timestamp
@@ -530,7 +534,7 @@ def codex_events_to_actf(
     if steps and not any(step["user_content"] for step in steps) and expected_users:
         steps[0]["user_content"] = expected_users[0]
 
-    return {
+    trajectory = {
         "schema_version": "ACTF_v1.0",
         "system_prompt": "\n\n".join(system_parts),
         "tools": deepcopy(tools),
@@ -543,6 +547,13 @@ def codex_events_to_actf(
         "started_at": steps[0]["started_at"] if steps else first_time or "",
         "finished_at": steps[-1]["finished_at"] if steps else last_time or first_time or "",
     }
+    missing = [call["id"] for call in calls_by_id.values() if call["output"] is None]
+    if missing:
+        trajectory["projection"] = {
+            "complete": False, "training_eligible": False,
+            "reason": "missing_tool_results", "missing_tool_call_ids": missing,
+        }
+    return trajectory
 
 
 def convert_codex_trace(

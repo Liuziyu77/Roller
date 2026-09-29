@@ -4,11 +4,43 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from dataclasses import replace
 
+from roller.bundles import TaskBundleStore
+from roller.models import RunRequest
+from roller.native_images import attachment_specs
 from roller.tasks import TaskFormatError, build_requests, load_tasks
 
 
 class TaskLoadingTests(unittest.TestCase):
+    def test_image_selection_is_explicit_first_turn_only_and_changes_resume_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "image.png").write_bytes(b"image")
+            path = root / "tasks.json"
+            row = {"id": "inspect", "prompt": "Describe it", "files": {
+                "inputs": [{"source": "image.png", "target": "inputs/image.png"}], "input_mode": "copy"}}
+            path.write_text(json.dumps([row]))
+            plain = load_tasks(path)[0]
+            row["files"]["attach_images"] = ["inputs/image.png"]
+            path.write_text(json.dumps([row]))
+            selected = load_tasks(path)[0]
+            request = RunRequest(0, selected, "model", 30)
+            self.assertEqual(selected.input_mode, "copy")
+            self.assertEqual(attachment_specs(replace(request, task=plain), "/workspace", first_turn=True), [])
+            self.assertEqual(attachment_specs(request, "/workspace", first_turn=False), [])
+            self.assertEqual(attachment_specs(request, "/workspace", first_turn=True)[0]["path"], "/workspace/inputs/image.png")
+            store = TaskBundleStore(root / "run")
+            self.assertNotEqual(store.prepare(plain).manifest_digest, store.prepare(selected).manifest_digest)
+            for invalid in (["../escape.png"], "inputs/image.png"):
+                row["files"]["attach_images"] = invalid
+                path.write_text(json.dumps([row]))
+                with self.subTest(invalid=invalid), self.assertRaises(TaskFormatError):
+                    load_tasks(path)
+            undeclared = replace(request, task=replace(selected, attach_images=("missing.png",)))
+            with self.assertRaisesRegex(ValueError, "not a declared task input"):
+                attachment_specs(undeclared, "/workspace", first_turn=True)
+
     def test_normalizes_and_validates_task_and_simulator_thinking(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             task_file = Path(temporary) / "tasks.json"

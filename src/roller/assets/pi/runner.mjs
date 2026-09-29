@@ -111,13 +111,20 @@ async function serve(config) {
         }
         currentTurn = payload.turn;
         steps = 0;
+        const images = (payload.images ?? []).map((image) => {
+          if (!image || typeof image.path !== "string" || typeof image.mime_type !== "string") {
+            throw new Error("Invalid Pi image attachment");
+          }
+          if (fs.statSync(image.path).size > 20 * 1024 * 1024) throw new Error("Pi image exceeds input bound");
+          return {type: "image", data: fs.readFileSync(image.path).toString("base64"), mimeType: image.mime_type};
+        });
         const before = session.messages.length;
         journal({type: "turn_start", turn: currentTurn});
         timer = setTimeout(() => {
           timedOut = true;
           void session.abort();
         }, Math.max(1, payload.timeout_seconds * 1000));
-        await session.prompt(payload.message, {expandPromptTemplates: false});
+        await session.prompt(payload.message, {expandPromptTemplates: false, images});
         const messages = session.messages.slice(before);
         const assistants = messages.filter((message) => message.role === "assistant");
         const last = assistants.at(-1);

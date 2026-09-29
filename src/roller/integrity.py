@@ -121,6 +121,9 @@ def _validate_trajectory_files(
     require_cache_trace: bool,
 ) -> None:
     raw_path = base / "trace.jsonl"
+    conversion = info.get("conversion")
+    if isinstance(conversion, Mapping) and conversion.get("status") == "failed":
+        raise ValueError("sample capture/conversion failed and cannot be reused")
     actf_path = base / "trace_ACTF.json"
     sft_path = base / "trace_SFT.json"
     if not raw_path.is_file():
@@ -129,10 +132,7 @@ def _validate_trajectory_files(
     conversion_target = trajectory_conversion_unavailable(
         runtime if isinstance(runtime, Mapping) else None
     )
-    raw_only = (
-        info.get("harness") in {"opencode", "openclaw"}
-        and conversion_target == "actf"
-    )
+    raw_only = conversion_target == "actf"
     sft_unavailable = conversion_target == "sft"
     if raw_only:
         trajectory = info.get("trajectory")
@@ -210,6 +210,13 @@ def validate_resumable_sample(
         raise ValueError("info.json has an unsupported schema_version")
     if info.get("status") != "ok":
         raise ValueError("info.json status is not ok")
+    conversion = info.get("conversion")
+    if isinstance(conversion, Mapping) and conversion.get("status") == "failed":
+        raise ValueError("sample capture/conversion failed and cannot be reused")
+    training = info.get("training")
+    if isinstance(training, Mapping) and training.get("eligible") is True:
+        if not isinstance(conversion, Mapping) or conversion.get("status") != "ok":
+            raise ValueError("training eligibility contradicts conversion status")
     expected_identity = {
         "request_index": request.index,
         "sample_index": request.sample_index,

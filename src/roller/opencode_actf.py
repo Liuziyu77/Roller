@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from roller.actf import openclaw_events_to_actf
+from roller.attachment_journal import journal_image
 from roller.storage import atomic_write_json
 from roller.usage import ZERO_USAGE
 
@@ -17,7 +18,8 @@ def read_opencode_events(path: Path) -> list[dict[str, Any]]:
     # JSON Lines records are delimited by LF, not every character recognized by
     # str.splitlines().  In particular, U+2028/U+2029 are legal inside a JSON
     # string and must remain part of the record.
-    events = [json.loads(line) for line in path.read_text(encoding="utf-8").split("\n") if line.strip()]
+    with path.open(encoding="utf-8") as source:
+        events = [json.loads(line) for line in source if line.strip()]
     if not all(isinstance(e, dict) for e in events):
         raise ValueError("OpenCode journal must contain JSON object events")
     return events
@@ -90,20 +92,51 @@ def _attachment_placeholder(attachments: list[Any]) -> str:
     ) + "]"
 
 
-def _tool_result_content(result: str, attachments: list[Any]) -> list[dict[str, Any]]:
+def _attachments(events):
+    stored = {}
+    for event in events:
+        if event.get("type") != "attachment":
+            continue
+        key = event.get("key")
+        if not isinstance(key, str) or not key:
+            raise ValueError("OpenCode attachment journal entry has no native part key")
+        value = journal_image(event.get("data"), event.get("mime"), sha256=event.get("sha256"))
+        if key in stored and stored[key] != value:
+            raise ValueError("OpenCode attachment bytes changed for one native part")
+        stored[key] = value
+    return stored
+
+
+def _image(reference, stored, key):
+    mime = reference.get("mime")
+    url = reference.get("url", reference.get("uri"))
+    if not isinstance(mime, str) or not mime.lower().startswith("image/") or not isinstance(url, str) or not url:
+        raise ValueError("OpenCode image attachment must contain a MIME type and URL")
+    mime = mime.lower()
+    if url.startswith("data:"):
+        prefix = f"data:{mime};base64,"
+        if not url.startswith(prefix):
+            raise ValueError("OpenCode image data URL MIME type does not match its file part")
+        journal_image(url[len(prefix):], mime)
+        return {"type": "image", "data": url, "mimeType": mime}
+    if key in stored:
+        if stored[key]["mimeType"] != mime:
+            raise ValueError("OpenCode image attachment MIME type changed")
+        return deepcopy(stored[key])
+    # Preserve upstream diagnostic ACTF references. SFT still rejects URLs
+    # without persisted bytes; never read a container path on the host.
+    return {"type": "image", "data": url, "mimeType": mime}
+
+
+def _tool_result_content(result: str, attachments: list[Any], stored, part_id) -> list[dict[str, Any]]:
     content = [{"type": "text", "text": result}]
     non_image_attachments: list[Any] = []
-    for attachment in attachments:
+    for index, attachment in enumerate(attachments):
         if not isinstance(attachment, dict):
             raise ValueError("OpenCode tool attachment must be an object")
         mime = attachment.get("mime")
         if isinstance(mime, str) and mime.lower().startswith("image/"):
-            image_url = attachment.get("url")
-            if not isinstance(image_url, str) or not image_url:
-                raise ValueError("OpenCode image attachment must contain a URL")
-            content.append(
-                {"type": "image", "data": image_url, "mimeType": mime.lower()}
-            )
+            content.append(_image(attachment, stored, f"tool:{part_id}:{index}"))
         else:
             non_image_attachments.append(attachment)
     if non_image_attachments:
@@ -118,6 +151,7 @@ def _tool_result_content(result: str, attachments: list[Any]) -> list[dict[str, 
 
 def opencode_events_to_actf(events: Iterable[dict[str, Any]], *, keep_thinking: bool = True) -> dict[str, Any]:
     events = list(events)
+    stored = _attachments(events)
     schemas, systems = {}, []
     for event in events:
         if event.get("type") != "request":
@@ -154,6 +188,8 @@ def opencode_events_to_actf(events: Iterable[dict[str, Any]], *, keep_thinking: 
                 if not isinstance(part.get("text"), str):
                     raise ValueError("OpenCode text part must contain text")
                 content.append({"type": "text", "text": part["text"]})
+            elif kind == "file" and role == "user":
+                content.append(_image(part, stored, f"part:{part['id']}"))
             elif kind == "reasoning" and role == "assistant":
                 content.append({"type": "thinking", "thinking": part["text"]})
             elif kind == "tool" and role == "assistant":
@@ -178,7 +214,7 @@ def opencode_events_to_actf(events: Iterable[dict[str, Any]], *, keep_thinking: 
                     if not isinstance(attachments, list):
                         raise ValueError("OpenCode tool attachments must be a list")
                     metadata = _attachment_metadata(attachments)
-                    message["content"] = _tool_result_content(result, attachments)
+                    message["content"] = _tool_result_content(result, attachments, stored, part["id"])
                     message["details"] = {"attachments": metadata}
                 results.append({"type": "message", "timestamp": _timestamp(state.get("time", {}).get("end")), "message": message})
             elif kind in {"step-start", "step-finish", "snapshot", "patch", "retry"}:

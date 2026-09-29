@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from roller.actf import openclaw_events_to_actf
+from roller.attachment_journal import journal_image
 from roller.storage import atomic_write_json
 from roller.usage import ZERO_USAGE
 
@@ -15,28 +16,89 @@ from roller.usage import ZERO_USAGE
 def read_deepseek_events(path: Path) -> list[dict[str, Any]]:
     # JSONL uses LF as its record separator.  ``splitlines`` would also split
     # legal U+2028/U+2029 characters embedded in JSON strings.
-    events = [json.loads(line) for line in path.read_text(encoding="utf-8").split("\n") if line.strip()]
+    with path.open(encoding="utf-8") as source:
+        events = [json.loads(line) for line in source if line.strip()]
     if not all(isinstance(event, dict) for event in events):
         raise ValueError("DeepSeek journal must contain JSON objects")
     return events
 
 
-def native_events(events):
+def _session_id(events):
+    ids = {event["session_id"] for event in events
+           if event.get("type") == "metadata" and isinstance(event.get("session_id"), str)}
+    if len(ids) > 1:
+        raise ValueError("DeepSeek journal contains multiple target sessions")
+    if ids:
+        return next(iter(ids))
+    ids = {event.get("payload", {}).get("sessionId") for event in events
+           if event.get("type") == "notification" and event.get("method") == "session.event"}
+    if len(ids) > 1:
+        raise ValueError("DeepSeek journal needs metadata to select one target session")
+    return next(iter(ids), None)
+
+
+def native_events(events, session_id=None):
     for event in events:
-        if event.get("type") == "notification" and event.get("method") == "session.event":
+        if (event.get("type") == "notification" and event.get("method") == "session.event"
+                and (session_id is None or event.get("payload", {}).get("sessionId") == session_id)):
             yield event["payload"]["event"]
 
 
-def _text(blocks):
-    if not isinstance(blocks, list) or any(b.get("type") != "text" or not isinstance(b.get("text"), str) for b in blocks):
-        raise ValueError("DeepSeek content cannot be represented as text-only SFT")
-    return "".join(block["text"] for block in blocks)
+def _attachments(events, session_id):
+    attachments = {}
+    for event in events:
+        if event.get("type") != "attachment":
+            continue
+        # Old journals have no session field: only immutable IDs may be shared.
+        # Never resolve an explicitly foreign record for the target session.
+        if event.get("session_id") not in {None, session_id}:
+            continue
+        ref = event.get("attachment")
+        key = ref.get("attachmentId") if isinstance(ref, dict) else None
+        if not isinstance(key, str) or not key:
+            raise ValueError("DeepSeek attachment journal entry has no attachment ID")
+        value = journal_image(event.get("data"), event.get("mimeType"), sha256=event.get("sha256"))
+        if ref.get("mediaType", value["mimeType"]) != value["mimeType"]:
+            raise ValueError("DeepSeek attachment MIME type changed")
+        if key in attachments and attachments[key] != value:
+            raise ValueError("DeepSeek attachment bytes changed for one attachment ID")
+        attachments[key] = value
+    return attachments
+
+
+def _content(blocks, attachments):
+    if not isinstance(blocks, list):
+        raise ValueError("DeepSeek content must be a block list")
+    converted = []
+    for block in blocks:
+        if not isinstance(block, dict):
+            raise ValueError("DeepSeek content block must be an object")
+        if block.get("type") == "text" and isinstance(block.get("text"), str):
+            converted.append({"type": "text", "text": block["text"]})
+        elif block.get("type") == "image":
+            ref = block.get("attachment")
+            key = ref.get("attachmentId") if isinstance(ref, dict) else None
+            if not isinstance(key, str) or key not in attachments:
+                raise ValueError("DeepSeek image attachment bytes are missing from the journal")
+            image = deepcopy(attachments[key])
+            if ref.get("mediaType", image["mimeType"]) != image["mimeType"]:
+                raise ValueError("DeepSeek image attachment MIME type changed")
+            converted.append(image)
+        else:
+            raise ValueError(f"DeepSeek content would lose data in SFT: {block.get('type')}")
+    if all(block["type"] == "text" for block in converted):
+        return "".join(block["text"] for block in converted)
+    return converted
 
 
 def deepseek_events_to_actf(events: Iterable[dict[str, Any]], *, keep_thinking: bool = True) -> dict[str, Any]:
     events = list(events)
+    session_id = _session_id(events)
+    attachments = _attachments(events, session_id)
     schemas, systems = {}, []
     for event in events:
+        if event.get("session_id") not in {None, session_id}:
+            continue
         if event.get("type") == "runner_error":
             raise ValueError("DeepSeek journal contains a runner error")
         if event.get("type") != "request":
@@ -57,7 +119,7 @@ def deepseek_events_to_actf(events: Iterable[dict[str, Any]], *, keep_thinking: 
         raise ValueError("DeepSeek journal has no captured system prompt")
     rows, calls, results, turns = [], {}, set(), []
     active_turn = None
-    for event in native_events(events):
+    for event in native_events(events, session_id):
         kind, data = event["type"], event["data"]
         if kind == "turn/start":
             if active_turn is not None:
@@ -84,7 +146,11 @@ def deepseek_events_to_actf(events: Iterable[dict[str, Any]], *, keep_thinking: 
                 results.add(call_id)
                 rows.append({"type": "message", "timestamp": timestamp, "message": {
                     "role": "toolResult", "toolCallId": call_id, "toolName": calls[call_id],
-                    "content": _text(block["content"]), "isError": block.get("isError", False)}})
+                    "content": _content(block["content"], attachments), "isError": block.get("isError", False)}})
+            continue
+        if kind == "user/message":
+            rows.append({"type": "message", "timestamp": timestamp, "message": {
+                "role": "user", "content": _content(message["content"], attachments)}})
             continue
         content = []
         for block in message["content"]:
@@ -122,9 +188,10 @@ def convert_deepseek_trace(source: Path, destination: Path, *, keep_thinking: bo
 
 def extract_deepseek_usage(source: Path) -> dict[str, int | float]:
     events = read_deepseek_events(source)
+    session_id = _session_id(events)
     totals = dict(ZERO_USAGE)
-    totals["request_count"] = sum(e.get("type") == "request" for e in events)
-    for event in native_events(events):
+    totals["request_count"] = sum(e.get("type") == "request" and e.get("session_id") in {None, session_id} for e in events)
+    for event in native_events(events, session_id):
         if event["type"] != "assistant/message":
             continue
         tokens = event["data"].get("usage") or {}

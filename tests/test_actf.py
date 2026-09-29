@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from copy import deepcopy
 
 from roller.actf import openclaw_events_to_actf
 from roller.sft import actf_to_sft
@@ -60,6 +61,31 @@ def _events() -> list[dict]:
 
 
 class ActfConversionTests(unittest.TestCase):
+    def test_prompt_cleanup_preserves_ordered_user_images(self) -> None:
+        for picture in (
+            {"type": "image", "data": "AA==", "mimeType": "image/png"},
+            {"type": "input_image", "image_url": "data:image/png;base64,AA=="},
+            {"type": "image_url", "image_url": {"url": "data:image/png;base64,AA=="}},
+        ):
+            for content, expected, count in (
+                (["wrapped", picture], ["clean", picture], 1),
+                ([picture], [picture], 1),
+                (["before", picture, "after", picture], ["before", picture, "after", picture], 2),
+                (["literal <image>", "text"], "clean", 0),
+            ):
+                with self.subTest(content=content):
+                    original = deepcopy(content)
+                    events = [{"type": "message", "message": {"role": "user", "content": content}},
+                              {"type": "message", "message": {"role": "assistant", "content": "done"}}]
+                    trajectory = openclaw_events_to_actf(events, user_messages=["clean"])
+                    self.assertEqual(trajectory["steps"][0]["user_content"], expected)
+                    record = actf_to_sft(trajectory)
+                    self.assertEqual(record.get("images", []), ["data:image/png;base64,AA=="] * count)
+                    self.assertEqual(record["messages"][1]["content"],
+                                     expected if isinstance(expected, str) else
+                                     "\n".join(item if isinstance(item, str) else "<image>" for item in expected))
+                    self.assertEqual(content, original)
+
     def test_groups_assistant_tool_results_and_multiple_user_turns(self) -> None:
         trajectory = openclaw_events_to_actf(
             _events(), user_messages=("clean first", "clean second")
