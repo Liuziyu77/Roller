@@ -64,11 +64,15 @@ COMMON_ENV_NAMES = (
 _OPENCLAW_2026_3_11_UNSAFE_THINKING = frozenset(
     {"xhigh", "adaptive", "max", "ultra"}
 )
-_OPENCLAW_2026_7_1_UNSAFE_THINKING = frozenset({"ultra"})
 
 
 def validate_openclaw_thinking(version: str, thinking: str | None) -> None:
-    """Reject advanced levels known to be silently changed by a legacy image."""
+    """Guard the legacy downgrade; modern model profiles belong to OpenClaw.
+
+    A version string or CLI help text is not a model capability table. Modern
+    OpenClaw validates explicit levels against its provider/model/runtime
+    profile, including custom catalog compatibility settings.
+    """
 
     if (
         thinking in _OPENCLAW_2026_3_11_UNSAFE_THINKING
@@ -79,16 +83,6 @@ def validate_openclaw_thinking(version: str, thinking: str | None) -> None:
             "the bundled 2026.3.11 runtime predates the current advanced thinking "
             "profiles and can silently downgrade the request. Use off|minimal|low|"
             "medium|high, or select a newer OpenClaw image with --docker-image."
-        )
-    if (
-        thinking in _OPENCLAW_2026_7_1_UNSAFE_THINKING
-        and re.search(r"(?:^|\s)2026\.7\.1(?:\s|$)", version)
-    ):
-        raise RuntimeError(
-            f"OpenClaw {version!r} does not accept --thinking {thinking!r}; "
-            "this stable runtime supports off|minimal|low|medium|high|xhigh|"
-            "adaptive|max. Select one of those levels or a later OpenClaw "
-            "version that explicitly lists ultra in `openclaw agent --help`."
         )
 
 
@@ -162,7 +156,8 @@ def prepare_model_config(
             for model in models:
                 if isinstance(model, dict) and model.get("id") == model_id:
                     if enable_reasoning:
-                        model["reasoning"] = True
+                        # Preserve explicit capabilities while applying rollout limits.
+                        model.setdefault("reasoning", True)
                     if max_tokens is not None:
                         model["maxTokens"] = max_tokens
                     break
