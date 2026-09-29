@@ -13,6 +13,18 @@ from roller.sft import SFTConversionError, actf_to_sft
 from roller.usage import extract_codex_usage
 
 
+_TOOLS = [
+    {"type": "function", "name": "exec_command", "description": "Run a command.",
+     "parameters": {"type": "object", "properties": {"cmd": {"type": "string"}}, "required": ["cmd"]}},
+    {"type": "function", "name": "view_image", "description": "View an image.",
+     "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}},
+    {"type": "function", "name": "deep_think", "description": "Ordinary fixture tool.",
+     "parameters": {"type": "object", "properties": {"note": {"type": "string"}}, "required": ["note"]}},
+    {"type": "function", "name": "unused", "parameters": {"type": "object", "properties": {}}},
+    {"type": "web_search"},
+]
+
+
 def _events() -> list[dict]:
     return [
         {
@@ -147,9 +159,9 @@ class CodexActfTests(unittest.TestCase):
         events = _events()
         events[4]["payload"]["name"] = "deep_think"
         events[4]["payload"]["arguments"] = '{"note":"ordinary tool argument"}'
-        trajectory = codex_events_to_actf(events)
+        trajectory = codex_events_to_actf(events, tools=_TOOLS)
         record = actf_to_sft(trajectory)
-        tool = record["tools"][0]["function"]
+        tool = next(tool for tool in record["tools"] if tool.get("name") == "deep_think")
         self.assertEqual(tool["name"], "deep_think")
         self.assertEqual(tool["parameters"]["properties"], {"note": {"type": "string"}})
         assistant = next(m for m in record["messages"] if m["role"] == "assistant")
@@ -158,7 +170,7 @@ class CodexActfTests(unittest.TestCase):
 
     def test_groups_native_events_by_model_request(self) -> None:
         trajectory = codex_events_to_actf(
-            _events(), user_messages=["read input.txt"]
+            _events(), user_messages=["read input.txt"], tools=_TOOLS,
         )
 
         self.assertEqual(trajectory["schema_version"], "ACTF_v1.0")
@@ -176,7 +188,7 @@ class CodexActfTests(unittest.TestCase):
             second["assistant_content"]["reasoning_content"],
             "The file contains hello.",
         )
-        self.assertEqual(trajectory["tools"][0]["function"]["name"], "exec_command")
+        self.assertEqual(trajectory["tools"][0]["name"], "exec_command")
 
         sft = actf_to_sft(trajectory)
         self.assertEqual(set(sft), {"messages", "tools"})
@@ -224,7 +236,7 @@ class CodexActfTests(unittest.TestCase):
             }
         ]
 
-        trajectory = codex_events_to_actf(events, user_messages=["inspect image.png"])
+        trajectory = codex_events_to_actf(events, user_messages=["inspect image.png"], tools=_TOOLS)
 
         self.assertEqual(
             trajectory["steps"][0]["observation"][0]["content"],
@@ -254,7 +266,7 @@ class CodexActfTests(unittest.TestCase):
         ]
 
         record = actf_to_sft(
-            codex_events_to_actf(events, user_messages=["inspect images"])
+            codex_events_to_actf(events, user_messages=["inspect images"], tools=_TOOLS)
         )
         tool_result = next(
             message for message in record["messages"] if message["role"] == "tool"
@@ -280,7 +292,7 @@ class CodexActfTests(unittest.TestCase):
                 events = _events()
                 events[6]["payload"]["output"] = native_output
                 trajectory = codex_events_to_actf(
-                    events, user_messages=["Read values"]
+                    events, user_messages=["Read values"], tools=_TOOLS,
                 )
                 self.assertEqual(
                     trajectory["steps"][0]["observation"][0]["content"],
@@ -308,7 +320,7 @@ class CodexActfTests(unittest.TestCase):
                 events = _events()
                 events[6]["payload"]["output"] = native_output
                 record = actf_to_sft(
-                    codex_events_to_actf(events, user_messages=["Read values"])
+                    codex_events_to_actf(events, user_messages=["Read values"], tools=_TOOLS)
                 )
                 tool_result = next(
                     message
@@ -323,7 +335,7 @@ class CodexActfTests(unittest.TestCase):
             {"type": "text", "text": 7, "metadata": "not ACTF content"}
         ]
 
-        trajectory = codex_events_to_actf(events, user_messages=["Read values"])
+        trajectory = codex_events_to_actf(events, user_messages=["Read values"], tools=_TOOLS)
 
         self.assertEqual(
             trajectory["steps"][0]["observation"][0]["content"],
@@ -396,7 +408,8 @@ class CodexActfTests(unittest.TestCase):
                 events[6]["payload"]["output"] = native_output
 
                 trajectory = codex_events_to_actf(
-                    events, user_messages=["Inspect images"]
+                    events, user_messages=["Inspect images"], tools=_TOOLS,
+
                 )
 
                 self.assertEqual(
@@ -428,7 +441,8 @@ class CodexActfTests(unittest.TestCase):
                 events[6]["payload"]["output"] = native_output
 
                 trajectory = codex_events_to_actf(
-                    events, user_messages=["Inspect images"]
+                    events, user_messages=["Inspect images"], tools=_TOOLS,
+
                 )
 
                 self.assertEqual(
@@ -465,7 +479,8 @@ class CodexActfTests(unittest.TestCase):
                     events[6]["payload"]["output"] = native_output
 
                     trajectory = codex_events_to_actf(
-                        events, user_messages=["Inspect result"]
+                        events, user_messages=["Inspect result"], tools=_TOOLS,
+
                     )
 
                     self.assertEqual(
@@ -480,7 +495,7 @@ class CodexActfTests(unittest.TestCase):
         events[6]["payload"]["output"] = '{"values": [1, 2]}'
 
         record = actf_to_sft(
-            codex_events_to_actf(events, user_messages=["Read values"])
+            codex_events_to_actf(events, user_messages=["Read values"], tools=_TOOLS)
         )
         tool_result = next(
             message for message in record["messages"] if message["role"] == "tool"
@@ -495,11 +510,11 @@ class CodexActfTests(unittest.TestCase):
         block_events[6]["payload"]["output"] = []
 
         json_trajectory = codex_events_to_actf(
-            json_events, user_messages=["Read values"]
-        )
+            json_events, user_messages=["Read values"], tools=_TOOLS,
+)
         block_trajectory = codex_events_to_actf(
-            block_events, user_messages=["Read values"]
-        )
+            block_events, user_messages=["Read values"], tools=_TOOLS,
+)
 
         self.assertEqual(
             json_trajectory["steps"][0]["observation"][0]["content"],
@@ -522,7 +537,7 @@ class CodexActfTests(unittest.TestCase):
         )
 
         record = actf_to_sft(
-            codex_events_to_actf(events, user_messages=["inspect frame"])
+            codex_events_to_actf(events, user_messages=["inspect frame"], tools=_TOOLS)
         )
         tool_result = next(
             message for message in record["messages"] if message["role"] == "tool"
@@ -557,7 +572,7 @@ class CodexActfTests(unittest.TestCase):
                 ]
                 break
 
-        trajectory = codex_events_to_actf(events, user_messages=["read input.txt"])
+        trajectory = codex_events_to_actf(events, user_messages=["read input.txt"], tools=_TOOLS)
 
         self.assertIn("<environment_context>", trajectory["system_prompt"])
         self.assertEqual(trajectory["steps"][0]["user_content"], "read input.txt")

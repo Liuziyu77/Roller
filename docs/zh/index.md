@@ -70,6 +70,7 @@ start/docker-builds
 :caption: Harness 配置
 
 harnesses/openclaw-configuration
+harnesses/openclaw-thinking
 harnesses/codex-configuration
 harnesses/claude-code-configuration
 harnesses/hermes-configuration

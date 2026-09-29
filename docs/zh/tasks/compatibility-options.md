@@ -11,6 +11,12 @@
 
 DeepSeek 标准 SDK 的 bash 子进程只继承 `--pass-env` 或任务显式声明的工具环境变量，不把全部宿主机变量传入。任务专属 endpoint、路径去空格和权限启用策略不属于这些通用默认。
 
+Codex 工具捕获沿用上游：`actf/full`、显式 API base、HTTP transport 时生成独立的
+`tools_capture.jsonl`。图片 detail 兼容与此独立；`--wire-trace off` 加显式 detail
+只执行兼容改写，不生成工具 capture。新版 raw→ACTF→SFT 使用上游原生 Responses
+工具格式及完整性检查，缺失 capture 或完成记录不会退回 schema 反推。已有不含
+`tools_format=responses` 的旧 ACTF 仍使用原来的 SFT 转换路径。
+
 `info.json` 现在分别记录 `status`（执行）、`conversion`（raw/ACTF/SFT）、`training.eligible`（通用训练资格）。转换失败不把成功执行改成失败；有完整 raw 和结构化 `unavailable` 的结果可复用但不能进入 SFT。缺失/损坏产物的 `failed` 结果不可复用。`skipped` 只表示复用，`resumed_from_status` 保存原执行结果。
 
 本文配置已通过 mock/离线测试，真实服务与镜像验证另记，不将配置可解析等同于服务可用。

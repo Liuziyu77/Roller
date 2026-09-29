@@ -46,7 +46,7 @@ Code 保留 native session 中的明文 thinking block。七种 Harness 成功 r
 
 OpenClaw 默认的 `actf` wire 模式会临时捕获 tools schema，写入 ACTF/SFT 后删除中间
 `wire_trace.jsonl` 和 `cache_trace.jsonl`，以减少最终 sample 的存储占用。Codex 的默认 `actf`
-直接从 native session 生成 permissive tool schema，不启动请求代理。Claude Code 在显式
+在配置 `--api-base` 时通过 HTTP 代理捕获原始 Responses 工具，转换后保留 `tools_capture.jsonl`。Claude Code 在显式
 `--api-base` 时临时捕获 Anthropic system 和完整 `input_schema`；未设 API base 或
 `--wire-trace off` 时则从实际 `tool_use` 推导 permissive schema。
 
@@ -211,8 +211,8 @@ ACTF 顶层保存 `schema_version`、`system_prompt`、完整 `tools`、`steps` 
 - Harness 已取得 `trace.jsonl`，且对应 adapter 能生成 canonical ACTF；
 - OpenClaw system/tools 分别来自 cache/wire 捕获；缺失时 system 为 `""`、tools 为 `null`；
 - Codex system 来自 native base instructions、developer/system message 和首轮前的
-  `<environment_context>`；task 用户消息按内容匹配到对应轮次。native session 不含完整工具
-  schema，因此根据实际调用名和参数字段生成 permissive schema。
+  `<environment_context>`；task 用户消息按内容匹配到对应轮次。原始工具定义来自 Responses 请求捕获，
+  包含未调用的工具，`tools_capture` 保留逐请求快照；捕获缺失、工具变化或定义形式不支持时 SFT 不可用。
 - Claude Code 将同一 `message.id` 的流式 native 事件合并，把明文
   `thinking/reasoning/analysis` 写入 `reasoning_content`，把 `tool_use_id` 与后续
   `tool_result` 关联。`redacted_thinking` 密文保留在 raw，不转换为明文。
@@ -220,10 +220,9 @@ ACTF 顶层保存 `schema_version`、`system_prompt`、完整 `tools`、`steps` 
   `tool_use` 推导 permissive schema。
 
 OpenClaw ACTF 只把 cache trace 中首个有效的组装后 system prompt 和 wire trace 中首个
-非空 tools schema 固化在顶层；Codex ACTF 使用 native system 事件和实际调用推导的
-schema；Claude Code ACTF 使用首个捕获到的 Anthropic system/tools，无 wire 时回退到
-native 推导。它们都没有逐 step 保存每次请求的完整 messages/input，也不会表达
-system/tools 在调用间的变化；需要检查这些变化时使用 full wire，OpenClaw
+非空 tools schema 固化在顶层；Codex ACTF 使用 native system 事件和原始请求工具定义；Claude Code ACTF 使用首个捕获到的 Anthropic system/tools，无 wire 时回退到
+native 推导。它们都没有逐 step 保存每次请求的完整 messages/input。Codex 额外保留逐请求工具
+快照，工具变化时不导出 SFT；需要检查这些变化时使用 full wire，OpenClaw
 还可结合 full cache trace。
 
 只要 raw 存在，Roller 就会尝试转换，包括 Harness 已经失败或超时的 sample。因此错误
@@ -253,11 +252,11 @@ SFT 表达的是从 session 事件重建的逻辑对话，不是每次 provider 
 - 每个 tool call 有非空且全局唯一的 ID；
 - 每个 tool call 在同一 step 恰好对应一个 tool result；
 - 被调用工具存在于顶层 tools schema；
-- arguments 可编码为 JSON object；
+- function arguments 可编码为 JSON object；Codex custom input 保持字符串；
 - tool result 是字符串、text blocks 或内嵌 base64 字节的 image blocks。
 
-GPT Responses 的扁平 tools 与 Chat Completions 的嵌套 tools 都会统一为嵌套 function
-schema。image 工具结果会导出为 `<image>` 占位符加顶层 `images` data-URI 列表，对齐
+Codex 保留原始 Responses 工具定义、namespace 和 custom grammar。其他 harness 的 function
+定义继续统一为嵌套 function schema。image 工具结果会导出为 `<image>` 占位符加顶层 `images` data-URI 列表，对齐
 约定见 [SFT 数据格式](sft-format.md)。其余无法无损导出的内容——audio 等未知 block
 类型、不支持的 media type、损坏的 base64、只引用路径而没有字节的 image block——仍会
 令 SFT 转换失败。Collector 在 `runtime.trajectory_conversion` 中记录
@@ -368,7 +367,7 @@ cache trace 能展示每次差异；ACTF 顶层值不能代表所有 step。
 
 - OpenClaw `actf` 只记录 model、非消息参数、消息数量以及首次非空 tools schema，不记录
   完整 messages/input；该临时文件在转换后删除；
-- Codex `actf` 不启动代理，直接从 native session 生成 ACTF；
+- Codex `actf` 在配置 API 地址时通过 HTTP 捕获原始工具定义，保留 `tools_capture.jsonl`，删除临时 wire 文件；
 - Claude Code `actf` 在显式 API base 时临时记录首个 Anthropic system/tools 及非消息
   参数，转换后删除；
 - `full` 保存每次完整请求体并最终保留；
@@ -442,17 +441,17 @@ result。需要训练或分析任一参与方时，应使用各自的 raw/ACTF/S
 | Harness / 模式 | 代理要求 | ACTF tools | 最终辅助文件 | 适用场景 |
 | --- | --- | --- | --- | --- |
 | OpenClaw `actf`（默认） | 有可代理 `baseUrl` 时启用；缺少时降级 | 捕获成功时为完整 schema，否则 `null` | 不保留 cache/wire | 常规批量采集 |
-| Codex `actf`（默认） | 不启动代理 | 根据 native 实际调用生成 permissive schema | 不保留 wire | 常规批量采集 |
+| Codex `actf`（默认） | 配置 API 地址、HTTP、host 网络 | 原始 Responses 定义，不推导 | `tools_capture.jsonl` | 常规批量采集 |
 | Claude Code `actf`（默认） | 显式 `--api-base` 时启动 | 捕获 Anthropic `input_schema`；无代理时从 native 推导 | 不保留 wire | 常规批量采集 |
 | OpenClaw `full` | provider 必须有绝对 `baseUrl` | 完整 schema | `wire_trace`，启用 cache 时还有 `cache_trace` | 请求级审计 |
-| Codex `full` | 必须显式 `--api-base --network host` | native permissive schema | `wire_trace` | 请求级审计 |
+| Codex `full` | API 地址、HTTP、host 网络 | 原始 Responses 定义 | `wire_trace`、`tools_capture.jsonl` | 请求级审计 |
 | Claude Code `full` | 必须显式 `--api-base --network host` | 捕获 Anthropic `input_schema` | `wire_trace` | 请求级审计 |
-| `off` | 不为记录启动代理 | OpenClaw 为 `null`；Codex/Claude Code 从 native 推导 | 不保留 | 最小诊断关闭模式 |
+| `off` | 不为记录启动代理 | OpenClaw/Codex 为 `null`；Claude Code 从 native 推导 | 不保留 | 最小诊断关闭模式 |
 
 OpenClaw 的 `off` 或 `actf` 降级后，如果轨迹实际调用了工具，SFT 校验会因缺少工具 schema
-失败；没有工具调用时，SFT 的 `tools` 为 `[]`。Codex 和 Claude Code 会从 native
-实际调用推导 schema，所以不依赖 wire 来满足这项结构校验，但推导的 schema 不包含完整的
-工具接口定义。
+失败；没有工具调用时，SFT 的 `tools` 为 `[]`。Claude Code 保留原有 native schema 回退。
+Codex 不推导 schema：未捕获（包括 `off`、WebSocket、未配置 API 地址）、工具定义变化或
+programmatic `additional_tools` 都会使 SFT 不可用，详见 [Codex 工具捕获](../harnesses/codex-configuration.md#8-轨迹产出)。
 
 ### 6.2 Thinking
 

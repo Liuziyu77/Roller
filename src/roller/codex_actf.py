@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 from roller.actf import _merge_user_content, _user_content
+from roller.codex_tools import read_tool_capture
 from roller.storage import atomic_write_json
 
 
@@ -244,66 +245,13 @@ def _usage_number(value: Any) -> int:
     return int(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else 0
 
 
-def _json_type(value: Any) -> dict[str, Any]:
-    if isinstance(value, bool):
-        return {"type": "boolean"}
-    if isinstance(value, int):
-        return {"type": "integer"}
-    if isinstance(value, float):
-        return {"type": "number"}
-    if isinstance(value, str):
-        return {"type": "string"}
-    if isinstance(value, list):
-        return {"type": "array"}
-    if isinstance(value, dict):
-        return {"type": "object"}
-    return {}
-
-
-def _tool_schemas(steps: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
-    properties: dict[str, dict[str, dict[str, Any]]] = {}
-    for step in steps:
-        assistant = step.get("assistant_content")
-        calls = assistant.get("tool_calls") if isinstance(assistant, Mapping) else None
-        if not isinstance(calls, list):
-            continue
-        for call in calls:
-            if not isinstance(call, Mapping):
-                continue
-            name = call.get("name")
-            arguments = call.get("arguments")
-            if not isinstance(name, str) or not name:
-                continue
-            fields = properties.setdefault(name, {})
-            if isinstance(arguments, Mapping):
-                for key, item in arguments.items():
-                    if isinstance(key, str):
-                        fields.setdefault(key, _json_type(item))
-    schemas: list[dict[str, Any]] = []
-    for name, fields in sorted(properties.items()):
-        schemas.append(
-            {
-                "type": "function",
-                "function": {
-                    "name": name,
-                    "description": "Tool invoked by the Codex CLI native harness.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": fields,
-                        "additionalProperties": True,
-                    },
-                },
-            }
-        )
-    return schemas
-
-
 def codex_events_to_actf(
     events: Iterable[dict[str, Any]],
     *,
     user_messages: Iterable[str] | None = None,
     keep_thinking: bool = True,
-    tools: list[Any] | None = None,
+    tools: list[dict[str, Any]] | None = None,
+    tools_capture: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Convert one Codex native rollout stream to ``ACTF_v1.0``.
 
@@ -473,9 +421,6 @@ def codex_events_to_actf(
                 raise ValueError("Codex tool call ID is missing or repeated")
             if not isinstance(name, str) or not name:
                 name = "unknown_tool"
-            namespace = payload.get("namespace")
-            if isinstance(namespace, str) and namespace and not name.startswith(namespace + "."):
-                name = namespace + "." + name
             arguments, raw_arguments = _arguments(payload)
             call = {
                 "type": "toolCall",
@@ -483,6 +428,8 @@ def codex_events_to_actf(
                 "name": name,
                 "arguments": arguments,
                 "raw_arguments": raw_arguments,
+                "native_type": payload_type,
+                "namespace": payload.get("namespace"),
                 "output": None,
                 "output_time": None,
                 "is_error": False,
@@ -517,14 +464,18 @@ def codex_events_to_actf(
         calls: list[dict[str, Any]] = []
         observations: list[dict[str, Any]] = []
         for raw_call in raw_group["tool_calls"]:
-            calls.append(
-                {
-                    "type": "toolCall",
-                    "id": raw_call["id"],
-                    "name": raw_call["name"],
-                    "arguments": deepcopy(raw_call["arguments"]),
-                }
-            )
+            call = {
+                "type": "toolCall",
+                "id": raw_call["id"],
+                "name": raw_call["name"],
+                "arguments": deepcopy(raw_call["arguments"]),
+            }
+            if raw_call.get("namespace"):
+                call["namespace"] = raw_call["namespace"]
+            if raw_call.get("native_type") == "custom_tool_call":
+                call["native_type"] = "custom_tool_call"
+                call["input"] = deepcopy(raw_call["raw_arguments"])
+            calls.append(call)
             output = raw_call.get("output")
             missing = output is None
             if missing:
@@ -586,8 +537,12 @@ def codex_events_to_actf(
     trajectory = {
         "schema_version": "ACTF_v1.0",
         "system_prompt": "\n\n".join(system_parts),
-        "tools": deepcopy(tools) if tools is not None else _tool_schemas(steps),
-        "tool_schema_source": "wire" if tools is not None else "inferred_from_calls",
+        "tools": deepcopy(tools),
+        "tools_format": "responses",
+        "tools_capture": deepcopy(tools_capture) if tools_capture is not None else {
+            "source": "provided" if tools is not None else "none",
+            "status": "captured" if tools is not None else "missing",
+        },
         "steps": steps,
         "started_at": steps[0]["started_at"] if steps else first_time or "",
         "finished_at": steps[-1]["finished_at"] if steps else last_time or first_time or "",
@@ -607,13 +562,19 @@ def convert_codex_trace(
     *,
     user_messages: Iterable[str] | None = None,
     keep_thinking: bool = True,
-    tools: list[Any] | None = None,
+    tools_trace: Path | None = None,
 ) -> dict[str, Any]:
+    capture = read_tool_capture(tools_trace)
+    tools = (
+        capture["requests"][0]["snapshot"].get("tools", [])
+        if capture["status"] == "captured" else None
+    )
     trajectory = codex_events_to_actf(
         _read_events(source),
         user_messages=user_messages,
         keep_thinking=keep_thinking,
         tools=tools,
+        tools_capture=capture,
     )
     atomic_write_json(destination, trajectory)
     return trajectory

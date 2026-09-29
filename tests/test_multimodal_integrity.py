@@ -107,7 +107,7 @@ class MultimodalIntegrityTests(unittest.TestCase):
         self.assertEqual(events, original)
 
     def test_codex_image_wrapper_cleanup_preserves_image_for_ordinary_prompt(self):
-        from test_codex_actf import _events
+        from test_codex_actf import _events, _TOOLS
         events = _events()
         prompt = "Describe this image."
         content = [
@@ -118,7 +118,7 @@ class MultimodalIntegrityTests(unittest.TestCase):
         ]
         events[2]["payload"]["content"] = content
         original = deepcopy(events)
-        actf = codex_events_to_actf(events, user_messages=[prompt])
+        actf = codex_events_to_actf(events, user_messages=[prompt], tools=_TOOLS)
         self.assertEqual(actf["steps"][0]["user_content"], content)
         sft = actf_to_sft(actf)
         self.assertEqual(sft["messages"][1]["content"],
@@ -196,13 +196,13 @@ class MultimodalIntegrityTests(unittest.TestCase):
             _normalize_tools(native + [{"type": "function", "name": "functions.read"}])
 
     def test_codex_preserves_user_media_and_custom_string_even_if_json(self):
-        from test_codex_actf import _events
+        from test_codex_actf import _events, _TOOLS
         events = _events()
         content = [{"type": "input_text", "text": "before"},
                    {"type": "input_image", "image_url": "data:image/png;base64,AA=="},
                    {"type": "input_text", "text": "after"}]
         events[2]["payload"]["content"] = content
-        actf = codex_events_to_actf(events)
+        actf = codex_events_to_actf(events, tools=_TOOLS)
         self.assertEqual(actf["steps"][0]["user_content"], content)
         self.assertEqual(actf_to_sft(actf)["images"], ["data:image/png;base64,AA=="])
         native = '{"path":"file"}'
