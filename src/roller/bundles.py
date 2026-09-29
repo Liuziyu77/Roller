@@ -571,6 +571,156 @@ class TaskBundleStore:
     def prepare_all(self, tasks: Iterable[Task]) -> dict[str, TaskBundle]:
         return {task.id: self.prepare(task) for task in tasks}
 
+    @staticmethod
+    def _verify_persisted_blob(path: Path, digest: str, size: int) -> None:
+        if path.is_symlink() or not path.is_file():
+            raise BundleError(f"persisted context blob is not a regular file: {path}")
+        actual_digest, actual_size = _hash_file(path)
+        if actual_digest != digest or actual_size != size:
+            raise BundleError(f"persisted context blob does not match its digest: {path}")
+
+    @staticmethod
+    def _ensure_archive_directory(path: Path) -> None:
+        if path.exists() or path.is_symlink():
+            if path.is_symlink() or not path.is_dir():
+                raise BundleError(f"context archive path is not a directory: {path}")
+            return
+        path.mkdir(parents=True)
+
+    def _persist_blob(
+        self, source: Path, destination: Path, digest: str, size: int
+    ) -> None:
+        if destination.exists() or destination.is_symlink():
+            self._verify_persisted_blob(destination, digest, size)
+            return
+        try:
+            os.link(source, destination)
+            return
+        except FileExistsError:
+            self._verify_persisted_blob(destination, digest, size)
+            return
+        except OSError:
+            pass
+
+        fd, temporary_name = tempfile.mkstemp(
+            prefix=f".{digest}.", dir=destination.parent
+        )
+        os.close(fd)
+        temporary = Path(temporary_name)
+        try:
+            shutil.copyfile(source, temporary)
+            copied_digest, copied_size = _hash_file(temporary)
+            if copied_digest != digest or copied_size != size:
+                raise BundleError(f"context blob changed while persisting: {source}")
+            temporary.chmod(0o444)
+            os.replace(temporary, destination)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+    def persist_full_context(
+        self, bundles: Iterable[TaskBundle], destination_run_dir: Path
+    ) -> None:
+        """Persist capture=full content without changing runtime manifest digests."""
+
+        destination_run_dir = destination_run_dir.expanduser().resolve()
+        context_root = destination_run_dir / "context"
+        blobs_root = context_root / "sha256"
+        manifests_root = context_root / "manifests"
+        archive_initialized = False
+        persisted_digests: set[str] = set()
+
+        for bundle in bundles:
+            try:
+                context_manifest = json.loads(
+                    bundle.context_manifest_path.read_text(encoding="utf-8")
+                )
+            except (OSError, json.JSONDecodeError) as exc:
+                raise BundleError(
+                    f"cannot read context manifest: {bundle.context_manifest_path}"
+                ) from exc
+            declarations = context_manifest.get("declarations")
+            if not isinstance(declarations, list):
+                raise BundleError(
+                    f"invalid context manifest: {bundle.context_manifest_path}"
+                )
+
+            archived_declarations: list[dict[str, Any]] = []
+            for declaration in declarations:
+                if not isinstance(declaration, dict):
+                    raise BundleError(
+                        f"invalid context declaration: {bundle.context_manifest_path}"
+                    )
+                if declaration.get("capture") != "full":
+                    continue
+                if not archive_initialized:
+                    for path in (context_root, blobs_root, manifests_root):
+                        self._ensure_archive_directory(path)
+                    archive_initialized = True
+                archived_declaration = dict(declaration)
+                files = declaration.get("files", [])
+                if not isinstance(files, list):
+                    raise BundleError(
+                        f"invalid context file list: {bundle.context_manifest_path}"
+                    )
+                archived_files: list[dict[str, Any]] = []
+                for record in files:
+                    if not isinstance(record, dict):
+                        raise BundleError(
+                            f"invalid context file record: {bundle.context_manifest_path}"
+                        )
+                    digest = record.get("sha256")
+                    size = record.get("size")
+                    blob = record.get("blob")
+                    if (
+                        not isinstance(digest, str)
+                        or not isinstance(size, int)
+                        or isinstance(size, bool)
+                        or blob != f"blobs/sha256/{digest}"
+                    ):
+                        raise BundleError(
+                            "invalid full context blob record: "
+                            f"{bundle.context_manifest_path}"
+                        )
+                    source = self.run_dir / blob
+                    destination = blobs_root / digest
+                    if digest not in persisted_digests:
+                        self._persist_blob(source, destination, digest, size)
+                        persisted_digests.add(digest)
+                    archived_record = dict(record)
+                    archived_record["blob"] = (
+                        destination.relative_to(destination_run_dir).as_posix()
+                    )
+                    archived_files.append(archived_record)
+                archived_declaration["files"] = archived_files
+                archived_declarations.append(archived_declaration)
+
+            if not archived_declarations:
+                continue
+            archive_manifest = {
+                "schema_version": "roller.context-archive/v1",
+                "context_manifest_digest": bundle.context_manifest_digest,
+                "declarations": archived_declarations,
+            }
+            archive_path = manifests_root / f"{bundle.context_manifest_digest}.json"
+            if archive_path.exists() or archive_path.is_symlink():
+                if archive_path.is_symlink() or not archive_path.is_file():
+                    raise BundleError(
+                        f"persisted context manifest is not a regular file: {archive_path}"
+                    )
+                try:
+                    existing = json.loads(archive_path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError) as exc:
+                    raise BundleError(
+                        f"cannot read persisted context manifest: {archive_path}"
+                    ) from exc
+                if existing != archive_manifest:
+                    raise BundleError(
+                        "persisted context manifest does not match its digest: "
+                        f"{archive_path}"
+                    )
+                continue
+            atomic_write_json(archive_path, archive_manifest)
+
     def attach(
         self, requests: Iterable[RunRequest], bundles: dict[str, TaskBundle]
     ) -> list[RunRequest]:

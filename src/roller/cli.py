@@ -1251,6 +1251,7 @@ def _collect(args: argparse.Namespace) -> int:
                 resume=args.resume,
                 existing_run=existing_run,
             )
+            bundle_store.persist_full_context(bundles.values(), run_dir)
             if lock_decision.legacy_run:
                 logger.warning(
                     "legacy run has not completed trusted lock adoption; rerunning "

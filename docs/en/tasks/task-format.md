@@ -248,7 +248,7 @@ copies the complete input tree into a private writable workspace. The default, `
 | `role` | yes | Semantic role of the Context |
 | `source` | yes | Path relative to `file_root`, or an absolute path |
 | `target` | no | Relative path after injection; derived from the role when omitted |
-| `capture` | no | `full`, `hash`, or `none` |
+| `capture` | no | `full` persists source content in the run, `hash` records only its digest, and `none` records neither |
 | `required` | no | Default `true` |
 
 Default targets:
