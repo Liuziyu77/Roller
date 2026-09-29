@@ -685,15 +685,10 @@ class CollectorTests(unittest.TestCase):
             def bundle(digest: str, resume_safe: bool = True) -> TaskBundle:
                 bundle_root = run_dir / "tasks" / digest
                 bundle_root.mkdir(parents=True, exist_ok=True)
-                manifest = bundle_root / "task.json"
-                manifest.write_text("{}", encoding="utf-8")
                 return TaskBundle(
                     root=bundle_root,
                     inputs_root=bundle_root,
                     context_root=bundle_root,
-                    manifest_path=manifest,
-                    input_manifest_path=manifest,
-                    context_manifest_path=manifest,
                     manifest_digest=digest,
                     input_tree_digest="inputs",
                     input_manifest_digest="input-manifest",

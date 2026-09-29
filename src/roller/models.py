@@ -59,9 +59,6 @@ class TaskBundle:
     root: Path
     inputs_root: Path
     context_root: Path
-    manifest_path: Path
-    input_manifest_path: Path
-    context_manifest_path: Path
     manifest_digest: str
     input_tree_digest: str
     input_manifest_digest: str
