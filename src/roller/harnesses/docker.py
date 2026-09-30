@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import subprocess
 from pathlib import Path
 from typing import Sequence
@@ -43,6 +44,26 @@ class DockerRuntime:
         log_file = getattr(process, "_roller_log_file", None)
         if log_file is not None and not log_file.closed:
             log_file.close()
+
+
+def warn_if_image_changed(
+    logger: logging.Logger,
+    image: str,
+    preflight_digest: str | None,
+    rollout_digest: str | None,
+) -> None:
+    if (
+        preflight_digest
+        and rollout_digest
+        and preflight_digest != rollout_digest
+    ):
+        logger.warning(
+            "Docker image %s changed after preflight: expected %s, found %s; "
+            "the rollout uses and records the current image",
+            image,
+            preflight_digest,
+            rollout_digest,
+        )
 
 
 def remove_container(

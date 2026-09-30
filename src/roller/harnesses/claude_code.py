@@ -18,7 +18,7 @@ from urllib.parse import urlsplit, urlunsplit
 from roller.artifacts import ArtifactCollectionResult, collect_output_directory
 from roller.claude_code_actf import convert_claude_code_trace
 from roller.harnesses.base import Harness, InteractiveHarness, InteractiveSession, TurnResult
-from roller.harnesses.docker import DockerRuntime, remove_container
+from roller.harnesses.docker import DockerRuntime, remove_container, warn_if_image_changed
 from roller.models import HarnessResult, RunRequest
 from roller.storage import safe_component
 from roller.thinking import normalize_thinking, resolve_thinking
@@ -116,7 +116,7 @@ class ClaudeCodeConfig:
     network: str | None = "host"
     workspace_container_path: str = "/roller/workspace"
     settings_path: Path | None = None
-    settings_fingerprint: str | None = None
+    config_sha256: str | None = None
     api_base: str | None = None
     api_key_env: str = "ANTHROPIC_API_KEY"
     pass_env: tuple[str, ...] = COMMON_ENV_NAMES
@@ -128,6 +128,7 @@ class ClaudeCodeConfig:
     keep_thinking: bool = True
     keep_container_on_error: bool = False
     docker_binary: str = "docker"
+    preflight_image_digest: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -626,7 +627,14 @@ class ClaudeCodeHarness(InteractiveHarness):
         result = self.runtime.run(
             ["image", "inspect", self.config.docker_image, "--format", "{{.Id}}"]
         )
-        return result.stdout.strip() if result.returncode == 0 else None
+        digest = result.stdout.strip() if result.returncode == 0 else None
+        warn_if_image_changed(
+            logger,
+            self.config.docker_image,
+            self.config.preflight_image_digest,
+            digest,
+        )
+        return digest
 
     def run(self, request: RunRequest, output_dir: Path, attempt: int) -> HarnessResult:
         started = time.monotonic()
@@ -839,7 +847,7 @@ class ClaudeCodeHarness(InteractiveHarness):
                 "permission_mode": self.config.permission_mode,
                 "wire_trace": self.config.wire_trace_mode,
                 "keep_thinking": self.config.keep_thinking,
-                "settings_fingerprint": self.config.settings_fingerprint,
+                "config_sha256": self.config.config_sha256,
                 "output_collection": output_metadata,
                 "output_copy_error": output_copy_error,
                 "attempt": attempt,
@@ -1074,7 +1082,7 @@ class ClaudeCodeSession(InteractiveSession):
                 "permission_mode": config.permission_mode,
                 "wire_trace": config.wire_trace_mode,
                 "keep_thinking": config.keep_thinking,
-                "settings_fingerprint": config.settings_fingerprint,
+                "config_sha256": config.config_sha256,
                 "output_collection": output_metadata,
                 "output_copy_error": output_copy_error,
                 "attempt": self.attempt,

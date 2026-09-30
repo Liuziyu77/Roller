@@ -18,7 +18,11 @@ from urllib.parse import urlsplit, urlunsplit
 from roller.artifacts import ArtifactCollectionResult, collect_output_directory
 from roller.codex_actf import convert_codex_trace
 from roller.harnesses.base import Harness, InteractiveHarness, InteractiveSession, TurnResult
-from roller.harnesses.docker import DockerRuntime, remove_container
+from roller.harnesses.docker import (
+    DockerRuntime,
+    remove_container,
+    warn_if_image_changed,
+)
 from roller.models import HarnessResult, RunRequest
 from roller.storage import safe_component
 from roller.thinking import normalize_thinking, resolve_thinking
@@ -91,6 +95,7 @@ class CodexConfig:
     keep_thinking: bool = True
     keep_container_on_error: bool = False
     docker_binary: str = "docker"
+    preflight_image_digest: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -547,7 +552,14 @@ class CodexHarness(InteractiveHarness):
         result = self.runtime.run(
             ["image", "inspect", self.config.docker_image, "--format", "{{.Id}}"]
         )
-        return result.stdout.strip() if result.returncode == 0 else None
+        digest = result.stdout.strip() if result.returncode == 0 else None
+        warn_if_image_changed(
+            logger,
+            self.config.docker_image,
+            self.config.preflight_image_digest,
+            digest,
+        )
+        return digest
 
     def run(self, request: RunRequest, output_dir: Path, attempt: int) -> HarnessResult:
         started = time.monotonic()

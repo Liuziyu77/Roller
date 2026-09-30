@@ -199,8 +199,8 @@ roller collect ... \
 ```
 
 The file is copied to the isolated `$CLAUDE_CONFIG_DIR/settings.json` and loaded explicitly with `--settings`. To avoid copying
-settings that may contain environment variables or hooks into the run, the run lock stores only a short BLAKE2b content fingerprint.
-If the file changes, Resume refuses to mix in old samples. The repo example contains no key, hook, or permission relaxation. It only turns off the commit
+settings that may contain environment variables or hooks into the run, the run lock stores only its SHA-256.
+Existing locks that contain the earlier BLAKE2b fingerprint remain resumable. If the file changes, Resume refuses to mix in old samples. The repo example contains no key, hook, or permission relaxation. It only turns off the commit
 co-author marker. Copy it and then add your own Claude Code settings as needed.
 
 Automated collection defaults to:

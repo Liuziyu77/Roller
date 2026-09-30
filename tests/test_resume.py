@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import contextlib
+import hashlib
 import io
 import tempfile
 import unittest
@@ -165,6 +166,72 @@ class CliResumeCompatibilityTests(unittest.TestCase):
         for agent, simulator in (("codex", "claude-code"), ("claude-code", "codex")):
             with self.subTest(agent=agent, simulator=simulator):
                 self.assert_disabled_legacy_run_resumes(*self.seed(agent, agent, simulator))
+
+    def test_cli_resumes_legacy_claude_settings_fingerprint_lock(self):
+        settings = self.root / "settings.json"
+        settings.write_text('{"model":"one"}\n', encoding="utf-8")
+        tasks = self.root / "claude-settings.jsonl"
+        tasks.write_text(
+            json.dumps(
+                {
+                    "id": "task",
+                    "harness": "claude-code",
+                    "model": "provider/model",
+                    "prompt": "say done",
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        args = [
+            "collect",
+            "--tasks",
+            str(tasks),
+            "--claude-settings",
+            str(settings),
+            "--api-base",
+            "http://example.test/v1",
+            "--api-key-env",
+            "TEST_KEY",
+            "--output",
+            str(self.root / "runs"),
+            "--run-name",
+            "claude-settings",
+        ]
+        with patch(
+            "roller.cli.hashlib.blake2b",
+            side_effect=AssertionError("new runs must use only SHA-256"),
+        ):
+            self.assertEqual(self.invoke(args), 0)
+        run = self.root / "runs" / "claude-settings"
+        lock_path = run / "lock.json"
+        lock = json.loads(lock_path.read_text(encoding="utf-8"))
+        claude = lock["execution"]["claude-code"]
+        content = settings.read_bytes()
+        self.assertEqual(
+            claude["config_sha256"], hashlib.sha256(content).hexdigest()
+        )
+        self.assertNotIn("settings_fingerprint", claude)
+
+        claude["settings_fingerprint"] = hashlib.blake2b(
+            content, digest_size=16
+        ).hexdigest()
+        del claude["config_sha256"]
+        lock_path.write_text(json.dumps(lock), encoding="utf-8")
+        historical_lock = lock_path.read_bytes(), lock_path.stat().st_mtime_ns
+        calls_before_resume = list(self.calls)
+
+        self.assertEqual(self.invoke(args, resume=True), 0)
+
+        self.assertEqual(self.calls, calls_before_resume)
+        self.assertEqual(
+            (lock_path.read_bytes(), lock_path.stat().st_mtime_ns),
+            historical_lock,
+        )
+
+        settings.write_text('{"model":"two"}\n', encoding="utf-8")
+        with self.assertRaisesRegex(FileExistsError, "lock mismatch"):
+            self.invoke(args, resume=True)
 
     def test_cli_still_recaptures_and_adopts_an_unlocked_native_run(self):
         args, run = self.seed("unlocked-native", "codex")

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from roller.artifacts import collect_output_directory
 
@@ -31,6 +33,36 @@ class ArtifactCollectionTests(unittest.TestCase):
             self.assertEqual(result.file_count, 3)
             self.assertEqual(result.directory_count, 2)
             self.assertEqual(len(result.files), 3)
+
+    def test_hashes_each_output_during_its_single_source_read(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            staging = root / "staging"
+            source = staging / "artifact.bin"
+            staging.mkdir()
+            source.write_bytes(b"artifact contents")
+            source.chmod(0o640)
+            original_open = Path.open
+            source_reads = 0
+
+            def tracked_open(path, *args, **kwargs):
+                nonlocal source_reads
+                if path == source and args and args[0] == "rb":
+                    source_reads += 1
+                return original_open(path, *args, **kwargs)
+
+            with patch.object(Path, "open", tracked_open):
+                result = collect_output_directory(staging, root / "sample")
+
+            destination = root / "sample" / "results" / "artifact.bin"
+            self.assertEqual(source_reads, 1)
+            self.assertEqual(destination.read_bytes(), b"artifact contents")
+            self.assertEqual(destination.stat().st_mode & 0o777, 0o640)
+            self.assertEqual(
+                result.files[0]["sha256"],
+                hashlib.sha256(destination.read_bytes()).hexdigest(),
+            )
+            self.assertEqual(result.files[0]["size"], len(b"artifact contents"))
 
     def test_empty_output_directory_does_not_create_results(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

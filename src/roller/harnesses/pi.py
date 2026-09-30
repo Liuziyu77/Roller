@@ -17,7 +17,7 @@ import uuid
 
 from roller.artifacts import collect_output_directory
 from roller.harnesses.base import InteractiveHarness, InteractiveSession, TurnResult
-from roller.harnesses.docker import DockerRuntime, remove_container
+from roller.harnesses.docker import DockerRuntime, remove_container, warn_if_image_changed
 from roller.pi_actf import convert_pi_trace, extract_pi_usage
 from roller.models import HarnessResult, RunRequest
 from roller.storage import atomic_write_json
@@ -62,6 +62,7 @@ class PiConfig:
     keep_thinking: bool = True
     keep_container_on_error: bool = False
     docker_binary: str = "docker"
+    preflight_image_digest: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "reasoning_effort", pi_effort(self.reasoning_effort) or "off")
@@ -187,6 +188,7 @@ class PiSession(InteractiveSession):
         )
         self.environment = environment
         self.image_digest = self.checked(["image", "inspect", config.docker_image, "--format", "{{.Id}}"], "Pi image inspection").stdout.strip()
+        warn_if_image_changed(logger, config.docker_image, config.preflight_image_digest, self.image_digest)
         args = ["run", "-d", "--name", self.container, "--label", "ai.roller.harness=pi"]
         if config.container_user is not None:
             args += ["--user", config.container_user]
