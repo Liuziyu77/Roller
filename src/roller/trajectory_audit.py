@@ -90,21 +90,35 @@ def thinking_audit(trajectory: dict[str, Any], metadata: dict[str, Any]) -> dict
 def _request_effort(body: dict[str, Any], requested: str, transport_effort: str | None,
                     seq: int | None) -> dict[str, Any]:
     efforts = []
-    if "reasoning_effort" in body:
-        efforts.append(body["reasoning_effort"])
-    for key in ("reasoning", "output_config"):
-        value = body.get(key)
-        if isinstance(value, dict) and "effort" in value:
-            efforts.append(value["effort"])
+    controls = [body]
+    nested = body.get("extra_body")
+    for _ in range(2):
+        if not isinstance(nested, dict):
+            break
+        controls.append(nested)
+        nested = nested.get("extra_body")
+    switches = []
+    modes = []
+    for fields in controls:
+        if "reasoning_effort" in fields:
+            efforts.append(fields["reasoning_effort"])
+        for key in ("reasoning", "output_config"):
+            value = fields.get(key)
+            if isinstance(value, dict) and "effort" in value:
+                efforts.append(value["effort"])
+        reasoning = fields.get("reasoning")
+        if isinstance(reasoning, dict):
+            switches.append(reasoning.get("enabled"))
+        thinking = fields.get("thinking")
+        if isinstance(thinking, dict):
+            modes.append(thinking.get("type"))
+        switches.append(fields.get("enable_thinking"))
+        template = fields.get("chat_template_kwargs")
+        if isinstance(template, dict):
+            switches.append(template.get("enable_thinking"))
     efforts = ["off" if e == "none" else e for e in efforts]
-    thinking = body.get("thinking")
-    mode = thinking.get("type") if isinstance(thinking, dict) else None
-    template = body.get("chat_template_kwargs")
-    switches = [body.get("enable_thinking")]
-    if isinstance(template, dict):
-        switches.append(template.get("enable_thinking"))
-    disabled = mode == "disabled" or any(v is False for v in switches)
-    active = mode in ("enabled", "adaptive") or any(v is True for v in switches)
+    disabled = "disabled" in modes or any(v is False for v in switches)
+    active = any(mode in ("enabled", "adaptive") for mode in modes) or any(v is True for v in switches)
     known = [requested if e == transport_effort and transport_effort != requested else e
              for e in efforts if isinstance(e, str) and
              (e in THINKING_LEVELS or e == transport_effort)]
@@ -118,9 +132,10 @@ def _request_effort(body: dict[str, Any], requested: str, transport_effort: str 
             "unrecognized_effort": len(known) != len(efforts)}
 
 
-def _request_rows(path: Path, schema: str | None = None) -> tuple[list[dict[str, Any]], bool]:
-    """Read wire rows, or request snapshots from known native journals."""
-    rows = []
+def _request_audits(path: Path, requested: str, transport_effort: str | None,
+                    schema: str | None = None) -> tuple[list[dict[str, Any]], bool]:
+    """Audit each request as it is read, without retaining full request bodies."""
+    audits = []
     unreadable = False
     try:
         with path.open(encoding="utf-8") as source:
@@ -148,24 +163,25 @@ def _request_rows(path: Path, schema: str | None = None) -> tuple[list[dict[str,
                 else:
                     continue
                 if isinstance(body, dict):
-                    rows.append({"body": body, "seq": event.get("seq")})
+                    audits.append(_request_effort(body, requested, transport_effort, event.get("seq")))
                 else:
                     unreadable = True
     except (OSError, UnicodeError):
         unreadable = True
-    return rows, unreadable
+    return audits, unreadable
 
 
 def wire_effort_audit(path: Path, requested: str | None, transport_effort: str | None = None,
                       native_path: Path | None = None, native_schema: str | None = None) -> dict[str, Any] | None:
     if requested is None:
         return None
-    rows, unreadable = _request_rows(path)
+    requests, unreadable = _request_audits(path, requested, transport_effort)
     source = "wire"
-    if not rows and native_path is not None and native_schema is not None:
-        rows, unreadable = _request_rows(native_path, native_schema)
+    if not requests and native_path is not None and native_schema is not None:
+        requests, unreadable = _request_audits(
+            native_path, requested, transport_effort, native_schema,
+        )
         source = "native"
-    requests = [_request_effort(row["body"], requested, transport_effort, row["seq"]) for row in rows]
     status = "not_observable"
     if any(row["status"] == "mismatch" for row in requests):
         status = "mismatch"

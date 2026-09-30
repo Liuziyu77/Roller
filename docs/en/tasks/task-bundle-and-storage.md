@@ -32,7 +32,7 @@ Files and directories in `files.inputs` are scanned before Docker starts. Roller
 - Recursively record the directory tree.
 - Compute SHA-256, size, and permissions for each file.
 - Validate any declared optional `sha256`.
-- Store identical content as reusable blobs and build a content-addressed input tree.
+- Copy each source directly into a content-addressed input tree, hashing the bytes during the copy to detect changes since scanning. No intermediate blobs are stored.
 
 Default limits:
 
@@ -41,7 +41,7 @@ Default limits:
 | Single input or Context file | 10 GiB | `--max-input-file-bytes` |
 | Total input per task | 50 GiB | `--max-task-input-bytes` |
 
-Identical input trees in the same run can be reused. The Task Bundle manifest records declarations, file hashes, the input-tree digest, and the Context digest; the final sample keeps only these digests and does not copy the full set of input dependencies.
+Identical input trees in the same run can be reused. Task Bundle manifests are computed in memory (not written to disk) and record declarations, file hashes, the input-tree digest, and the Context digest; the final sample keeps only these digests and does not copy the full set of input dependencies.
 
 Two entry points in OpenClaw:
 
@@ -75,13 +75,13 @@ So the default `USER.md` for `role: "user"`, the default `MEMORY.md` for `role: 
 
 `capture` controls how the Task Bundle records Context content:
 
-| Strategy | Record hash | Save content-addressed blob | Allow safe Resume |
+| Strategy | Record hash | Include legacy blob identifier in digest | Allow safe Resume |
 | --- | --- | --- | --- |
 | `full` | yes | yes | yes |
 | `hash` | yes | no | yes |
 | `none` | no | no | no |
 
-All three strategies still provide Context to the current rollout. The difference only affects what the runtime Bundle retains and how later Resume decisions are made; the final sample does not keep Context source text.
+All three strategies copy Context directly into the runtime context directory, validating its bytes against the scan digest while copying. No strategy writes an extra blob or rereads the destination for hashing. The difference only affects the in-memory digest payload and later Resume decisions; the final sample does not keep Context source text. Historical blob identifiers remain in input and `full` Context digest payloads solely to preserve compatibility with existing run locks; they do not refer to stored files.
 
 By default, `user` and `memory` use `hash`, and other roles use `full`. Use `hash` when the content is private but you still need reliable change detection; use `none` when you do not want even a content hash recorded, and accept that the task cannot safely Resume.
 

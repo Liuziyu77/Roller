@@ -67,11 +67,11 @@ _OPENCLAW_2026_3_11_UNSAFE_THINKING = frozenset(
 
 
 def validate_openclaw_thinking(version: str, thinking: str | None) -> None:
-    """Guard known legacy downgrades and defer modern capabilities to OpenClaw.
+    """Guard the legacy downgrade; modern model profiles belong to OpenClaw.
 
-    A runtime version is not a provider/model capability table. Modern
-    OpenClaw releases validate explicit levels against the selected model
-    profile, including its provider-specific compatibility settings.
+    A version string or CLI help text is not a model capability table. Modern
+    OpenClaw validates explicit levels against its provider/model/runtime
+    profile, including custom catalog compatibility settings.
     """
 
     if (
@@ -156,9 +156,7 @@ def prepare_model_config(
             for model in models:
                 if isinstance(model, dict) and model.get("id") == model_id:
                     if enable_reasoning:
-                        # Fill missing legacy metadata without overriding an
-                        # explicit model capability declaration. OpenClaw owns
-                        # provider/model validation and effort mapping.
+                        # Preserve explicit capabilities and provider mappings.
                         model.setdefault("reasoning", True)
                     if max_tokens is not None:
                         model["maxTokens"] = max_tokens

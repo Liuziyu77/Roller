@@ -11,7 +11,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Iterable
 
 from roller.models import ContextFile, InputFile, RunRequest, Task, TaskBundle
-from roller.storage import atomic_write_json, safe_component
+from roller.storage import safe_component
 
 
 class BundleError(ValueError):
@@ -75,12 +75,10 @@ class TaskBundleStore:
     def __init__(self, run_dir: Path, policy: BundlePolicy | None = None) -> None:
         self.run_dir = run_dir.expanduser().resolve()
         self.policy = policy or BundlePolicy()
-        self.blobs_root = self.run_dir / "blobs" / "sha256"
         self.trees_root = self.run_dir / "trees" / "sha256"
-        self.tasks_root = self.run_dir / "tasks"
         self.runtime_root = self.run_dir / ".runtime"
         self._scan_cache: dict[Path, _ScannedSource] = {}
-        for path in (self.blobs_root, self.trees_root, self.tasks_root, self.runtime_root):
+        for path in (self.trees_root, self.runtime_root):
             path.mkdir(parents=True, exist_ok=True)
         try:
             self.runtime_root.chmod(0o700)
@@ -167,47 +165,25 @@ class TaskBundleStore:
         self._scan_cache[source] = scanned
         return scanned
 
-    def _store_blob(self, item: _ScannedFile) -> Path:
-        destination = self.blobs_root / item.sha256
-        if destination.is_file():
-            return destination
-        fd, temporary_name = tempfile.mkstemp(prefix=f".{item.sha256}.", dir=self.blobs_root)
-        os.close(fd)
-        temporary = Path(temporary_name)
+    @staticmethod
+    def _copy_snapshot(item: _ScannedFile, destination: Path, label: str) -> None:
+        """Copy once, validating the streamed bytes against the scan digest."""
+        digest = hashlib.sha256()
+        size = 0
         try:
-            shutil.copyfile(item.source, temporary)
-            copied_digest, copied_size = _hash_file(temporary)
-            if copied_digest != item.sha256 or copied_size != item.size:
-                raise BundleError(f"source changed while snapshotting: {item.source}")
-            temporary.chmod(0o444)
-            try:
-                os.replace(temporary, destination)
-            except FileExistsError:
-                temporary.unlink(missing_ok=True)
-        finally:
-            temporary.unlink(missing_ok=True)
-        return destination
-
-    def _store_inline_blob(self, content: str, digest: str) -> Path:
-        destination = self.blobs_root / digest
-        if destination.is_file():
-            return destination
-        encoded = content.encode("utf-8")
-        fd, temporary_name = tempfile.mkstemp(
-            prefix=f".{digest}.", dir=self.blobs_root
-        )
-        try:
-            with os.fdopen(fd, "wb") as stream:
-                stream.write(encoded)
-            temporary = Path(temporary_name)
-            temporary.chmod(0o444)
-            try:
-                temporary.replace(destination)
-            except FileExistsError:
-                temporary.unlink(missing_ok=True)
-        finally:
-            Path(temporary_name).unlink(missing_ok=True)
-        return destination
+            with item.source.open("rb") as source, destination.open("wb") as target:
+                while chunk := source.read(1024 * 1024):
+                    size += len(chunk)
+                    if size > item.size:
+                        raise BundleError(f"{label} changed while snapshotting: {item.source}")
+                    digest.update(chunk)
+                    target.write(chunk)
+            if digest.hexdigest() != item.sha256 or size != item.size:
+                raise BundleError(f"{label} changed while snapshotting: {item.source}")
+            destination.chmod(item.mode)
+        except BaseException:
+            destination.unlink(missing_ok=True)
+            raise
 
     @staticmethod
     def _add_directory(
@@ -234,6 +210,8 @@ class TaskBundleStore:
 
     def _prepare_inputs(self, task: Task) -> tuple[Path, dict[str, Any]]:
         file_records: list[dict[str, Any]] = []
+        # Source paths and inline strings are materialization details, never digest inputs.
+        sources: dict[str, _ScannedFile | str] = {}
         directories: set[str] = set()
         occupied_files: set[str] = set()
         declarations: list[dict[str, Any]] = []
@@ -255,6 +233,7 @@ class TaskBundleStore:
                         f"({total_bytes} > {self.policy.max_task_input_bytes})"
                     )
                 digest = hashlib.sha256(encoded).hexdigest()
+                del encoded  # Retain only the original string, not every UTF-8 encoding.
                 if spec.expected_sha256 and digest != spec.expected_sha256:
                     raise BundleError(
                         f"task {task.id} input {index} sha256 mismatch: "
@@ -266,7 +245,7 @@ class TaskBundleStore:
                     directories,
                     f"task {task.id} input",
                 )
-                blob = self._store_inline_blob(spec.content, digest)
+                sources[spec.path] = spec.content
                 declarations.append(
                     {
                         "path": spec.path,
@@ -282,7 +261,7 @@ class TaskBundleStore:
                         "sha256": digest,
                         "size": size,
                         "mode": 0o644,
-                        "blob": blob.relative_to(self.run_dir).as_posix(),
+                        "blob": f"blobs/sha256/{digest}",
                     }
                 )
                 continue
@@ -338,17 +317,19 @@ class TaskBundleStore:
                     directories,
                     f"task {task.id} input",
                 )
-                blob = self._store_blob(item)
+                sources[logical_path] = item
                 file_records.append(
                     {
                         "logical_path": logical_path,
                         "sha256": item.sha256,
                         "size": item.size,
                         "mode": item.mode,
-                        "blob": blob.relative_to(self.run_dir).as_posix(),
+                        "blob": f"blobs/sha256/{item.sha256}",
                     }
                 )
 
+        # Keep the historical blob identifiers in the in-memory manifests so
+        # tree/run digests remain compatible, without storing physical blobs.
         file_records.sort(key=lambda row: row["logical_path"])
         tree_digest = _canonical_digest(
             {"directories": sorted(directories), "files": file_records}
@@ -365,8 +346,12 @@ class TaskBundleStore:
                 for record in file_records:
                     destination = temporary_root / record["logical_path"]
                     destination.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copyfile(self.run_dir / record["blob"], destination)
-                    destination.chmod(record["mode"])
+                    source = sources[record["logical_path"]]
+                    if isinstance(source, str):
+                        destination.write_bytes(source.encode("utf-8"))
+                        destination.chmod(record["mode"])
+                    else:
+                        self._copy_snapshot(source, destination, "source")
                 try:
                     temporary_root.rename(tree_root)
                 except FileExistsError:
@@ -463,15 +448,7 @@ class TaskBundleStore:
                 )
                 destination = context_root / target
                 destination.parent.mkdir(parents=True, exist_ok=True)
-                if spec.capture == "full":
-                    source_for_copy = self._store_blob(item)
-                else:
-                    source_for_copy = item.source
-                shutil.copyfile(source_for_copy, destination)
-                copied_digest, copied_size = _hash_file(destination)
-                if copied_digest != item.sha256 or copied_size != item.size:
-                    raise BundleError(f"context changed while snapshotting: {item.source}")
-                destination.chmod(item.mode)
+                self._copy_snapshot(item, destination, "context")
                 file_record: dict[str, Any] = {
                     "logical_path": target,
                     "size": item.size,
@@ -480,9 +457,8 @@ class TaskBundleStore:
                 if spec.capture in {"full", "hash"}:
                     file_record["sha256"] = item.sha256
                 if spec.capture == "full":
-                    file_record["blob"] = (
-                        self.blobs_root / item.sha256
-                    ).relative_to(self.run_dir).as_posix()
+                    # Compatibility identifier only; no blob is written.
+                    file_record["blob"] = f"blobs/sha256/{item.sha256}"
                 declaration["files"].append(file_record)
             declaration["files"].sort(key=lambda row: row["logical_path"])
             declaration["directories"] = sorted(set(declaration["directories"]))
@@ -500,14 +476,8 @@ class TaskBundleStore:
 
     def prepare(self, task: Task) -> TaskBundle:
         task_key = f"{task.source_index:08d}_{safe_component(task.id)}"
-        task_root = self.tasks_root / task_key
-        task_root.mkdir(parents=True, exist_ok=True)
         inputs_root, input_manifest = self._prepare_inputs(task)
         context_root, context_manifest = self._prepare_context(task, task_key)
-        input_manifest_path = task_root / "inputs.manifest.json"
-        context_manifest_path = task_root / "context.manifest.json"
-        atomic_write_json(input_manifest_path, input_manifest)
-        atomic_write_json(context_manifest_path, context_manifest)
         input_manifest_digest = _canonical_digest(input_manifest)
         context_manifest_digest = _canonical_digest(context_manifest)
 
@@ -518,10 +488,11 @@ class TaskBundleStore:
             "messages": [{"role": "user", "content": prompt} for prompt in task.prompts],
             "model": task.model,
             "files": {
-                "inputs_manifest": input_manifest_path.name,
+                # Preserve historical names in the digest; manifests stay in memory.
+                "inputs_manifest": "inputs.manifest.json",
                 "inputs_tree_digest": input_manifest["tree_digest"],
                 "inputs_manifest_digest": input_manifest_digest,
-                "context_manifest": context_manifest_path.name,
+                "context_manifest": "context.manifest.json",
                 "context_manifest_digest": context_manifest_digest,
                 "output_dir": task.output_dir,
                 "output_collection": "all",
@@ -550,16 +521,9 @@ class TaskBundleStore:
             "resume_safe": context_manifest["resume_safe"],
         }
         manifest_digest = _canonical_digest(manifest)
-        manifest["manifest_digest"] = manifest_digest
-        manifest_path = task_root / "task.json"
-        atomic_write_json(manifest_path, manifest)
         return TaskBundle(
-            root=task_root,
             inputs_root=inputs_root,
             context_root=context_root,
-            manifest_path=manifest_path,
-            input_manifest_path=input_manifest_path,
-            context_manifest_path=context_manifest_path,
             manifest_digest=manifest_digest,
             input_tree_digest=input_manifest["tree_digest"],
             input_manifest_digest=input_manifest_digest,

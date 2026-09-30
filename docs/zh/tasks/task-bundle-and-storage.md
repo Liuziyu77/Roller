@@ -32,7 +32,7 @@
 - 递归记录目录结构。
 - 计算每个文件的 SHA-256、大小和权限。
 - 校验声明的可选 `sha256`。
-- 把相同内容保存为可复用 blob，并构建内容寻址的输入树。
+- 把源文件直接复制到内容寻址的输入树，复制时同步计算 hash，与扫描结果对比以检测源文件变化；不再保存中间 blob。
 
 默认限制：
 
@@ -41,7 +41,7 @@
 | 单个输入或 Context 文件 | 10 GiB | `--max-input-file-bytes` |
 | 单条 task 输入总量 | 50 GiB | `--max-task-input-bytes` |
 
-同一 run 中内容相同的输入树可以复用。Task Bundle manifest 记录声明、文件 hash、输入树 digest 和 Context digest；最终 sample 只保存这些 digest，不复制整套输入依赖。
+同一 run 中内容相同的输入树可以复用。Task Bundle manifest 仅在内存中计算，不写入磁盘，记录声明、文件 hash、输入树 digest 和 Context digest；最终 sample 只保存这些 digest，不复制整套输入依赖。
 
 OpenClaw 中的两个入口：
 
@@ -75,13 +75,13 @@ OpenClaw 的具体路径为：
 
 `capture` 决定 Task Bundle 如何记录 Context 内容：
 
-| 策略 | 记录 hash | 保存内容寻址 blob | 允许安全 Resume |
+| 策略 | 记录 hash | digest 包含旧版 blob 标识 | 允许安全 Resume |
 | --- | --- | --- | --- |
 | `full` | 是 | 是 | 是 |
 | `hash` | 是 | 否 | 是 |
 | `none` | 否 | 否 | 否 |
 
-三种策略都会把 Context 提供给当前 rollout。区别只影响运行期 Bundle 的内容留存和之后的 Resume 判断；最终 sample 不保存 Context 原文。
+三种策略都会把 Context 直接复制到运行期 context 目录，复制时同步计算 hash 并与扫描结果对比，不再额外保存 blob 或重新读取目标文件计算 hash。区别只影响内存中的 digest 数据和之后的 Resume 判断；最终 sample 不保存 Context 原文。输入和 `full` Context 的 digest 数据仍保留旧版 blob 标识，仅用于兼容已有 run lock，不代表磁盘上存在对应文件。
 
 默认情况下，`user` 和 `memory` 使用 `hash`，其他 role 使用 `full`。包含隐私内容但仍需可靠检测变化时，可以使用 `hash`；完全不希望记录内容 hash 时使用 `none`，同时接受该 task 无法安全 Resume。
 

@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 import tempfile
+import tracemalloc
 import unittest
 
 from roller.trajectory_audit import (
@@ -11,6 +12,37 @@ from roller.trajectory_audit import (
 
 
 class TrajectoryAuditTests(unittest.TestCase):
+    def test_wire_effort_audit_does_not_retain_request_history(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "wire_trace.jsonl"
+            body = {"reasoning_effort": "low", "messages": ["x" * 32768]}
+            with path.open("w", encoding="utf-8") as stream:
+                for seq in range(32):
+                    stream.write(json.dumps({"seq": seq, "path": "/v1/chat/completions",
+                                             "body": body}) + "\n")
+            tracemalloc.start()
+            try:
+                audit = wire_effort_audit(path, "low")
+                _, peak = tracemalloc.get_traced_memory()
+            finally:
+                tracemalloc.stop()
+            self.assertEqual(audit["status"], "matched")
+            self.assertEqual(len(audit["requests"]), 32)
+            self.assertLess(peak, 500_000)
+
+    def test_native_extra_body_effort_is_audited(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "trace.jsonl").write_text(json.dumps({
+                "type": "request", "extra_body": {
+                    "reasoning": {"enabled": True, "effort": "high"},
+                },
+            }) + "\n")
+            metadata = {"reasoning_effort": "low", "raw_trace_schema": "roller.hermes-events/v1"}
+            record_training_audits(metadata, None, root / "wire_trace.jsonl")
+            self.assertEqual(metadata["wire_effort_audit"]["status"], "mismatch")
+            self.assertEqual(metadata["sft_eligibility"]["reason"], "wire_effort_mismatch")
+
     def test_unified_visible_reasoning_audit_excludes_simulator(self):
         with tempfile.TemporaryDirectory() as temporary:
             metadata = {"reasoning_effort": "off", "keep_thinking": True}
