@@ -475,6 +475,51 @@ effort、开源模型 profile 和 OpenClaw 镜像限制见
 - 返回明文 reasoning 的 Qwen、GLM 等开源模型：保持默认 `--keep-thinking`，明文 reasoning 直接进入
   ACTF/SFT `reasoning_content`。
 
+显式请求 reasoning 档位时，样本 `info.json` 会记录
+`runtime.thinking_audit`。该审计只统计 ACTF 中实际保留的可见 reasoning。若请求 `off`
+后仍返回可见 reasoning，状态为 `mismatch`，Roller 同时记录 runtime warning，但不会删除或
+修改模型返回的文本。使用 `--no-keep-thinking` 时状态为 `not_observable`：导出字段为空不代表
+模型没有进行隐藏推理。
+
+`mismatch` 样本保持实际执行状态和单样本 SFT，便于检查；同时记录
+`runtime.sft_eligibility = {"eligible": false, "reason": "thinking_effort_mismatch"}`，
+不纳入训练汇总 `sft.jsonl`，续跑同样排除。该规则不把 `no_visible_reasoning` 当作
+关闭推理的证明。失败或超时的样本保留已有 raw/ACTF，但不导出单样本 SFT。
+
+归档前还会记录以下审计（主 Agent 与 user simulator 均适用）：
+
+- `runtime.wire_effort_audit`：逐条核对实际请求中的 effort/启停字段，包括重试。
+  明确冲突为 `mismatch`；参数省略、只有预算或未知协议为 `unverified`；无可读请求为
+  `not_observable`。默认 `actf` 模式若没有 wire 请求，可读取 Pi、DeepSeek、Hermes、
+  OpenCode 的原生请求快照；`source` 标明证据来源。删除临时文件后审计仍保存在 info 中。
+  `matched` 只证明客户端出站参数匹配，不证明服务实际遵从。
+- `runtime.completion_audit`：最后一步明确以 `length`/`max_tokens`/`max_output_tokens`
+  结束，或没有文本和工具调用时，记录 `incomplete`。未知结束原因不推断为截断；
+  `not_flagged` 不等于任务通过。最后一次已捕获响应若明确为 `incomplete` 或达到 token
+  上限，即使 ACTF 写为 `stop` 也判为截断；中途截断后请求成功恢复则不据此排除。
+  覆盖 ACTF 判定时，原始结果保存在 `actf_completion_audit`。
+- 明确 wire 冲突和上述不完整轨迹会记录 `sft_eligibility.eligible=false`，排除主 Agent
+  的训练汇总。参数省略不会自动被当成匹配或据此过滤；可转换的单样本 SFT 保留用于诊断。
+  user simulator 的失败/超时归档同样不生成 SFT；其成功轨迹保留审计及诊断 SFT，不混入
+  主 Agent 的汇总。旧样本续跑不会自动补算此前未记录的新审计。
+
+若严格转换没有生成 ACTF，Pi/OpenClaw 可从已完成的原生 assistant 消息中记录
+`completion_audit.source=native`（忽略历史 context 和未完成 delta）；其他未知 schema
+仍为不可观测，不强行放宽转换器或导出失败 SFT。
+
+代理还从 JSON/SSE 响应中提取模型名和结束原因，记录为 wire `response_metadata` 事件，
+通过 `request_seq` 与请求关联，不额外保存响应正文。归档后的 `runtime.model_identity_audit`
+包含每次 wire 请求的 `requested_model`、`response_models` 和 `finish_reasons`。
+名称不一致记为 `name_mismatch` 并告警，但可能是合法别名，故不会自动排除训练集。
+这只能核对响应声明的名字，不能证明中转实际路由到哪个模型。压缩/未知协议、缺失字段、
+超过采集大小限制等情况不声称匹配；默认 actf 模式清理 wire 后仍保留 runtime 审计。
+
+终端完成提示与 run `info.json` 的 `summary.training` 会汇总：SFT 纳入/排除数量、
+thinking 冲突样本数、wire 无法确认/不可观测样本数。统计单位是已处理的主 Agent 样本，
+不是 HTTP 请求或 simulator；续跑样本也计入。一个样本可能同时属于 reasoning 冲突和
+wire 无法确认，分类不可直接相加。旧样本缺少审计不表示匹配。该汇总与实际 SFT 导出
+共用排除规则，不新增 strict 开关、不改变执行状态或 CLI 退出码，也不代表任务 grader 通过。
+
 `--no-keep-thinking` 即使配合 `--wire-trace off`，也必须启动代理来剥离请求历史，因此
 OpenClaw 仍要求 `--model-config` 中存在可代理 `baseUrl`；Codex 和 Claude Code 不做
 该 history 剥离。

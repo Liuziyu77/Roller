@@ -308,10 +308,11 @@ After the task finishes, every safe file and empty directory in that folder is c
 `env` and `setup` both accept a single string or an array of strings. Task authors should treat setup as executable code and only run commands from trusted datasets.
 
 The Roller schema for `thinking` accepts `off/minimal/low/medium/high/xhigh/adaptive/max/ultra`;
-`none` is normalized to `off`. The value in the task takes precedence over CLI `--thinking`. OpenClaw `2026.7.1` supports
-up to `max` and rejects `ultra`; Codex maps valid levels to `model_reasoning_effort` and rejects
-the OpenClaw-only `adaptive` and `off`, which has no shared equivalent; the default Codex 0.149.0 image supports
-`minimal/low/medium/high/xhigh` and does not support `max/ultra`. Claude Code 2.1.222 accepts
+`none` is normalized to `off`. The value in the task takes precedence over CLI `--thinking`. Modern OpenClaw releases
+validate levels against the selected provider/model profile; Roller only rejects advanced levels on the legacy
+`2026.3.11` runtime that is known to silently downgrade them. Codex maps valid levels to `model_reasoning_effort` and rejects
+the OpenClaw-only `adaptive` and `off`, which has no shared equivalent; other effort levels are forwarded to Codex
+and validated by the selected model and endpoint. Claude Code 2.1.222 accepts
 `low/medium/high/xhigh/max/ultracode`; Roller maps `ultra` to `ultracode` and rejects
 `off/minimal/adaptive`. Available levels depend on the Harness version, model, and provider; each validates the value.
 The Task Agent can use OpenClaw, Codex, Claude Code, Hermes, OpenCode, DeepSeek, or Pi; the User Simulator can also choose any of these seven Harnesses in its own `harness` field. Task Agent harnesses may be mixed per task; an explicit `--harness` overrides all of them. The Simulator can choose independently.

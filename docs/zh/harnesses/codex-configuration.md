@@ -166,8 +166,8 @@ roller collect ... \
 ```
 
 Task 的 `runtime.thinking` 优先于 CLI。Roller 会把
-`minimal/low/medium/high/xhigh` 交给 Codex，再由模型和 API 服务验证。其中 `xhigh` 取决于
-模型是否支持。Codex CLI 0.149.0 不接受 `max`/`ultra`，Roller 会提前报错。OpenClaw 专用的
+`minimal/low/medium/high/xhigh/max/ultra` 交给 Codex，再由模型和 API 服务验证；是否支持取决于
+所选模型与服务端点，Roller 不再根据 Codex CLI 版本推断。OpenClaw 专用的
 `adaptive` 也会提前拒绝。`off`/`none` 同样会拒绝，因为 Codex Harness 没有
 一个能对所有 reasoning 模型关闭推理的通用开关。若要使用模型/CLI 默认值，
 直接省略 `--thinking`。

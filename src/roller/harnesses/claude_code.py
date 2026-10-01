@@ -833,7 +833,8 @@ class ClaudeCodeHarness(InteractiveHarness):
                 "container": retained_container,
                 "agent_return_codes": return_codes,
                 "turns": len(request.task.prompts),
-                "reasoning_effort": self._effective_effort(request),
+                "reasoning_effort": resolve_thinking(request.task.thinking, self.config.reasoning_effort),
+                "transport_effort": self._effective_effort(request),
                 "max_thinking_tokens": self.config.max_thinking_tokens,
                 "max_turns": self.config.max_turns,
                 "permission_mode": self.config.permission_mode,
@@ -1052,9 +1053,11 @@ class ClaudeCodeSession(InteractiveSession):
             "finished_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         }
         try:
-            reasoning_effort = self.harness._effective_effort(self.request)
+            reasoning_effort = resolve_thinking(self.request.task.thinking, config.reasoning_effort)
+            transport_effort = self.harness._effective_effort(self.request)
         except Exception:
             reasoning_effort = None
+            transport_effort = None
         result = HarnessResult(
             status=final_status,
             elapsed_seconds=elapsed,
@@ -1069,6 +1072,7 @@ class ClaudeCodeSession(InteractiveSession):
                 "agent_return_codes": self.return_codes,
                 "turns": len(self.messages),
                 "reasoning_effort": reasoning_effort,
+                "transport_effort": transport_effort,
                 "max_thinking_tokens": config.max_thinking_tokens,
                 "max_turns": config.max_turns,
                 "permission_mode": config.permission_mode,

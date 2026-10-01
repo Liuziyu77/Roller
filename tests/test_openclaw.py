@@ -271,26 +271,33 @@ class OpenClawHelpersTests(unittest.TestCase):
         self.assertNotIn("reasoning", config["providers"]["proxy"]["models"][1])
         self.assertEqual(config["providers"]["proxy"]["models"][1]["tags"], ["reasoning"])
 
-    def test_explicit_model_capabilities_and_effort_mapping_are_not_overridden(self) -> None:
+    def test_preserves_explicit_model_capabilities_and_effort_mapping(self) -> None:
         model = {
             "id": "plain",
             "name": "Plain",
             "reasoning": False,
             "tags": ["reasoning"],
+            "thinkingLevelMap": {"medium": "high"},
             "compat": {
                 "supportsReasoningEffort": False,
                 "supportedReasoningEfforts": ["low", "high"],
                 "reasoningEffortMap": {"medium": "high"},
             },
-            "thinkingLevelMap": {"medium": "high"},
         }
         config = {"providers": {"proxy": {"models": [model]}}}
         original = json.loads(json.dumps(config))
-        prepared = prepare_model_config(config, "proxy/plain", enable_reasoning=True)
+
+        prepared = prepare_model_config(
+            config,
+            "proxy/plain",
+            enable_reasoning=True,
+        )
+
         saved = prepared["providers"]["proxy"]["models"][0]
         self.assertFalse(saved["reasoning"])
-        self.assertEqual(saved["compat"], model["compat"])
         self.assertEqual(saved["thinkingLevelMap"], model["thinkingLevelMap"])
+        self.assertEqual(saved["compat"], model["compat"])
+        self.assertNotIn("tags", saved)
         self.assertEqual(config, original)
 
     def test_rollout_limits_preserve_explicit_and_unset_reasoning(self) -> None:
@@ -324,7 +331,6 @@ class OpenClawHelpersTests(unittest.TestCase):
                         )
                     self.assertEqual(provider["models"][1], original["providers"]["proxy"]["models"][1])
                     self.assertEqual(config, original)
-
 
     def test_no_keep_thinking_requires_interceptable_model_config(self) -> None:
         task = Task(id="task", prompts=("hello",), source_index=0)
@@ -713,7 +719,9 @@ class OpenClawHelpersTests(unittest.TestCase):
         )
         self.assertEqual(agent_command[agent_command.index("--thinking") + 1], "max")
 
-    def test_modern_harness_passes_ultra_and_off_but_does_not_inject_default(self) -> None:
+    def test_modern_harness_passes_explicit_levels_without_injecting_a_default(
+        self,
+    ) -> None:
         for level in ("ultra", "off", None):
             with self.subTest(level=level):
                 runtime = FakeDockerRuntime(version="OpenClaw 2026.7.1")
@@ -727,14 +735,22 @@ class OpenClawHelpersTests(unittest.TestCase):
                     worker_slot=0,
                     runtime=runtime,
                 )
-                request = RunRequest(0, Task("task", ("solve",), 0), "provider/model", 30)
+                request = RunRequest(
+                    0,
+                    Task("task", ("solve",), 0),
+                    "provider/model",
+                    30,
+                )
+
                 with tempfile.TemporaryDirectory() as temporary:
                     result = harness.run(request, Path(temporary), attempt=1)
+
                 self.assertEqual(result.status, "ok", result.error)
-                agent = next(c for c in runtime.commands if "agent" in c)
+                agent = next(command for command in runtime.commands if "agent" in command)
                 defaults = [
-                    c for c in runtime.commands
-                    if "agents.defaults.thinkingDefault" in c
+                    command
+                    for command in runtime.commands
+                    if "agents.defaults.thinkingDefault" in command
                 ]
                 if level is None:
                     self.assertNotIn("--thinking", agent)

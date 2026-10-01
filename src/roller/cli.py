@@ -12,7 +12,7 @@ import tempfile
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Callable, Sequence
 
 from roller.collector import CollectionConfig, Collector, check_retired_cot_samples
 from roller.benches import (
@@ -60,6 +60,7 @@ from roller.harnesses.codex import (
     DEFAULT_CODEX_IMAGE,
     CodexConfig,
     CodexHarness,
+    codex_effort,
     redact_api_base,
 )
 from roller.harnesses.openclaw import (
@@ -78,6 +79,11 @@ from roller.run_lock import (
 from roller.storage import atomic_write_json, safe_component
 from roller.tasks import TaskFormatError, build_requests, load_tasks
 from roller.thinking import THINKING_LEVELS, normalize_thinking, resolve_thinking
+from roller.trajectory_audit import training_summary
+from roller.thinking_capabilities import (
+    ThinkingCapabilities,
+    load_thinking_capabilities,
+)
 from roller.version import __version__
 from roller.viewer import serve as serve_viewer
 
@@ -296,6 +302,14 @@ def _build_parser() -> argparse.ArgumentParser:
         help=(
             "Harness reasoning/thinking level; 'none' aliases 'off'. Each Harness "
             "applies its own validation and effort mapping"
+        ),
+    )
+    runtime.add_argument(
+        "--thinking-capabilities",
+        metavar="PATH",
+        help=(
+            "optional versioned JSON capability declarations keyed by harness, "
+            "model, and endpoint; unsupported efforts fail before rollout"
         ),
     )
     runtime.add_argument(
@@ -616,6 +630,35 @@ def _with_task_timeout(request):
     return dataclasses.replace(request, timeout_seconds=declared)
 
 
+def _validate_thinking_requests(
+    requests: Sequence[Any],
+    *,
+    cli_harness: str | None,
+    harness: str,
+    api_base: str | None | Callable[[str], str | None],
+    default_effort: str | None,
+    effort_validator: Callable[[str | None], str | None],
+    capabilities: ThinkingCapabilities | None,
+) -> None:
+    def validate(model: str, selected: str | None) -> None:
+        effort = resolve_thinking(selected, default_effort)
+        effort_validator(effort)
+        if capabilities is not None:
+            capabilities.validate(
+                harness=harness,
+                model=model,
+                api_base=api_base(model) if callable(api_base) else api_base,
+                effort=effort,
+            )
+
+    for request in requests:
+        if (cli_harness or request.task.harness) == harness:
+            validate(request.model, request.task.thinking)
+        spec = request.task.user_simulator
+        if spec is not None and spec.harness == harness:
+            validate(spec.model or request.model, spec.thinking)
+
+
 def _collect(args: argparse.Namespace) -> int:
     if args.samples is None:
         args.samples = 3 if args.bench == "skillsbench" else 1
@@ -791,6 +834,25 @@ def _collect(args: argparse.Namespace) -> int:
     if args.openclaw_max_tokens is not None and model_config is None:
         raise ValueError("--openclaw-max-tokens requires --model-config")
 
+    thinking_capabilities: ThinkingCapabilities | None = None
+    thinking_capabilities_path: Path | None = None
+    thinking_capabilities_digest: str | None = None
+    if args.thinking_capabilities:
+        thinking_capabilities_path = (
+            Path(args.thinking_capabilities).expanduser().resolve()
+        )
+        if not thinking_capabilities_path.is_file():
+            raise FileNotFoundError(
+                "thinking capabilities not found: "
+                f"{thinking_capabilities_path}"
+            )
+        thinking_capabilities = load_thinking_capabilities(
+            thinking_capabilities_path
+        )
+        thinking_capabilities_digest = hashlib.sha256(
+            thinking_capabilities_path.read_bytes()
+        ).hexdigest()
+
     codex_config_path: Path | None = None
     codex_config_digest: str | None = None
     if args.codex_config:
@@ -847,6 +909,17 @@ def _collect(args: argparse.Namespace) -> int:
             set_image_model=args.set_image_model,
             docker_binary=args.docker_binary,
         )
+        def openclaw_endpoint(model: str) -> str | None:
+            providers = (model_config or {}).get("providers", {})
+            provider = providers.get(model.split("/", 1)[0], {}) if isinstance(providers, dict) else {}
+            endpoint = provider.get("baseUrl") if isinstance(provider, dict) else None
+            return endpoint if isinstance(endpoint, str) else None
+
+        _validate_thinking_requests(
+            requests, cli_harness=cli_harness, harness="openclaw",
+            api_base=openclaw_endpoint, default_effort=args.thinking,
+            effort_validator=normalize_thinking, capabilities=thinking_capabilities,
+        )
     if "codex" in selected_harnesses:
         if args.collect_path and "openclaw" not in selected_harnesses:
             raise ValueError("--collect-path requires an OpenClaw participant")
@@ -868,6 +941,11 @@ def _collect(args: argparse.Namespace) -> int:
             keep_thinking=args.keep_thinking,
             keep_container_on_error=args.keep_container_on_error,
             docker_binary=args.docker_binary,
+        )
+        _validate_thinking_requests(
+            requests, cli_harness=cli_harness, harness="codex",
+            api_base=codex_api_base, default_effort=args.thinking,
+            effort_validator=codex_effort, capabilities=thinking_capabilities,
         )
     if "claude-code" in selected_harnesses:
         if args.collect_path and "openclaw" not in selected_harnesses:
@@ -894,12 +972,11 @@ def _collect(args: argparse.Namespace) -> int:
             keep_container_on_error=args.keep_container_on_error,
             docker_binary=args.docker_binary,
         )
-        for request in requests:
-            if (cli_harness or request.task.harness) == "claude-code":
-                claude_effort(resolve_thinking(request.task.thinking, claude_code_config.reasoning_effort))
-            spec = request.task.user_simulator
-            if spec is not None and spec.harness == "claude-code":
-                claude_effort(resolve_thinking(spec.thinking, claude_code_config.reasoning_effort))
+        _validate_thinking_requests(
+            requests, cli_harness=cli_harness, harness="claude-code",
+            api_base=claude_code_config.api_base, default_effort=args.thinking,
+            effort_validator=claude_effort, capabilities=thinking_capabilities,
+        )
 
     if "hermes" in selected_harnesses:
         hermes_config = HermesConfig(
@@ -912,12 +989,15 @@ def _collect(args: argparse.Namespace) -> int:
             wire_trace_mode=args.wire_trace, keep_thinking=args.keep_thinking,
             keep_container_on_error=args.keep_container_on_error, docker_binary=args.docker_binary,
         )
-        for request in requests:
-            if (cli_harness or request.task.harness) == "hermes":
-                hermes_effort(resolve_thinking(request.task.thinking, hermes_config.reasoning_effort))
-            spec = request.task.user_simulator
-            if spec is not None and spec.harness == "hermes":
-                hermes_effort(resolve_thinking(spec.thinking, hermes_config.reasoning_effort))
+        _validate_thinking_requests(
+            requests,
+            cli_harness=cli_harness,
+            harness="hermes",
+            api_base=hermes_api_base or "https://api.openai.com/v1",
+            default_effort=hermes_config.reasoning_effort,
+            effort_validator=hermes_effort,
+            capabilities=thinking_capabilities,
+        )
 
     if "opencode" in selected_harnesses:
         opencode_config = OpenCodeConfig(
@@ -931,12 +1011,15 @@ def _collect(args: argparse.Namespace) -> int:
             wire_trace_mode=args.wire_trace, keep_thinking=args.keep_thinking,
             keep_container_on_error=args.keep_container_on_error, docker_binary=args.docker_binary,
         )
-        for request in requests:
-            if (cli_harness or request.task.harness) == "opencode":
-                opencode_effort(resolve_thinking(request.task.thinking, opencode_config.reasoning_effort))
-            spec = request.task.user_simulator
-            if spec is not None and spec.harness == "opencode":
-                opencode_effort(resolve_thinking(spec.thinking, opencode_config.reasoning_effort))
+        _validate_thinking_requests(
+            requests,
+            cli_harness=cli_harness,
+            harness="opencode",
+            api_base=opencode_api_base or "https://api.openai.com/v1",
+            default_effort=opencode_config.reasoning_effort,
+            effort_validator=opencode_effort,
+            capabilities=thinking_capabilities,
+        )
 
     if "deepseek" in selected_harnesses:
         deepseek_config = DeepSeekConfig(
@@ -949,12 +1032,15 @@ def _collect(args: argparse.Namespace) -> int:
             wire_trace_mode=args.wire_trace, keep_thinking=args.keep_thinking,
             keep_container_on_error=args.keep_container_on_error, docker_binary=args.docker_binary,
         )
-        for request in requests:
-            if (cli_harness or request.task.harness) == "deepseek":
-                deepseek_effort(resolve_thinking(request.task.thinking, deepseek_config.reasoning_effort))
-            spec = request.task.user_simulator
-            if spec is not None and spec.harness == "deepseek":
-                deepseek_effort(resolve_thinking(spec.thinking, deepseek_config.reasoning_effort))
+        _validate_thinking_requests(
+            requests,
+            cli_harness=cli_harness,
+            harness="deepseek",
+            api_base=deepseek_api_base or "https://api.deepseek.com",
+            default_effort=deepseek_config.reasoning_effort,
+            effort_validator=deepseek_effort,
+            capabilities=thinking_capabilities,
+        )
 
     if "pi" in selected_harnesses:
         pi_config = PiConfig(
@@ -967,12 +1053,15 @@ def _collect(args: argparse.Namespace) -> int:
             wire_trace_mode=args.wire_trace, keep_thinking=args.keep_thinking,
             keep_container_on_error=args.keep_container_on_error, docker_binary=args.docker_binary,
         )
-        for request in requests:
-            if (cli_harness or request.task.harness) == "pi":
-                pi_effort(resolve_thinking(request.task.thinking, pi_config.reasoning_effort))
-            spec = request.task.user_simulator
-            if spec is not None and spec.harness == "pi":
-                pi_effort(resolve_thinking(spec.thinking, pi_config.reasoning_effort))
+        _validate_thinking_requests(
+            requests,
+            cli_harness=cli_harness,
+            harness="pi",
+            api_base=pi_api_base or "https://api.openai.com/v1",
+            default_effort=pi_config.reasoning_effort,
+            effort_validator=pi_effort,
+            capabilities=thinking_capabilities,
+        )
 
     if args.dry_run:
         # Exercise all path, hash, collision and size checks without leaving a run directory.
@@ -1174,6 +1263,12 @@ def _collect(args: argparse.Namespace) -> int:
             "limit": args.limit,
             "resume": args.resume,
             "task_schema": "roller.task/v1",
+            "thinking_capabilities_path": (
+                str(thinking_capabilities_path)
+                if thinking_capabilities_path
+                else None
+            ),
+            "thinking_capabilities_sha256": thinking_capabilities_digest,
             "conversation": {
                 "user_simulator_tasks": sum(
                     task.user_simulator is not None for task in tasks
@@ -1226,6 +1321,9 @@ def _collect(args: argparse.Namespace) -> int:
                     "simulator_harnesses": sorted(simulator_harnesses),
                     "task_schema": "roller.task/v1",
                     "output_collection": "all",
+                    "thinking_capabilities_sha256": (
+                        thinking_capabilities_digest
+                    ),
                     "task_images": {
                         task.id: {
                             "image": task.docker_image,
@@ -1373,6 +1471,14 @@ def _collect(args: argparse.Namespace) -> int:
     assert results is not None
     failed = sum(result.get("status") in {"error", "timeout"} for result in results)
     print(f"Collected {len(results)} trajectories ({failed} failed).")
+    training = training_summary(results)
+    print(
+        f"SFT: {training['sft_included']} included, "
+        f"{training['sft_excluded']} excluded. "
+        f"Thinking audit: {training['thinking_mismatch']} mismatch; "
+        f"wire {training['wire_unverified']} unverified, "
+        f"{training['wire_not_observable']} not observable."
+    )
     print(f"Run directory: {run_dir}")
     print(f"Info: {run_dir / 'info.json'}")
     if bench_context is not None:

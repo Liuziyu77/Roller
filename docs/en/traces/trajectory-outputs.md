@@ -580,6 +580,66 @@ encrypted reasoning does not enter SFT.
 
 The default `--keep-thinking` retains visible reasoning returned by the service. This includes GPT summaries, Claude visible thinking, and plaintext reasoning returned by open models.
 
+When a reasoning effort was explicitly requested, sample `info.json` records
+`runtime.thinking_audit`. This audit counts only visible reasoning retained in
+ACTF. If `off` was requested but visible reasoning is still present, its status
+is `mismatch` and Roller records a runtime warning without deleting or changing
+the returned text. With `--no-keep-thinking`, the status is `not_observable`:
+an empty exported field is not evidence that the model performed no hidden
+reasoning.
+
+Samples with a `mismatch` keep their execution status and per-sample SFT for
+inspection, but record `runtime.sft_eligibility = {"eligible": false,
+"reason": "thinking_effort_mismatch"}` and are excluded from `sft.jsonl`,
+including on resume. `no_visible_reasoning` is not proof that reasoning was
+disabled. Failed or timed-out samples retain available raw/ACTF evidence but
+do not export per-sample SFT.
+
+Before pruning auxiliary traces, both agent and user-simulator archives record:
+
+- `runtime.wire_effort_audit`: checks each outgoing request, including retries.
+  Explicit conflicts are `mismatch`; omitted controls, budgets alone, and unknown
+  encodings are `unverified`; missing readable requests are `not_observable`.
+  Default `actf` mode also reads native request snapshots for Pi, DeepSeek,
+  Hermes, and OpenCode when no wire requests were captured. `source` identifies
+  the evidence used. The audit survives pruning.
+  `matched` describes client parameters, not provider compliance.
+- `runtime.completion_audit`: flags a final `length`, `max_tokens`, or
+  `max_output_tokens` stop, or an empty text answer without tool calls, as
+  `incomplete`. Unknown/missing stop reasons are not inferred. `not_flagged`
+  does not mean the task passed. A final observed response with `incomplete` or
+  a token-limit finish reason also flags truncation, even if ACTF says `stop`;
+  an earlier truncated request followed by a completed request does not.
+  `actf_completion_audit` retains the original ACTF finding when overridden.
+- Explicit wire mismatches and these incomplete trajectories set
+  `sft_eligibility.eligible=false`, excluding them from the agent aggregate.
+  Omitted controls alone do not trigger exclusion. Convertible per-sample SFT
+  remains diagnostic evidence. Failed/timed-out simulator archives also omit SFT;
+  successful simulator artifacts retain diagnostics and never enter the agent
+  aggregate. Resume does not backfill new audits on previously collected samples.
+
+When strict conversion produces no ACTF, Pi/OpenClaw can record
+`completion_audit.source=native` from completed native assistant messages,
+ignoring context history and partial deltas. Unknown schemas remain unobservable;
+conversion is not relaxed and failed SFT is not exported.
+
+The proxy extracts model names and finish reasons from JSON/SSE responses into
+wire `response_metadata` events linked by `request_seq`, without retaining
+additional response text. Archived `runtime.model_identity_audit` records each
+wire `requested_model`, `response_models`, and `finish_reasons`. A `name_mismatch`
+produces a warning but no automatic training exclusion: aliases can be legitimate.
+These are server-declared names, not proof of actual backend routing. Compressed
+or unknown protocols, missing fields, and capture limits do not imply a match.
+The runtime audit survives default actf-mode wire pruning.
+
+The terminal completion message and run `summary.training` report SFT inclusion/
+exclusion, thinking mismatches, and unverified/not-observable wire audits. Counts
+refer to processed primary-agent samples, including resumed ones, not HTTP
+requests or simulators. Categories can overlap; missing legacy audits do not
+imply a match. Reporting shares the export exclusion policy; it adds no strict
+switch and changes neither execution status nor CLI exit codes. Inclusion does
+not imply that a task grader passed.
+
 Even with `--wire-trace off`, `--no-keep-thinking` must still start a proxy to
 strip request history, so OpenClaw still requires a proxyable `baseUrl` in
 `--model-config`. Codex and Claude Code do not perform that history stripping.

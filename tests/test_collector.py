@@ -135,6 +135,11 @@ class FakeHarness(Harness):
                 "request_count": 1,
             }
             metadata = {"slot": self.slot}
+            if "reasoning_effort" in self.state:
+                metadata["settings"] = {
+                    "reasoning_effort": self.state["reasoning_effort"],
+                    "keep_thinking": self.state.get("keep_thinking", True),
+                }
             trajectory_path = str(trajectory)
             if self.state.get("raw_only"):
                 trajectory.unlink()
@@ -169,6 +174,25 @@ class FakeHarness(Harness):
                     }
                 ]
                 trajectory.write_text(json.dumps(payload), encoding="utf-8")
+            if self.state.get("reasoning_text") and trajectory.is_file():
+                payload = json.loads(trajectory.read_text(encoding="utf-8"))
+                payload["steps"][0]["assistant_content"]["reasoning_content"] = (
+                    self.state["reasoning_text"]
+                )
+                trajectory.write_text(json.dumps(payload), encoding="utf-8")
+            if "final_content" in self.state or "stop_reason" in self.state:
+                payload = json.loads(trajectory.read_text())
+                last = payload["steps"][-1]
+                if "final_content" in self.state:
+                    last["assistant_content"]["content"] = self.state["final_content"]
+                if "stop_reason" in self.state:
+                    last["metric"]["stop_reason"] = self.state["stop_reason"]
+                trajectory.write_text(json.dumps(payload))
+            if "wire_efforts" in self.state:
+                (output_dir / "wire_trace.jsonl").write_text("".join(
+                    json.dumps({"seq": i, "path": "/v1/chat/completions", "params": {"reasoning_effort": effort}}) + "\n"
+                    for i, effort in enumerate(self.state["wire_efforts"])
+                ))
             if self.state.get("record_output"):
                 artifact = output_dir / "results" / "artifact.txt"
                 artifact.parent.mkdir(parents=True, exist_ok=True)
@@ -178,7 +202,7 @@ class FakeHarness(Harness):
                     "files": [{"path": "artifact.txt", "size": artifact.stat().st_size}],
                 }
             return HarnessResult(
-                status="ok",
+                status=self.state.get("final_status", "ok"),
                 elapsed_seconds=0.01,
                 usage=usage,
                 trace_path=str(trace),
@@ -201,6 +225,30 @@ def make_requests() -> list[RunRequest]:
 
 
 class CollectorTests(unittest.TestCase):
+    def test_training_audits_exclude_without_changing_execution_status(self) -> None:
+        for state_update, reason in (
+            ({"final_content": ""}, "empty_final_answer"),
+            ({"stop_reason": "length"}, "token_limit"),
+            ({"reasoning_effort": "low", "wire_efforts": ["low", "high"]}, "wire_effort_mismatch"),
+        ):
+            with self.subTest(reason=reason), tempfile.TemporaryDirectory() as temporary:
+                run_dir = Path(temporary)
+                state = self._state()
+                state.update(state_update)
+                collector = Collector(CollectionConfig(run_dir=run_dir), lambda slot: FakeHarness(state, slot))
+                result = collector.collect(make_requests()[:1])[0]
+                self.assertEqual(result["status"], "ok")
+                self.assertEqual(result["runtime"]["sft_eligibility"]["reason"], reason)
+                if reason != "empty_final_answer":
+                    self.assertIsNotNone(result["trajectory"]["sft"])
+                self.assertEqual((run_dir / "sft.jsonl").read_text(), "")
+                resumed = Collector(CollectionConfig(run_dir=run_dir, resume=True), lambda slot: FakeHarness(state, slot)).collect(make_requests()[:1])[0]
+                self.assertEqual(resumed["status"], "skipped")
+                self.assertEqual((run_dir / "sft.jsonl").read_text(), "")
+                summary = json.loads((run_dir / "info.json").read_text())["summary"]
+                self.assertEqual(summary["training"]["sft_included"], 0)
+                self.assertEqual(summary["training"]["sft_excluded"], 1)
+
     def _state(self, fail_first: bool = False) -> dict:
         return {
             "lock": threading.Lock(),
@@ -229,6 +277,8 @@ class CollectorTests(unittest.TestCase):
             self.assertEqual(summary["processed"], 4)
             self.assertEqual(summary["pending"], 0)
             self.assertEqual(summary["ok"], 4)
+            self.assertEqual(summary["training"]["sft_included"], 4)
+            self.assertEqual(summary["training"]["sft_excluded"], 0)
             self.assertEqual(summary["usage"]["total_tokens"], 12)
             sample = next((run_dir / "samples").glob("*/00000000_task-0"))
             self.assertEqual(
@@ -246,6 +296,86 @@ class CollectorTests(unittest.TestCase):
             ]
             self.assertEqual(len(dataset), 4)
             self.assertEqual(dataset[0], sft)
+
+    def test_audits_visible_reasoning_without_rewriting_it(self) -> None:
+        cases = (
+            ("off", "unexpected chain", True, "mismatch", True),
+            ("off", None, True, "no_visible_reasoning", False),
+            ("high", "expected chain", True, "visible_reasoning_observed", False),
+            ("off", "filtered chain", False, "not_observable", False),
+        )
+        for effort, reasoning, keep, status, warned in cases:
+            with self.subTest(effort=effort, reasoning=reasoning, keep=keep):
+                with tempfile.TemporaryDirectory() as temporary:
+                    run_dir = Path(temporary) / "run"
+                    state = self._state()
+                    state.update(
+                        reasoning_effort=effort,
+                        reasoning_text=reasoning,
+                        keep_thinking=keep,
+                    )
+                    collector = Collector(
+                        CollectionConfig(run_dir=run_dir),
+                        lambda slot: FakeHarness(state, slot),
+                    )
+                    if warned:
+                        with self.assertLogs("roller.trajectory_audit", level="WARNING"):
+                            result = collector.collect(make_requests()[:1])[0]
+                    else:
+                        result = collector.collect(make_requests()[:1])[0]
+
+                    audit = result["runtime"]["thinking_audit"]
+                    self.assertEqual(audit["requested_effort"], effort)
+                    self.assertEqual(audit["status"], status)
+                    self.assertEqual(audit["retained_in_actf"], keep)
+                    warnings = result["runtime"].get("warnings", [])
+                    self.assertEqual(bool(warnings), warned)
+                    actf = json.loads(
+                        next((run_dir / "samples").glob("*/*/trace_ACTF.json"))
+                        .read_text()
+                    )
+                    retained = actf["steps"][0]["assistant_content"][
+                        "reasoning_content"
+                    ]
+                    self.assertEqual(retained, reasoning or "")
+                    self.assertEqual(result["status"], "ok")
+                    self.assertEqual(
+                        bool((run_dir / "sft.jsonl").read_text()), not warned
+                    )
+                    self.assertTrue(list(run_dir.glob("samples/*/*/trace_SFT.json")))
+                    if warned:
+                        self.assertFalse(result["runtime"]["sft_eligibility"]["eligible"])
+                        # Older samples carry only the audit, not eligibility.
+                        info_path = next(run_dir.glob("samples/*/*/info.json"))
+                        legacy = json.loads(info_path.read_text())
+                        legacy["runtime"].pop("sft_eligibility")
+                        info_path.write_text(json.dumps(legacy), encoding="utf-8")
+                    resumed = Collector(
+                        CollectionConfig(run_dir=run_dir, resume=True),
+                        lambda slot: FakeHarness(state, slot),
+                    ).collect(make_requests()[:1])[0]
+                    self.assertEqual(resumed["status"], "skipped")
+                    self.assertEqual(
+                        bool((run_dir / "sft.jsonl").read_text()), not warned
+                    )
+
+    def test_failed_partial_trace_has_no_training_export(self) -> None:
+        for status in ("error", "timeout"):
+            with self.subTest(status=status), tempfile.TemporaryDirectory() as temporary:
+                run_dir = Path(temporary) / "run"
+                state = self._state()
+                state["final_status"] = status
+                collector = Collector(
+                    CollectionConfig(run_dir=run_dir),
+                    lambda slot: FakeHarness(state, slot),
+                )
+                result = collector.collect(make_requests()[:1])[0]
+                self.assertEqual(result["status"], status)
+                self.assertIsNotNone(result["trajectory"]["raw"])
+                self.assertIsNotNone(result["trajectory"]["actf"])
+                self.assertIsNone(result["trajectory"]["sft"])
+                self.assertFalse(list(run_dir.glob("samples/*/*/trace_SFT.json")))
+                self.assertEqual((run_dir / "sft.jsonl").read_text(), "")
 
     def test_collects_multimodal_sft_dataset_and_resumes(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

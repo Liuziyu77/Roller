@@ -12,10 +12,12 @@ import unittest
 from unittest.mock import Mock, patch
 
 from roller.cli import _build_parser, _collect
+from roller.collector import CollectionConfig, Collector
 from roller.harnesses.hermes import HermesConfig, HermesHarness, RUNNER_PATH
 from roller.hermes_actf import convert_hermes_trace, extract_hermes_usage, hermes_events_to_actf
-from roller.models import RunRequest, Task
+from roller.models import HarnessResult, RunRequest, Task
 from roller.sft import actf_to_sft
+from roller.trajectory_audit import sft_exclusion_reason
 
 
 TOOL = {"type": "function", "function": {"name": "terminal", "description": "Run a command", "parameters": {"type": "object", "properties": {"command": {"type": "string"}}, "required": ["command"]}}}
@@ -162,6 +164,53 @@ class HermesTraceTests(unittest.TestCase):
 
 
 class HermesBridgeTests(unittest.TestCase):
+    def test_actual_journal_request_controls_reach_collector_audit(self):
+        spec = importlib.util.spec_from_file_location("roller_hermes_runner_test", RUNNER_PATH)
+        runner = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(runner)
+
+        class FakeAgent:
+            def _interruptible_api_call(self, kwargs):
+                self.forwarded = kwargs
+                return {"choices": [{"message": {"role": "assistant", "content": "answer"},
+                                     "finish_reason": "stop"}]}
+
+        with tempfile.TemporaryDirectory() as temporary:
+            sample_dir = Path(temporary) / "sample"
+            sample_dir.mkdir()
+            raw = sample_dir / "trace.jsonl"
+            journal = runner.Journal(raw)
+            journal.write("message", message={"role": "user", "content": "prompt"})
+            agent = runner.journaled_agent(FakeAgent, journal)()
+            agent._interruptible_api_call({
+                "model": "model", "messages": [{"role": "user", "content": "prompt"}],
+                "tools": [], "reasoning_effort": "high",
+                "extra_body": {"reasoning": {"enabled": True, "effort": "high"},
+                               "unrelated": "not needed for effort audit"},
+            })
+            request_row = next(row for row in (json.loads(line) for line in raw.read_text().splitlines())
+                               if row["type"] == "request")
+            self.assertEqual(agent.forwarded["reasoning_effort"], "high")
+            self.assertEqual(request_row["reasoning_effort"], "high")
+            self.assertEqual(request_row["extra_body"],
+                             {"reasoning": {"enabled": True, "effort": "high"}})
+            trajectory = sample_dir / "trace_ACTF.json"
+            convert_hermes_trace(raw, trajectory)
+            request = RunRequest(0, Task("task", ("prompt",), 0, thinking="low"), "model", 30)
+            result = HarnessResult(
+                status="ok", elapsed_seconds=0.01,
+                trace_path="trace.jsonl", trajectory_path="trace_ACTF.json",
+                metadata={"raw_trace_schema": "roller.hermes-events/v1",
+                          "reasoning_effort": "low", "keep_thinking": True},
+            )
+            collector = Collector(CollectionConfig(run_dir=Path(temporary)), lambda slot: None)
+            info = collector._finalize_sample(request, sample_dir, "hermes", result, [], "test")
+            self.assertEqual(info["runtime"]["wire_effort_audit"]["source"], "native")
+            self.assertEqual(info["runtime"]["wire_effort_audit"]["status"], "mismatch")
+            self.assertEqual(sft_exclusion_reason(info), "wire_effort_mismatch")
+            collector._write_sft_dataset([info])
+            self.assertEqual((Path(temporary) / "sft.jsonl").read_text(), "")
+
     def test_tool_images_are_moved_to_following_user_message_on_wire(self):
         spec = importlib.util.spec_from_file_location("roller_hermes_runner_test", RUNNER_PATH)
         runner = importlib.util.module_from_spec(spec)

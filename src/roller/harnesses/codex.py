@@ -45,6 +45,21 @@ COMMON_ENV_NAMES = (
 )
 
 
+def codex_effort(value: str | None) -> str | None:
+    """Validate a logical effort using the same rules as Codex execution."""
+    effort = normalize_thinking(value, field="Codex reasoning effort")
+    if effort == "off":
+        raise ValueError(
+            "Codex does not expose a harness-level reasoning-off mode; omit "
+            "--thinking to use the model default or choose an explicit effort"
+        )
+    if effort == "adaptive":
+        raise ValueError(
+            "Codex does not accept the OpenClaw-specific adaptive thinking profile"
+        )
+    return effort
+
+
 def redact_api_base(value: str) -> str:
     """Return an API endpoint safe to retain in run metadata."""
 
@@ -58,19 +73,6 @@ def redact_api_base(value: str) -> str:
     if port is not None:
         netloc = f"{hostname}:{port}"
     return urlunsplit((parsed.scheme, netloc, parsed.path, "", ""))
-
-
-def validate_codex_thinking(version: str, effort: str | None) -> None:
-    """Reject effort levels unsupported by the pinned default Codex CLI."""
-
-    if effort in {"max", "ultra"} and re.search(
-        r"(?:^|\s)0\.149\.0(?:\s|$)", version
-    ):
-        raise RuntimeError(
-            f"Codex {version!r} does not accept reasoning effort {effort!r}; "
-            "use minimal|low|medium|high|xhigh (xhigh is model-dependent), "
-            "or select a later image that explicitly supports the requested level"
-        )
 
 
 @dataclass(frozen=True)
@@ -376,16 +378,7 @@ class CodexHarness(InteractiveHarness):
 
     def _effective_effort(self, request: RunRequest) -> str | None:
         effort = resolve_thinking(request.task.thinking, self.config.reasoning_effort)
-        if effort == "off":
-            raise ValueError(
-                "Codex does not expose a harness-level reasoning-off mode; omit "
-                "--thinking to use the model default or choose an explicit effort"
-            )
-        if effort == "adaptive":
-            raise ValueError(
-                "Codex does not accept the OpenClaw-specific adaptive thinking profile"
-            )
-        return effort
+        return codex_effort(effort)
 
     def _codex_command(
         self,
@@ -581,9 +574,6 @@ class CodexHarness(InteractiveHarness):
                 ["exec", container, "codex", "--version"],
                 "Codex version check",
             ).stdout.strip()
-            validate_codex_thinking(
-                codex_version, self._effective_effort(request)
-            )
             for index, prompt in enumerate(request.task.prompts):
                 remaining = request.timeout_seconds - (time.monotonic() - started)
                 if remaining <= 0:
@@ -808,9 +798,6 @@ class CodexSession(InteractiveSession):
                 ["exec", self.container, "codex", "--version"],
                 "Codex version check",
             ).stdout.strip()
-            validate_codex_thinking(
-                self.codex_version, self.harness._effective_effort(self.request)
-            )
             self.started = True
         except Exception:
             # ``finish`` is still responsible for stopping the proxy/container.

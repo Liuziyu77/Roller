@@ -1,0 +1,11 @@
+{
+  "schema_version": "roller.thinking-capabilities/v1",
+  "profiles": [
+    {
+      "harness": "hermes",
+      "model": "served-model-id",
+      "api_base": "https://gateway.example/v1",
+      "supported_efforts": ["low", "medium", "high"]
+    }
+  ]
+}

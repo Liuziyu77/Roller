@@ -166,8 +166,8 @@ roller collect ... \
 ```
 
 The task's `runtime.thinking` wins over the CLI. Roller forwards
-`minimal/low/medium/high/xhigh` to Codex. The model and API service then validate them. `xhigh` depends on
-whether the model supports it. Codex CLI 0.149.0 does not accept `max`/`ultra`. Roller errors early. The OpenClaw-only
+`minimal/low/medium/high/xhigh/max/ultra` to Codex. The model and API service then validate them; support depends on
+the selected model and endpoint. Roller does not infer support from the Codex CLI version. The OpenClaw-only
 `adaptive` is also rejected early. `off`/`none` are rejected as well, because the Codex Harness has no
 single switch that turns off reasoning for every reasoning model. To use the model/CLI default,
 omit `--thinking`.

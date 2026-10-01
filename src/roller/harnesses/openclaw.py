@@ -156,7 +156,7 @@ def prepare_model_config(
             for model in models:
                 if isinstance(model, dict) and model.get("id") == model_id:
                     if enable_reasoning:
-                        # Preserve explicit capabilities while applying rollout limits.
+                        # Preserve explicit capabilities and provider mappings.
                         model.setdefault("reasoning", True)
                     if max_tokens is not None:
                         model["maxTokens"] = max_tokens
@@ -1581,6 +1581,12 @@ class OpenClawSession(InteractiveSession):
                 "warnings": warnings,
                 "trajectory_conversion": trajectory_conversion,
                 "attempt": self.attempt,
+                "settings": {
+                    "reasoning_effort": self.harness._effective_thinking(
+                        self.request
+                    ),
+                    "keep_thinking": self.harness.config.keep_thinking,
+                },
                 "provenance": provenance,
             },
         )
