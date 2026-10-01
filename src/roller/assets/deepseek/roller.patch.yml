@@ -1,5 +1,5 @@
-# Fixed additions to the official sdk-minimal profile. The native agent loop,
-# persistent bash tool and session persistence are left under dsh's ownership.
+# Additions to the selected native SDK profile. Tool plugins and the agent loop
+# remain under dsh ownership; no tool allowlist is imposed here.
 - id: session-log-deepseek
   disabled: true
 - id: plugin-package-inventory-deepseek

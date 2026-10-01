@@ -9,7 +9,11 @@ import subprocess
 import time
 
 VERSION = "1.18.30"
-TOOLS = ("bash", "read", "write", "edit", "apply_patch", "glob", "grep", "skill")
+def tool_permissions(denied=()):
+    # Batch execution cannot answer approval prompts. Let the native registry
+    # expose its tools; only an explicit user selection removes a tool.
+    return {"*": "allow", **{name: "deny" for name in denied}}
+
 
 
 def atomic_json(path, value):
@@ -89,7 +93,7 @@ def run_turn(config, state):
         "share": "disabled", "autoupdate": False, "snapshot": False,
         "compaction": {"auto": False, "prune": False},
         "lsp": False, "formatter": False,
-        "permission": {"*": "deny", **{name: "allow" for name in TOOLS}, "external_directory": "allow"},
+        "permission": tool_permissions(config.get("deny_tools", [])),
         "agent": {"build": {"steps": config["max_steps"]}, "title": {"disable": True}, "summary": {"disable": True}},
     }
     atomic_json(state / "opencode.json", native_config)

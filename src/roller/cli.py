@@ -38,7 +38,7 @@ from roller.harnesses.claude_code import (
 from roller.harness_registry import HARNESSES, HARNESS_NAMES
 from roller.harnesses.deepseek import (
     COMMON_ENV_NAMES as DEEPSEEK_COMMON_ENV_NAMES,
-    DEFAULT_DEEPSEEK_IMAGE, DEEPSEEK_VERSION, DEEPSEEK_TOOLS,
+    DEFAULT_DEEPSEEK_IMAGE, DEEPSEEK_VERSION,
     DeepSeekConfig, DeepSeekHarness, deepseek_effort,
 )
 from roller.harnesses.pi import (
@@ -48,7 +48,7 @@ from roller.harnesses.pi import (
 )
 from roller.harnesses.opencode import (
     COMMON_ENV_NAMES as OPENCODE_COMMON_ENV_NAMES,
-    DEFAULT_OPENCODE_IMAGE, OPENCODE_VERSION, OPENCODE_TOOLS,
+    DEFAULT_OPENCODE_IMAGE, OPENCODE_VERSION,
     OpenCodeConfig, OpenCodeHarness, opencode_effort,
 )
 from roller.harnesses.hermes import (
@@ -400,6 +400,7 @@ def _build_parser() -> argparse.ArgumentParser:
     api.add_argument("--claude-api-key-env", help="Claude Code-only API key environment variable")
 
     hermes = collect.add_argument_group("Hermes")
+    hermes.add_argument("--hermes-toolset", action="append", help="native Hermes toolset; repeat to select multiple (default: native discovery)")
     hermes.add_argument("--hermes-max-iterations", type=int, default=12, help="maximum model iterations per Hermes user turn (default: 12)")
     hermes.add_argument("--hermes-context-length", type=int, help="override Hermes model context window (at least 64000 tokens)")
     hermes.add_argument(
@@ -410,6 +411,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
 
     opencode = collect.add_argument_group("OpenCode")
+    opencode.add_argument("--opencode-deny-tool", action="append", default=[], help="explicitly deny a native OpenCode tool/permission; repeat as needed")
     opencode.add_argument(
         "--opencode-max-steps",
         type=int,
@@ -436,6 +438,8 @@ def _build_parser() -> argparse.ArgumentParser:
     deepseek = collect.add_argument_group("DeepSeek")
     deepseek.add_argument("--deepseek-max-steps", type=int, default=12, help="maximum model steps per DeepSeek user turn (default: 12)")
     deepseek.add_argument("--deepseek-context-length", type=int, default=128000, help="DeepSeek model context window (default: 128000 tokens)")
+    deepseek.add_argument("--deepseek-permission-mode", choices=("read-only", "workspace-write", "danger-full-access"), default="danger-full-access", help="native permissions inside the disposable container (default: danger-full-access)")
+    deepseek.add_argument("--deepseek-profile", default="sdk", help="native DeepSeek SDK profile (default: sdk; sdk-minimal selects shell-only)")
     deepseek.add_argument("--deepseek-output-tokens", type=int, default=8192, help="DeepSeek maximum output tokens (default: 8192)")
 
     pi = collect.add_argument_group("Pi")
@@ -909,6 +913,7 @@ def _collect(args: argparse.Namespace) -> int:
             pass_env=_deduplicate((*HERMES_COMMON_ENV_NAMES, *args.pass_env)),
             reasoning_effort=args.thinking, max_iterations=args.hermes_max_iterations,
             context_length=args.hermes_context_length, vision=args.hermes_vision,
+            toolsets=tuple(args.hermes_toolset) if args.hermes_toolset is not None else None,
             wire_trace_mode=args.wire_trace, keep_thinking=args.keep_thinking,
             keep_container_on_error=args.keep_container_on_error, docker_binary=args.docker_binary,
         )
@@ -927,7 +932,7 @@ def _collect(args: argparse.Namespace) -> int:
             pass_env=_deduplicate((*OPENCODE_COMMON_ENV_NAMES, *args.pass_env)),
             reasoning_effort=args.thinking, max_steps=args.opencode_max_steps,
             context_length=args.opencode_context_length, output_tokens=args.opencode_output_tokens,
-            vision=args.opencode_vision,
+            vision=args.opencode_vision, deny_tools=tuple(args.opencode_deny_tool),
             wire_trace_mode=args.wire_trace, keep_thinking=args.keep_thinking,
             keep_container_on_error=args.keep_container_on_error, docker_binary=args.docker_binary,
         )
@@ -945,7 +950,7 @@ def _collect(args: argparse.Namespace) -> int:
             network=args.network, api_base=deepseek_api_base, api_key_env=deepseek_api_key_env,
             pass_env=_deduplicate((*DEEPSEEK_COMMON_ENV_NAMES, *args.pass_env)),
             reasoning_effort=args.thinking, max_steps=args.deepseek_max_steps,
-            context_length=args.deepseek_context_length, output_tokens=args.deepseek_output_tokens,
+            context_length=args.deepseek_context_length, output_tokens=args.deepseek_output_tokens, profile=args.deepseek_profile, permission_mode=args.deepseek_permission_mode,
             wire_trace_mode=args.wire_trace, keep_thinking=args.keep_thinking,
             keep_container_on_error=args.keep_container_on_error, docker_binary=args.docker_binary,
         )
@@ -1104,7 +1109,8 @@ def _collect(args: argparse.Namespace) -> int:
             "api_key_env": hermes_api_key_env, "reasoning_effort": args.thinking,
             "max_iterations": args.hermes_max_iterations, "hermes_revision": HERMES_REVISION,
             "context_length": args.hermes_context_length, "vision": args.hermes_vision,
-            "toolsets": ["terminal", "file", *(["vision"] if args.hermes_vision else [])], "api_mode": "chat_completions",
+            "toolsets": list(hermes_config.toolsets) if hermes_config.toolsets is not None else None,
+            "disabled_toolsets": [] if args.hermes_vision else ["vision"], "api_mode": "chat_completions",
             "wire_trace": args.wire_trace,
             "keep_thinking": args.keep_thinking, "pass_env_names": list(hermes_config.pass_env),
         }
@@ -1117,7 +1123,7 @@ def _collect(args: argparse.Namespace) -> int:
             "max_steps": args.opencode_max_steps, "opencode_version": OPENCODE_VERSION,
             "context_length": args.opencode_context_length, "output_tokens": args.opencode_output_tokens,
             "vision": args.opencode_vision,
-            "tools": list(OPENCODE_TOOLS), "api_mode": "chat_completions",
+            "tool_policy": "native", "deny_tools": list(opencode_config.deny_tools), "api_mode": "chat_completions",
             "wire_trace": args.wire_trace,
             "keep_thinking": args.keep_thinking, "pass_env_names": list(opencode_config.pass_env),
             "compaction": {"auto": False, "prune": False},
@@ -1130,10 +1136,10 @@ def _collect(args: argparse.Namespace) -> int:
             "api_key_env": deepseek_api_key_env, "reasoning_effort": args.thinking,
             "max_steps": args.deepseek_max_steps, "deepseek_version": DEEPSEEK_VERSION,
             "context_length": args.deepseek_context_length, "output_tokens": args.deepseek_output_tokens,
-            "tools": list(DEEPSEEK_TOOLS), "api_mode": "chat_completions",
+            "tools": None, "api_mode": "chat_completions",
             "wire_trace": args.wire_trace,
             "keep_thinking": args.keep_thinking, "pass_env_names": list(deepseek_config.pass_env),
-            "profile": "sdk-minimal", "retry_count": 0,
+            "profile": deepseek_config.profile, "permission_mode": deepseek_config.permission_mode, "retry_count": 0,
         }
 
     if pi_config is not None:

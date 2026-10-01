@@ -34,7 +34,6 @@ RUNNER_PATH = Path(__file__).resolve().parents[1] / "assets" / "deepseek" / "run
 STATE = "/roller/deepseek-state"
 RUNNER = "/roller/deepseek_runner.py"
 PLUGIN = "/roller/deepseek_journal.mjs"
-DEEPSEEK_TOOLS = ("bash",)
 ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
@@ -55,6 +54,8 @@ class DeepSeekConfig:
     api_key_env: str = "DEEPSEEK_API_KEY"
     pass_env: tuple[str, ...] = COMMON_ENV_NAMES
     reasoning_effort: str | None = None
+    profile: str = "sdk"
+    permission_mode: str = "danger-full-access"
     max_steps: int = 12
     context_length: int = 128000
     output_tokens: int = 8192
@@ -65,6 +66,10 @@ class DeepSeekConfig:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "reasoning_effort", deepseek_effort(self.reasoning_effort))
+        if self.permission_mode not in {"read-only", "workspace-write", "danger-full-access"}:
+            raise ValueError("DeepSeek permission mode must be read-only|workspace-write|danger-full-access")
+        if not isinstance(self.profile, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", self.profile):
+            raise ValueError("DeepSeek profile must be a non-empty native profile name")
         if not self.docker_image.strip():
             raise ValueError("DeepSeek docker image must be non-empty")
         if self.container_user is not None and not self.container_user.strip():
@@ -95,7 +100,7 @@ class DeepSeekConfig:
 
 
 class DeepSeekHarness(InteractiveHarness):
-    """Run the official DeepSeek SDK minimal profile in a task Docker container."""
+    """Run the official DeepSeek SDK profile in a task Docker container."""
 
     name = "deepseek"
 
@@ -184,6 +189,7 @@ class DeepSeekSession(InteractiveSession):
         environment.update(
             DEEPSEEK_BASE_URL=api_base, HOME="/roller/deepseek-home",
             DSH_HOME="/roller/deepseek-home", DSH_RUNTIME_MODE="exe",
+            DSH_PERMISSION_MODE=config.permission_mode,
             ROLLER_DEEPSEEK_JOURNAL=STATE + "/trace.jsonl",
         )
         self.environment = environment
@@ -237,13 +243,13 @@ class DeepSeekSession(InteractiveSession):
             raise TimeoutError("DeepSeek turn timed out")
         config = self.harness.config
         self.turns += 1
-        # The minimal profile uses explicit context files and an isolated DSH_HOME.
+        # The native profile owns tool discovery inside the isolated DSH_HOME.
         context = ", ".join(item.target for item in self.request.task.context_files)
         payload = {
             "session_id": self.container, "turn": self.turns, "model": self.request.model, "message": message,
             "thinking": deepseek_effort(resolve_thinking(self.request.task.thinking, config.reasoning_effort)),
             "max_steps": config.max_steps, "timeout_seconds": timeout,
-            "context_length": config.context_length, "output_tokens": config.output_tokens,
+            "context_length": config.context_length, "output_tokens": config.output_tokens, "profile": config.profile, "permission_mode": config.permission_mode,
             "tool_env_names": sorted(set((*config.pass_env, *self.request.task.env_names))),
             "system_prompt": f"You are running a Roller task. Work in {config.workspace_container_path}. "
                 f"Task inputs are in the workspace. Save deliverables under {self.request.task.output_dir}. "
@@ -349,7 +355,7 @@ class DeepSeekSession(InteractiveSession):
         provenance = {
             "schema_version": "roller.provenance/v1", "roller_version": __version__,
             "task_id": self.request.task.id, "harness": "deepseek", "model": self.request.model,
-            "deepseek_version": self.deepseek_version, "profile": "sdk-minimal",
+            "deepseek_version": self.deepseek_version, "profile": config.profile, "permission_mode": config.permission_mode,
             "docker_image": config.docker_image, "docker_image_digest": self.image_digest,
             "api_base_urls": [config.api_base or "https://api.deepseek.com"],
             "environment_names": sorted(self.environment), "attempt": self.attempt,
@@ -361,9 +367,9 @@ class DeepSeekSession(InteractiveSession):
             status=status, error=self.redact(error) if error else None, elapsed_seconds=elapsed, usage=usage,
             trace_path=trace.relative_to(self.output_dir).as_posix() if trace else None,
             trajectory_path=trajectory.relative_to(self.output_dir).as_posix() if trajectory else None,
-            metadata={"raw_trace_schema": "roller.deepseek-events/v1", "deepseek_version": self.deepseek_version, "profile": "sdk-minimal",
+            metadata={"raw_trace_schema": "roller.deepseek-events/v1", "deepseek_version": self.deepseek_version, "profile": config.profile, "permission_mode": config.permission_mode,
                 "provenance": provenance, "output_collection": output_metadata, "turn_count": self.turns,
                 "retained_container": self.container if retained else None,
-                "settings": {"reasoning_effort": resolve_thinking(self.request.task.thinking, config.reasoning_effort), "max_steps": config.max_steps, "context_length": config.context_length, "output_tokens": config.output_tokens, "tools": list(DEEPSEEK_TOOLS), "keep_thinking": config.keep_thinking}},
+                "settings": {"reasoning_effort": resolve_thinking(self.request.task.thinking, config.reasoning_effort), "max_steps": config.max_steps, "context_length": config.context_length, "output_tokens": config.output_tokens, "profile": config.profile, "permission_mode": config.permission_mode, "tools": None, "keep_thinking": config.keep_thinking}},
         )
         return self._result

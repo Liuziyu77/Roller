@@ -11,7 +11,7 @@ The Hermes Harness supports:
 - Task Bundle, read-only inputs, Context files, `runtime.setup`, task environment variables, and full `output_dir` collection.
 - parallelism, retry, run lock, and Resume integrity checks.
 - **OpenAI Chat Completions** with tool calls.
-- the Hermes `local` terminal backend, enabling the `terminal`, `file`, and optional `vision` toolsets.
+- the Hermes `local` terminal backend, using native tool discovery; `--hermes-toolset` explicitly selects toolsets.
 - local-image loading through `vision_analyze` for image-capable models and endpoints.
 - ACTF, SFT, results, provenance, and usage.
 - `--wire-trace actf|full|off`.
@@ -80,7 +80,7 @@ Participant-specific API/image settings apply to Hermes on either side of a mixe
 
 ## 5. Sessions, workspace, and traces
 
-Each participant gets its own disposable container. Hermes uses its `local` terminal backend **inside that container**, with the `terminal`, `file`, and optional `vision` toolsets. Immutable inputs, context files, setup commands, task environment variables, output directories, and container-based grading use Roller's normal workspace contract.
+Each participant gets its own disposable container. Hermes uses its `local` terminal backend **inside that container**, with native tool discovery. Immutable inputs, context files, setup commands, task environment variables, output directories, and container-based grading use Roller's normal workspace contract.
 
 Context files of all roles are copied to their declared workspace paths and listed in the task system prompt. Tasks may explicitly read them. The bridge disables implicit profile/context discovery, persistent memory, SOUL identity loading, checkpoints, background review, and automatic dependency installation during rollouts. This supports file-based context and skill fixtures. It does not enable Hermes' skill discovery/learning service.
 
@@ -131,3 +131,5 @@ Common errors:
 - rollout timeout: execution is stopped and available artifacts retained. Adjust `--timeout` or `--hermes-max-iterations` as needed.
 - Resume refused: the revision, image digest, endpoint, iteration cap, toolsets, or export settings recorded in the run lock changed. Use a fresh run directory.
 - `--wire-trace full` fails to start: an explicit API base and host networking are required.
+
+See the [tool availability audit](tool-availability.md). Repeat `--hermes-toolset NAME` for explicit selection; omit it for native discovery.

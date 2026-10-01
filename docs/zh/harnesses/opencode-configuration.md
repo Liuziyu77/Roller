@@ -10,7 +10,7 @@ OpenCode Harness 支持：
 - Task Agent 和 User Simulator 均可设置 `"harness": "opencode"`。
 - Task Bundle、只读 inputs、Context、setup、任务环境变量、自定义 `output_dir` 和容器内评分。
 - 流式 **OpenAI Chat Completions**（含工具调用）。
-- `bash/read/write/edit/apply_patch/glob/grep` 工具权限，实际工具集合由固定版本和模型选择决定。
+- 原生工具注册表决定可用工具，`--opencode-deny-tool NAME` 可显式禁用。
 - 让具备视觉能力的模型接收 OpenCode `read` 工具生成的图片附件。
 - ACTF、SFT、reasoning 导出和 usage。
 - `--wire-trace actf|full|off`。
@@ -77,7 +77,7 @@ OpenCode Harness 连接支持流式响应和工具调用的 OpenAI Chat Completi
 
 每个参与者单独创建容器。输入只读挂载，Context 复制到声明路径并在任务提示中列出，支持 setup、任务环境变量、自定义输出目录和容器内评分。
 
-每轮使用 `opencode run --session` 恢复同一原生会话，共享参与者工作区。不恢复 CLI 进程内的后台句柄。关闭自动分享、更新、模型目录刷新、LSP、formatter、自动压缩及工具结果裁剪。禁用工作区 OpenCode 配置的隐式加载，使用独立的 HOME/XDG 目录。Context/skill 测试验证文件可访问性。首版不启用 skill 工具、MCP、子 Agent 或联网工具。
+每轮使用 `opencode run --session` 恢复同一原生会话，共享参与者工作区。不恢复 CLI 进程内的后台句柄。关闭自动分享、更新、模型目录刷新、LSP、formatter、自动压缩及工具结果裁剪。禁用工作区 OpenCode 配置的隐式加载，使用独立的 HOME/XDG 目录。Context/skill 测试验证文件可访问性。工具由原生注册表决定，Roller 不再默认拒绝 skill、子 Agent 或联网工具；它们仍需要原生依赖和凭据。`--opencode-deny-tool NAME` 可显式禁用工具。
 
 ## 6. 轨迹产物与 Resume
 
