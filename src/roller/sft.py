@@ -366,7 +366,7 @@ def actf_to_sft(trajectory: Mapping[str, Any]) -> dict[str, Any]:
         if not isinstance(observations, list):
             raise SFTConversionError(f"{prefix}.observation must be a list")
         observed_ids: set[str] = set()
-        tool_messages: list[dict[str, Any]] = []
+        results_by_id: dict[str, tuple[dict[str, Any], str]] = {}
         for observation_index, observation in enumerate(observations):
             field = f"{prefix}.observation[{observation_index}]"
             if not isinstance(observation, dict):
@@ -388,19 +388,25 @@ def actf_to_sft(trajectory: Mapping[str, Any]) -> dict[str, Any]:
                     f"tool result name {observed_name} does not match call {call_names[call_id]}"
                 )
             observed_ids.add(call_id)
-            tool_message = (
-                {
-                    "role": "tool",
-                    "tool_call_id": call_id,
-                    "content": _tool_result_content(
-                        observation.get("content", []), f"{field}.content", images
-                    ),
-                }
-            )
-            tool_messages.append(tool_message)
+            results_by_id[call_id] = (observation, field)
         if observed_ids != expected_ids:
             missing = sorted(expected_ids - observed_ids)
             raise SFTConversionError(f"tool calls missing results: {', '.join(missing)}")
+
+        # Parallel tools can finish in any order. Canonicalize only the SFT
+        # output, matching by ID rather than completion order or tool name.
+        # Serialize media in this same order so positional image references
+        # remain aligned with the emitted <image> placeholders.
+        tool_messages: list[dict[str, Any]] = []
+        for call in calls:
+            observation, field = results_by_id[call["id"]]
+            tool_messages.append({
+                "role": "tool",
+                "tool_call_id": call["id"],
+                "content": _tool_result_content(
+                    observation.get("content", []), f"{field}.content", images
+                ),
+            })
 
         messages.append(
             {

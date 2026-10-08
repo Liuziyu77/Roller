@@ -204,3 +204,9 @@ networks. The sample therefore retains raw/ACTF and records SFT as unavailable.
 For a User Simulator rollout, the Task Agent SFT is in the root sample. The
 simulated user's own SFT is at `user_simulator/trace_SFT.json`. Run-level
 `sft.jsonl` aggregates only the Task Agent.
+
+## Parallel tool result ordering
+
+Tools called in one assistant message may finish in any order. SFT export pairs results by `tool_call_id` and emits tool messages in that assistant message's `tool_calls` array order. It does not sort by tool name or lexicographic ID, or move results across steps. Duplicate, missing, unmatched and name-mismatched results still fail conversion.
+
+Images are appended to the top-level `images` list after ordering results, so the Nth `<image>` still maps to `images[N-1]`. Raw traces and ACTF observation order remain unchanged for inspection of completion order. This canonicalizes training output; reversed results were not necessarily mispaired when consumed by ID. Existing SFT files are not automatically rewritten; re-export to apply this ordering.

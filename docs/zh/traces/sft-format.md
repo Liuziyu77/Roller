@@ -184,3 +184,9 @@ SFT，因为导出过程不会读取文件或网络。该样本会保留 raw/ACT
 
 User Simulator rollout 的任务 Agent SFT 位于根 sample，模拟用户自己的 SFT 位于
 `user_simulator/trace_SFT.json`；run 级 `sft.jsonl` 只汇总任务 Agent。
+
+## 并行工具结果的顺序
+
+同一条 assistant 消息中的多个工具调用可以按任意顺序完成。SFT 导出按 `tool_call_id` 配对，然后按该消息的 `tool_calls` 数组顺序输出 tool 消息；不会按工具名或 ID 字典序排序，也不会跨 step 移动结果。重复、缺失、无对应调用或工具名不匹配的结果仍会拒绝导出。
+
+图片在结果重排后按消息顺序加入顶层 `images`，因此第 N 个 `<image>` 仍对应 `images[N-1]`。原始轨迹和 ACTF 的 observation 顺序保持不变，供检查实际完成顺序。此规则统一训练数据顺序，不表示原来的逆序结果在按 ID 配对时发生了内容错配。已生成的 SFT 文件不会自动重写，重新导出时才应用此规则。
