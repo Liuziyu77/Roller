@@ -454,6 +454,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     pi = collect.add_argument_group("Pi")
     pi.add_argument("--pi-max-steps", type=int, default=12, help="maximum model steps per Pi user turn (default: 12)")
+    pi.add_argument("--pi-input-modalities", choices=("text", "text,image"), default="text,image", help="Pi model input capabilities (default: text,image)")
     pi.add_argument("--pi-context-length", type=int, default=128000, help="Pi model context window (default: 128000 tokens)")
     pi.add_argument("--pi-output-tokens", type=int, default=8192, help="Pi maximum output tokens (default: 8192)")
 
@@ -1050,6 +1051,7 @@ def _collect(args: argparse.Namespace) -> int:
             pass_env=_deduplicate((*PI_COMMON_ENV_NAMES, *args.pass_env)),
             reasoning_effort=args.thinking, max_steps=args.pi_max_steps,
             context_length=args.pi_context_length, output_tokens=args.pi_output_tokens,
+            input_modalities=tuple(args.pi_input_modalities.split(",")),
             wire_trace_mode=args.wire_trace, keep_thinking=args.keep_thinking,
             keep_container_on_error=args.keep_container_on_error, docker_binary=args.docker_binary,
         )
@@ -1232,6 +1234,7 @@ def _collect(args: argparse.Namespace) -> int:
             "api_key_env": pi_api_key_env, "reasoning_effort": pi_config.reasoning_effort,
             "max_steps": args.pi_max_steps, "pi_version": PI_VERSION,
             "context_length": args.pi_context_length, "output_tokens": args.pi_output_tokens,
+            "input_modalities": list(pi_config.input_modalities),
             "tools": list(PI_TOOLS), "api_mode": "chat_completions",
             "wire_trace": args.wire_trace,
             "keep_thinking": args.keep_thinking, "pass_env_names": list(pi_config.pass_env),

@@ -26,8 +26,159 @@ from roller.harnesses.pi import DEFAULT_PI_IMAGE, PiConfig, PiHarness
 from roller.models import RunRequest, Task
 
 
+def canonical_pi_messages(messages, images=()):
+    """Fold Pi's synthetic image user messages back into tool observations."""
+    normalized, captured = [], list(images)
+    for original in messages:
+        message = json.loads(json.dumps(original))
+        content = message.get("content")
+        if isinstance(content, list):
+            attached = [b["image_url"]["url"] for b in content if b.get("type") == "image_url"]
+            text = "\n".join(b["text"] for b in content if b.get("type") == "text")
+            if attached:
+                if (message["role"] != "user" or text != "Attached image(s) from tool result:"
+                        or not normalized or normalized[-1]["role"] != "tool"):
+                    raise AssertionError("Unexpected Pi image transport shape")
+                captured.extend(attached)
+                previous = normalized[-1]
+                previous["content"] = "\n".join(filter(None, [previous.get("content"), *["<image>"] * len(attached)]))
+                continue
+            if any(b.get("type") != "text" for b in content):
+                raise AssertionError("Unrecognized content block")
+            message["content"] = text
+        for key in ("content", "reasoning_content", "tool_calls"):
+            if message.get(key) in (None, "", []):
+                message.pop(key, None)
+        for call in message.get("tool_calls", []):
+            arguments = call["function"]["arguments"]
+            if isinstance(arguments, str):
+                call["function"]["arguments"] = json.loads(arguments)
+        normalized.append(message)
+    return normalized, captured
+
+
 @unittest.skipUnless(os.environ.get("ROLLER_PI_DOCKER_TEST") == "1", "set ROLLER_PI_DOCKER_TEST=1 to run real Docker")
 class PiDockerTests(unittest.TestCase):
+    def test_authenticated_two_image_export_and_resume(self):
+        self._two_image_export_and_resume("text,image")
+
+    def test_text_only_model_does_not_receive_images(self):
+        self._two_image_export_and_resume("text")
+
+    def _two_image_export_and_resume(self, modalities):
+        import base64
+        from roller.sft import actf_to_sft
+        from roller.viewer import RollerRun
+        from roller.viewer.app import _rollout_id
+
+        requests, authorizations = [], []
+        secret = "synthetic-pi-image-secret"
+
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *_): pass
+
+            def do_GET(self):
+                data = json.dumps({"data": [{"id": "roller-test"}]}).encode()
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(data)
+
+            def do_POST(self):
+                body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                authorizations.append(self.headers.get("Authorization"))
+                if authorizations[-1] != f"Bearer {secret}":
+                    self.send_response(401)
+                    self.end_headers()
+                    self.wfile.write(b'{"error":{"message":"Invalid token"}}')
+                    return
+                requests.append(body)
+                index = len(requests) - 1
+                delta = {"role": "assistant", "content": "red, blue", "reasoning_content": "Read both images in order."}
+                reason = "stop"
+                if index < 2:
+                    delta.update(content=None, tool_calls=[{"index": 0, "id": f"read-{index}", "type": "function",
+                        "function": {"name": "read", "arguments": json.dumps({"path": f"{index + 1}.png"})}}])
+                    reason = "tool_calls"
+                chunk = {"id": "vision", "object": "chat.completion.chunk", "created": 1, "model": "roller-test"}
+                chunks = [{**chunk, "choices": [{"index": 0, "delta": delta, "finish_reason": None}]},
+                    {**chunk, "choices": [{"index": 0, "delta": {}, "finish_reason": reason}]}]
+                data = ("".join("data: " + json.dumps(c) + "\n\n" for c in chunks) + "data: [DONE]\n\n").encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        with tempfile.TemporaryDirectory(prefix="roller-pi-images-") as tmp:
+            root = Path(tmp)
+            fixtures = Path(__file__).resolve().parents[1] / "examples/coverage/fixtures/media"
+            expected = []
+            for name in ("1.png", "2.png"):
+                data = (fixtures / name).read_bytes()
+                (root / name).write_bytes(data)
+                expected.append("data:image/png;base64," + base64.b64encode(data).decode())
+            tasks = root / "tasks.json"
+            tasks.write_text(json.dumps([{"id": "two-images", "harness": "pi", "model": "roller-test",
+                "prompt": "Read 1.png then 2.png and report their colors.", "files": {"inputs": ["1.png", "2.png"]}}]))
+            command = ["collect", "--tasks", str(tasks), "--pi-image", os.environ.get("ROLLER_PI_IMAGE", DEFAULT_PI_IMAGE),
+                "--pi-api-base", f"http://127.0.0.1:{server.server_port}/v1", "--pi-api-key-env", "ROLLER_LOCAL_KEY",
+                "--thinking", "high", "--wire-trace", "full", "--timeout", "180", "--retries", "0",
+                "--output", str(root / "runs"), "--run-name", "images", "--pi-input-modalities", modalities]
+            with patch.dict(os.environ, {"ROLLER_LOCAL_KEY": secret, "NO_PROXY": "localhost,127.0.0.1",
+                    "no_proxy": "localhost,127.0.0.1"}), contextlib.redirect_stdout(io.StringIO()):
+                code = _collect(_build_parser().parse_args(command))
+                run = root / "runs/images"
+                sample = next(run.glob("samples/*/*/info.json")).parent
+                self.assertEqual(code, 0, (sample / "info.json").read_text())
+                self.assertEqual(authorizations, [f"Bearer {secret}"] * 3)
+                raw = (sample / "trace.jsonl").read_text()
+                events = [json.loads(line) for line in raw.splitlines()]
+                self.assertEqual([e["body"] for e in events if e["type"] == "request"], requests)
+                self.assertEqual([entry["body"] for line in (sample / "wire_trace.jsonl").read_text().splitlines() if "body" in (entry := json.loads(line))], requests)
+                for index, request in enumerate(requests):
+                    images = [b["image_url"]["url"] for m in request["messages"] if isinstance(m.get("content"), list)
+                        for b in m["content"] if b["type"] == "image_url"]
+                    self.assertEqual(images, expected[:index] if modalities == "text,image" else [])
+                actf = json.loads((sample / "trace_ACTF.json").read_text())
+                sft = json.loads((sample / "trace_SFT.json").read_text())
+                self.assertEqual(sft, actf_to_sft(actf))
+                self.assertEqual(sft["images"], expected)
+                if modalities == "text,image":
+                    positions = [i for i, m in enumerate(sft["messages"]) if m["role"] == "assistant"]
+                    for index, (request, position) in enumerate(zip(requests, positions)):
+                        self.assertEqual(canonical_pi_messages(request["messages"]),
+                            canonical_pi_messages(sft["messages"][:position], expected[:index]))
+                self.assertEqual(sft["messages"][-1]["content"], "red, blue")
+                self.assertTrue(any(m.get("reasoning_content") == "Read both images in order." for m in sft["messages"]))
+                self.assertEqual([json.loads(line) for line in (run / "sft.jsonl").read_text().splitlines()], [sft])
+                viewer = RollerRun(run)
+                rollout_id = _rollout_id(sample.relative_to(run).as_posix())
+                shown = [block["url"] for i in range(len(actf["steps"]))
+                    for obs in viewer.step_detail(rollout_id, i)["observations"]
+                    for block in obs["content"].get("blocks", []) if block["type"] == "image"]
+                self.assertEqual(shown, expected)
+                self.assertEqual(_collect(_build_parser().parse_args(command + ["--resume"])), 0)
+                self.assertEqual(len(requests), 3)
+                with self.assertRaisesRegex(Exception, "lock|configuration|mismatch"):
+                    _collect(_build_parser().parse_args(command + ["--resume", "--pi-input-modalities", "text" if modalities == "text,image" else "text,image"]))
+                for path in run.rglob("*"):
+                    if path.is_file():
+                        self.assertNotIn(secret.encode(), path.read_bytes(), str(path))
+                # Wrong credentials must fail at the real SDK transport boundary.
+                with patch.dict(os.environ, {"ROLLER_LOCAL_KEY": "wrong-synthetic-key"}):
+                    harness = PiHarness(PiConfig(api_base=f"http://127.0.0.1:{server.server_port}/v1",
+                        api_key_env="ROLLER_LOCAL_KEY", wire_trace_mode="off",
+                        docker_image=os.environ.get("ROLLER_PI_IMAGE", DEFAULT_PI_IMAGE)), 0)
+                    result = harness.run(RunRequest(0, Task("bad-key", ("Reply OK",), 0, harness="pi"),
+                        "roller-test", 60), root / "bad-key", 1)
+                    self.assertEqual(result.status, "error")
+                    self.assertIn("Invalid token", result.error)
+                    self.assertEqual(authorizations[-1], "Bearer wrong-synthetic-key")
+
     def test_all_seven_native_tools_and_exact_model_id(self):
         requests = []
         operations = [
@@ -212,7 +363,7 @@ class PiDockerTests(unittest.TestCase):
                         traces[path] = path.read_bytes()
                         events = [json.loads(line) for line in path.read_text().splitlines()]
                         native = [e["body"] for e in events if e["type"] == "request"]
-                        wire = [json.loads(line)["body"] for line in (participant / "wire_trace.jsonl").read_text().splitlines()]
+                        wire = [entry["body"] for line in (participant / "wire_trace.jsonl").read_text().splitlines() if "body" in (entry := json.loads(line))]
                         self.assertEqual(native, wire)
                         self.assertTrue((participant / "trace_SFT.json").is_file())
                         self.assertFalse((participant / "cache_trace.jsonl").exists())
@@ -368,8 +519,8 @@ class PiDockerTests(unittest.TestCase):
                 self.assertTrue((sample / "wire_trace.jsonl").is_file())
                 native_requests = [json.loads(line)["body"] for line in raw.splitlines()
                                    if json.loads(line).get("type") == "request"]
-                wire_requests = [json.loads(line)["body"] for line in
-                                 (sample / "wire_trace.jsonl").read_text().splitlines()]
+                wire_requests = [entry["body"] for line in
+                                 (sample / "wire_trace.jsonl").read_text().splitlines() if "body" in (entry := json.loads(line))]
                 self.assertEqual(native_requests, wire_requests)
                 self.assertEqual(native_requests, requests)
                 self.assertIn("You are running a Roller task", sft["messages"][0]["content"])

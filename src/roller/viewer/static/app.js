@@ -240,7 +240,11 @@
         <span>${observation.is_error ? "Tool Error" : "Tool Result"} · ${escapeHtml(observation.tool_name || observation.tool_call_id || "unknown")}</span>
         <span>${formatNumber(observation.content?.length || 0)} chars</span>
       </header>
-      <pre>${escapeHtml(observation.content?.text || "")}</pre>
+      ${observation.content?.blocks
+        ? observation.content.blocks.map((block) => block.type === "image"
+          ? `<img class="tool-image" src="${escapeHtml(block.url)}" alt="Tool result image" loading="lazy">`
+          : `<pre>${escapeHtml(block.text)}</pre>`).join("")
+        : `<pre>${escapeHtml(observation.content?.text || "")}</pre>`}
       ${truncation(observation.content, index)}
     </section>`;
 

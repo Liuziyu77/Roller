@@ -53,7 +53,7 @@ async function serve(config) {
   });
   modelRuntime.registerProvider("roller", {
     api: "openai-completions", baseUrl: process.env.PI_BASE_URL, apiKey: "$PI_API_KEY",
-    models: [{id: config.model, name: config.model, reasoning: true, input: ["text", "image"],
+    models: [{id: config.model, name: config.model, reasoning: true, input: config.input_modalities,
       thinkingLevelMap: {off: "none", xhigh: "xhigh", max: "max"},
       cost: {input: 0, output: 0, cacheRead: 0, cacheWrite: 0},
       contextWindow: config.context_length, maxTokens: config.output_tokens,

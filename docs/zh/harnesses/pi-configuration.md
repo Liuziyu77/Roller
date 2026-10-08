@@ -66,6 +66,7 @@ Pi Harness 连接支持流式响应和工具调用的 OpenAI Chat Completions �
 | --- | --- |
 | `--pi-image` | 优先于 `--docker-image`、`ROLLER_PI_IMAGE`、`roller-pi:0.85.1` |
 | `--pi-max-steps` | 每条用户消息最多 12 次模型请求，另受任务/轮次超时约束 |
+| `--pi-input-modalities` | 默认 `text,image`；纯文本模型使用 `text`。声明 SDK 输入能力，不会使上游模型获得视觉能力。写入 run lock，resume 时检查一致性。 |
 | `--pi-context-length` | 128000，至少 1024。按实际模型服务配置 |
 | `--pi-output-tokens` | 8192，必须为正且小于上下文窗口。发送为 `max_tokens` |
 | `--thinking` / `runtime.thinking` | `off/minimal/low/medium/high/xhigh/max`。默认 `off`，`none` 为别名 |
@@ -106,6 +107,16 @@ Docker 测试使用本地确定性流式 API 和虚构 Key，执行真实 Pi SDK
 若同时准备了 DeepSeek 镜像，可额外设置 `ROLLER_PI_MIXED_DOCKER_TEST=1`，验证 Pi ↔ DeepSeek 双向配对与 Resume。
 
 完整矩阵见 [Coverage](https://github.com/Liuziyu77/Roller/blob/main/examples/coverage/README.md)。离线配置校验、真实容器测试与外部模型服务验收是不同验证层级。
+
+### Issue #46 回归覆盖
+
+Pi Docker 测试校验真实请求的 Bearer token 是否等于合成凭据，并检查错误凭据失败；通过原生 `read` 读取两张图片，比较请求、ACTF、SFT 中的图片字节与顺序。此外覆盖纯文本输入能力、原生 reasoning、run 级 SFT、resume 和 Viewer 图片数据。Pi 的 Chat Completions 协议会为工具图片插入合成 user 消息；规范比较时将其还原到对应工具结果。
+
+2026-10-08 使用 Pi 0.85.1 对 `kimi-k3`、`glm-5.3-flash` 实测：两个模型均读取两张 64×64 PNG，将 `red, blue` 写入文件并返回相同答案，各调用模型四次。已核验 raw/wire 请求、图片字节与顺序、ACTF/SFT 规范投影、run 级 SFT，以及 resume 后轨迹不变。Kimi 返回三段 reasoning，逐段完整保留；GLM 本轮未返回可见 reasoning。Viewer 图片数据接口及 Chrome 页面视觉验收均已通过：两条真实轨迹的第一步显示红图，第二步显示蓝图，图片位于对应 read 结果中，文本与图片顺序及布局正常。此结果不代表其他模型或网关均支持视觉。
+
+同日补测 `gpt-5.6-sol` 和 `bailian/deepseek-v4.1-flash`，当前凭据均可完成两图任务并回答 `red, blue`。GPT 在该网关的 Chat Completions 接口上以 `high` 搭配工具返回 400，改为 `--thinking off` 后成功（4 次请求）；DeepSeek 使用 `high` 成功（3 次请求，返回并保留 2 段 reasoning）。图片字节、顺序、ACTF/SFT、run 级 SFT 和 Viewer 图片接口均通过检查；DeepSeek 并行读图的请求按工具结果组进行规范比较。这两次补测未重复执行 resume 或浏览器视觉验收。响应模型名分别为 `gpt-5.6-sol-2026-07-09` 和 `deepseek-v4.1-flash`，与请求名不同，可能是网关别名映射，不能据此独立验证后端模型身份。
+
+输入能力写入 run lock。新增配置前的历史 run 可能无法直接 resume，应保留旧证据并使用新目录运行。凭据和本地验收产物不进入版本控制。
 
 ## 8. 常见问题
 
