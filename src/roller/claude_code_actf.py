@@ -356,6 +356,10 @@ def claude_code_events_to_actf(
         event_type = row.get("type")
         timestamp = _timestamp(row.get("timestamp"))
         sidechain = bool(row.get("isSidechain", False))
+        # A native child conversation is not part of the parent's model input.
+        # Keep it in raw/capture artifacts, never flatten it into root steps.
+        if sidechain or message.get("model") == "<synthetic>":
+            continue
 
         if event_type == "assistant":
             visible, reasoning, calls = _assistant_parts(message.get("content"))
@@ -481,10 +485,12 @@ def claude_code_events_to_actf(
         if expected_users is None:
             selected = raw_text
         elif expected_index < len(expected_users):
-            expected = expected_users[expected_index]
-            if _matches_expected_user(raw_text, expected):
-                selected = expected
-                expected_index += 1
+            for index in range(expected_index, len(expected_users)):
+                expected = expected_users[index]
+                if _matches_expected_user(raw_text, expected):
+                    selected = expected
+                    expected_index = index + 1
+                    break
         if selected is not None:
             pending_user = (
                 f"{pending_user}\n\n{selected}" if pending_user else selected
@@ -524,7 +530,7 @@ def claude_code_events_to_actf(
         ),
         first_time,
     )
-    return {
+    result = {
         "schema_version": "ACTF_v1.0",
         "system_prompt": system_prompt,
         "tools": normalized_tools,
@@ -532,6 +538,12 @@ def claude_code_events_to_actf(
         "started_at": steps[0]["started_at"] if steps else first_time,
         "finished_at": steps[-1]["finished_at"] if steps else last_time,
     }
+    if any(row.get("subtype") == "compact_boundary" for row in rows):
+        result["sft_unavailable_reason"] = (
+            "Claude context compaction cannot be represented by the linear ACTF projection; "
+            "use captured per-call contexts instead"
+        )
+    return result
 
 
 def convert_claude_code_trace(

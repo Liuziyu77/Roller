@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterator
 
 from roller.harnesses.base import Harness
+from roller.capture import read_jsonl, validate_capture
 from roller.integrity import (
     trajectory_conversion_unavailable,
     validate_resumable_sample,
@@ -192,6 +193,7 @@ class Collector:
             "results",
             "conversation.json",
             "user_simulator",
+            "capture",  # Formal per-attempt calls/native evidence, not diagnostics.
             # Written by bench grading, which runs before the container dies.
             "score.json",
         }
@@ -503,6 +505,26 @@ class Collector:
                 yield row
 
         write_jsonl(self.run_dir / "sft.jsonl", rows())
+        def calls() -> Iterator[dict[str, Any]]:
+            for result in results:
+                if result.get("status") not in {"ok", "skipped"}:
+                    continue
+                capture = result.get("runtime", {}).get("capture")
+                if not isinstance(capture, dict) or not capture.get("manifest"):
+                    continue
+                sample = self._sample_dir_from_result(result)
+                validate_capture(sample, capture)
+                manifest_path = sample / capture["manifest"]
+                for call in read_jsonl(manifest_path.parent / "calls.jsonl"):
+                    if call.get("export_status") == "available":
+                        yield {**call, "sample": sample.relative_to(self.run_dir).as_posix(),
+                               "capture_manifest": capture["manifest"],
+                               "task_id": result["task_id"], "model_label": result.get("model_label"),
+                               "sample_index": result.get("sample_index", 0)}
+        # Separate schema; historical assistant content is input, output is the
+        # current response. Never append these records to legacy sft.jsonl.
+        if any(isinstance(r.get("runtime", {}).get("capture"), dict) for r in results):
+            write_jsonl(self.run_dir / "calls.jsonl", calls())
 
     def collect(self, requests: list[RunRequest]) -> list[dict[str, Any]]:
         check_retired_cot_samples(self.run_dir, requests)

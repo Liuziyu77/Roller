@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from roller.models import RunRequest
+from roller.capture import read_jsonl, validate_capture
 from roller.harness_registry import requires_cache_trace
 from roller.sft import actf_to_sft, validate_sft_record
 
@@ -165,6 +166,12 @@ def _validate_trajectory_files(
         raise ValueError("required full-mode cache_trace.jsonl is missing")
     if not _has_json_event(raw_path):
         raise ValueError("trace.jsonl contains no valid JSON object event")
+    capture = runtime.get("capture") if isinstance(runtime, Mapping) else None
+    if isinstance(capture, dict):
+        validate_capture(base, capture)
+    if info.get("harness") == "claude-code" and not sft_unavailable:
+        if any(row.get("subtype") == "compact_boundary" for row in read_jsonl(raw_path)):
+            raise ValueError("Claude compaction requires per-call context export, not linear SFT")
 
     if raw_only:
         return

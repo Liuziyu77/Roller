@@ -16,6 +16,8 @@ from typing import Any, Mapping, Sequence
 from urllib.parse import urlsplit, urlunsplit
 
 from roller.artifacts import ArtifactCollectionResult, collect_output_directory
+from roller.capture import CallRecorder
+from roller.claude_capture import finalize_claude_capture
 from roller.claude_code_actf import convert_claude_code_trace
 from roller.harnesses.base import Harness, InteractiveHarness, InteractiveSession, TurnResult
 from roller.harnesses.docker import DockerRuntime, remove_container
@@ -128,6 +130,7 @@ class ClaudeCodeConfig:
     keep_thinking: bool = True
     keep_container_on_error: bool = False
     docker_binary: str = "docker"
+    capture_calls: bool = False
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -165,6 +168,10 @@ class ClaudeCodeConfig:
             raise ValueError("Claude Code wire trace mode must be off|actf|full")
         if self.wire_trace_mode == "full" and not self.api_base:
             raise ValueError("Claude Code --wire-trace full requires --api-base")
+        if self.capture_calls and (not self.api_base or self.network != "host"):
+            raise ValueError("Claude call capture requires --claude-api-base and --network host")
+        if self.capture_calls and self.wire_trace_mode == "off":
+            raise ValueError("Claude call capture requires wire tracing")
         if (
             self.wire_trace_mode != "off"
             and self.api_base
@@ -221,16 +228,23 @@ class ClaudeCodeHarness(InteractiveHarness):
             raise RuntimeError(f"{description} failed: {self._error_text(result)}")
         return result
 
-    def _start_wire_proxy(self, output_dir: Path) -> None:
+    def _start_wire_proxy(self, output_dir: Path, attempt: int = 1) -> None:
         self._wire_proxy = None
+        self._capture_recorder = None
         if self.config.wire_trace_mode == "off" or not self.config.api_base:
             return
         log_path = output_dir / "wire_trace.jsonl"
         log_path.unlink(missing_ok=True)
+        if self.config.capture_calls:
+            directory = output_dir / "capture" / f"attempt-{attempt:04d}"
+            if directory.exists():
+                shutil.rmtree(directory)
+            self._capture_recorder = CallRecorder(directory)
         self._wire_proxy = WireTraceProxy(
             self.config.api_base,
             log_path,
-            mode="full" if self.config.wire_trace_mode == "full" else "tools",
+            mode="full" if self.config.wire_trace_mode == "full" or self.config.capture_calls else "tools",
+            capture_recorder=self._capture_recorder,
             # Claude Code 2.1.222 uses an SDK-internal ``?beta=true`` route.
             # Anthropic-compatible gateways commonly implement the stable
             # Messages path but reject this transport-only query flag.
@@ -245,6 +259,9 @@ class ClaudeCodeHarness(InteractiveHarness):
         proxy = self._wire_proxy
         try:
             proxy.stop()
+            recorder = getattr(self, "_capture_recorder", None)
+            if recorder is not None:
+                recorder.seal()
             if proxy.log_path.is_file():
                 redact_jsonl_file(proxy.log_path)
         finally:
@@ -589,7 +606,20 @@ class ClaudeCodeHarness(InteractiveHarness):
             sidechain_dir = primary.parent / primary.stem / "subagents"
             files = [primary]
             if sidechain_dir.is_dir():
-                files.extend(sorted(sidechain_dir.glob("*.jsonl")))
+                files.extend(sorted(path for path in sidechain_dir.rglob("*.jsonl") if not path.is_symlink()))
+            if self.config.capture_calls:
+                from roller.storage import atomic_write_json
+                native_dir = output_dir / "capture" / f"attempt-{attempt:04d}" / "native"
+                native_dir.mkdir(parents=True, exist_ok=True)
+                sources = []
+                for index, path in enumerate(files):
+                    if path.is_symlink():
+                        continue
+                    name = f"source-{index:04d}.jsonl"
+                    shutil.copyfile(path, native_dir / name)
+                    sources.append({"path": f"native/{name}",
+                                    "native_path": path.relative_to(staging_root).as_posix()})
+                atomic_write_json(native_dir.parent / "native_index.json", sources)
             destination = rollout_dir / f"trace.attempt-{attempt}.jsonl"
             self._combine_session_files(files, destination)
             if not destination.is_file() or destination.stat().st_size == 0:
@@ -599,6 +629,20 @@ class ClaudeCodeHarness(InteractiveHarness):
             return trace_path
         finally:
             shutil.rmtree(staging_root, ignore_errors=True)
+
+    def _capture_metadata(self, output_dir: Path, attempt: int, status: str) -> dict[str, Any]:
+        if not self.config.capture_calls:
+            return {}
+        directory = output_dir / "capture" / f"attempt-{attempt:04d}"
+        recorder = getattr(self, "_capture_recorder", None)
+        try:
+            manifest = finalize_claude_capture(directory, execution_status=status,
+                recorder_error=recorder.error if recorder else "capture recorder unavailable")
+            return {"capture": {"manifest": (directory / "manifest.json").relative_to(output_dir).as_posix(),
+                                "capture_status": manifest["capture_status"]}}
+        except Exception as exc:
+            logger.warning("Claude call capture finalization failed: %s", exc)
+            return {"capture": {"manifest": None, "capture_status": "partial", "error": str(exc)}}
 
     def _collect_outputs(
         self, container: str, request: RunRequest, output_dir: Path
@@ -650,7 +694,7 @@ class ClaudeCodeHarness(InteractiveHarness):
         stream_path.parent.mkdir(parents=True, exist_ok=True)
 
         try:
-            self._start_wire_proxy(output_dir)
+            self._start_wire_proxy(output_dir, attempt)
             environment = self._start_container(container, request)
             container_started = True
             self._prepare_workspace(container, request)
@@ -828,6 +872,7 @@ class ClaudeCodeHarness(InteractiveHarness):
                 else None
             ),
             metadata={
+                **self._capture_metadata(output_dir, attempt, status),
                 "raw_trace_schema": "claude-code-session-jsonl",
                 "claude_code_version": claude_version,
                 "container": retained_container,
@@ -894,7 +939,7 @@ class ClaudeCodeSession(InteractiveSession):
             "wire_trace.jsonl",
         ):
             (self.output_dir / relative).unlink(missing_ok=True)
-        self.harness._start_wire_proxy(self.output_dir)
+        self.harness._start_wire_proxy(self.output_dir, self.attempt)
         self.environment = self.harness._start_container(self.container, self.request)
         self.container_started = True
         self.harness._prepare_workspace(self.container, self.request)
@@ -1066,6 +1111,7 @@ class ClaudeCodeSession(InteractiveSession):
             trace_path=trace_path.relative_to(self.output_dir).as_posix() if trace_path else None,
             trajectory_path=trajectory_path.relative_to(self.output_dir).as_posix() if trajectory_path else None,
             metadata={
+                **self.harness._capture_metadata(self.output_dir, self.attempt, final_status),
                 "raw_trace_schema": "claude-code-session-jsonl",
                 "claude_code_version": self.claude_version,
                 "container": retained_container,

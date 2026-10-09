@@ -271,6 +271,16 @@ def validate_sft_record(record: Any) -> None:
 def actf_to_sft(trajectory: Mapping[str, Any]) -> dict[str, Any]:
     """Convert one ACTF trajectory to a minimal messages/tools SFT record."""
 
+    if trajectory.get("sft_unavailable_reason"):
+        raise SFTConversionError(str(trajectory["sft_unavailable_reason"]))
+    raw_steps = trajectory.get("steps")
+    for step in raw_steps if isinstance(raw_steps, list) else []:
+        extra = step.get("extra") if isinstance(step, Mapping) else None
+        if isinstance(extra, Mapping) and extra.get("is_sidechain"):
+            raise SFTConversionError("mixed subagent steps cannot be exported as one assistant")
+        if isinstance(extra, Mapping) and extra.get("model") == "<synthetic>":
+            raise SFTConversionError("synthetic assistant is not a model output")
+
     system_prompt = trajectory.get("system_prompt", "")
     if not isinstance(system_prompt, str):
         raise SFTConversionError("system_prompt must be a string")

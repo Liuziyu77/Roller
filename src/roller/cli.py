@@ -484,6 +484,10 @@ def _build_parser() -> argparse.ArgumentParser:
 
     claude = collect.add_argument_group("Claude Code")
     claude.add_argument(
+        "--claude-capture-calls", action="store_true",
+        help="save Claude main/subagent native files, full HTTP calls and participant relations",
+    )
+    claude.add_argument(
         "--claude-settings",
         help="optional Claude Code settings.json copied into the disposable container",
     )
@@ -765,6 +769,8 @@ def _collect(args: argparse.Namespace) -> int:
         if request.task.user_simulator is not None
     }
     selected_harnesses = agent_harnesses | simulator_harnesses
+    if args.claude_capture_calls and "claude-code" not in selected_harnesses:
+        raise ValueError("--claude-capture-calls requires a Claude Code participant")
     cli_harness = args.harness
     args._cli_harness = cli_harness
     # Resolve the historical global default after loading tasks.  This keeps
@@ -966,6 +972,7 @@ def _collect(args: argparse.Namespace) -> int:
             reasoning_effort=args.thinking,
             max_thinking_tokens=args.claude_max_thinking_tokens,
             max_turns=args.claude_max_turns,
+            capture_calls=args.claude_capture_calls,
             permission_mode=args.claude_permission_mode,
             wire_trace_mode=args.wire_trace,
             keep_thinking=args.keep_thinking,
@@ -1184,6 +1191,7 @@ def _collect(args: argparse.Namespace) -> int:
             "wire_trace": args.wire_trace,
             "keep_thinking": args.keep_thinking,
             "pass_env_names": list(claude_code_config.pass_env),
+            **({"capture_calls": True} if claude_code_config.capture_calls else {}),
         }
 
     if hermes_config is not None:

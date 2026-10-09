@@ -14,6 +14,8 @@ The Claude Code Harness supports:
 - conversion of plaintext `thinking/reasoning/analysis`, text, multiple `tool_use`, `tool_result`, and usage.
 - `ACTF_v1.0`, one SFT record, run-level `sft.jsonl`, and Viewer.
 - `--wire-trace actf|full|off`.
+- `--claude-capture-calls`: optional full HTTP call capture and independent
+  native main/subagent files. Requires an Anthropic endpoint and host networking.
 - dynamic User Simulator and Task Agent. The two can use different models, and the Simulator
   selects its Harness independently via `user_simulator.harness`.
 - Claude Code `settings.json`, `--max-turns`, `MAX_THINKING_TOKENS`, and permission mode.
@@ -22,6 +24,22 @@ Not currently supported:
 
 - APIs that only have OpenAI Chat Completions/Responses and no Anthropic `/v1/messages`.
 - internal reasoning that the API does not return as plaintext. Roller exports only visible thinking or summaries returned by the service.
+
+### Subagent collection
+
+The main ACTF/SFT contains only main-agent steps and the delegation/results it
+actually observes. Child internals remain in native evidence. Enable
+`--claude-capture-calls` to retain `capture/attempt-NNNN/` with native files,
+full request/response records, participant-specific `calls.jsonl`, relations,
+and a hashed `manifest.json`. These artifacts survive diagnostic cleanup and
+are validated on resume. Response IDs must match native assistant IDs;
+unmatched or interrupted calls remain recorded with explicit incomplete status.
+
+Run-level `calls.jsonl` is a separate `roller.call/v1` export containing the
+actual protocol `context` and current `output`, plus participant identity. It is
+not the legacy SFT messages/tools schema. Background drain and complete nested
+lifecycle support are not part of this first implementation. Linear SFT export
+is unavailable after detected compaction; captured calls retain their own contexts.
 
 ## 2. Image preparation
 

@@ -14,6 +14,7 @@ Claude Code Harness 支持：
 - 明文 `thinking/reasoning/analysis`、文本、多个 `tool_use`、`tool_result` 和 usage 转换。
 - `ACTF_v1.0`、单条 SFT、run 级 `sft.jsonl` 和 Viewer。
 - `--wire-trace actf|full|off`。
+- `--claude-capture-calls`：可选的完整 HTTP 调用捕获及主、子原生文件独立保存，需要 Anthropic 端点和 host 网络。
 - 动态 User Simulator 和 Task Agent。两者可使用不同 model，Simulator 通过
   `user_simulator.harness` 独立选择 Harness。
 - Claude Code `settings.json`、`--max-turns`、`MAX_THINKING_TOKENS` 和 permission mode。
@@ -22,6 +23,17 @@ Claude Code Harness 支持：
 
 - 只有 OpenAI Chat Completions/Responses、没有 Anthropic `/v1/messages` 的 API。
 - API 未以明文返回的内部 reasoning。Roller 只导出服务实际返回的可见 thinking 或 summary。
+
+### Subagent 收集
+
+主 ACTF/SFT 只保留主 agent 的步骤以及它实际观察到的委派和返回结果，子内部过程保留在原始证据中。
+开启 `--claude-capture-calls` 后，`capture/attempt-NNNN/` 保存主、子原生文件、完整请求响应、
+按参与者分开的 `calls.jsonl`、关联记录及带文件哈希的 `manifest.json`；诊断清理不会删除它们，
+resume 会校验这些文件。调用归属依赖响应 ID 与 native assistant ID 的匹配，不能匹配或响应中断时明确标记不完整。
+
+run 级 `calls.jsonl` 使用独立的 `roller.call/v1` 格式，包含实际协议的 `context`、本次 `output` 和参与者身份，
+不混入旧 messages/tools SFT。首期不承诺后台任务 drain 或完整嵌套生命周期。
+检测到 compaction 后，线性 SFT 标为不可导出；已捕获的逐调用记录仍保留各自上下文。
 
 ## 2. 镜像准备
 
