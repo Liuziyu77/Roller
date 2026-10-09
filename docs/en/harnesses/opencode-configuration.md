@@ -20,7 +20,7 @@ Not currently supported:
 
 - direct multimodal task messages.
 - native account/OAuth login.
-- custom provider SDKs, MCP, subagents, and persistent memory.
+- custom provider SDKs, MCP, and persistent memory. Subagents require `--capture-calls`.
 - automatic compaction (long tasks need enough configured context. Exceeding the window fails).
 
 ## 2. Image preparation and first run
@@ -76,7 +76,7 @@ Dedicated options apply to both participants. The run lock includes the binary v
 
 Each participant gets an independent container and HOME/XDG directories. Inputs are mounted read-only. Context files are copied to declared paths and listed in the prompt. Setup, selected environment variables, output collection, and in-container grading use the shared Roller task contract.
 
-The adapter permits bash, read, write, edit, apply_patch, glob, and grep. Native model selection determines which tools are exposed. Each user turn resumes the same native session and workspace with a new CLI process. Background process handles do not survive. Auto-sharing, updates, model catalog refresh, LSP, formatters, compaction, pruning, and implicit project configuration are disabled. Context/skill coverage checks file accessibility. Skill tools, MCP, subagents, and network tools are outside the initial scope.
+The adapter permits bash, read, write, edit, apply_patch, glob, and grep. Native model selection determines which tools are exposed. Each user turn resumes the same native session and workspace with a new CLI process. Background process handles do not survive. Auto-sharing, updates, model catalog refresh, LSP, formatters, compaction, pruning, and implicit project configuration are disabled. Context/skill coverage checks file accessibility. MCP and network tools remain outside scope. Subagents are enabled explicitly with `--capture-calls`.
 
 ## 6. Trace outputs and Resume
 
@@ -107,3 +107,21 @@ Common errors:
 - long tasks exceed the context window: automatic compaction is disabled. Raise `--opencode-context-length` to match the real service capability.
 - rollout timeout: the container is stopped and available artifacts recovered. Adjust `--timeout` or `--opencode-max-steps` as needed.
 - `--wire-trace full` fails to start: an explicit API base and host networking are required.
+
+
+## 9. Subagent call capture
+
+`--capture-calls` uses the same call/participant/relation schemas as Claude Code.
+It requires an explicit endpoint, host networking and wire tracing. Full HTTP
+requests/responses and native root/child sessions are retained separately. Root
+ACTF/SFT excludes child messages and child request configurations.
+
+A per-request native session header proves ownership; the local proxy removes
+it before forwarding. Capture mode restores Explore's write/edit/apply_patch/task/skill
+restrictions and applies the step limit to general/explore children. Bash exit
+codes can exist only in native metadata while the model receives `(no output)`;
+both facts are preserved without rewriting context. Background captures are
+partial; background drain is not implemented.
+
+See the [capture protocol (Chinese)](../../zh/traces/subagent-capture-protocol.md)
+for adapter boundaries and integrity rules.

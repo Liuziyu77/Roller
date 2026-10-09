@@ -294,6 +294,8 @@ def _build_parser() -> argparse.ArgumentParser:
         help="rebuild task-specific benchmark images even when their tags exist locally",
     )
     runtime.add_argument("--network", default="host")
+    runtime.add_argument("--capture-calls", action="store_true",
+        help="save full model calls and subagent relations for Claude Code/OpenCode participants")
     runtime.add_argument(
         "--thinking",
         type=normalize_thinking,
@@ -771,6 +773,8 @@ def _collect(args: argparse.Namespace) -> int:
     selected_harnesses = agent_harnesses | simulator_harnesses
     if args.claude_capture_calls and "claude-code" not in selected_harnesses:
         raise ValueError("--claude-capture-calls requires a Claude Code participant")
+    if args.capture_calls and not set(selected_harnesses).issubset({"claude-code", "opencode"}):
+        raise ValueError("--capture-calls currently supports only Claude Code and OpenCode participants")
     cli_harness = args.harness
     args._cli_harness = cli_harness
     # Resolve the historical global default after loading tasks.  This keeps
@@ -972,7 +976,7 @@ def _collect(args: argparse.Namespace) -> int:
             reasoning_effort=args.thinking,
             max_thinking_tokens=args.claude_max_thinking_tokens,
             max_turns=args.claude_max_turns,
-            capture_calls=args.claude_capture_calls,
+            capture_calls=args.claude_capture_calls or args.capture_calls,
             permission_mode=args.claude_permission_mode,
             wire_trace_mode=args.wire_trace,
             keep_thinking=args.keep_thinking,
@@ -1015,6 +1019,7 @@ def _collect(args: argparse.Namespace) -> int:
             reasoning_effort=args.thinking, max_steps=args.opencode_max_steps,
             context_length=args.opencode_context_length, output_tokens=args.opencode_output_tokens,
             vision=args.opencode_vision,
+            capture_calls=args.capture_calls,
             wire_trace_mode=args.wire_trace, keep_thinking=args.keep_thinking,
             keep_container_on_error=args.keep_container_on_error, docker_binary=args.docker_binary,
         )
@@ -1218,6 +1223,7 @@ def _collect(args: argparse.Namespace) -> int:
             "wire_trace": args.wire_trace,
             "keep_thinking": args.keep_thinking, "pass_env_names": list(opencode_config.pass_env),
             "compaction": {"auto": False, "prune": False},
+            **({"capture_calls": True, "subagent_profile_policy": "explore-tool-restrictions/v1"} if opencode_config.capture_calls else {}),
         }
 
     if deepseek_config is not None:

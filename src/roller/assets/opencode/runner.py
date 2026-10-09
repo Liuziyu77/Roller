@@ -89,9 +89,18 @@ def run_turn(config, state):
         "share": "disabled", "autoupdate": False, "snapshot": False,
         "compaction": {"auto": False, "prune": False},
         "lsp": False, "formatter": False,
-        "permission": {"*": "deny", **{name: "allow" for name in TOOLS}, "external_directory": "allow"},
+        "permission": {"*": "deny", **{name: "allow" for name in TOOLS}, "external_directory": "allow",
+                       **({"task": "allow"} if config.get("capture_calls") else {})},
         "agent": {"build": {"steps": config["max_steps"]}, "title": {"disable": True}, "summary": {"disable": True}},
     }
+    if config.get("capture_calls"):
+        # Global task permissions otherwise override Explore's native tool
+        # restrictions. Retain a distinct child tool profile when delegating.
+        native_config["agent"]["general"] = {"steps": config["max_steps"]}
+        native_config["agent"]["explore"] = {"steps": config["max_steps"], "permission": {
+            "write": "deny", "edit": "deny", "apply_patch": "deny",
+            "task": "deny", "skill": "deny",
+        }}
     atomic_json(state / "opencode.json", native_config)
     session_file = state / "session.json"
     session = json.loads(session_file.read_text()) if session_file.exists() else {}
@@ -132,6 +141,33 @@ def run_turn(config, state):
         raise ValueError("OpenCode exported a different session")
     with (state / "trace.jsonl").open("a", encoding="utf-8") as journal:
         journal.write(json.dumps({"type": "session_export", "data": export}, ensure_ascii=False) + "\n")
+    if config.get("capture_calls"):
+        # Preserve child sessions too. Read exact native IDs from task metadata
+        # and session events; never infer ownership from CLI output ordering.
+        ids = set()
+        for line in (state / "trace.jsonl").read_text(encoding="utf-8").split("\n"):
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            event = row.get("event", {})
+            if event.get("type") in {"session.created", "session.updated"}:
+                info = event.get("properties", {}).get("info", {})
+                if info.get("id"):
+                    ids.add(info["id"])
+            if event.get("type") == "message.part.updated":
+                child = event.get("properties", {}).get("part", {}).get("state", {}).get("metadata", {}).get("sessionId")
+                if child:
+                    ids.add(child)
+        for child_id in sorted(ids - {session_id}):
+            try:
+                child_export = export_session(state, child_id, remaining())
+                record = {"type": "session_export", "data": child_export}
+            except Exception as exc:
+                # Evidence failures do not change the completed root turn.
+                record = {"type": "capture_error", "session_id": child_id,
+                          "error": "child session export failed: " + type(exc).__name__}
+            with (state / "trace.jsonl").open("a", encoding="utf-8") as journal:
+                journal.write(json.dumps(record, ensure_ascii=False) + "\n")
     errors = [e.get("error") for e in events if e.get("type") == "error"]
     if process.returncode or errors:
         raise RuntimeError("OpenCode CLI failed: " + json.dumps(errors, ensure_ascii=False)[:2000])

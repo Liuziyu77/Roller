@@ -52,14 +52,15 @@ class CallRecorder:
         except Exception as exc:
             self.error = str(exc)
 
-    def begin(self, seq: int, path: str, body: dict[str, Any]) -> str:
+    def begin(self, seq: int, path: str, body: dict[str, Any], *, native_identity: dict[str, str] | None = None) -> str:
         call_id = f"{self.scope_id}:{self.directory.name}:call-{seq:08d}"
         with self._lock:
             if self.sealed:
                 return call_id
             self.request_seqs.add(seq)
             self.write({"type": "request", "call_id": call_id,
-                        "request_seq": seq, "path": path, "body": body})
+                        "request_seq": seq, "path": path, "body": body,
+                        **({"native_identity": native_identity} if native_identity else {})})
         return call_id
 
     def response_path(self, seq: int) -> Path:
@@ -142,6 +143,8 @@ def _validate_capture(sample: Path, metadata: dict[str, Any]) -> None:
     pids = {part["participant_id"] for part in participants}
     if len(pids) != len(participants):
         raise ValueError("duplicate capture participant IDs")
+    if any(not isinstance(pid, str) or not pid for pid in pids):
+        raise ValueError("invalid capture participant ID")
     for part in participants:
         if part.get("calls_path") not in inventory or any(p not in inventory for p in part.get("native_files", [])):
             raise ValueError("participant references unregistered capture files")
@@ -149,20 +152,36 @@ def _validate_capture(sample: Path, metadata: dict[str, Any]) -> None:
         expected = [c for c in calls if c.get("participant_id") == part["participant_id"]]
         if actual != expected:
             raise ValueError("participant calls do not match capture calls")
+        if part.get("call_ids") != [c["call_id"] for c in expected]:
+            raise ValueError("participant call IDs do not match capture calls")
     for call in calls:
         if call.get("schema_version") != "roller.call/v1" or not isinstance(call.get("context"), dict):
             raise ValueError("invalid capture call schema")
+        if call.get("protocol") not in {"anthropic-messages", "openai-chat-completions"}:
+            raise ValueError("unsupported capture call protocol")
         if call.get("participant_id") is not None and call["participant_id"] not in pids:
             raise ValueError("call participant is missing")
         if call.get("capture_status") == "complete":
             if call.get("response_path") not in inventory or not isinstance(call.get("output"), dict):
                 raise ValueError("complete call lacks response evidence")
+        if call.get("export_status") == "available" and (
+            call.get("capture_status") != "complete" or call.get("identity_status") != "observed"
+            or call.get("response_capture_status") != "complete" or call.get("execution_status") != "completed"
+            or call.get("output_source") != "model" or call.get("participant_id") not in pids
+            or call.get("errors")):
+            raise ValueError("available call lacks complete model/identity evidence")
     relations = read_jsonl(path.parent / "relations.jsonl")
     if len(relations) != manifest.get("relation_count"):
         raise ValueError("capture relation count mismatch")
+    relation_ids = [r.get("relation_id") for r in relations]
+    if any(not isinstance(rid, str) or not rid for rid in relation_ids) or len(set(relation_ids)) != len(relation_ids):
+        raise ValueError("capture relation IDs are missing or duplicated")
     for relation in relations:
         if relation.get("schema_version") != "roller.relation/v1":
             raise ValueError("invalid capture relation schema")
+        if relation.get("type") not in {"spawn", "result_delivered", "child_completed", "child_failed",
+                                        "result_in_context", "launch_acknowledged", "launch_ack_in_context"}:
+            raise ValueError("unsupported capture relation type")
         for key in ("parent_call_id", "call_id"):
             if relation.get(key) is not None and relation[key] not in ids:
                 raise ValueError("relation call reference is missing")
@@ -172,6 +191,12 @@ def _validate_capture(sample: Path, metadata: dict[str, Any]) -> None:
         for evidence in relation.get("evidence", []):
             if evidence.get("path") not in inventory:
                 raise ValueError("relation evidence file is missing")
+    if manifest.get("capture_status") == "complete" and (
+        not calls or manifest.get("recorder_error") or manifest.get("native_errors") or manifest.get("background_detected")
+        or any(c.get("capture_status") != "complete" for c in calls)
+        or any(p.get("capture_status") != "complete" for p in participants)
+        or any(r.get("status") != "observed" for r in relations)):
+        raise ValueError("complete manifest contains incomplete evidence")
 
 
 def _safe_file(base: Path, relative: str) -> Path:

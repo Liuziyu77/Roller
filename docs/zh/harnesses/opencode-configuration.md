@@ -77,7 +77,7 @@ OpenCode Harness 连接支持流式响应和工具调用的 OpenAI Chat Completi
 
 每个参与者单独创建容器。输入只读挂载，Context 复制到声明路径并在任务提示中列出，支持 setup、任务环境变量、自定义输出目录和容器内评分。
 
-每轮使用 `opencode run --session` 恢复同一原生会话，共享参与者工作区。不恢复 CLI 进程内的后台句柄。关闭自动分享、更新、模型目录刷新、LSP、formatter、自动压缩及工具结果裁剪。禁用工作区 OpenCode 配置的隐式加载，使用独立的 HOME/XDG 目录。Context/skill 测试验证文件可访问性。首版不启用 skill 工具、MCP、子 Agent 或联网工具。
+每轮使用 `opencode run --session` 恢复同一原生会话，共享参与者工作区。不恢复 CLI 进程内的后台句柄。关闭自动分享、更新、模型目录刷新、LSP、formatter、自动压缩及工具结果裁剪。禁用工作区 OpenCode 配置的隐式加载，使用独立的 HOME/XDG 目录。Context/skill 测试验证文件可访问性。默认不启用子 Agent；`--capture-calls` 显式允许原生 `task` 子任务。MCP 和联网工具仍未启用。
 
 ## 6. 轨迹产物与 Resume
 
@@ -115,3 +115,20 @@ Docker 集成测试使用本地确定性流式 API 和虚构 Key，实际运行 
 - 长任务超窗失败：自动压缩已关闭，按服务真实能力调大 `--opencode-context-length`。
 - rollout 超时：容器被停止并尝试回收已有轨迹和文件，按需调整 `--timeout` 或 `--opencode-max-steps`。
 - `--wire-trace full` 无法启动：需要显式 API base 与 host 网络。
+
+
+## 9. Subagent 调用采集
+
+`--capture-calls` 使用与 Claude Code 相同的采集协议。需要显式 API base、host
+网络和开启 wire trace。保存实际请求/响应、原生主/子 session、父子关系和各
+参与者的独立调用。主 ACTF/SFT 不混入子任务内部消息或工具配置。
+
+OpenCode 使用插件提供的原生 session ID 关联每次请求，本地代理在向服务
+转发前移除关联头。开启采集时恢复 Explore 的 write/edit/apply_patch/task/skill
+工具限制，并将步骤上限应用到 general/explore 子任务。
+
+Bash 非零退出码可能只在原生工具元数据中，而模型收到 `(no output)`。采集
+原样保留实际上下文和原生证据，不向模型输入添加错误标记。后台任务整体标记
+partial；首期未实现等待后台任务完成。
+
+字段和完整性规则见 [Subagent 采集协议](../traces/subagent-capture-protocol.md)。

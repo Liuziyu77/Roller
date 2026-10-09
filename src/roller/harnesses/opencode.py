@@ -16,9 +16,11 @@ from urllib.parse import urlsplit
 import uuid
 
 from roller.artifacts import collect_output_directory
+from roller.capture import CallRecorder
 from roller.harnesses.base import InteractiveHarness, InteractiveSession, TurnResult
 from roller.harnesses.docker import DockerRuntime, remove_container
 from roller.opencode_actf import convert_opencode_trace, extract_opencode_usage
+from roller.opencode_capture import finalize_opencode_capture
 from roller.models import HarnessResult, RunRequest
 from roller.storage import atomic_write_json
 from roller.thinking import normalize_thinking, resolve_thinking
@@ -101,6 +103,7 @@ class OpenCodeConfig:
     output_tokens: int = 8192
     vision: bool = True
     wire_trace_mode: str = "actf"
+    capture_calls: bool = False
     keep_thinking: bool = True
     keep_container_on_error: bool = False
     docker_binary: str = "docker"
@@ -134,6 +137,8 @@ class OpenCodeConfig:
             raise ValueError("OpenCode wire trace mode must be off|actf|full")
         if self.wire_trace_mode == "full" and (not self.api_base or self.network != "host"):
             raise ValueError("OpenCode --wire-trace full requires --api-base and --network host")
+        if self.capture_calls and (not self.api_base or self.network != "host" or self.wire_trace_mode == "off"):
+            raise ValueError("OpenCode call capture requires --api-base, --network host and wire trace enabled")
 
 
 class OpenCodeHarness(InteractiveHarness):
@@ -184,6 +189,7 @@ class OpenCodeSession(InteractiveSession):
         self.image_digest = None
         self.opencode_version = None
         self.proxy = None
+        self.capture_recorder = None
         self._result: HarnessResult | None = None
         self.turns = 0
 
@@ -222,8 +228,12 @@ class OpenCodeSession(InteractiveSession):
             raise ValueError(f"OpenCode requires a non-empty API key in {config.api_key_env}")
         environment["OPENAI_API_KEY"] = os.environ[config.api_key_env]
         api_base = config.api_base or "https://api.openai.com/v1"
-        if config.wire_trace_mode == "full":
-            self.proxy = WireTraceProxy(api_base, self.output_dir / "wire_trace.jsonl", mode="full")
+        if config.capture_calls:
+            self.capture_recorder = CallRecorder(self.output_dir / "capture" / f"attempt-{self.attempt:04d}")
+        if config.wire_trace_mode == "full" or config.capture_calls:
+            self.proxy = WireTraceProxy(api_base, self.output_dir / "wire_trace.jsonl", mode="full",
+                capture_recorder=self.capture_recorder,
+                capture_identity_header="x-roller-native-session-id" if config.capture_calls else None)
             self.proxy.start()
             api_base = self.proxy.proxy_base_url
         environment.update(
@@ -304,6 +314,7 @@ class OpenCodeSession(InteractiveSession):
             "max_steps": config.max_steps, "timeout_seconds": timeout,
             "context_length": config.context_length, "output_tokens": config.output_tokens,
             "vision": config.vision,
+            "capture_calls": config.capture_calls,
             "system_prompt": _system_prompt(
                 self.request, config.workspace_container_path
             ),
@@ -355,6 +366,7 @@ class OpenCodeSession(InteractiveSession):
         problems = []
         warnings = []
         trajectory_conversion = None
+        capture_metadata = {}
         try:
             if self.container_started:
                 try:
@@ -365,6 +377,10 @@ class OpenCodeSession(InteractiveSession):
                         trace = None
                         problems.append("no OpenCode journal was collected")
                     else:
+                        if config.capture_calls:
+                            native_dir = self.capture_recorder.directory / "native"
+                            native_dir.mkdir(parents=True, exist_ok=True)
+                            shutil.copyfile(trace, native_dir / "journal.jsonl")
                         usage = extract_opencode_usage(trace)
                         trajectory = trace.with_name("trace_ACTF.json")
                         converted = convert_opencode_trace(trace, trajectory, keep_thinking=config.keep_thinking)
@@ -412,6 +428,16 @@ class OpenCodeSession(InteractiveSession):
                         redact_jsonl_file(self.proxy.log_path)
                 except Exception as exc:
                     problems.append(self.redact(str(exc)))
+            if self.capture_recorder is not None:
+                self.capture_recorder.seal()
+                try:
+                    directory = self.capture_recorder.directory
+                    manifest = finalize_opencode_capture(directory, execution_status=status,
+                        recorder_error=self.capture_recorder.error)
+                    capture_metadata = {"capture": {"manifest": (directory / "manifest.json").relative_to(self.output_dir).as_posix(),
+                                                   "capture_status": manifest["capture_status"]}}
+                except Exception as exc:
+                    capture_metadata = {"capture": {"manifest": None, "capture_status": "partial", "error": self.redact(str(exc))}}
             if problems and status == "ok":
                 status, error = "error", "; ".join(problems)
             retained = self.container_started and config.keep_container_on_error and status != "ok"
@@ -441,10 +467,12 @@ class OpenCodeSession(InteractiveSession):
             trace_path=trace.relative_to(self.output_dir).as_posix() if trace else None,
             trajectory_path=trajectory.relative_to(self.output_dir).as_posix() if trajectory else None,
             metadata={"raw_trace_schema": "roller.opencode-events/v1", "opencode_version": self.opencode_version,
+                **capture_metadata,
                 "provenance": provenance, "output_collection": output_metadata, "turn_count": self.turns,
                 "warnings": warnings,
                 "trajectory_conversion": trajectory_conversion,
                 "retained_container": self.container if retained else None,
-                "settings": {"reasoning_effort": resolve_thinking(self.request.task.thinking, config.reasoning_effort), "max_steps": config.max_steps, "context_length": config.context_length, "output_tokens": config.output_tokens, "vision": config.vision, "tools": list(OPENCODE_TOOLS), "keep_thinking": config.keep_thinking}},
+                "settings": {"reasoning_effort": resolve_thinking(self.request.task.thinking, config.reasoning_effort), "max_steps": config.max_steps, "context_length": config.context_length, "output_tokens": config.output_tokens, "vision": config.vision, "tools": [*OPENCODE_TOOLS, *(["task"] if config.capture_calls else [])], "keep_thinking": config.keep_thinking,
+                    **({"capture_calls": True, "subagent_profile_policy": "explore-tool-restrictions/v1"} if config.capture_calls else {})}},
         )
         return self._result

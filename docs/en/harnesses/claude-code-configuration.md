@@ -14,7 +14,7 @@ The Claude Code Harness supports:
 - conversion of plaintext `thinking/reasoning/analysis`, text, multiple `tool_use`, `tool_result`, and usage.
 - `ACTF_v1.0`, one SFT record, run-level `sft.jsonl`, and Viewer.
 - `--wire-trace actf|full|off`.
-- `--claude-capture-calls`: optional full HTTP call capture and independent
+- `--capture-calls` (also `--claude-capture-calls`): optional full HTTP call capture and independent
   native main/subagent files. Requires an Anthropic endpoint and host networking.
 - dynamic User Simulator and Task Agent. The two can use different models, and the Simulator
   selects its Harness independently via `user_simulator.harness`.
@@ -277,8 +277,9 @@ fields. The structure is not guaranteed to be stable across Claude Code versions
 ### `trace_ACTF.json`
 
 The converter merges the text, reasoning, and multiple `tool_use` items of one inference into a single
-ACTF step by Claude `message.id`, then attaches later `tool_result` items by `tool_use_id`. Both the main session and subagent sidechains
-enter the trajectory in time order. Sidechain steps are marked with `extra.is_sidechain`.
+ACTF step by Claude `message.id`, then attaches later `tool_result` items by `tool_use_id`.
+Main ACTF excludes subagent internals and `<synthetic>` messages. Child model calls
+are retained independently in capture records.
 
 Usage uses the last value for the same `message.id` so stream updates are not double-counted:
 

@@ -14,18 +14,27 @@ export default async function RollerJournal() {
       // Retain OpenCode's native instructions and append the task contract.
       output.system.push(turn.system_prompt);
     },
+    "chat.headers": async (input, output) => {
+      if (turn.capture_calls) {
+        // A local correlation field, stripped by Roller's proxy before it
+        // reaches the provider. Each request carries its own session identity.
+        output.headers["x-roller-native-session-id"] = input.sessionID;
+      }
+    },
     config: async (config) => {
       const provider = config.provider?.roller;
       if (!provider) throw new Error("Roller provider is missing");
       provider.options.fetch = async (input, init) => {
         const body = typeof init?.body === "string" ? JSON.parse(init.body) : null;
-        if (body && Array.isArray(body.messages)) write({ type: "request", body });
+        const sessionID = new Headers(init?.headers).get("x-roller-native-session-id");
+        if (body && Array.isArray(body.messages)) write({ type: "request", body,
+          ...(sessionID ? { native_session_id: sessionID } : {}) });
         return fetch(input, init);
       };
       write({ type: "bridge_ready", version: "1.18.30" });
     },
     event: ({ event }) => {
-      if (["message.updated", "message.part.updated", "session.error"].includes(event.type)) {
+      if (["message.updated", "message.part.updated", "session.created", "session.updated", "session.error"].includes(event.type)) {
         write({ type: "event", event });
       }
     },

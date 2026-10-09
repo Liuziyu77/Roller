@@ -14,7 +14,7 @@ Claude Code Harness 支持：
 - 明文 `thinking/reasoning/analysis`、文本、多个 `tool_use`、`tool_result` 和 usage 转换。
 - `ACTF_v1.0`、单条 SFT、run 级 `sft.jsonl` 和 Viewer。
 - `--wire-trace actf|full|off`。
-- `--claude-capture-calls`：可选的完整 HTTP 调用捕获及主、子原生文件独立保存，需要 Anthropic 端点和 host 网络。
+- `--capture-calls`（兼容 `--claude-capture-calls`）：可选的完整 HTTP 调用捕获及主、子原生文件独立保存，需要 Anthropic 端点和 host 网络。
 - 动态 User Simulator 和 Task Agent。两者可使用不同 model，Simulator 通过
   `user_simulator.harness` 独立选择 Harness。
 - Claude Code `settings.json`、`--max-turns`、`MAX_THINKING_TOKENS` 和 permission mode。
@@ -271,8 +271,8 @@ Raw 保留 plaintext thinking、加密 thinking envelope、tool metadata、usage
 ### `trace_ACTF.json`
 
 转换器按 Claude `message.id` 把一次推理的 text、reasoning 和多个 `tool_use` 合并为一个
-ACTF step，再按 `tool_use_id` 关联后续 `tool_result`。主 session 和 subagent sidechain 都按
-时间顺序进入轨迹。sidechain step 在 `extra.is_sidechain` 标记。
+ACTF step，再按 `tool_use_id` 关联后续 `tool_result`。主 ACTF 仅包含主 session；
+subagent 内部消息和 `<synthetic>` 消息被排除。子任务通过独立 Call 记录保存。
 
 Usage 使用同一 `message.id` 的最后一个值，避免 stream 更新重复累计：
 
@@ -345,3 +345,5 @@ messages、tools、thinking/output config 和 sampling 参数。它记录的是�
 - model 拒绝 `budget_tokens` 或要求 adaptive thinking：移除
   `--claude-max-thinking-tokens`，只使用该模型支持的 `--thinking` effort。
 - ACTF 有 thinking token 但 `reasoning_content` 为空：服务没有返回明文，不是转换器丢失。
+
+统一字段与适配器边界见 [Subagent 采集协议](../traces/subagent-capture-protocol.md)。

@@ -272,8 +272,10 @@ class _ProxyHandler(BaseHTTPRequestHandler):
         proxy.write(entry)
         if (proxy.capture_recorder is not None and parsed is not None
                 and self.command == "POST"
-                and urlsplit(self.path).path.rstrip("/").endswith("/messages")):
-            proxy.capture_recorder.begin(entry["seq"], proxy.forward_path(self.path), parsed)
+                and urlsplit(self.path).path.rstrip("/").endswith(("/messages", "/chat/completions"))):
+            native_session = self.headers.get(proxy.capture_identity_header) if proxy.capture_identity_header else None
+            proxy.capture_recorder.begin(entry["seq"], proxy.forward_path(self.path), parsed,
+                native_identity={"session_id": native_session} if native_session else None)
         return entry["seq"]
 
     def _handle(self) -> None:
@@ -453,6 +455,7 @@ class WireTraceProxy:
         drop_request_headers: Sequence[str] = (),
         responses_tools_path: Path | None = None,
         capture_recorder: CallRecorder | None = None,
+        capture_identity_header: str | None = None,
     ) -> None:
         if mode not in ("tools", "full"):
             raise ValueError(f"unknown wire trace mode: {mode}")
@@ -465,6 +468,7 @@ class WireTraceProxy:
         self.mode = mode
         self.responses_tools_path = responses_tools_path
         self.capture_recorder = capture_recorder
+        self.capture_identity_header = capture_identity_header
         self.recording_error: str | None = None
         self.strip_thinking = strip_thinking
         self.normalize_reasoning_replay = normalize_reasoning_replay
@@ -472,6 +476,8 @@ class WireTraceProxy:
         self.drop_request_headers = frozenset(
             name.strip().lower() for name in drop_request_headers if name.strip()
         )
+        if capture_identity_header:
+            self.drop_request_headers |= {capture_identity_header.lower()}
         self.timeout_seconds = timeout_seconds
         self._lock = threading.Lock()
         self._seq = 0
