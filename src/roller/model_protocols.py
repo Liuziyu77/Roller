@@ -118,15 +118,41 @@ def chat_response(payload: bytes, content_type: str) -> dict[str, Any]:
     return result
 
 
+def responses_response(payload: bytes, content_type: str) -> dict[str, Any]:
+    """Retain the terminal Responses object, including reasoning/encrypted items."""
+    if "text/event-stream" not in content_type:
+        result = json.loads(payload)
+    else:
+        result = None
+        for frame in payload.decode("utf-8").replace("\r\n", "\n").split("\n\n"):
+            data = "\n".join(line[5:].lstrip() for line in frame.splitlines() if line.startswith("data:"))
+            if not data or data == "[DONE]":
+                continue
+            event = json.loads(data)
+            if event.get("type") in {"error", "response.failed", "response.incomplete"}:
+                raise ValueError("Responses stream failed or is incomplete")
+            if event.get("type") == "response.completed":
+                if result is not None:
+                    raise ValueError("Responses stream has multiple terminal responses")
+                result = event.get("response")
+    if not isinstance(result, dict) or result.get("object") != "response" or not isinstance(result.get("output"), list):
+        raise ValueError("Responses capture lacks a terminal response object")
+    return result
+
+
 def decode_response(protocol: str, payload: bytes, content_type: str) -> dict[str, Any]:
     if protocol == "anthropic-messages":
         return anthropic_response(payload, content_type)
     if protocol == "openai-chat-completions":
         return chat_response(payload, content_type)
+    if protocol == "openai-responses":
+        return responses_response(payload, content_type)
     raise ValueError(f"unsupported capture protocol: {protocol}")
 
 
 def response_finished(protocol: str, output: dict[str, Any]) -> bool:
+    if protocol == "openai-responses":
+        return output.get("status") == "completed"
     if protocol == "anthropic-messages":
         return output.get("stop_reason") in {"end_turn", "tool_use", "stop_sequence"}
     choices = output.get("choices", [])
@@ -134,12 +160,18 @@ def response_finished(protocol: str, output: dict[str, Any]) -> bool:
 
 
 def tool_call_ids(protocol: str, output: dict[str, Any]) -> set[str]:
+    if protocol == "openai-responses":
+        return {item["call_id"] for item in output.get("output", []) if isinstance(item, dict)
+                and item.get("type") in {"function_call", "custom_tool_call"} and isinstance(item.get("call_id"), str)}
     if protocol == "anthropic-messages":
         return {b["id"] for b in output.get("content", []) if isinstance(b, dict) and b.get("type") == "tool_use" and isinstance(b.get("id"), str)}
     return {t["id"] for c in output.get("choices", []) for t in c.get("message", {}).get("tool_calls", []) if isinstance(t.get("id"), str)}
 
 
 def tool_result_ids(protocol: str, context: dict[str, Any]) -> set[str]:
+    if protocol == "openai-responses":
+        return {item["call_id"] for item in context.get("input", []) if isinstance(item, dict)
+                and item.get("type") in {"function_call_output", "custom_tool_call_output"} and isinstance(item.get("call_id"), str)}
     if protocol == "anthropic-messages":
         return {b["tool_use_id"] for m in context.get("messages", []) for b in (m.get("content", []) if isinstance(m.get("content"), list) else []) if isinstance(b, dict) and b.get("type") == "tool_result" and isinstance(b.get("tool_use_id"), str)}
     return {m["tool_call_id"] for m in context.get("messages", []) if m.get("role") == "tool" and isinstance(m.get("tool_call_id"), str)}

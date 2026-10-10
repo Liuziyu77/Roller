@@ -5,7 +5,8 @@
 
 ## 开启
 
-`roller collect ... --capture-calls` 支持 Claude Code 和 OpenCode。旧的
+`roller collect ... --capture-calls` 支持目前七个 harness：Claude Code、
+OpenCode、Codex、Hermes、OpenClaw、Pi 和 DeepSeek。旧的
 `--claude-capture-calls` 保留。需要显式 API base、host 网络、开启 wire trace。
 默认不开启；OpenCode 仅在开启此选项时允许原生 `task` 子任务工具。
 采集模式写入 run 配置，resume 不能混用开启前后的样本。
@@ -24,8 +25,8 @@ attempt 引用时必须带 sample/manifest 路径。`call_id` 和新生成的
 `relation_id` 包含采集实例的随机作用域，避免不同样本、重试的编号冲突。
 
 Call 的 `context` 保留实际发送的完整请求体；`output` 是重组后的 provider
-响应。`protocol` 区分 `anthropic-messages` 和 `openai-chat-completions`，
-两者保持自己的消息格式。原始响应文件也保留，不靠原生日志重建请求。
+响应。`protocol` 区分 `anthropic-messages`、`openai-chat-completions`
+以及 `openai-responses`，按实际 HTTP 请求端点识别协议，各协议保持自己的消息格式。原始响应文件也保留，不靠原生日志重建请求。
 不保存 HTTP 认证头，不用父 agent 的配置覆盖子 agent 的模型和工具配置。
 
 | 状态 | 回答的问题 |
@@ -60,15 +61,21 @@ Call 才可导出。未归属、失败、中断的请求仍保留在 attempt 的
 适配层只返回 `capture_protocol.NativeCapture`：参与者、身份映射、原生关系、
 可观测输出 ID/数量和能力声明。公共 `finalize_capture` 负责关联 HTTP 调用、
 判断状态、生成上下文关系、写文件和 manifest。`model_protocols` 负责
-Anthropic/Chat Completions 响应解码和工具引用提取。
+Anthropic/Chat Completions/Responses 响应解码和工具引用提取。
 
 | harness | 身份证据 | 原生输出覆盖检查 |
 |---|---|---|
 | Claude Code | provider 响应 ID 与原生日志 message ID 匹配 | 逐 message ID |
 | OpenCode | `chat.headers` 提供的 session ID 与原生日志匹配 | 各 session 完成的 assistant 数量 |
+| Codex | 每次 HTTP 请求原生 `thread-id` 与 rollout session_meta 匹配 | token_usage 更新数量；不是逐响应 ID |
+| Hermes | 执行实例自己的 session ID 与原生日志匹配 | provider 响应 ID |
+| OpenClaw | 原生 stream wrapper 的 session ID 与 session 文件匹配 | stream context 数量 |
+| Pi | SDK session ID | 完成的 assistant 数量 |
+| DeepSeek | runner session ID | 完成的 assistant 数量 |
 
 OpenCode 的关联头仅在本地代理使用，代理向模型服务转发前移除。各请求携带
-自己的 session ID，因此并行请求不依赖“当前 session”全局变量。原生数量
+自己的 session ID，因此并行请求不依赖“当前 session”全局变量。Codex 的原生
+`thread-id` 继续转发给模型服务，只移除 Roller 新增的 `x-roller-*` 身份头。原生数量
 检查比逐 ID 检查弱，manifest 的 `capabilities.native_output_coverage` 明确
 记录这一差别；不根据时间、文本或请求次序猜身份。
 
@@ -83,11 +90,29 @@ manifest 使用 `roller.capture/v1`，增加的能力和身份依据字段向后
 关闭 recorder 后再发布文件哈希；文件缺失、修改、错误引用会阻止 resume
 复用。即使关闭辅助日志保留，也不会清理 capture 正式证据。
 
-首期真实验收覆盖同步/并行、相同提示词、文件共享、工具错误、不同工具配置
-和普通对话。尚未承诺后台任务等待完成、跨进程恢复、完整嵌套执行、compaction
-分段重建或其他 harness。检测到后台任务时整体标记 partial。
+## 七个 harness 的执行边界
 
-共享验收入口：`scripts/test_subagents_e2e.py --harness claude-code|opencode ...`。
+- Claude Code / OpenCode：已有原生子任务适配。未完成的后台任务标记 partial。
+- Codex：保留 Responses 原生 output（包括加密 reasoning）及所有线程 rollout；
+  spawn 返回的是启动回执，wait 返回完成结果。多轮执行通过已确认的根线程 ID resume，
+  防止 `resume --last` 误选最近的子线程。根 ACTF 的工具快照只取根线程，完整快照仍作为证据保存。
+  `tool_search_output` 动态加载的定义保存在实际 Call.context 和工具快照；这种轨迹的
+  主 SFT 暂不导出，避免丢失加载顺序或虚构静态工具列表。逐调用导出不受此边界影响。
+- Hermes：在原生 delegate_task 创建子实例时记录父 session ID 和委派工具 ID；
+  一个批量工具调用可以对应多个孩子。使用原生有限查询 session 设置等待孩子返回。
+- OpenClaw：固定镜像内的原生 stream wrapper 记录各 session 的实际上下文；
+  等待原生 registry 中的子任务及完成通知清理结束，再收集文件。启动回执与完成通知分开；
+  完成通知只有与父模型实际输入逐字匹配才建立 result_in_context。工具 ID 规范化映射来自
+  原生 resolver 的实际输出。支持按实际请求端点解码 Chat Completions、Responses 或 Messages，
+  真实测试结果分别注明模型与协议。固定镜像的 hook 不匹配时会报错。
+- Pi / DeepSeek：统一记录实际模型 I/O、根参与者和完整性。Roller 内置的 Pi 配置禁用
+  扩展，DeepSeek 使用 sdk-minimal profile；二者没有原生委派工具。manifest 明确声明
+  `not_available_in_bundled_profile`，子任务测试为 not_applicable，不能当作通过。
+
+共同验收覆盖单子任务、并行、相同提示词、文件共享、工具错误、不同工具配置和普通对话。
+跨进程恢复、完整嵌套执行和 compaction 分段重建仍不在此实现范围。
+
+共享验收入口：`scripts/test_subagents_e2e.py --harness HARNESS ...`（七个 harness 均可选）。
 测试凭据只从指定环境变量读取。
 
 OpenCode 原生接口依据：[固定版本的插件 hook 定义](https://github.com/anomalyco/opencode/blob/v1.18.30/packages/plugin/src/index.ts)、

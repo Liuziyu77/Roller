@@ -157,7 +157,7 @@ def _validate_capture(sample: Path, metadata: dict[str, Any]) -> None:
     for call in calls:
         if call.get("schema_version") != "roller.call/v1" or not isinstance(call.get("context"), dict):
             raise ValueError("invalid capture call schema")
-        if call.get("protocol") not in {"anthropic-messages", "openai-chat-completions"}:
+        if call.get("protocol") not in {"anthropic-messages", "openai-chat-completions", "openai-responses"}:
             raise ValueError("unsupported capture call protocol")
         if call.get("participant_id") is not None and call["participant_id"] not in pids:
             raise ValueError("call participant is missing")

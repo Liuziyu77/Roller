@@ -272,7 +272,7 @@ class _ProxyHandler(BaseHTTPRequestHandler):
         proxy.write(entry)
         if (proxy.capture_recorder is not None and parsed is not None
                 and self.command == "POST"
-                and urlsplit(self.path).path.rstrip("/").endswith(("/messages", "/chat/completions"))):
+                and urlsplit(self.path).path.rstrip("/").endswith(("/messages", "/chat/completions", "/responses"))):
             native_session = self.headers.get(proxy.capture_identity_header) if proxy.capture_identity_header else None
             proxy.capture_recorder.begin(entry["seq"], proxy.forward_path(self.path), parsed,
                 native_identity={"session_id": native_session} if native_session else None)
@@ -476,7 +476,7 @@ class WireTraceProxy:
         self.drop_request_headers = frozenset(
             name.strip().lower() for name in drop_request_headers if name.strip()
         )
-        if capture_identity_header:
+        if capture_identity_header and capture_identity_header.lower().startswith("x-roller-"):
             self.drop_request_headers |= {capture_identity_header.lower()}
         self.timeout_seconds = timeout_seconds
         self._lock = threading.Lock()

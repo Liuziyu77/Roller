@@ -128,6 +128,19 @@ class CodexToolsTests(unittest.TestCase):
         with self.assertRaisesRegex(SFTConversionError, "additional_tools"):
             actf_to_sft(trajectory)
 
+    def test_dynamic_tool_search_is_preserved_and_static_sft_is_rejected(self) -> None:
+        item = {"type": "tool_search_output", "call_id": "search", "tools": [TOOLS[2]]}
+        snapshots = [tool_snapshot({"tools": TOOLS[:1]}),
+                     tool_snapshot({"tools": TOOLS[:1], "input": [item]})]
+        call = {"type": "function_call", "call_id": "wait", "name": "wait",
+                "namespace": "agents", "arguments": "{}"}
+        with tempfile.TemporaryDirectory() as tmp:
+            trajectory = self.convert(Path(tmp), snapshots, call)
+        self.assertEqual(trajectory["tools_capture"]["requests"][1]["snapshot"]["tool_search_outputs"], [item])
+        self.assertIsNone(trajectory["tools"])
+        with self.assertRaisesRegex(SFTConversionError, "tool_search_output"):
+            actf_to_sft(trajectory)
+
     def test_whole_record_loss_rejects_sft_and_preserves_remaining_snapshots(self) -> None:
         modified = deepcopy(TOOLS)
         modified[0]["description"] = "New definition."

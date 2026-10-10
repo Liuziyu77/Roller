@@ -8,14 +8,15 @@ from dataclasses import dataclass
 class HarnessCapabilities:
     label: str
     cache_trace: bool = False
+    subagent_tool: str | None = None
 
 
 HARNESSES = {
-    "openclaw": HarnessCapabilities("OpenClaw", cache_trace=True),
-    "codex": HarnessCapabilities("Codex"),
-    "claude-code": HarnessCapabilities("Claude Code"),
-    "hermes": HarnessCapabilities("Hermes"),
-    "opencode": HarnessCapabilities("OpenCode"),
+    "openclaw": HarnessCapabilities("OpenClaw", cache_trace=True, subagent_tool="sessions_spawn"),
+    "codex": HarnessCapabilities("Codex", subagent_tool="spawn_agent"),
+    "claude-code": HarnessCapabilities("Claude Code", subagent_tool="Agent"),
+    "hermes": HarnessCapabilities("Hermes", subagent_tool="delegate_task"),
+    "opencode": HarnessCapabilities("OpenCode", subagent_tool="task"),
     "deepseek": HarnessCapabilities("DeepSeek Harness"),
     "pi": HarnessCapabilities("Pi Agent"),
 }

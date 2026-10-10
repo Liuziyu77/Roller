@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 
+from roller.harness_registry import HARNESS_NAMES
 from roller.capture import read_jsonl, validate_capture
 from roller.cli import _build_parser, _collect
 from roller.model_protocols import tool_call_ids
@@ -28,9 +29,38 @@ CASES = {
 }
 
 
+def harness_prompt(harness, case):
+    children, prompt = CASES[case]
+    if harness == "opencode":
+        return children, prompt.replace('Agent','task').replace('general-purpose','general').replace('Explore','explore').replace('Bash','bash').replace('Write','write').replace('Read','read').replace('run_in_background=false','background=false')
+    if harness == "claude-code" or case == "ordinary":
+        return children, prompt
+    if harness in {"pi", "deepseek"}:
+        return None, None
+    task = {
+        "single": "Execute pwd once, then return CHILD_SINGLE.",
+        "parallel": "Execute sleep 2 once, then return CHILD_PARALLEL.",
+        "identical": "Return exactly IDENTICAL_CHILD. Do not use tools.",
+        "workspace": "Create /roller/workspace/outputs/child.txt containing WORKSPACE_CHILD followed by a newline, then return CHILD_WROTE.",
+        "tool-error": "Execute exit 13 once. Do not retry or repair the failure. Then return CHILD_ERROR_HANDLED.",
+        "different-tools": "Execute pwd once, then return CONFIG_CHILD.",
+    }[case]
+    ending = "After receiving all completed child results, reply ROOT_" + case.replace('-', '_').upper() + ". "
+    if case == "workspace":
+        ending += "Read the file yourself to verify it after the child has written it. "
+    if harness == "hermes":
+        count = "TWO children in a single delegate_task tasks batch" if children == 2 else "ONE child using delegate_task"
+        return children, f"Delegate {count}. Each child task: {task} " + ending + "Do not perform the child's work yourself. Use only delegate_task" + (" and read_file." if case == "workspace" else ".")
+    if harness == "codex":
+        profile = "Use the explorer agent type for the child. " if case == "different-tools" else ""
+        return children, f"Use multi_agent_v1.spawn_agent to start {children} child agent(s). Each task: {task} " + profile + "Start all children before waiting; use multi_agent_v1.wait_agent to receive their final results. " + ending + "Do not perform the child's work yourself."
+    task = task.replace("/roller/workspace/", "/tmp_workspace/")
+    return children, f"Use sessions_spawn to start {children} child agent(s), with cleanup=keep and expectsCompletionMessage=true. Each task: {task} Start all children before waiting. Wait for completion notifications; you may use sessions_history to read the completed child result. " + ending + "Do not perform the child's work yourself."
+
+
 def audit(run: Path, expected_children: int, case: str, harness="claude-code"):
-    agent_tool = "Agent" if harness == "claude-code" else "task"
-    read_tool = "Read" if harness == "claude-code" else "read"
+    agent_tool = {"claude-code": "Agent", "opencode": "task", "hermes": "delegate_task", "codex": "spawn_agent", "openclaw": "sessions_spawn"}.get(harness)
+    read_tool = {"claude-code": "Read", "opencode": "read", "hermes": "read_file", "codex": "exec_command", "openclaw": "read"}.get(harness)
     sample = next((run/'samples').glob('*/*/info.json')).parent
     info = json.loads((sample/'info.json').read_text())
     assert info['status']=='ok', info.get('error')
@@ -42,25 +72,39 @@ def audit(run: Path, expected_children: int, case: str, harness="claude-code"):
     parts=manifest['participants']
     children=[p for p in parts if p['role']=='child']
     assert len(children)==expected_children, parts
+    assert sum(p['role']=='root' for p in parts)==1, parts
     assert all(p['capture_status']=='complete' for p in parts), parts
     # Service-side failed attempts may remain raw/unknown. Every successful
     # model response must be completely captured and uniquely attributed.
-    assert all(c['capture_status']=='complete' for c in calls if c['http_status']==200), [(c['request_seq'],c['errors']) for c in calls]
+    assert all(c['capture_status']=='complete' for c in calls if c['execution_status']=='completed'), [(c['request_seq'],c['errors']) for c in calls]
+    assert all(c['export_status']=='unavailable' for c in calls if c['execution_status']!='completed')
     exported=read_jsonl(run/'calls.jsonl')
     assert len(exported)==sum(c['export_status']=='available' for c in calls)
-    sft=json.loads((sample/'trace_SFT.json').read_text())
-    tools=[t['function']['name'] for m in sft['messages'] for t in m.get('tool_calls',[])]
-    assert set(tools)<=({agent_tool,read_tool} if case=='workspace' else {agent_tool}), tools
+    root_sft = 'available'
+    if (sample/'trace_SFT.json').is_file():
+        sft=json.loads((sample/'trace_SFT.json').read_text())
+    else:
+        conversion = info['runtime'].get('trajectory_conversion') or {}
+        assert harness == 'codex' and 'tool_search_output' in conversion.get('error', ''), conversion
+        trajectory = json.loads((sample/'trace_ACTF.json').read_text())
+        assert trajectory['tools_capture']['status'] == 'unsupported'
+        root_sft = 'unavailable_dynamic_tools'
+        sft = {'messages': [{'tool_calls': step['assistant_content'].get('tool_calls', [])}
+                           for step in trajectory['steps']]}
+    tools=[t.get('function', t.get('custom', t))['name'] for m in sft['messages'] for t in m.get('tool_calls',[])]
+    if harness in {"claude-code", "opencode", "hermes"}:
+        assert set(tools)<=({agent_tool,read_tool} if case=='workspace' else {agent_tool}), tools
     assert all(m.get('content')!='No response requested.' for m in sft['messages'])
     relations=read_jsonl(directory/'relations.jsonl')
     assert sum(r['type']=='spawn' and r['status']=='observed' for r in relations)==expected_children
     assert sum(r['type']=='child_completed' for r in relations)==expected_children
-    assert len({r['tool_call_id'] for r in relations if r['type']=='result_in_context'})==expected_children
+    assert len({r['child_participant_id'] for r in relations if r['type']=='result_in_context'})==expected_children
     if case=='workspace':
         assert (sample/'results/child.txt').read_text()=='WORKSPACE_CHILD\n'
     if case in {'parallel','identical'}:
         spawns=[c for c in calls if c['output'] and len(tool_call_ids(c['protocol'],c['output']))==2]
-        assert spawns, 'model did not issue two delegation calls in one response'
+        if harness in {'claude-code', 'opencode'}:
+            assert spawns, 'model did not issue two delegation calls in one response'
         intervals=[]
         for p in children:
             cc=[c for c in calls if c['participant_id']==p['participant_id']]
@@ -79,7 +123,7 @@ def audit(run: Path, expected_children: int, case: str, harness="claude-code"):
             failure_observed = any(b.get('type')=='tool_result' and b.get('is_error')
                 for c in child for m in c['context']['messages']
                 for b in (m.get('content',[]) if isinstance(m.get('content'),list) else []))
-        else:
+        elif harness=='opencode':
             # OpenCode emits '(no output)' into model context for exit 13;
             # the exit code is only in native tool metadata. Verify that fact
             # and its exact tool-result link, without inventing an error flag.
@@ -89,46 +133,90 @@ def audit(run: Path, expected_children: int, case: str, harness="claude-code"):
                 and p.get('state',{}).get('metadata',{}).get('exit')==13}
             failure_observed = bool(failed_ids) and any(m.get('role')=='tool' and m.get('tool_call_id') in failed_ids
                 for c in child for m in c['context']['messages'])
+        else:
+            failure_observed = any('13' in json.dumps(m) for c in child for m in (c['context'].get('messages', []) if c['protocol'] != 'openai-responses' else c['context'].get('input', [])) if m.get('role') == 'tool' or m.get('type') in {'function_call_output', 'custom_tool_call_output'})
         assert failure_observed, 'child tool failure lacks native/context evidence'
 
     return {'case':case,'status':'passed','sample':str(sample),'capture_status':manifest['capture_status'],
             'requests':len(calls),'exported_calls':len(exported),'participants':len(parts),
-            'root_tools':tools,'usage':info.get('usage')}
+            'root_tools':tools,'root_sft':root_sft,'usage':info.get('usage')}
 
 
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('--api-base',required=True)
     parser.add_argument('--api-key-env',required=True)
-    parser.add_argument('--model',default='claude-opus-5')
-    parser.add_argument('--harness',choices=['claude-code','opencode'],default='claude-code')
+    parser.add_argument('--model', help='default: gpt-5.5 for Codex, claude-opus-5 otherwise')
+    parser.add_argument('--harness',choices=HARNESS_NAMES,default='claude-code')
     parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--cases',nargs='+',choices=list(CASES),default=list(CASES))
+    parser.add_argument('--openclaw-api', choices=['openai-completions', 'openai-responses'], default='openai-completions')
+    parser.add_argument('--gateway-port', type=int, default=18789, help='OpenClaw gateway port; use distinct ports for independent concurrent test runs')
+    parser.add_argument('--check-followup', action='store_true', help='add a second user turn after delegation to verify native root-thread resume')
     parser.add_argument('--disable-experimental-betas',action='store_true',help='use Claude native compatibility setting for gateways rejecting beta request fields')
     args=parser.parse_args()
     if args.disable_experimental_betas:
         os.environ['CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS']='1'
     if not os.environ.get(args.api_key_env):
         parser.error('credential environment variable is empty')
+    args.model = args.model or ('gpt-5.5' if args.harness == 'codex' else 'claude-opus-5')
     args.output.mkdir(parents=True,exist_ok=True)
     results=[]
+    quota_exhausted = False
     for case in args.cases:
-        children,prompt=CASES[case]
-        if args.harness=='opencode':
-            prompt=prompt.replace('Agent','task').replace('general-purpose','general').replace('Explore','explore').replace('Bash','bash').replace('Write','write').replace('Read','read').replace('run_in_background=false','background=false')
+        if quota_exhausted:
+            results.append({"case": case, "status": "blocked", "reason": "service token quota exhausted"})
+            (args.output/"summary.json").write_text(json.dumps(results, ensure_ascii=False, indent=2))
+            continue
+        children, prompt = harness_prompt(args.harness, case)
+        if children is None:
+            result = {'case': case, 'status': 'not_applicable', 'reason': 'bundled profile has no native delegation tool or extensions'}
+            results.append(result)
+            (args.output/'summary.json').write_text(json.dumps(results,ensure_ascii=False,indent=2))
+            print(json.dumps(result,ensure_ascii=False),flush=True)
+            continue
         tasks=args.output/f'{case}.tasks.json'
-        tasks.write_text(json.dumps([{'id':case,'harness':args.harness,'model':args.model,'prompt':prompt}]))
+        task = {'id':case,'harness':args.harness,'model':('roller/'+args.model if args.harness=='openclaw' else args.model)}
+        if args.check_followup:
+            task['messages'] = [prompt, 'Do not delegate or use tools again. Reply exactly ROOT_FOLLOWUP.']
+        else:
+            task['prompt'] = prompt
+        tasks.write_text(json.dumps([task]))
         command=['collect','--tasks',str(tasks),'--api-base',args.api_base,
                  '--api-key-env',args.api_key_env,'--capture-calls',
                  '--timeout','240','--parallel','1','--retries','0',
                  '--output',str(args.output),'--run-name',case]
-        command+=['--claude-max-turns','6'] if args.harness=='claude-code' else ['--opencode-max-steps','6']
+        controls = {'claude-code': ['--claude-max-turns', '8'], 'opencode': ['--opencode-max-steps', '8'],
+                    'hermes': ['--hermes-max-iterations', '8'], 'pi': ['--pi-max-steps', '8'],
+                    'deepseek': ['--deepseek-max-steps', '8']}
+        command += controls.get(args.harness, [])
+        if args.harness == 'openclaw':
+            config = {'providers': {'roller': {'baseUrl': args.api_base, 'apiKey': '${'+args.api_key_env+'}',
+                'api': args.openclaw_api, 'models': [{'id': args.model, 'name': args.model,
+                'input': ['text'], 'reasoning': True, 'contextWindow': 128000, 'maxTokens': 4096}]}}}
+            config_path = args.output / 'model-config.json'
+            config_path.write_text(json.dumps(config))
+            command += ['--model-config', str(config_path), '--pass-env', args.api_key_env, '--gateway-port', str(args.gateway_port)]
+
         if args.disable_experimental_betas:
             command+=['--pass-env','CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS']
         try:
             exit_code=_collect(_build_parser().parse_args(command))
-            assert exit_code==0, f'collect exit={exit_code}; inspect sample info.json'
+            if exit_code != 0:
+                sample_info = next((args.output/case/'samples').glob('*/*/info.json'), None)
+                detail = json.loads(sample_info.read_text()).get('error', '') if sample_info else ''
+                quota_exhausted = 'quota' in detail.lower() and '403' in detail
+                raise AssertionError(f'collect exit={exit_code}: {detail}')
             result=audit(args.output/case,children,case,args.harness)
+            if args.check_followup:
+                sample = Path(result['sample'])
+                info = json.loads((sample/'info.json').read_text())
+                directory = (sample/info['runtime']['capture']['manifest']).parent
+                parts = json.loads((directory/'manifest.json').read_text())['participants']
+                root = next(p['participant_id'] for p in parts if p['role']=='root')
+                calls = [c for c in read_jsonl(directory/'calls.jsonl') if c['participant_id']==root]
+                assert 'ROOT_FOLLOWUP' in json.dumps(calls[-1]['output']), 'second turn did not finish in root thread'
+                result['followup_verified'] = True
             before=(args.output/case/'calls.jsonl').read_bytes()
             assert _collect(_build_parser().parse_args(command+['--resume']))==0
             assert (args.output/case/'calls.jsonl').read_bytes()==before, 'resume changed calls export'
@@ -138,7 +226,7 @@ def main():
         results.append(result)
         (args.output/'summary.json').write_text(json.dumps(results,ensure_ascii=False,indent=2))
         print(json.dumps(result,ensure_ascii=False),flush=True)
-    return 0 if all(r['status']=='passed' for r in results) else 1
+    return 0 if all(r['status'] in {'passed', 'not_applicable'} for r in results) else 1
 
 
 if __name__=='__main__':

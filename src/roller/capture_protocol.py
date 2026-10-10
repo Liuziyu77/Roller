@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import hashlib
+import gzip
+import zlib
 from pathlib import Path
 from typing import Any
 
@@ -44,6 +46,11 @@ def finalize_capture(directory: Path, native: NativeCapture, *, execution_status
     responses = {e["request_seq"]: e for e in events if e.get("type") == "response"}
     calls = []
     for seq, event in sorted(requests.items()):
+        endpoint = event["path"].split("?", 1)[0].rstrip("/")
+        protocol = next((value for suffix, value in {
+            "/messages": "anthropic-messages", "/chat/completions": "openai-chat-completions",
+            "/responses": "openai-responses",
+        }.items() if endpoint.endswith(suffix)), native.protocol)
         completion = responses.get(seq, {})
         output = None
         errors = []
@@ -51,12 +58,18 @@ def finalize_capture(directory: Path, native: NativeCapture, *, execution_status
             errors.append(completion.get("error") or "response capture incomplete")
         response_path = completion.get("response_path")
         try:
-            if completion.get("content_encoding") not in {"", "identity"}:
-                raise ValueError("encoded response is preserved raw but not parsed")
             if not response_path:
                 raise ValueError("response is missing")
-            output = decode_response(native.protocol, (directory / response_path).read_bytes(), completion.get("content_type", ""))
-        except (OSError, ValueError, KeyError, TypeError) as exc:
+            payload = (directory / response_path).read_bytes()
+            encoding = completion.get("content_encoding", "").lower()
+            if encoding == "gzip":
+                payload = gzip.decompress(payload)
+            elif encoding == "deflate":
+                payload = zlib.decompress(payload)
+            elif encoding not in {"", "identity"}:
+                raise ValueError("unsupported response content encoding")
+            output = decode_response(protocol, payload, completion.get("content_type", ""))
+        except (OSError, ValueError, KeyError, TypeError, zlib.error) as exc:
             errors.append(str(exc))
         if output is not None and (not isinstance(output.get("id"), str) or not output["id"]):
             errors.append("model response has no valid response ID")
@@ -72,7 +85,7 @@ def finalize_capture(directory: Path, native: NativeCapture, *, execution_status
             errors.append("call has no unique native participant")
         elif not identity_confirmed:
             errors.append("native participant identity is unresolved")
-        finished = bool(output and response_finished(native.protocol, output))
+        finished = bool(output and response_finished(protocol, output))
         if completion.get("http_status") != 200:
             errors.append("model HTTP request did not succeed")
         if not finished:
@@ -81,7 +94,7 @@ def finalize_capture(directory: Path, native: NativeCapture, *, execution_status
             errors.append("response model does not match request")
         call = {"schema_version": "roller.call/v1", "call_id": event["call_id"],
             "attempt_id": directory.name, "request_seq": seq, "participant_id": pid,
-            "protocol": native.protocol, "output_source": "model",
+            "protocol": protocol, "output_source": "model",
             "started_at": event.get("timestamp"), "finished_at": completion.get("timestamp"),
             "request_path": event["path"], "context": event["body"], "output": output,
             "http_status": completion.get("http_status"), "response_path": response_path,
@@ -96,12 +109,13 @@ def finalize_capture(directory: Path, native: NativeCapture, *, execution_status
     relations = []
     for observation in native.relations:
         relation = dict(observation)
+        context_message = relation.pop("context_message", None)
         parent_mid = relation.pop("parent_native_message_id", None)
         parent = relation.get("parent_participant_id")
         tool_id = relation.get("tool_call_id")
         candidates = [c for c in calls if c["participant_id"] == parent and c["output"]
                       and ((parent_mid and c["output"].get("id") == parent_mid)
-                           or tool_id in tool_call_ids(native.protocol, c["output"]))]
+                           or tool_id in tool_call_ids(c["protocol"], c["output"]))]
         relation["parent_call_id"] = candidates[0]["call_id"] if len(candidates) == 1 else None
         if len(candidates) != 1:
             relation["status"] = "unknown"
@@ -110,7 +124,14 @@ def finalize_capture(directory: Path, native: NativeCapture, *, execution_status
         if relation["type"] not in {"result_delivered", "launch_acknowledged"}:
             continue
         for call in calls:
-            if call["participant_id"] == parent and tool_id in tool_result_ids(native.protocol, call["context"]):
+            if relation.get("delivery_mode") == "notification" or context_message is not None:
+                texts = [m.get("content") for m in call["context"].get("input" if call["protocol"] == "openai-responses" else "messages", []) if m.get("role") == "user"]
+                texts = [t if isinstance(t, str) else "\n".join(b.get("text", "") for b in t if isinstance(b, dict))
+                         for t in texts if isinstance(t, (str, list))]
+                in_context = bool(context_message) and any(context_message == t for t in texts)
+            else:
+                in_context = relation.get("context_tool_call_id", tool_id) in tool_result_ids(call["protocol"], call["context"])
+            if call["participant_id"] == parent and in_context:
                 relations.append({**relation,
                     "type": "result_in_context" if relation["type"] == "result_delivered" else "launch_ack_in_context",
                     "call_id": call["call_id"]})
@@ -149,6 +170,7 @@ def finalize_capture(directory: Path, native: NativeCapture, *, execution_status
         "capabilities": native.capabilities,
         "coverage": {"request_response": "observed HTTP calls only",
                      "identity": native.capabilities.get("identity", "unknown"),
-                     "lifecycle": "foreground native evidence; background drain not supported"}}
+                     "lifecycle": "native registry completion and announcement drain" if native.capabilities.get("background_drain")
+                                  else "foreground native evidence; background drain not supported"}}
     atomic_write_json(directory / "manifest.json", manifest)
     return manifest

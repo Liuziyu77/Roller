@@ -20,6 +20,10 @@ def tool_snapshot(body: Mapping[str, Any]) -> dict[str, Any]:
         deepcopy(item) for item in items
         if isinstance(item, dict) and item.get("type") == "additional_tools"
     ] if isinstance(items, list) else []
+    snapshot["tool_search_outputs"] = [
+        deepcopy(item) for item in items
+        if isinstance(item, dict) and item.get("type") == "tool_search_output"
+    ] if isinstance(items, list) else []
     return snapshot
 
 
@@ -85,6 +89,13 @@ def read_tool_capture(path: Path | None) -> dict[str, Any]:
             status="unsupported",
             error="Responses additional_tools items require a programmatic-tool "
             "SFT representation; exact items are retained in tools_capture.requests",
+        )
+    elif any(s.get("tool_search_outputs") for s in snapshots):
+        capture.update(
+            status="unsupported",
+            error="Responses tool_search_output loads dynamic tool schemas; "
+            "a static SFT tools list cannot preserve loading order. Exact "
+            "definitions are retained in tools_capture.requests and call contexts",
         )
     elif any(s.get("tools", []) != snapshots[0].get("tools", []) for s in snapshots[1:]):
         capture.update(

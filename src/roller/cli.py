@@ -295,7 +295,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     runtime.add_argument("--network", default="host")
     runtime.add_argument("--capture-calls", action="store_true",
-        help="save full model calls and subagent relations for Claude Code/OpenCode participants")
+        help="save full model calls and native subagent relations for all harness participants")
     runtime.add_argument(
         "--thinking",
         type=normalize_thinking,
@@ -773,8 +773,6 @@ def _collect(args: argparse.Namespace) -> int:
     selected_harnesses = agent_harnesses | simulator_harnesses
     if args.claude_capture_calls and "claude-code" not in selected_harnesses:
         raise ValueError("--claude-capture-calls requires a Claude Code participant")
-    if args.capture_calls and not set(selected_harnesses).issubset({"claude-code", "opencode"}):
-        raise ValueError("--capture-calls currently supports only Claude Code and OpenCode participants")
     cli_harness = args.harness
     args._cli_harness = cli_harness
     # Resolve the historical global default after loading tasks.  This keeps
@@ -913,6 +911,7 @@ def _collect(args: argparse.Namespace) -> int:
             thinking=args.thinking,
             capture_cache_trace=args.cache_trace,
             wire_trace_mode=args.wire_trace,
+            capture_calls=args.capture_calls,
             keep_thinking=args.keep_thinking,
             collect_paths=tuple(args.collect_path),
             keep_container_on_error=args.keep_container_on_error,
@@ -948,6 +947,7 @@ def _collect(args: argparse.Namespace) -> int:
             web_search=args.codex_web_search,
             supports_websockets=args.codex_websockets,
             wire_trace_mode=args.wire_trace,
+            capture_calls=args.capture_calls,
             keep_thinking=args.keep_thinking,
             keep_container_on_error=args.keep_container_on_error,
             docker_binary=args.docker_binary,
@@ -997,7 +997,8 @@ def _collect(args: argparse.Namespace) -> int:
             pass_env=_deduplicate((*HERMES_COMMON_ENV_NAMES, *args.pass_env)),
             reasoning_effort=args.thinking, max_iterations=args.hermes_max_iterations,
             context_length=args.hermes_context_length, vision=args.hermes_vision,
-            wire_trace_mode=args.wire_trace, keep_thinking=args.keep_thinking,
+            wire_trace_mode=args.wire_trace,
+            capture_calls=args.capture_calls, keep_thinking=args.keep_thinking,
             keep_container_on_error=args.keep_container_on_error, docker_binary=args.docker_binary,
         )
         _validate_thinking_requests(
@@ -1041,7 +1042,8 @@ def _collect(args: argparse.Namespace) -> int:
             pass_env=_deduplicate((*DEEPSEEK_COMMON_ENV_NAMES, *args.pass_env)),
             reasoning_effort=args.thinking, max_steps=args.deepseek_max_steps,
             context_length=args.deepseek_context_length, output_tokens=args.deepseek_output_tokens,
-            wire_trace_mode=args.wire_trace, keep_thinking=args.keep_thinking,
+            wire_trace_mode=args.wire_trace,
+            capture_calls=args.capture_calls, keep_thinking=args.keep_thinking,
             keep_container_on_error=args.keep_container_on_error, docker_binary=args.docker_binary,
         )
         _validate_thinking_requests(
@@ -1062,7 +1064,8 @@ def _collect(args: argparse.Namespace) -> int:
             pass_env=_deduplicate((*PI_COMMON_ENV_NAMES, *args.pass_env)),
             reasoning_effort=args.thinking, max_steps=args.pi_max_steps,
             context_length=args.pi_context_length, output_tokens=args.pi_output_tokens,
-            wire_trace_mode=args.wire_trace, keep_thinking=args.keep_thinking,
+            wire_trace_mode=args.wire_trace,
+            capture_calls=args.capture_calls, keep_thinking=args.keep_thinking,
             keep_container_on_error=args.keep_container_on_error, docker_binary=args.docker_binary,
         )
         _validate_thinking_requests(
@@ -1156,6 +1159,7 @@ def _collect(args: argparse.Namespace) -> int:
             "wire_trace": args.wire_trace,
             "pass_env_names": list(openclaw_config.pass_env),
             "collect_paths": args.collect_path,
+            **({"capture_calls": True} if openclaw_config.capture_calls else {}),
         }
     if codex_config is not None:
         harness_configurations["codex"] = {
@@ -1173,6 +1177,7 @@ def _collect(args: argparse.Namespace) -> int:
             "web_search": args.codex_web_search,
             "supports_websockets": args.codex_websockets,
             "pass_env_names": list(codex_config.pass_env),
+            **({"capture_calls": True} if codex_config.capture_calls else {}),
         }
     if claude_code_config is not None:
         harness_configurations["claude-code"] = {
@@ -1206,9 +1211,10 @@ def _collect(args: argparse.Namespace) -> int:
             "api_key_env": hermes_api_key_env, "reasoning_effort": args.thinking,
             "max_iterations": args.hermes_max_iterations, "hermes_revision": HERMES_REVISION,
             "context_length": args.hermes_context_length, "vision": args.hermes_vision,
-            "toolsets": ["terminal", "file", *(["vision"] if args.hermes_vision else [])], "api_mode": "chat_completions",
+            "toolsets": ["terminal", "file", *(["delegation"] if hermes_config.capture_calls else []), *(["vision"] if args.hermes_vision else [])], "api_mode": "chat_completions",
             "wire_trace": args.wire_trace,
             "keep_thinking": args.keep_thinking, "pass_env_names": list(hermes_config.pass_env),
+            **({"capture_calls": True} if hermes_config.capture_calls else {}),
         }
 
     if opencode_config is not None:
@@ -1237,6 +1243,7 @@ def _collect(args: argparse.Namespace) -> int:
             "wire_trace": args.wire_trace,
             "keep_thinking": args.keep_thinking, "pass_env_names": list(deepseek_config.pass_env),
             "profile": "sdk-minimal", "retry_count": 0,
+            **({"capture_calls": True} if deepseek_config.capture_calls else {}),
         }
 
     if pi_config is not None:
@@ -1250,6 +1257,7 @@ def _collect(args: argparse.Namespace) -> int:
             "wire_trace": args.wire_trace,
             "keep_thinking": args.keep_thinking, "pass_env_names": list(pi_config.pass_env),
             "compaction": {"auto": False}, "retry_count": 0,
+            **({"capture_calls": True} if pi_config.capture_calls else {}),
         }
 
     run_info = {

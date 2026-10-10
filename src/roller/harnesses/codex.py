@@ -15,8 +15,10 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 from urllib.parse import urlsplit, urlunsplit
 
+from roller.capture_runtime import CaptureRuntime
 from roller.artifacts import ArtifactCollectionResult, collect_output_directory
 from roller.codex_actf import convert_codex_trace
+from roller.codex_capture import retain_root_tools
 from roller.harnesses.base import Harness, InteractiveHarness, InteractiveSession, TurnResult
 from roller.harnesses.docker import DockerRuntime, remove_container
 from roller.models import HarnessResult, RunRequest
@@ -89,6 +91,7 @@ class CodexConfig:
     reasoning_summary: str | None = None
     web_search: str = "disabled"
     supports_websockets: bool = False
+    capture_calls: bool = False
     wire_trace_mode: str = "actf"
     keep_thinking: bool = True
     keep_container_on_error: bool = False
@@ -124,6 +127,8 @@ class CodexConfig:
             raise ValueError("Codex reasoning summary must be auto|concise|detailed|none")
         if self.web_search not in {"disabled", "cached", "live"}:
             raise ValueError("Codex web search must be disabled|cached|live")
+        if self.capture_calls and (not self.api_base or self.network != "host" or self.supports_websockets or self.wire_trace_mode == "off"):
+            raise ValueError("Codex call capture requires --api-base, host network, wire tracing and --no-codex-websockets")
         if self.wire_trace_mode not in {"off", "actf", "full"}:
             raise ValueError("Codex wire trace mode must be off|actf|full")
         if self.wire_trace_mode == "full" and not self.api_base:
@@ -157,6 +162,8 @@ class CodexHarness(InteractiveHarness):
         self.worker_slot = worker_slot
         self.runtime = runtime or DockerRuntime(config.docker_binary)
         self._wire_proxy: WireTraceProxy | None = None
+        self.capture = None
+        self._root_thread_id: str | None = None
 
     def create_session(
         self,
@@ -168,7 +175,9 @@ class CodexHarness(InteractiveHarness):
     ) -> InteractiveSession:
         return CodexSession(self, request, output_dir, attempt, collect_outputs=collect_outputs)
 
-    def _start_wire_proxy(self, output_dir: Path) -> None:
+    def _start_wire_proxy(self, output_dir: Path, attempt: int = 1) -> None:
+        self._root_thread_id = None
+        self.capture = CaptureRuntime(output_dir, attempt, "codex") if self.config.capture_calls else None
         self._wire_proxy = None
         tools_path = output_dir / "tools_capture.jsonl"
         tools_path.unlink(missing_ok=True)
@@ -183,7 +192,9 @@ class CodexHarness(InteractiveHarness):
         self._wire_proxy = WireTraceProxy(
             self.config.api_base,
             log_path,
-            mode="full" if self.config.wire_trace_mode == "full" else "tools",
+            mode="full" if self.config.wire_trace_mode == "full" or self.config.capture_calls else "tools",
+            capture_recorder=self.capture.recorder if self.capture else None,
+            capture_identity_header="thread-id" if self.capture else None,
             responses_tools_path=tools_path,
         )
         self._wire_proxy.start()
@@ -399,7 +410,9 @@ class CodexHarness(InteractiveHarness):
             "exec",
         ]
         if resume:
-            command.extend(["resume", "--last"])
+            if self.config.capture_calls and not self._root_thread_id:
+                raise RuntimeError("Cannot resume Codex capture without a confirmed root thread")
+            command.extend(["resume", self._root_thread_id] if self._root_thread_id else ["resume", "--last"])
         command.extend(
             [
                 "--dangerously-bypass-approvals-and-sandbox",
@@ -411,6 +424,8 @@ class CodexHarness(InteractiveHarness):
                 "unified_exec",
             ]
         )
+        if self.config.capture_calls:
+            command.extend(["--enable", "multi_agent"])
         effort = self._effective_effort(request)
         if effort:
             command.extend(["-c", f"model_reasoning_effort={json.dumps(effort)}"])
@@ -488,6 +503,9 @@ class CodexHarness(InteractiveHarness):
                 f"Codex exec exited with code {return_code}"
                 + (f": {detail}" if detail else "")
             )
+        if self.capture is not None:
+            attempt = int(self.capture.recorder.directory.name.removeprefix("attempt-"))
+            self._collect_trace(container, self.capture.output_dir, attempt)
         return return_code
 
     def _collect_trace(
@@ -501,6 +519,8 @@ class CodexHarness(InteractiveHarness):
             "from pathlib import Path; "
             f"p=Path({CODEX_HOME_CONTAINER_PATH!r})/'sessions'; "
             "rows=[x for x in p.rglob('*.jsonl') if x.is_file()]; "
+            "import json; "
+            "rows=[x for x in rows if not json.loads(x.open().readline()).get('payload',{}).get('parent_thread_id')]; "
             "print(max(rows,key=lambda x:x.stat().st_mtime_ns) if rows else '')"
         )
         found = self.runtime.run(["exec", container, "python3", "-c", finder])
@@ -512,6 +532,11 @@ class CodexHarness(InteractiveHarness):
             return None
         trace_path = rollout_dir / "trace.jsonl"
         shutil.copyfile(destination, trace_path)
+        if self.config.capture_calls:
+            from roller.capture import read_jsonl
+            meta = next((r.get("payload", {}) for r in read_jsonl(trace_path) if r.get("type") == "session_meta"), {})
+            if isinstance(meta.get("id"), str) and not meta.get("parent_thread_id"):
+                self._root_thread_id = meta["id"]
         return trace_path
 
     def _collect_outputs(
@@ -564,7 +589,7 @@ class CodexHarness(InteractiveHarness):
         log_path.parent.mkdir(parents=True, exist_ok=True)
 
         try:
-            self._start_wire_proxy(output_dir)
+            self._start_wire_proxy(output_dir, attempt)
             environment = self._start_container(container, request)
             container_started = True
             self._prepare_workspace(container, request)
@@ -614,6 +639,8 @@ class CodexHarness(InteractiveHarness):
                 output_copy_error = str(exc)
                 logger.warning("[%s] Codex output collection failed: %s", request.task.id, exc)
 
+        if self.capture is not None and trace_path is not None:
+            retain_root_tools(self.capture, trace_path)
         if trace_path is not None:
             try:
                 trajectory_path = output_dir / "rollout" / "trace_ACTF.json"
@@ -642,6 +669,10 @@ class CodexHarness(InteractiveHarness):
             status = "error"
             error = "unsafe output files were rejected"
 
+        capture_metadata = {}
+        if self.capture is not None:
+            self.capture.copy_native(self.runtime, container, CODEX_HOME_CONTAINER_PATH + "/sessions/.", "sessions")
+            capture_metadata = self.capture.finish(status)
         retained_container: str | None = None
         if container_started:
             if self.config.keep_container_on_error and status != "ok":
@@ -716,6 +747,7 @@ class CodexHarness(InteractiveHarness):
                 else None
             ),
             metadata={
+                **capture_metadata,
                 "raw_trace_schema": "codex-session-jsonl",
                 "codex_version": codex_version,
                 "container": retained_container,
@@ -788,7 +820,7 @@ class CodexSession(InteractiveSession):
         ):
             (self.output_dir / relative).unlink(missing_ok=True)
         try:
-            self.harness._start_wire_proxy(self.output_dir)
+            self.harness._start_wire_proxy(self.output_dir, self.attempt)
             self.environment = self.harness._start_container(self.container, self.request)
             self.container_started = True
             self.harness._prepare_workspace(self.container, self.request)
@@ -878,6 +910,8 @@ class CodexSession(InteractiveSession):
                 except Exception as exc:
                     output_copy_error = str(exc)
                     logger.warning("[%s] Codex output collection failed: %s", self.request.task.id, exc)
+        if self.harness.capture is not None and trace_path is not None:
+            retain_root_tools(self.harness.capture, trace_path)
         if trace_path is not None:
             try:
                 trajectory_path = self.output_dir / "rollout" / "trace_ACTF.json"
@@ -900,6 +934,10 @@ class CodexSession(InteractiveSession):
             final_status, final_error = "error", f"output collection failed: {output_copy_error}"
         if final_status == "ok" and artifact_result is not None and not artifact_result.passed:
             final_status, final_error = "error", "unsafe output files were rejected"
+        capture_metadata = {}
+        if self.harness.capture is not None:
+            self.harness.capture.copy_native(self.harness.runtime, self.container, CODEX_HOME_CONTAINER_PATH + "/sessions/.", "sessions")
+            capture_metadata = self.harness.capture.finish(final_status)
         retained_container: str | None = None
         if self.container_started:
             if config.keep_container_on_error and final_status != "ok":
@@ -960,6 +998,7 @@ class CodexSession(InteractiveSession):
             trace_path=trace_path.relative_to(self.output_dir).as_posix() if trace_path else None,
             trajectory_path=trajectory_path.relative_to(self.output_dir).as_posix() if trajectory_path else None,
             metadata={
+                **capture_metadata,
                 "raw_trace_schema": "codex-session-jsonl",
                 "codex_version": self.codex_version,
                 "container": retained_container,
