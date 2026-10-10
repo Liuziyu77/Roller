@@ -86,9 +86,16 @@ Call 中。`calls.jsonl` 是逐调用的协议数据，不能直接当成主轨�
 
 ## 文件与边界
 
-每个 `capture/attempt-NNNN/` 保存 `events.jsonl`、`responses/`、`native/`、
-`calls.jsonl`、`relations.jsonl`、`participants/*/calls.jsonl`、`manifest.json`。
-manifest 使用 `roller.capture/v1`，增加的能力和身份依据字段向后兼容。
+每个 `capture/attempt-NNNN/` 顶层只有 `manifest.json`、`calls.jsonl`、
+`relations.jsonl` 和 `raw/`。原生日志、原始响应、采集事件及来源映射集中在
+`raw/`；事件的 `body_ref` 引用 `calls.jsonl` 中对应调用的 `context`，不重复保存
+请求正文。参与者通过 manifest 的 `call_ids` 和 Call 的 `participant_id` 关联，
+不再另存 `participants/*/calls.jsonl` 副本。
+
+manifest 使用 `roller.capture/v1`，新布局以 `storage_layout: compact/v1` 标识。
+读取和完整性校验兼容旧布局；采集关闭前仍使用工作文件，发布时整理为新布局。
+可用 `PYTHONPATH=src python scripts/view_capture.py /path/to/attempt-0001`
+查看按代理展开的调用树，不生成额外的数据副本。
 关闭 recorder 后再发布文件哈希；文件缺失、修改、错误引用会阻止 resume
 复用。即使关闭辅助日志保留，也不会清理 capture 正式证据。
 

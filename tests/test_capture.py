@@ -67,6 +67,23 @@ class CaptureTests(unittest.TestCase):
             self.assertEqual(sum(r['type']=='result_in_context' for r in relations),2)
             validate_capture(base,{'manifest':'capture/attempt-0001/manifest.json','capture_status':'complete'})
 
+    def test_compact_capture_replays_without_duplicate_contexts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            directory, _ = self.make_capture(base)
+            manifest = finalize_claude_capture(directory, execution_status="ok")
+            before = read_jsonl(directory / "calls.jsonl")
+            self.assertEqual({p.name for p in directory.iterdir()},
+                             {"manifest.json", "calls.jsonl", "relations.jsonl", "raw"})
+            self.assertTrue(all("calls_path" not in p for p in manifest["participants"]))
+            events = read_jsonl(directory / "raw/events.jsonl")
+            self.assertTrue(all("body" not in e and "body_ref" in e
+                                for e in events if e["type"] == "request"))
+            manifest = finalize_claude_capture(directory, execution_status="ok")
+            self.assertEqual(before, read_jsonl(directory / "calls.jsonl"))
+            validate_capture(base, {"manifest": "capture/attempt-0001/manifest.json",
+                                    "capture_status": manifest["capture_status"]})
+
     def test_unmatched_response_is_preserved_but_not_exported(self):
         with tempfile.TemporaryDirectory() as tmp:
             directory,_=self.make_capture(Path(tmp))
@@ -94,10 +111,10 @@ class CaptureTests(unittest.TestCase):
             base=Path(tmp);directory,_=self.make_capture(base)
             finalize_claude_capture(directory,execution_status='ok')
             metadata={'manifest':'capture/attempt-0001/manifest.json','capture_status':'complete'}
-            (directory/'native/a.jsonl').write_text('{}\n')
+            (directory/'raw/native/a.jsonl').write_text('{}\n')
             with self.assertRaisesRegex(ValueError,'hash mismatch'):
                 validate_capture(base,metadata)
-            (directory/'native/a.jsonl').unlink()
+            (directory/'raw/native/a.jsonl').unlink()
             with self.assertRaisesRegex(ValueError,'missing'):
                 validate_capture(base,metadata)
 
@@ -157,11 +174,11 @@ class CaptureTests(unittest.TestCase):
             self.assertEqual(results[0]['status'],'ok')
             self.assertEqual(len(read_jsonl(run/'calls.jsonl')),4)
             sample=run/'samples/model/00000000_sample'
-            self.assertTrue((sample/'capture/attempt-0001/native/a.jsonl').is_file())
+            self.assertTrue((sample/'capture/attempt-0001/raw/native/a.jsonl').is_file())
             resumed=Collector(CollectionConfig(run_dir=run,resume=True),factory).collect([request])
             self.assertEqual(resumed[0]['status'],'skipped')
             self.assertEqual(state['runs'],1)
-            (sample/'capture/attempt-0001/responses/call-00000002.body').write_text('tampered')
+            (sample/'capture/attempt-0001/raw/responses/call-00000002.body').write_text('tampered')
             rerun=Collector(CollectionConfig(run_dir=run,resume=True),factory).collect([request])
             self.assertEqual(rerun[0]['status'],'ok')
             self.assertEqual(state['runs'],2)

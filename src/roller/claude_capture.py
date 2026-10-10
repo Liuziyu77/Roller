@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from roller.capture import read_jsonl
+from roller.capture import read_jsonl, native_directory
 from roller.capture_protocol import NativeCapture, finalize_capture
 from roller.model_protocols import anthropic_response
 
@@ -14,7 +14,7 @@ def _participant(event: dict[str, Any], source: str) -> str:
         return "agent:" + str(event["agentId"])
     if event.get("isSidechain"):
         # Source identity is distinct from a confirmed native agent identity.
-        return "unknown:" + source
+        return "unknown:" + source.removeprefix("raw/")
     return "root:" + str(event.get("sessionId") or "unknown")
 
 
@@ -23,7 +23,7 @@ def read_claude_native(directory: Path) -> NativeCapture:
     participants: dict[str, dict[str, Any]] = {}
     native: list[tuple[str, dict[str, Any], str]] = []
     ids: dict[str, set[str]] = {}
-    for path in sorted((directory / "native").glob("*.jsonl")):
+    for path in sorted(native_directory(directory).glob("*.jsonl")):
         source = path.relative_to(directory).as_posix()
         for event in read_jsonl(path):
             if event.get("type") not in {"user", "assistant"}:

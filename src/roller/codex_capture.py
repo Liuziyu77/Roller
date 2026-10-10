@@ -2,7 +2,7 @@
 import json
 from pathlib import Path
 
-from roller.capture import read_jsonl
+from roller.capture import read_jsonl, native_directory
 from roller.codex_tools import read_tool_capture
 from roller.capture_protocol import NativeCapture
 from roller.storage import write_jsonl
@@ -35,7 +35,7 @@ def read_codex_native(directory: Path) -> NativeCapture:
         "native_output_coverage": "token_usage_updates", "subagents": "native_spawn_agent",
         "background_drain": False,
     })
-    for path in sorted((directory / "native").rglob("*.jsonl")):
+    for path in sorted(native_directory(directory).rglob("*.jsonl")):
         rows = read_jsonl(path)
         meta = next((r.get("payload", {}) for r in rows if r.get("type") == "session_meta"), {})
         sid = meta.get("id")

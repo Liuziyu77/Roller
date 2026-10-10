@@ -7,12 +7,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import hashlib
+import json
+import shutil
 import gzip
 import zlib
 from pathlib import Path
 from typing import Any
 
-from roller.capture import read_jsonl
+from roller.capture import read_jsonl, _safe_file
 from roller.model_protocols import decode_response, response_finished, tool_call_ids, tool_result_ids
 from roller.storage import atomic_write_json, write_jsonl
 
@@ -41,7 +43,16 @@ Relations carry file/event evidence and optionally a parent native message ID.
 
 def finalize_capture(directory: Path, native: NativeCapture, *, execution_status: str,
                      recorder_error: str | None = None) -> dict[str, Any]:
-    events = read_jsonl(directory / "events.jsonl") if (directory / "events.jsonl").exists() else []
+    event_path = directory / "events.jsonl"
+    if not event_path.exists():
+        event_path = directory / "raw/events.jsonl"
+    events = read_jsonl(event_path) if event_path.exists() else []
+    contexts = None
+    for event in events:
+        if event.get("type") == "request" and "body_ref" in event:
+            if contexts is None:
+                contexts = {c["call_id"]: c["context"] for c in read_jsonl(directory / "calls.jsonl")}
+            event["body"] = contexts[event["body_ref"]["call_id"]]
     requests = {e["request_seq"]: e for e in events if e.get("type") == "request"}
     responses = {e["request_seq"]: e for e in events if e.get("type") == "response"}
     calls = []
@@ -60,7 +71,7 @@ def finalize_capture(directory: Path, native: NativeCapture, *, execution_status
         try:
             if not response_path:
                 raise ValueError("response is missing")
-            payload = (directory / response_path).read_bytes()
+            payload = _safe_file(directory, response_path).read_bytes()
             encoding = completion.get("content_encoding", "").lower()
             if encoding == "gzip":
                 payload = gzip.decompress(payload)
@@ -149,14 +160,10 @@ def finalize_capture(directory: Path, native: NativeCapture, *, execution_status
         relation["schema_version"] = "roller.relation/v1"
         relation["relation_id"] = f"{relation_scope}:relation-{index:08d}"
 
-    write_jsonl(directory / "calls.jsonl", calls)
-    write_jsonl(directory / "relations.jsonl", relations)
     for pid, part in native.participants.items():
         owned = [c for c in calls if c["participant_id"] == pid]
-        relative = "participants/" + hashlib.sha256(pid.encode()).hexdigest()[:16] + "/calls.jsonl"
-        write_jsonl(directory / relative, owned)
         part["call_ids"] = [c["call_id"] for c in owned]
-        part["calls_path"] = relative
+        part.pop("calls_path", None)
         expected = {mid for mid, owners in native.response_owners.items() if pid in owners}
         captured = {c["output"]["id"] for c in owned if c["output"] and c["capture_status"] == "complete"}
         part["uncaptured_message_ids"] = sorted(expected - captured)
@@ -167,11 +174,12 @@ def finalize_capture(directory: Path, native: NativeCapture, *, execution_status
             part["native_completed_call_count"] = expected_count
             part["captured_complete_call_count"] = valid_count
         part["capture_status"] = "complete" if part["native_files"] and (expected or expected_count) and not (expected - captured) and count_ok else "partial"
+    _compact_artifacts(directory, calls, relations, native.participants, events)
     files = [{"path": p.relative_to(directory).as_posix(), "sha256": hashlib.sha256(p.read_bytes()).hexdigest()}
              for p in sorted(directory.rglob("*")) if p.is_file() and p.name != "manifest.json"]
     complete = bool(calls) and not recorder_error and not native.errors and not native.background_detected and all(c["capture_status"] == "complete" for c in calls) and all(p["capture_status"] == "complete" for p in native.participants.values()) and all(r["status"] == "observed" for r in relations)
     manifest = {"schema_version": "roller.capture/v1", "attempt_id": directory.name,
-        "harness": native.harness, "execution_status": execution_status,
+        "harness": native.harness, "storage_layout": "compact/v1", "execution_status": execution_status,
         "capture_status": "complete" if complete else "partial", "recorder_error": recorder_error,
         "native_errors": native.errors,
         "participants": list(native.participants.values()), "background_detected": native.background_detected,
@@ -183,3 +191,49 @@ def finalize_capture(directory: Path, native: NativeCapture, *, execution_status
                                   else "foreground native evidence; background drain not supported"}}
     atomic_write_json(directory / "manifest.json", manifest)
     return manifest
+
+
+def _compact_artifacts(directory: Path, calls: list[dict[str, Any]],
+                       relations: list[dict[str, Any]], participants: dict[str, dict[str, Any]],
+                       events: list[dict[str, Any]]) -> None:
+    """Publish one copy of each context and group source evidence under raw/."""
+    raw = directory / "raw"
+    raw.mkdir(exist_ok=True)
+    def relocated(path):
+        if path and (path.startswith("native/") or path.startswith("responses/")):
+            return "raw/" + path
+        return path
+
+    for name in ("native", "responses", "native_index.json"):
+        source = directory / name
+        if source.exists():
+            target = raw / name
+            if target.exists():
+                raise ValueError(f"capture relocation target already exists: {target}")
+            source.rename(target)
+    for call in calls:
+        call["response_path"] = relocated(call.get("response_path"))
+    for part in participants.values():
+        part["native_files"] = [relocated(p) for p in part["native_files"]]
+    for relation in relations:
+        for evidence in relation.get("evidence", []):
+            evidence["path"] = relocated(evidence.get("path"))
+    for event in events:
+        if event.get("type") == "request":
+            event.pop("body", None)
+            event["body_ref"] = {"path": "calls.jsonl", "call_id": event["call_id"], "field": "context"}
+        if "response_path" in event:
+            event["response_path"] = relocated(event["response_path"])
+    index = raw / "native_index.json"
+    if index.exists():
+        rows = json.loads(index.read_text())
+        for row in rows:
+            row["path"] = relocated(row["path"])
+        atomic_write_json(index, rows)
+    write_jsonl(directory / "calls.jsonl", calls)
+    write_jsonl(directory / "relations.jsonl", relations)
+    write_jsonl(raw / "events.jsonl", events)
+    (directory / "events.jsonl").unlink(missing_ok=True)
+    # Remove obsolete derived copies when compacting a legacy attempt.
+    if (directory / "participants").exists():
+        shutil.rmtree(directory / "participants")

@@ -139,6 +139,23 @@ def _validate_capture(sample: Path, metadata: dict[str, Any]) -> None:
     ids = [call.get("call_id") for call in calls]
     if any(not isinstance(cid, str) or not cid for cid in ids) or len(set(ids)) != len(ids):
         raise ValueError("capture call IDs are missing or duplicated")
+    layout = manifest.get("storage_layout")
+    if layout not in {None, "compact/v1"}:
+        raise ValueError("unsupported capture storage layout")
+    if layout == "compact/v1":
+        if "raw/events.jsonl" not in inventory:
+            raise ValueError("compact capture lacks event inventory")
+        requests = [e for e in read_jsonl(path.parent / "raw/events.jsonl") if e.get("type") == "request"]
+        by_id = {c["call_id"]: c for c in calls}
+        request_ids = [e.get("call_id") for e in requests]
+        if len(request_ids) != len(calls) or set(request_ids) != set(ids):
+            raise ValueError("compact request references do not match calls")
+        for event in requests:
+            cid = event["call_id"]
+            if "body" in event or event.get("body_ref") != {"path": "calls.jsonl", "call_id": cid, "field": "context"}:
+                raise ValueError("invalid compact context reference")
+            if event.get("request_seq") != by_id[cid]["request_seq"] or event.get("path") != by_id[cid]["request_path"]:
+                raise ValueError("compact request metadata does not match call")
     participants = manifest.get("participants", [])
     pids = {part["participant_id"] for part in participants}
     if len(pids) != len(participants):
@@ -146,12 +163,15 @@ def _validate_capture(sample: Path, metadata: dict[str, Any]) -> None:
     if any(not isinstance(pid, str) or not pid for pid in pids):
         raise ValueError("invalid capture participant ID")
     for part in participants:
-        if part.get("calls_path") not in inventory or any(p not in inventory for p in part.get("native_files", [])):
+        if any(p not in inventory for p in part.get("native_files", [])):
             raise ValueError("participant references unregistered capture files")
-        actual = read_jsonl(_safe_file(path.parent, part["calls_path"]))
         expected = [c for c in calls if c.get("participant_id") == part["participant_id"]]
-        if actual != expected:
-            raise ValueError("participant calls do not match capture calls")
+        if manifest.get("storage_layout") != "compact/v1":
+            if part.get("calls_path") not in inventory:
+                raise ValueError("participant references unregistered capture files")
+            actual = read_jsonl(_safe_file(path.parent, part["calls_path"]))
+            if actual != expected:
+                raise ValueError("participant calls do not match capture calls")
         if part.get("call_ids") != [c["call_id"] for c in expected]:
             raise ValueError("participant call IDs do not match capture calls")
     for call in calls:
@@ -211,3 +231,9 @@ def _safe_file(base: Path, relative: str) -> Path:
     if not current.is_file():
         raise ValueError(f"capture file missing: {relative}")
     return current
+
+
+def native_directory(directory: Path) -> Path:
+    """Read native evidence in legacy or compact captures."""
+    legacy = directory / "native"
+    return legacy if legacy.exists() else directory / "raw/native"

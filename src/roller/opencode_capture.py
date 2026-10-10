@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from roller.capture import read_jsonl
+from roller.capture import read_jsonl, native_directory
 from roller.capture_protocol import NativeCapture, finalize_capture
 from roller.opencode_actf import native_messages
 
@@ -17,7 +17,7 @@ def read_opencode_native(directory: Path) -> NativeCapture:
     events = []
     sessions: dict[str, dict[str, Any]] = {}
     sources: dict[str, list[str]] = {}
-    for path in sorted((directory / "native").glob("*.jsonl")):
+    for path in sorted(native_directory(directory).glob("*.jsonl")):
         source = path.relative_to(directory).as_posix()
         rows = read_jsonl(path)
         events.extend(rows)

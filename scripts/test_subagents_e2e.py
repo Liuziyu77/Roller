@@ -95,6 +95,9 @@ def audit(run: Path, expected_children: int, case: str, harness="claude-code"):
     if harness in {"claude-code", "opencode", "hermes"}:
         assert set(tools)<=({agent_tool,read_tool} if case=='workspace' else {agent_tool}), tools
     assert all(m.get('content')!='No response requested.' for m in sft['messages'])
+    if case == 'single' and harness in {'claude-code', 'opencode', 'hermes'}:
+        assert any(m.get('role') == 'tool' and 'CHILD_SINGLE' in json.dumps(m.get('content'), ensure_ascii=False)
+                   for m in sft['messages']), 'child result is missing from root SFT'
     relations=read_jsonl(directory/'relations.jsonl')
     assert sum(r['type']=='spawn' and r['status']=='observed' for r in relations)==expected_children
     assert sum(r['type']=='child_completed' for r in relations)==expected_children

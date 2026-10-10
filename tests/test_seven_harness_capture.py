@@ -214,12 +214,12 @@ class SevenHarnessCaptureTests(unittest.TestCase):
                     self.assertTrue(all(r["status"] == "unknown" for r in read_jsonl(directory / "relations.jsonl") if r["type"] == "spawn"))
                 # A delivered notification without the exact message in a later
                 # request must never use the launch acknowledgement as evidence.
-                rows = read_jsonl(recorder.events)
-                rows[-2]["body"][field].pop()
-                write_jsonl(recorder.events, rows)
+                rows = read_jsonl(directory / "calls.jsonl")
+                rows[-1]["context"][field].pop()
+                write_jsonl(directory / "calls.jsonl", rows)
                 finalize_capture(directory, read_openclaw_native(directory), execution_status="ok")
                 self.assertFalse(any(r["type"] == "result_in_context" for r in read_jsonl(directory / "relations.jsonl")))
-                (directory / "native/subagent-runs.json").write_text(json.dumps([
+                (directory / "raw/native/subagent-runs.json").write_text(json.dumps([
                     {"runId": "run", "endedAt": 1, "outcome": {"status": "error"},
                      "delivery": {"status": "delivered"}}]))
                 native = read_openclaw_native(directory)

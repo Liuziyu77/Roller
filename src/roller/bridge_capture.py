@@ -6,7 +6,7 @@ Pi and DeepSeek's bundled profiles have no delegation tool or extensions.
 from pathlib import Path
 from typing import Any
 
-from roller.capture import read_jsonl
+from roller.capture import read_jsonl, native_directory
 from roller.capture_protocol import NativeCapture, finalize_capture
 
 
@@ -19,7 +19,7 @@ def read_bridge_native(directory: Path, harness: str) -> NativeCapture:
     })
     tool_results = set()
     children = []
-    for path in sorted((directory / "native").glob("*.jsonl")):
+    for path in sorted(native_directory(directory).glob("*.jsonl")):
         rows = read_jsonl(path)
         metadata = next((r for r in rows if r.get("type") in {"metadata", "participant"}), {})
         sid = metadata.get("session_id")

@@ -2,7 +2,7 @@
 import json
 from pathlib import Path
 
-from roller.capture import read_jsonl
+from roller.capture import read_jsonl, native_directory
 from roller.capture_protocol import NativeCapture
 
 
@@ -12,15 +12,15 @@ def read_openclaw_native(directory: Path) -> NativeCapture:
         "native_output_coverage": "stream_context_count", "subagents": "native_sessions_spawn",
         "background_drain": True,
     })
-    cache = directory / "native" / "stream-contexts.jsonl"
+    cache = native_directory(directory) / "stream-contexts.jsonl"
     if not cache.exists():
-        cache = directory / "native" / "cache_trace.jsonl"
+        cache = native_directory(directory) / "cache_trace.jsonl"
     cache_source = cache.relative_to(directory).as_posix()
     cache_rows = read_jsonl(cache) if cache.exists() else []
-    registry = directory / "native" / "subagent-runs.json"
+    registry = native_directory(directory) / "subagent-runs.json"
     runs = json.loads(registry.read_text()) if registry.exists() else []
     runs = {r["runId"]: r for r in runs}
-    alias_path = directory / "native" / "tool-id-aliases.jsonl"
+    alias_path = native_directory(directory) / "tool-id-aliases.jsonl"
     aliases = {}
     if alias_path.exists():
         for row in read_jsonl(alias_path):
@@ -44,7 +44,7 @@ def read_openclaw_native(directory: Path) -> NativeCapture:
                 counts[pid] = counts.get(pid, 0) + 1
     native.expected_call_counts = counts
     messages = {}
-    for path in sorted((directory / "native" / "sessions").rglob("*.jsonl")):
+    for path in sorted((native_directory(directory) / "sessions").rglob("*.jsonl")):
         rows = read_jsonl(path)
         sid = next((r.get("id") for r in rows if r.get("type") == "session"), None)
         pid = "session:" + str(sid)
