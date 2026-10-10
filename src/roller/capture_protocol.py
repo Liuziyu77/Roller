@@ -113,9 +113,14 @@ def finalize_capture(directory: Path, native: NativeCapture, *, execution_status
         parent_mid = relation.pop("parent_native_message_id", None)
         parent = relation.get("parent_participant_id")
         tool_id = relation.get("tool_call_id")
-        candidates = [c for c in calls if c["participant_id"] == parent and c["output"]
-                      and ((parent_mid and c["output"].get("id") == parent_mid)
-                           or tool_id in tool_call_ids(c["protocol"], c["output"]))]
+        model_ref = relation.get("model_tool_ref")
+        def matches_parent(call):
+            if model_ref:
+                return call["protocol"] == model_ref["protocol"] and any(
+                    item.get("call_id") == model_ref["call_id"] and item.get("id") == model_ref["item_id"]
+                    for item in call["output"].get("output", []) if item.get("type") == "function_call")
+            return (parent_mid and call["output"].get("id") == parent_mid) or tool_id in tool_call_ids(call["protocol"], call["output"])
+        candidates = [c for c in calls if c["participant_id"] == parent and c["output"] and matches_parent(c)]
         relation["parent_call_id"] = candidates[0]["call_id"] if len(candidates) == 1 else None
         if len(candidates) != 1:
             relation["status"] = "unknown"
@@ -130,7 +135,11 @@ def finalize_capture(directory: Path, native: NativeCapture, *, execution_status
                          for t in texts if isinstance(t, (str, list))]
                 in_context = bool(context_message) and any(context_message == t for t in texts)
             else:
-                in_context = relation.get("context_tool_call_id", tool_id) in tool_result_ids(call["protocol"], call["context"])
+                result_ids = tool_result_ids(call["protocol"], call["context"])
+                reference_ids = {relation.get("context_tool_call_id", tool_id)}
+                if model_ref and call["protocol"] == model_ref["protocol"]:
+                    reference_ids.add(model_ref["call_id"])
+                in_context = bool(reference_ids & result_ids)
             if call["participant_id"] == parent and in_context:
                 relations.append({**relation,
                     "type": "result_in_context" if relation["type"] == "result_delivered" else "launch_ack_in_context",

@@ -53,7 +53,9 @@ Call 才可导出。未归属、失败、中断的请求仍保留在 attempt 的
 | `launch_ack_in_context` | 启动回执进入父模型实际输入 |
 
 每条关系保留原生文件及事件/part ID 引用。父模型调用通过响应 message ID
-或其输出中的工具调用 ID 关联；无法唯一关联时标记 unknown。结果进入多个
+或其输出中的工具调用 ID 关联；无法唯一关联时标记 unknown。OpenClaw 的
+Responses SDK 使用 `call_id|item_id` 作为原生工具 ID；关系保留原生 ID，并用
+`model_tool_ref` 同时核对 HTTP 输出中的 call_id 和 item_id，不能只匹配其中一个。结果进入多个
 后续调用时，分别记录关联。后台启动回执不能当成任务完成。
 
 ## 公共层与适配层

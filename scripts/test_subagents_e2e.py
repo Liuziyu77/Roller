@@ -150,6 +150,8 @@ def main():
     parser.add_argument('--harness',choices=HARNESS_NAMES,default='claude-code')
     parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--cases',nargs='+',choices=list(CASES),default=list(CASES))
+    parser.add_argument('--max-output-tokens', type=int, default=4096, help='OpenClaw model output budget')
+    parser.add_argument('--thinking', help='explicit reasoning effort for this test run')
     parser.add_argument('--openclaw-api', choices=['openai-completions', 'openai-responses'], default='openai-completions')
     parser.add_argument('--gateway-port', type=int, default=18789, help='OpenClaw gateway port; use distinct ports for independent concurrent test runs')
     parser.add_argument('--check-followup', action='store_true', help='add a second user turn after delegation to verify native root-thread resume')
@@ -190,13 +192,15 @@ def main():
                     'hermes': ['--hermes-max-iterations', '8'], 'pi': ['--pi-max-steps', '8'],
                     'deepseek': ['--deepseek-max-steps', '8']}
         command += controls.get(args.harness, [])
+        if args.thinking:
+            command += ['--thinking', args.thinking]
         if args.harness == 'openclaw':
             config = {'providers': {'roller': {'baseUrl': args.api_base, 'apiKey': '${'+args.api_key_env+'}',
                 'api': args.openclaw_api, 'models': [{'id': args.model, 'name': args.model,
-                'input': ['text'], 'reasoning': True, 'contextWindow': 128000, 'maxTokens': 4096}]}}}
+                'input': ['text'], 'reasoning': True, 'contextWindow': 128000, 'maxTokens': args.max_output_tokens}]}}}
             config_path = args.output / 'model-config.json'
             config_path.write_text(json.dumps(config))
-            command += ['--model-config', str(config_path), '--pass-env', args.api_key_env, '--gateway-port', str(args.gateway_port)]
+            command += ['--model-config', str(config_path), '--pass-env', args.api_key_env, '--gateway-port', str(args.gateway_port), '--openclaw-max-tokens', str(args.max_output_tokens)]
 
         if args.disable_experimental_betas:
             command+=['--pass-env','CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS']

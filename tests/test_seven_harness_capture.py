@@ -150,57 +150,82 @@ class SevenHarnessCaptureTests(unittest.TestCase):
                 self.assertEqual(native.participants["session:root"]["role"], "root")
 
     def test_openclaw_notification_and_native_id_alias_are_not_launch_completion(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            directory = Path(tmp) / "capture/attempt-0001"
-            recorder = CallRecorder(directory)
-            key = "agent:main:subagent:child"
-            notification = f"source: subagent\nsession_key: {key}\nChild result: DONE"
-            for seq, sid in ((1, "root"), (2, "child"), (3, "root")):
-                body = {"model": "m", "messages": [{"role": "user", "content": "task"}]}
-                if seq == 3:
-                    body["messages"] += [{"role": "tool", "tool_call_id": "rawt1", "content": "accepted"},
-                                         {"role": "user", "content": notification}]
-                message = {"role": "assistant", "content": "DONE"}
-                if seq == 1:
-                    message["tool_calls"] = [{"id": "raw_t1", "type": "function", "function": {
-                        "name": "sessions_spawn", "arguments": "{}"}}]
-                output = {"id": f"r{seq}", "model": "m", "choices": [{"index": 0, "message": message,
-                    "finish_reason": "tool_calls" if seq == 1 else "stop"}]}
-                recorder.begin(seq, "/v1/chat/completions", body, native_identity={"session_id": sid})
-                # Test gzip decoding without rewriting the raw evidence.
-                recorder.response_path(seq).write_bytes(gzip.compress(json.dumps(output).encode()))
-                recorder.finish(seq, status=200, content_type="application/json", content_encoding="gzip", complete=True)
-            write_jsonl(directory / "native/stream-contexts.jsonl", [
-                {"sessionId": "root", "sessionKey": "agent:main:explicit:root", "runId": "parent", "stage": "stream:context"},
-                {"sessionId": "child", "sessionKey": key, "runId": "run", "stage": "stream:context"},
-                {"sessionId": "root", "sessionKey": "agent:main:explicit:root", "runId": f"announce:v1:{key}:run",
-                 "stage": "stream:context", "messages": [{"role": "user", "content": notification}]}])
-            write_jsonl(directory / "native/tool-id-aliases.jsonl", [{"original_id": "raw_t1", "context_id": "rawt1"}])
-            (directory / "native/subagent-runs.json").write_text(json.dumps([
-                {"runId": "run", "childSessionKey": key, "delivery": {"status": "delivered"}}]))
-            write_jsonl(directory / "native/sessions/root.jsonl", [
-                {"type": "session", "id": "root"}, {"type": "message", "id": "ack", "message": {
-                    "role": "toolResult", "toolName": "sessions_spawn", "toolCallId": "raw_t1",
-                    "details": {"status": "accepted", "childSessionKey": key, "runId": "run"}}}])
-            write_jsonl(directory / "native/sessions/child.jsonl", [
-                {"type": "session", "id": "child"}, {"type": "message", "message": {
-                    "role": "assistant", "content": [{"type": "text", "text": "DONE"}], "stopReason": "stop"}}])
-            native = read_openclaw_native(directory)
-            manifest = finalize_capture(directory, native, execution_status="ok")
-            self.assertEqual(manifest["capture_status"], "complete")
-            relations = read_jsonl(directory / "relations.jsonl")
-            for kind in ("launch_ack_in_context", "result_in_context"):
-                found = [r for r in relations if r["type"] == kind]
-                self.assertEqual(len(found), 1)
-                self.assertTrue(found[0]["call_id"].endswith("call-00000003"))
-            validate_capture(Path(tmp), {"manifest": "capture/attempt-0001/manifest.json", "capture_status": "complete"})
-            # A delivered notification without the exact message in a later
-            # request must never use the launch acknowledgement as evidence.
-            rows = read_jsonl(recorder.events)
-            rows[-2]["body"]["messages"].pop()
-            write_jsonl(recorder.events, rows)
-            finalize_capture(directory, read_openclaw_native(directory), execution_status="ok")
-            self.assertFalse(any(r["type"] == "result_in_context" for r in read_jsonl(directory / "relations.jsonl")))
+        for protocol in ("chat", "responses"):
+            with tempfile.TemporaryDirectory() as tmp:
+                directory = Path(tmp) / "capture/attempt-0001"
+                recorder = CallRecorder(directory)
+                key = "agent:main:subagent:child"
+                native_tool_id = "raw_t1|fc_t1" if protocol == "responses" else "raw_t1"
+                field = "input" if protocol == "responses" else "messages"
+                notification = f"source: subagent\nsession_key: {key}\nChild result: DONE"
+                for seq, sid in ((1, "root"), (2, "child"), (3, "root")):
+                    body = {"model": "m", "messages": [{"role": "user", "content": "task"}]}
+                    if seq == 3:
+                        body["messages"] += [{"role": "tool", "tool_call_id": "rawt1", "content": "accepted"},
+                                             {"role": "user", "content": notification}]
+                    message = {"role": "assistant", "content": "DONE"}
+                    if seq == 1:
+                        message["tool_calls"] = [{"id": "raw_t1", "type": "function", "function": {
+                            "name": "sessions_spawn", "arguments": "{}"}}]
+                    output = {"id": f"r{seq}", "model": "m", "choices": [{"index": 0, "message": message,
+                        "finish_reason": "tool_calls" if seq == 1 else "stop"}]}
+                    endpoint = "/v1/chat/completions"
+                    if protocol == "responses":
+                        body["input"] = body.pop("messages")
+                        if seq == 3:
+                            body["input"][1] = {"type": "function_call_output", "call_id": "raw_t1", "output": "accepted"}
+                        output = {"id": f"r{seq}", "object": "response", "model": "m", "status": "completed", "output": [
+                            {"type": "function_call", "id": "fc_t1", "call_id": "raw_t1", "name": "sessions_spawn", "arguments": "{}"}
+                        ] if seq == 1 else [{"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "DONE"}]}]}
+                        endpoint = "/v1/responses"
+                    recorder.begin(seq, endpoint, body, native_identity={"session_id": sid})
+                    # Test gzip decoding without rewriting the raw evidence.
+                    recorder.response_path(seq).write_bytes(gzip.compress(json.dumps(output).encode()))
+                    recorder.finish(seq, status=200, content_type="application/json", content_encoding="gzip", complete=True)
+                write_jsonl(directory / "native/stream-contexts.jsonl", [
+                    {"sessionId": "root", "sessionKey": "agent:main:explicit:root", "runId": "parent", "stage": "stream:context"},
+                    {"sessionId": "child", "sessionKey": key, "runId": "run", "stage": "stream:context"},
+                    {"sessionId": "root", "sessionKey": "agent:main:explicit:root", "runId": f"announce:v1:{key}:run",
+                     "stage": "stream:context", "messages": [{"role": "user", "content": notification}]}])
+                write_jsonl(directory / "native/tool-id-aliases.jsonl", [{"original_id": native_tool_id, "context_id": "rawt1"}])
+                (directory / "native/subagent-runs.json").write_text(json.dumps([
+                    {"runId": "run", "childSessionKey": key, "delivery": {"status": "delivered"}}]))
+                write_jsonl(directory / "native/sessions/root.jsonl", [
+                    {"type": "session", "id": "root"}, {"type": "message", "id": "ack", "message": {
+                        "role": "toolResult", "toolName": "sessions_spawn", "toolCallId": native_tool_id,
+                        "details": {"status": "accepted", "childSessionKey": key, "runId": "run"}}}])
+                write_jsonl(directory / "native/sessions/child.jsonl", [
+                    {"type": "session", "id": "child"}, {"type": "message", "message": {
+                        "role": "assistant", "content": [{"type": "text", "text": "DONE"}], "stopReason": "stop"}}])
+                native = read_openclaw_native(directory)
+                manifest = finalize_capture(directory, native, execution_status="ok")
+                self.assertEqual(manifest["capture_status"], "complete")
+                relations = read_jsonl(directory / "relations.jsonl")
+                for kind in ("launch_ack_in_context", "result_in_context"):
+                    found = [r for r in relations if r["type"] == kind]
+                    self.assertEqual(len(found), 1)
+                    self.assertTrue(found[0]["call_id"].endswith("call-00000003"))
+                validate_capture(Path(tmp), {"manifest": "capture/attempt-0001/manifest.json", "capture_status": "complete"})
+                if protocol == "responses":
+                    # Matching only call_id would falsely link a different item.
+                    native = read_openclaw_native(directory)
+                    native.relations[0]["model_tool_ref"]["item_id"] = "wrong-item"
+                    finalize_capture(directory, native, execution_status="ok")
+                    self.assertTrue(all(r["status"] == "unknown" for r in read_jsonl(directory / "relations.jsonl") if r["type"] == "spawn"))
+                # A delivered notification without the exact message in a later
+                # request must never use the launch acknowledgement as evidence.
+                rows = read_jsonl(recorder.events)
+                rows[-2]["body"][field].pop()
+                write_jsonl(recorder.events, rows)
+                finalize_capture(directory, read_openclaw_native(directory), execution_status="ok")
+                self.assertFalse(any(r["type"] == "result_in_context" for r in read_jsonl(directory / "relations.jsonl")))
+                (directory / "native/subagent-runs.json").write_text(json.dumps([
+                    {"runId": "run", "endedAt": 1, "outcome": {"status": "error"},
+                     "delivery": {"status": "delivered"}}]))
+                native = read_openclaw_native(directory)
+                self.assertFalse(native.background_detected)
+                self.assertTrue(any(r["type"] == "child_failed" for r in native.relations))
+                self.assertFalse(any(r["type"] == "child_completed" for r in native.relations))
 
 
 if __name__ == "__main__":

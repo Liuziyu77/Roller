@@ -72,6 +72,15 @@ def read_openclaw_native(directory: Path) -> NativeCapture:
                 "tool_call_id": message.get("toolCallId"), "status": "observed" if child else "unknown",
                 "evidence": [{"path": source, "event_id": row.get("id")}],
                 "native_run_id": result.get("runId")}
+            # The pinned pi-ai Responses bridge encodes a native tool ID as
+            # call_id|item_id. Keep the native ID and require BOTH provider
+            # references to match the captured model output; never match text.
+            tool_id = message.get("toolCallId", "")
+            if isinstance(tool_id, str) and tool_id.count("|") == 1:
+                call_id, item_id = tool_id.split("|")
+                if call_id and item_id:
+                    base["model_tool_ref"] = {"protocol": "openai-responses",
+                                              "call_id": call_id, "item_id": item_id}
             mapped = aliases.get(message.get("toolCallId"), set())
             if len(mapped) == 1:
                 base["context_tool_call_id"] = next(iter(mapped))
@@ -79,11 +88,15 @@ def read_openclaw_native(directory: Path) -> NativeCapture:
             native.relations.extend([{**base, "type": kind} for kind in ("spawn", "launch_acknowledged")])
             child_rows = messages.get(child, [])
             end = next((r for r, _ in reversed(child_rows) if r.get("message", {}).get("role") == "assistant"), None)
-            if end and end["message"].get("stopReason") in {"stop", "end_turn"}:
+            run = runs.get(result.get("runId"), {})
+            failed = run.get("endedAt") and run.get("outcome", {}).get("status") in {"error", "timeout"}
+            if failed:
+                native.relations.append({**base, "type": "child_failed",
+                    "evidence": [*base["evidence"], {"path": "native/subagent-runs.json", "event_id": result.get("runId")}]})
+            elif end and end["message"].get("stopReason") in {"stop", "end_turn"}:
                 native.relations.append({**base, "type": "child_completed"})
             else:
                 native.background_detected = True
-            run = runs.get(result.get("runId"), {})
             if run.get("delivery", {}).get("status") == "delivered":
                 announce = f"announce:v1:{result.get('childSessionKey')}:{result.get('runId')}"
                 context_message = None
