@@ -6,9 +6,10 @@ from roller.capture import CallRecorder
 
 
 class CaptureRuntime:
-    def __init__(self, output_dir: Path, attempt: int, harness: str):
+    def __init__(self, output_dir: Path, attempt: int, harness: str, debug_retention: str = "on-error"):
         self.output_dir = output_dir
         self.harness = harness
+        self.debug_retention = debug_retention
         directory = output_dir / "capture" / f"attempt-{attempt:04d}"
         if directory.exists():
             shutil.rmtree(directory)
@@ -42,7 +43,7 @@ class CaptureRuntime:
             from roller.capture_protocol import finalize_capture
             native.errors.extend(self.errors)
             manifest = finalize_capture(self.recorder.directory, native, execution_status=status,
-                                        recorder_error=self.recorder.error)
+                                        recorder_error=self.recorder.error, debug_retention=self.debug_retention)
             return {"capture": {"manifest": (self.recorder.directory / "manifest.json").relative_to(self.output_dir).as_posix(),
                                 "capture_status": manifest["capture_status"]}}
         except Exception as exc:

@@ -104,6 +104,7 @@ class OpenCodeConfig:
     vision: bool = True
     wire_trace_mode: str = "actf"
     capture_calls: bool = False
+    capture_debug: str = "on-error"
     keep_thinking: bool = True
     keep_container_on_error: bool = False
     docker_binary: str = "docker"
@@ -433,7 +434,7 @@ class OpenCodeSession(InteractiveSession):
                 try:
                     directory = self.capture_recorder.directory
                     manifest = finalize_opencode_capture(directory, execution_status=status,
-                        recorder_error=self.capture_recorder.error)
+                        recorder_error=self.capture_recorder.error, debug_retention=config.capture_debug)
                     capture_metadata = {"capture": {"manifest": (directory / "manifest.json").relative_to(self.output_dir).as_posix(),
                                                    "capture_status": manifest["capture_status"]}}
                 except Exception as exc:

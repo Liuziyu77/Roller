@@ -14,7 +14,7 @@ import zlib
 from pathlib import Path
 from typing import Any
 
-from roller.capture import read_jsonl, _safe_file
+from roller.capture import read_jsonl, _safe_file, apply_capture_retention
 from roller.model_protocols import decode_response, response_finished, tool_call_ids, tool_result_ids
 from roller.storage import atomic_write_json, write_jsonl
 
@@ -42,10 +42,12 @@ Relations carry file/event evidence and optionally a parent native message ID.
 
 
 def finalize_capture(directory: Path, native: NativeCapture, *, execution_status: str,
-                     recorder_error: str | None = None) -> dict[str, Any]:
+                     recorder_error: str | None = None, debug_retention: str = "full") -> dict[str, Any]:
     event_path = directory / "events.jsonl"
     if not event_path.exists():
         event_path = directory / "raw/events.jsonl"
+    if not event_path.exists() and (directory / "manifest.json").exists():
+        raise ValueError("capture has no raw events; cannot re-finalize a lean capture")
     events = read_jsonl(event_path) if event_path.exists() else []
     contexts = None
     for event in events:
@@ -190,7 +192,7 @@ def finalize_capture(directory: Path, native: NativeCapture, *, execution_status
                      "lifecycle": "native registry completion and announcement drain" if native.capabilities.get("background_drain")
                                   else "foreground native evidence; background drain not supported"}}
     atomic_write_json(directory / "manifest.json", manifest)
-    return manifest
+    return apply_capture_retention(directory, manifest, debug_retention)
 
 
 def _compact_artifacts(directory: Path, calls: list[dict[str, Any]],

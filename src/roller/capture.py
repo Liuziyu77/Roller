@@ -140,9 +140,15 @@ def _validate_capture(sample: Path, metadata: dict[str, Any]) -> None:
     if any(not isinstance(cid, str) or not cid for cid in ids) or len(set(ids)) != len(ids):
         raise ValueError("capture call IDs are missing or duplicated")
     layout = manifest.get("storage_layout")
-    if layout not in {None, "compact/v1"}:
+    if layout not in {None, "compact/v1", "compact/v2"}:
         raise ValueError("unsupported capture storage layout")
-    if layout == "compact/v1":
+    lean = layout == "compact/v2" and manifest.get("raw_retained") is False
+    if layout == "compact/v2":
+        if manifest.get("debug_retention") not in {"off", "on-error", "full"} or not isinstance(manifest.get("raw_retained"), bool):
+            raise ValueError("invalid capture retention policy")
+        if lean and any(p.startswith("raw/") for p in inventory):
+            raise ValueError("lean capture inventories raw files")
+    if layout in {"compact/v1", "compact/v2"} and not lean:
         if "raw/events.jsonl" not in inventory:
             raise ValueError("compact capture lacks event inventory")
         requests = [e for e in read_jsonl(path.parent / "raw/events.jsonl") if e.get("type") == "request"]
@@ -166,7 +172,7 @@ def _validate_capture(sample: Path, metadata: dict[str, Any]) -> None:
         if any(p not in inventory for p in part.get("native_files", [])):
             raise ValueError("participant references unregistered capture files")
         expected = [c for c in calls if c.get("participant_id") == part["participant_id"]]
-        if manifest.get("storage_layout") != "compact/v1":
+        if layout not in {"compact/v1", "compact/v2"}:
             if part.get("calls_path") not in inventory:
                 raise ValueError("participant references unregistered capture files")
             actual = read_jsonl(_safe_file(path.parent, part["calls_path"]))
@@ -175,6 +181,8 @@ def _validate_capture(sample: Path, metadata: dict[str, Any]) -> None:
         if part.get("call_ids") != [c["call_id"] for c in expected]:
             raise ValueError("participant call IDs do not match capture calls")
     for call in calls:
+        if lean and (call.get("response_path") is not None or call.get("response_evidence_retained") is not False):
+            raise ValueError("lean call references raw response")
         if call.get("schema_version") != "roller.call/v1" or not isinstance(call.get("context"), dict):
             raise ValueError("invalid capture call schema")
         if call.get("protocol") not in {"anthropic-messages", "openai-chat-completions", "openai-responses"}:
@@ -182,7 +190,7 @@ def _validate_capture(sample: Path, metadata: dict[str, Any]) -> None:
         if call.get("participant_id") is not None and call["participant_id"] not in pids:
             raise ValueError("call participant is missing")
         if call.get("capture_status") == "complete":
-            if call.get("response_path") not in inventory or not isinstance(call.get("output"), dict):
+            if (not lean and call.get("response_path") not in inventory) or not isinstance(call.get("output"), dict):
                 raise ValueError("complete call lacks response evidence")
         if call.get("export_status") == "available" and (
             call.get("capture_status") != "complete" or call.get("identity_status") != "observed"
@@ -209,7 +217,10 @@ def _validate_capture(sample: Path, metadata: dict[str, Any]) -> None:
             if relation.get(key) is not None and relation[key] not in pids:
                 raise ValueError("relation participant is missing")
         for evidence in relation.get("evidence", []):
-            if evidence.get("path") not in inventory:
+            if lean:
+                if evidence.get("retained") is not False or "path" in evidence or not isinstance(evidence.get("source"), str):
+                    raise ValueError("invalid released relation evidence")
+            elif evidence.get("path") not in inventory:
                 raise ValueError("relation evidence file is missing")
     if manifest.get("capture_status") == "complete" and (
         not calls or manifest.get("recorder_error") or manifest.get("native_errors") or manifest.get("background_detected")
@@ -237,3 +248,40 @@ def native_directory(directory: Path) -> Path:
     """Read native evidence in legacy or compact captures."""
     legacy = directory / "native"
     return legacy if legacy.exists() else directory / "raw/native"
+
+
+def apply_capture_retention(directory: Path, manifest: dict[str, Any], mode: str) -> dict[str, Any]:
+    """Check the full capture before publishing optional debug evidence."""
+    import shutil
+    from roller.storage import atomic_write_json, write_jsonl
+
+    if mode not in {"off", "on-error", "full"}:
+        raise ValueError("invalid capture debug retention")
+    validate_capture(directory, {"manifest": "manifest.json", "capture_status": manifest["capture_status"]})
+    calls = read_jsonl(directory / "calls.jsonl")
+    relations = read_jsonl(directory / "relations.jsonl")
+    failed = (manifest["capture_status"] != "complete" or manifest["execution_status"] != "ok"
+              or any(c["execution_status"] == "failed" for c in calls)
+              or any(r["type"] == "child_failed" for r in relations))
+    retain = mode == "full" or (mode == "on-error" and failed)
+    if not retain:
+        for call in calls:
+            call["response_path"] = None
+            call["response_evidence_retained"] = False
+        for part in manifest["participants"]:
+            part["native_source_count"] = len(part["native_files"])
+            part["native_files"] = []
+        for relation in relations:
+            for evidence in relation.get("evidence", []):
+                evidence["source"] = evidence.pop("path")
+                evidence["retained"] = False
+        write_jsonl(directory / "calls.jsonl", calls)
+        write_jsonl(directory / "relations.jsonl", relations)
+        shutil.rmtree(directory / "raw")
+    manifest.update(storage_layout="compact/v2", debug_retention=mode, raw_retained=retain)
+    manifest["files"] = [{"path": p.relative_to(directory).as_posix(),
+                          "sha256": hashlib.sha256(p.read_bytes()).hexdigest()}
+                         for p in sorted(directory.rglob("*")) if p.is_file() and p.name != "manifest.json"]
+    atomic_write_json(directory / "manifest.json", manifest)
+    validate_capture(directory, {"manifest": "manifest.json", "capture_status": manifest["capture_status"]})
+    return manifest

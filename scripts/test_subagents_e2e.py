@@ -11,7 +11,7 @@ import os
 from pathlib import Path
 
 from roller.harness_registry import HARNESS_NAMES
-from roller.capture import read_jsonl, validate_capture
+from roller.capture import native_directory, read_jsonl, validate_capture
 from roller.cli import _build_parser, _collect
 from roller.model_protocols import tool_call_ids
 from roller.opencode_actf import native_messages
@@ -130,10 +130,20 @@ def audit(run: Path, expected_children: int, case: str, harness="claude-code"):
             # OpenCode emits '(no output)' into model context for exit 13;
             # the exit code is only in native tool metadata. Verify that fact
             # and its exact tool-result link, without inventing an error flag.
-            native = native_messages([row for p in (directory/'native').glob('*.jsonl') for row in read_jsonl(p)])
-            failed_ids = {p['callID'] for m in native for p in m['parts']
-                if p.get('type')=='tool' and p.get('tool')=='bash'
-                and p.get('state',{}).get('metadata',{}).get('exit')==13}
+            if manifest.get('raw_retained') is False:
+                # Lean capture retains the actual command/result link, but
+                # discards native exit metadata. Do not invent an error flag.
+                failed_ids = {t['id'] for c in child if c['output']
+                    for choice in c['output'].get('choices', [])
+                    for t in choice.get('message', {}).get('tool_calls', [])
+                    if t.get('function', {}).get('name') == 'bash'
+                    and json.loads(t['function']['arguments']).get('command', '').strip() == 'exit 13'}
+                assert any('CHILD_ERROR_HANDLED' in json.dumps(c['output']) for c in child), 'child did not complete recovery'
+            else:
+                native = native_messages([row for p in native_directory(directory).glob('*.jsonl') for row in read_jsonl(p)])
+                failed_ids = {p['callID'] for m in native for p in m['parts']
+                    if p.get('type')=='tool' and p.get('tool')=='bash'
+                    and p.get('state',{}).get('metadata',{}).get('exit')==13}
             failure_observed = bool(failed_ids) and any(m.get('role')=='tool' and m.get('tool_call_id') in failed_ids
                 for c in child for m in c['context']['messages'])
         else:
@@ -147,6 +157,7 @@ def audit(run: Path, expected_children: int, case: str, harness="claude-code"):
 
 def main():
     parser=argparse.ArgumentParser()
+    parser.add_argument('--capture-debug', choices=['off', 'on-error', 'full'], default='on-error')
     parser.add_argument('--api-base',required=True)
     parser.add_argument('--api-key-env',required=True)
     parser.add_argument('--model', help='default: gpt-5.5 for Codex, claude-opus-5 otherwise')
@@ -188,7 +199,7 @@ def main():
             task['prompt'] = prompt
         tasks.write_text(json.dumps([task]))
         command=['collect','--tasks',str(tasks),'--api-base',args.api_base,
-                 '--api-key-env',args.api_key_env,'--capture-calls',
+                 '--api-key-env',args.api_key_env,'--capture-calls','--capture-debug',args.capture_debug,
                  '--timeout','240','--parallel','1','--retries','0',
                  '--output',str(args.output),'--run-name',case]
         controls = {'claude-code': ['--claude-max-turns', '8'], 'opencode': ['--opencode-max-steps', '8'],

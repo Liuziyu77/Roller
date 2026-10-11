@@ -84,6 +84,43 @@ class CaptureTests(unittest.TestCase):
             validate_capture(base, {"manifest": "capture/attempt-0001/manifest.json",
                                     "capture_status": manifest["capture_status"]})
 
+    def test_lean_capture_keeps_calls_relations_and_detects_corruption(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp); directory, _ = self.make_capture(base)
+            m = finalize_claude_capture(directory, execution_status="ok", debug_retention="on-error")
+            self.assertEqual(m["capture_status"], "complete")
+            self.assertFalse(m["raw_retained"])
+            self.assertEqual({p.name for p in directory.iterdir()}, {"manifest.json", "calls.jsonl", "relations.jsonl"})
+            validate_capture(base, {"manifest": "capture/attempt-0001/manifest.json", "capture_status": "complete"})
+            before = (directory / "calls.jsonl").read_bytes()
+            with self.assertRaisesRegex(ValueError, "cannot re-finalize"):
+                finalize_claude_capture(directory, execution_status="ok")
+            self.assertEqual(before, (directory / "calls.jsonl").read_bytes())
+            with (directory / "calls.jsonl").open("a") as f:
+                f.write("{}\n")
+            with self.assertRaisesRegex(ValueError, "hash mismatch"):
+                validate_capture(base, {"manifest": "capture/attempt-0001/manifest.json", "capture_status": "complete"})
+
+    def test_interrupted_capture_retains_raw_only_when_policy_requests_it(self):
+        for mode in ("off", "on-error"):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as tmp:
+                base = Path(tmp); directory, _ = self.make_capture(base)
+                recorder = CallRecorder(directory)
+                recorder.finish(2, status=200, content_type="application/json", content_encoding="",
+                                complete=False, error="injected interruption")
+                m = finalize_claude_capture(directory, execution_status="ok", debug_retention=mode)
+                self.assertEqual(m["capture_status"], "partial")
+                self.assertEqual(m["raw_retained"], mode == "on-error")
+                self.assertEqual(read_jsonl(directory / "calls.jsonl")[1]["export_status"], "unavailable")
+                validate_capture(base, {"manifest": "capture/attempt-0001/manifest.json", "capture_status": "partial"})
+
+    def test_execution_failure_retains_raw_even_when_capture_is_complete(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory, _ = self.make_capture(Path(tmp))
+            m = finalize_claude_capture(directory, execution_status="error", debug_retention="on-error")
+            self.assertEqual(m["capture_status"], "complete")
+            self.assertTrue(m["raw_retained"])
+
     def test_unmatched_response_is_preserved_but_not_exported(self):
         with tempfile.TemporaryDirectory() as tmp:
             directory,_=self.make_capture(Path(tmp))

@@ -211,6 +211,7 @@ class OpenClawConfig:
     thinking: str | None = None
     capture_cache_trace: bool = True
     capture_calls: bool = False
+    capture_debug: str = "on-error"
     wire_trace_mode: str = "actf"
     keep_thinking: bool = True
     collect_paths: tuple[str, ...] = ()
@@ -442,7 +443,7 @@ exec node --input-type=module -e "$1"
         stripped from request history, when Chat Completions reasoning fields
         need normalization.
         """
-        self.capture = CaptureRuntime(output_dir, attempt, "openclaw") if self.config.capture_calls else None
+        self.capture = CaptureRuntime(output_dir, attempt, "openclaw", self.config.capture_debug) if self.config.capture_calls else None
         self._wire_proxy = None
         needs_proxy = (
             self.config.wire_trace_mode != "off"

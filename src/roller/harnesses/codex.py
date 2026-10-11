@@ -92,6 +92,7 @@ class CodexConfig:
     web_search: str = "disabled"
     supports_websockets: bool = False
     capture_calls: bool = False
+    capture_debug: str = "on-error"
     wire_trace_mode: str = "actf"
     keep_thinking: bool = True
     keep_container_on_error: bool = False
@@ -177,7 +178,7 @@ class CodexHarness(InteractiveHarness):
 
     def _start_wire_proxy(self, output_dir: Path, attempt: int = 1) -> None:
         self._root_thread_id = None
-        self.capture = CaptureRuntime(output_dir, attempt, "codex") if self.config.capture_calls else None
+        self.capture = CaptureRuntime(output_dir, attempt, "codex", self.config.capture_debug) if self.config.capture_calls else None
         self._wire_proxy = None
         tools_path = output_dir / "tools_capture.jsonl"
         tools_path.unlink(missing_ok=True)

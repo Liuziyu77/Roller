@@ -58,6 +58,7 @@ class HermesConfig:
     context_length: int | None = None
     vision: bool = True
     capture_calls: bool = False
+    capture_debug: str = "on-error"
     wire_trace_mode: str = "actf"
     keep_thinking: bool = True
     keep_container_on_error: bool = False
@@ -140,7 +141,7 @@ class HermesSession(InteractiveSession):
         self.image_digest = None
         self.hermes_version = None
         self.proxy = None
-        self.capture = CaptureRuntime(self.output_dir, attempt, "hermes") if harness.config.capture_calls else None
+        self.capture = CaptureRuntime(self.output_dir, attempt, "hermes", harness.config.capture_debug) if harness.config.capture_calls else None
         self.capture_metadata = {}
         self._result: HarnessResult | None = None
         self.turns = 0

@@ -131,6 +131,7 @@ class ClaudeCodeConfig:
     keep_container_on_error: bool = False
     docker_binary: str = "docker"
     capture_calls: bool = False
+    capture_debug: str = "on-error"
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -637,7 +638,7 @@ class ClaudeCodeHarness(InteractiveHarness):
         recorder = getattr(self, "_capture_recorder", None)
         try:
             manifest = finalize_claude_capture(directory, execution_status=status,
-                recorder_error=recorder.error if recorder else "capture recorder unavailable")
+                recorder_error=recorder.error if recorder else "capture recorder unavailable", debug_retention=self.config.capture_debug)
             return {"capture": {"manifest": (directory / "manifest.json").relative_to(output_dir).as_posix(),
                                 "capture_status": manifest["capture_status"]}}
         except Exception as exc:

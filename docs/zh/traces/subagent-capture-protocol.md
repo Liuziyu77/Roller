@@ -86,14 +86,19 @@ Call 中。`calls.jsonl` 是逐调用的协议数据，不能直接当成主轨�
 
 ## 文件与边界
 
-每个 `capture/attempt-NNNN/` 顶层只有 `manifest.json`、`calls.jsonl`、
-`relations.jsonl` 和 `raw/`。原生日志、原始响应、采集事件及来源映射集中在
+每个 `capture/attempt-NNNN/` 默认只有 `manifest.json`、`calls.jsonl` 和
+`relations.jsonl`。`--capture-debug on-error`（默认）仅在执行失败、采集不完整、
+失败模型调用或子任务失败时保留 `raw/`；`full` 总是保留，`off` 总是清理。原生日志、原始响应、采集事件及来源映射集中在
 `raw/`；事件的 `body_ref` 引用 `calls.jsonl` 中对应调用的 `context`，不重复保存
 请求正文。参与者通过 manifest 的 `call_ids` 和 Call 的 `participant_id` 关联，
 不再另存 `participants/*/calls.jsonl` 副本。
 
-manifest 使用 `roller.capture/v1`，新布局以 `storage_layout: compact/v1` 标识。
-读取和完整性校验兼容旧布局；采集关闭前仍使用工作文件，发布时整理为新布局。
+manifest 使用 `roller.capture/v1`，新布局以 `storage_layout: compact/v2` 标识，
+并记录 `debug_retention` 与 `raw_retained`。完整性检查在清理前完成；
+清理后调用的 `response_path` 为 null，关系证据的 source 标明原始来源但
+retained=false，避免留下失效文件引用。采集状态不因调试材料清理而降级。
+精简模式的 resume 校验正式文件哈希、调用归属和关系引用，不能重新解析原始响应。
+读取和完整性校验兼容旧布局及 compact/v1；采集关闭前仍使用工作文件，发布时整理为新布局。
 可用 `PYTHONPATH=src python scripts/view_capture.py /path/to/attempt-0001`
 查看按代理展开的调用树，不生成额外的数据副本。
 关闭 recorder 后再发布文件哈希；文件缺失、修改、错误引用会阻止 resume
