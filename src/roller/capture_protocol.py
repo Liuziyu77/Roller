@@ -39,6 +39,7 @@ Relations carry file/event evidence and optionally a parent native message ID.
     background_detected: bool = False
     capabilities: dict[str, Any] = field(default_factory=dict)
     errors: list[str] = field(default_factory=list)
+    lifecycle: dict[str, Any] | None = None
 
 
 def finalize_capture(directory: Path, native: NativeCapture, *, execution_status: str,
@@ -114,6 +115,7 @@ def finalize_capture(directory: Path, native: NativeCapture, *, execution_status
             "response_capture_status": "complete" if completion.get("complete") and not completion.get("error") else "partial",
             "identity_status": "observed" if identity_confirmed else "unknown",
             "identity_basis": "native_session" if session_id else "response_message_id",
+            **({"native_identity": identity} if identity else {}),
             "execution_status": "completed" if finished and completion.get("http_status") == 200 else "failed",
             "capture_status": "complete" if not errors else "partial",
             "export_status": "available" if not errors else "unavailable", "errors": errors}
@@ -146,7 +148,15 @@ def finalize_capture(directory: Path, native: NativeCapture, *, execution_status
                 texts = [m.get("content") for m in call["context"].get("input" if call["protocol"] == "openai-responses" else "messages", []) if m.get("role") == "user"]
                 texts = [t if isinstance(t, str) else "\n".join(b.get("text", "") for b in t if isinstance(b, dict))
                          for t in texts if isinstance(t, (str, list))]
-                in_context = bool(context_message) and any(context_message == t for t in texts)
+                in_context = bool(context_message) and any(
+                    context_message == t or t.endswith("\n\n" + context_message) for t in texts)
+                # A copied notification is not evidence of this delivery.
+                # Bind it to a native invocation or an exact native response.
+                in_context = in_context and bool(
+                    relation.get("context_native_run_id")
+                    and call.get("native_identity", {}).get("run_id") == relation["context_native_run_id"]
+                    or relation.get("context_response_id")
+                    and (call.get("output") or {}).get("id") == relation["context_response_id"])
             else:
                 result_ids = tool_result_ids(call["protocol"], call["context"])
                 reference_ids = {relation.get("context_tool_call_id", tool_id)}
@@ -179,17 +189,24 @@ def finalize_capture(directory: Path, native: NativeCapture, *, execution_status
     _compact_artifacts(directory, calls, relations, native.participants, events)
     files = [{"path": p.relative_to(directory).as_posix(), "sha256": hashlib.sha256(p.read_bytes()).hexdigest()}
              for p in sorted(directory.rglob("*")) if p.is_file() and p.name != "manifest.json"]
-    complete = bool(calls) and not recorder_error and not native.errors and not native.background_detected and all(c["capture_status"] == "complete" for c in calls) and all(p["capture_status"] == "complete" for p in native.participants.values()) and all(r["status"] == "observed" for r in relations)
+    pending = sorted({r["child_participant_id"] for r in relations
+            if r["type"] == "spawn" and r.get("child_participant_id") and not any(
+                end.get("child_participant_id") == r["child_participant_id"] and end["type"] in {"child_completed", "child_failed"}
+                for end in relations)})
+    lifecycle = native.lifecycle or {"status": "unsupported" if native.background_detected else "pending" if pending else "complete",
+                                    "pending_participant_ids": pending}
+    complete = bool(calls) and not recorder_error and not native.errors and lifecycle["status"] == "complete" and not lifecycle["pending_participant_ids"] and all(c["capture_status"] == "complete" for c in calls) and all(p["capture_status"] == "complete" for p in native.participants.values()) and all(r["status"] == "observed" for r in relations)
     manifest = {"schema_version": "roller.capture/v1", "attempt_id": directory.name,
         "harness": native.harness, "storage_layout": "compact/v1", "execution_status": execution_status,
         "capture_status": "complete" if complete else "partial", "recorder_error": recorder_error,
         "native_errors": native.errors,
         "participants": list(native.participants.values()), "background_detected": native.background_detected,
+        "lifecycle": lifecycle,
         "call_count": len(calls), "relation_count": len(relations), "files": files,
         "capabilities": native.capabilities,
         "coverage": {"request_response": "observed HTTP calls only",
                      "identity": native.capabilities.get("identity", "unknown"),
-                     "lifecycle": "native registry completion and announcement drain" if native.capabilities.get("background_drain")
+                     "lifecycle": "native background execution and delivery evidence" if native.capabilities.get("background_drain")
                                   else "foreground native evidence; background drain not supported"}}
     atomic_write_json(directory / "manifest.json", manifest)
     return apply_capture_retention(directory, manifest, debug_retention)

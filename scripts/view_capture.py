@@ -15,6 +15,9 @@ def render(directory: Path) -> str:
     relations = read_jsonl(directory / 'relations.jsonl')
     parts = {p['participant_id']: p for p in manifest['participants']}
     lines = [f"{manifest['harness']} / {manifest['attempt_id']} / {manifest['capture_status']}"]
+    if manifest.get('lifecycle'):
+        lifecycle = manifest['lifecycle']
+        lines.append(f"收尾: {lifecycle['status']}；待完成: {len(lifecycle['pending_participant_ids'])}")
     seen = set()
 
     def visit(pid, indent=''):
@@ -52,8 +55,8 @@ def render(directory: Path) -> str:
                         visit(child, indent + '    ')
         kinds = {r['type'] for r in relations if r.get('child_participant_id') == pid}
         if part['role'] == 'child':
-            lines.append(indent + '  结果已进入主代理上下文' if 'result_in_context' in kinds
-                         else indent + '  尚未确认结果进入主代理上下文')
+            lines.append(indent + '  结果已进入父代理上下文' if 'result_in_context' in kinds
+                         else indent + '  尚未确认结果进入父代理上下文')
 
     for pid, part in parts.items():
         if part['role'] == 'root':

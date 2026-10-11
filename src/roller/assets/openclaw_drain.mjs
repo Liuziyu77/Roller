@@ -14,7 +14,8 @@ while (true) {
   const runs = new Map();
   registry.i({runs, mergeOnly: false});
   fs.writeFileSync("/tmp/roller-subagent-runs.json", JSON.stringify([...runs.values()]));
-  if (!key || registry._(runs, key) === 0) break;
+  if (!key) throw new Error("Cannot confirm OpenClaw root session for subagent drain");
+  if (registry._(runs, key) === 0) break;
   if (Date.now() >= deadline) throw new Error("Timed out draining OpenClaw subagents and announcements");
   await new Promise(resolve => setTimeout(resolve, 200));
 }

@@ -274,8 +274,10 @@ class _ProxyHandler(BaseHTTPRequestHandler):
                 and self.command == "POST"
                 and urlsplit(self.path).path.rstrip("/").endswith(("/messages", "/chat/completions", "/responses"))):
             native_session = self.headers.get(proxy.capture_identity_header) if proxy.capture_identity_header else None
+            native_run = self.headers.get(proxy.capture_run_header) if proxy.capture_run_header else None
             proxy.capture_recorder.begin(entry["seq"], proxy.forward_path(self.path), parsed,
-                native_identity={"session_id": native_session} if native_session else None)
+                native_identity={**({"session_id": native_session} if native_session else {}),
+                                 **({"run_id": native_run} if native_run else {})} or None)
         return entry["seq"]
 
     def _handle(self) -> None:
@@ -456,6 +458,7 @@ class WireTraceProxy:
         responses_tools_path: Path | None = None,
         capture_recorder: CallRecorder | None = None,
         capture_identity_header: str | None = None,
+        capture_run_header: str | None = None,
     ) -> None:
         if mode not in ("tools", "full"):
             raise ValueError(f"unknown wire trace mode: {mode}")
@@ -469,6 +472,7 @@ class WireTraceProxy:
         self.responses_tools_path = responses_tools_path
         self.capture_recorder = capture_recorder
         self.capture_identity_header = capture_identity_header
+        self.capture_run_header = capture_run_header
         self.recording_error: str | None = None
         self.strip_thinking = strip_thinking
         self.normalize_reasoning_replay = normalize_reasoning_replay
@@ -478,6 +482,8 @@ class WireTraceProxy:
         )
         if capture_identity_header and capture_identity_header.lower().startswith("x-roller-"):
             self.drop_request_headers |= {capture_identity_header.lower()}
+        if capture_run_header and capture_run_header.lower().startswith("x-roller-"):
+            self.drop_request_headers |= {capture_run_header.lower()}
         self.timeout_seconds = timeout_seconds
         self._lock = threading.Lock()
         self._seq = 0

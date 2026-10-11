@@ -9,7 +9,7 @@ needle = "return streamFn(model, context, options);\n\t\t};\n\t\treturn wrapped;
 replacement = ('rollerCaptureAppend("/tmp/roller-capture-stream.jsonl", JSON.stringify({...base, '
                'stage: "stream:context", messages: context.messages}) + "\\n"); '
                'return streamFn(model, context, {...options, headers: {...options?.headers, '
-               '"x-roller-native-session-id": base.sessionId}});\n\t\t};\n\t\treturn wrapped;')
+               '"x-roller-native-session-id": base.sessionId, "x-roller-native-run-id": base.runId}});\n\t\t};\n\t\treturn wrapped;')
 matched = [p for p in Path("/app/dist").glob("selection-*.js") if needle in p.read_text()]
 if len(matched) != 1 or matched[0].read_text().count(needle) != 1:
     raise RuntimeError("Pinned OpenClaw cache stream capture hook is unavailable")

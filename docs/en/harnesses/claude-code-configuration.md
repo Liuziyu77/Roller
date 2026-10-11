@@ -28,17 +28,23 @@ Not currently supported:
 ### Subagent collection
 
 The main ACTF/SFT contains only main-agent steps and the delegation/results it
-actually observes. Child internals remain in native evidence. Enable
-`--claude-capture-calls` to retain `capture/attempt-NNNN/` with native files,
-full request/response records, participant-specific `calls.jsonl`, relations,
-and a hashed `manifest.json`. These artifacts survive diagnostic cleanup and
+actually observes. Enable `--capture-calls` to preserve child internals as their
+own model calls. A successful `capture/attempt-NNNN/` contains `calls.jsonl`,
+`relations.jsonl`, and a hashed `manifest.json`; `--capture-debug on-error`
+(default) retains native files and raw responses only for failed or incomplete
+captures. Use `full` to always retain those diagnostic sources. These artifacts survive diagnostic cleanup and
 are validated on resume. Response IDs must match native assistant IDs;
 unmatched or interrupted calls remain recorded with explicit incomplete status.
 
 Run-level `calls.jsonl` is a separate `roller.call/v1` export containing the
 actual protocol `context` and current `output`, plus participant identity. It is
-not the legacy SFT messages/tools schema. Background drain and complete nested
-lifecycle support are not part of this first implementation. Linear SFT export
+not the legacy SFT messages/tools schema. The pinned native `-p` loop processes
+background completion notifications without extra Roller prompts. Completion is
+bound to native task/tool IDs and the following provider response; unresolved
+launches remain partial. Main ACTF/SFT retains automatic notifications as user
+input, including the actual request's system notification wrapper. One foreground
+root/child/grandchild execution has been verified; other harness/version and nested
+background combinations still need validation. Linear SFT export
 is unavailable after detected compaction; captured calls retain their own contexts.
 
 ## 2. Image preparation

@@ -178,7 +178,8 @@ class SevenHarnessCaptureTests(unittest.TestCase):
                             {"type": "function_call", "id": "fc_t1", "call_id": "raw_t1", "name": "sessions_spawn", "arguments": "{}"}
                         ] if seq == 1 else [{"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "DONE"}]}]}
                         endpoint = "/v1/responses"
-                    recorder.begin(seq, endpoint, body, native_identity={"session_id": sid})
+                    recorder.begin(seq, endpoint, body, native_identity={"session_id": sid,
+                        "run_id": f"announce:v1:{key}:run" if seq == 3 else "parent" if sid == "root" else "run"})
                     # Test gzip decoding without rewriting the raw evidence.
                     recorder.response_path(seq).write_bytes(gzip.compress(json.dumps(output).encode()))
                     recorder.finish(seq, status=200, content_type="application/json", content_encoding="gzip", complete=True)
@@ -189,7 +190,8 @@ class SevenHarnessCaptureTests(unittest.TestCase):
                      "stage": "stream:context", "messages": [{"role": "user", "content": notification}]}])
                 write_jsonl(directory / "native/tool-id-aliases.jsonl", [{"original_id": native_tool_id, "context_id": "rawt1"}])
                 (directory / "native/subagent-runs.json").write_text(json.dumps([
-                    {"runId": "run", "childSessionKey": key, "delivery": {"status": "delivered"}}]))
+                    {"runId": "run", "childSessionKey": key, "endedAt": 1, "outcome": {"status": "ok"},
+                     "delivery": {"status": "delivered"}}]))
                 write_jsonl(directory / "native/sessions/root.jsonl", [
                     {"type": "session", "id": "root"}, {"type": "message", "id": "ack", "message": {
                         "role": "toolResult", "toolName": "sessions_spawn", "toolCallId": native_tool_id,
@@ -220,7 +222,7 @@ class SevenHarnessCaptureTests(unittest.TestCase):
                 finalize_capture(directory, read_openclaw_native(directory), execution_status="ok")
                 self.assertFalse(any(r["type"] == "result_in_context" for r in read_jsonl(directory / "relations.jsonl")))
                 (directory / "raw/native/subagent-runs.json").write_text(json.dumps([
-                    {"runId": "run", "endedAt": 1, "outcome": {"status": "error"},
+                    {"runId": "run", "childSessionKey": key, "endedAt": 1, "outcome": {"status": "error"},
                      "delivery": {"status": "delivered"}}]))
                 native = read_openclaw_native(directory)
                 self.assertFalse(native.background_detected)

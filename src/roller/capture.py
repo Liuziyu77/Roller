@@ -222,8 +222,18 @@ def _validate_capture(sample: Path, metadata: dict[str, Any]) -> None:
                     raise ValueError("invalid released relation evidence")
             elif evidence.get("path") not in inventory:
                 raise ValueError("relation evidence file is missing")
+    lifecycle = manifest.get("lifecycle")
+    if lifecycle is not None:
+        if not isinstance(lifecycle, dict) or lifecycle.get("status") not in {"complete", "pending", "unsupported", "unknown"}:
+            raise ValueError("invalid capture lifecycle")
+        pending = lifecycle.get("pending_participant_ids")
+        if not isinstance(pending, list) or any(not isinstance(pid, str) or pid not in pids for pid in pending) or len(set(pending)) != len(pending):
+            raise ValueError("invalid pending lifecycle participants")
+        if lifecycle["status"] == "complete" and pending:
+            raise ValueError("complete lifecycle contains pending participants")
+    lifecycle_incomplete = (lifecycle["status"] != "complete") if lifecycle is not None else manifest.get("background_detected")
     if manifest.get("capture_status") == "complete" and (
-        not calls or manifest.get("recorder_error") or manifest.get("native_errors") or manifest.get("background_detected")
+        not calls or manifest.get("recorder_error") or manifest.get("native_errors") or lifecycle_incomplete
         or any(c.get("capture_status") != "complete" for c in calls)
         or any(p.get("capture_status") != "complete" for p in participants)
         or any(r.get("status") != "observed" for r in relations)):

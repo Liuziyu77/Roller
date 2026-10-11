@@ -20,6 +20,8 @@ def read_openclaw_native(directory: Path) -> NativeCapture:
     registry = native_directory(directory) / "subagent-runs.json"
     runs = json.loads(registry.read_text()) if registry.exists() else []
     runs = {r["runId"]: r for r in runs}
+    pending = set()
+    lifecycle_unknown = False
     alias_path = native_directory(directory) / "tool-id-aliases.jsonl"
     aliases = {}
     if alias_path.exists():
@@ -89,14 +91,25 @@ def read_openclaw_native(directory: Path) -> NativeCapture:
             child_rows = messages.get(child, [])
             end = next((r for r, _ in reversed(child_rows) if r.get("message", {}).get("role") == "assistant"), None)
             run = runs.get(result.get("runId"), {})
+            if not run or run.get("childSessionKey") != result.get("childSessionKey"):
+                lifecycle_unknown = True
+                run = {}
+            terminal = bool(run.get("endedAt")) and run.get("outcome", {}).get("status") in {"ok", "error", "timeout"}
             failed = run.get("endedAt") and run.get("outcome", {}).get("status") in {"error", "timeout"}
             if failed:
                 native.relations.append({**base, "type": "child_failed",
                     "evidence": [*base["evidence"], {"path": "native/subagent-runs.json", "event_id": result.get("runId")}]})
-            elif end and end["message"].get("stopReason") in {"stop", "end_turn"}:
+            elif terminal and end and end["message"].get("stopReason") in {"stop", "end_turn"}:
                 native.relations.append({**base, "type": "child_completed"})
             else:
                 native.background_detected = True
+                if child:
+                    pending.add(child)
+            needs_delivery = run.get("expectsCompletionMessage", True)
+            if not terminal or (needs_delivery and run.get("delivery", {}).get("status") != "delivered"):
+                native.background_detected = True
+                if child:
+                    pending.add(child)
             if run.get("delivery", {}).get("status") == "delivered":
                 announce = f"announce:v1:{result.get('childSessionKey')}:{result.get('runId')}"
                 context_message = None
@@ -114,6 +127,7 @@ def read_openclaw_native(directory: Path) -> NativeCapture:
                         break
                 native.relations.append({**base, "type": "result_delivered", "delivery_mode": "notification",
                     "context_message": context_message,
+                    "context_native_run_id": announce,
                     "evidence": [*base["evidence"], {"path": "native/subagent-runs.json", "event_id": result.get("runId")},
                                  {"path": cache_source, "event_id": announce}]})
     for pid in native.participants:
@@ -121,4 +135,6 @@ def read_openclaw_native(directory: Path) -> NativeCapture:
             native.errors.append(f"native transcript missing for {pid}")
     if not native.participants:
         native.errors.append("no OpenClaw native session evidence")
+    native.lifecycle = {"status": "unknown" if lifecycle_unknown else "pending" if pending else "complete",
+                        "pending_participant_ids": sorted(pending)}
     return native

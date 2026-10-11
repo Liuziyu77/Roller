@@ -57,6 +57,9 @@ Call 才可导出。未归属、失败、中断的请求仍保留在 attempt 的
 Responses SDK 使用 `call_id|item_id` 作为原生工具 ID；关系保留原生 ID，并用
 `model_tool_ref` 同时核对 HTTP 输出中的 call_id 和 item_id，不能只匹配其中一个。结果进入多个
 后续调用时，分别记录关联。后台启动回执不能当成任务完成。
+通知方式的结果还必须绑定原生 announcement run ID（OpenClaw）或后续响应 ID
+（Claude Code），并核对实际请求中的通知文本；仅出现相同文本不足以证明接收。
+Call 可选的 `native_identity.run_id` 保存本地原生调用标识；关联头在转发前移除。
 
 ## 公共层与适配层
 
@@ -94,7 +97,10 @@ Call 中。`calls.jsonl` 是逐调用的协议数据，不能直接当成主轨�
 不再另存 `participants/*/calls.jsonl` 副本。
 
 manifest 使用 `roller.capture/v1`，新布局以 `storage_layout: compact/v2` 标识，
-并记录 `debug_retention` 与 `raw_retained`。完整性检查在清理前完成；
+并记录 `debug_retention` 与 `raw_retained`。可选 `lifecycle` 包含 `status`
+（complete/pending/unknown/unsupported）和 `pending_participant_ids`：子任务执行结束
+与结果交付分别确认，未知或未完成不能宣称整体 complete。校验兼容没有 lifecycle 的旧记录。
+完整性检查在清理前完成；
 清理后调用的 `response_path` 为 null，关系证据的 source 标明原始来源但
 retained=false，避免留下失效文件引用。采集状态不因调试材料清理而降级。
 精简模式的 resume 校验正式文件哈希、调用归属和关系引用，不能重新解析原始响应。
@@ -106,7 +112,13 @@ retained=false，避免留下失效文件引用。采集状态不因调试材料
 
 ## 七个 harness 的执行边界
 
-- Claude Code / OpenCode：已有原生子任务适配。未完成的后台任务标记 partial。
+- Claude Code：固定版本 `-p` 原生循环会继续处理后台完成通知；Roller 不追加用户消息驱动执行。
+  通过通知的 task/tool ID 和后续响应 ID 确认完成与结果进入上下文。自动通知在主 ACTF/SFT
+  中仍是 user 输入，保留实际请求中的系统通知包装，不当作真人发言或子代理 assistant 输出。
+  已验证一次 root → child → grandchild 前台委派；嵌套返回缺失 toolUseResult 时，
+  必须核对原生元数据 ID、启动事件 UUID 与已采集的 child 身份。恢复同一 child 的新委派
+  按新工具 ID 判断是否结束，不能复用此前完成状态。
+- OpenCode：已有原生子任务适配；未完成的后台任务标记 partial，尚未新增原生后台 drain。
 - Codex：保留 Responses 原生 output（包括加密 reasoning）及所有线程 rollout；
   spawn 返回的是启动回执，wait 返回完成结果。多轮执行通过已确认的根线程 ID resume，
   防止 `resume --last` 误选最近的子线程。根 ACTF 的工具快照只取根线程，完整快照仍作为证据保存。
@@ -116,7 +128,11 @@ retained=false，避免留下失效文件引用。采集状态不因调试材料
   一个批量工具调用可以对应多个孩子。使用原生有限查询 session 设置等待孩子返回。
 - OpenClaw：固定镜像内的原生 stream wrapper 记录各 session 的实际上下文；
   等待原生 registry 中的子任务及完成通知清理结束，再收集文件。启动回执与完成通知分开；
-  完成通知只有与父模型实际输入逐字匹配才建立 result_in_context。工具 ID 规范化映射来自
+  完成通知必须同时匹配原生 run ID 和父模型实际输入才建立 result_in_context。
+  registry 缺失或身份不匹配为 unknown；子任务已结束但通知仍 pending 为 partial。
+  drain 失败记录采集错误，保留已成功的主 turn 状态。原生 session 可能不保存完整通知输入；
+  ACTF 用同一 announcement run 的 stream:context、session:after 和 provider 响应 ID
+  补回真实输入，无法绑定时禁止线性 SFT 导出。工具 ID 规范化映射来自
   原生 resolver 的实际输出。支持按实际请求端点解码 Chat Completions、Responses 或 Messages，
   真实测试结果分别注明模型与协议。固定镜像的 hook 不匹配时会报错。
 - Pi / DeepSeek：统一记录实际模型 I/O、根参与者和完整性。Roller 内置的 Pi 配置禁用
@@ -124,7 +140,7 @@ retained=false，避免留下失效文件引用。采集状态不因调试材料
   `not_available_in_bundled_profile`，子任务测试为 not_applicable，不能当作通过。
 
 共同验收覆盖单子任务、并行、相同提示词、文件共享、工具错误、不同工具配置和普通对话。
-跨进程恢复、完整嵌套执行和 compaction 分段重建仍不在此实现范围。
+跨进程恢复、七 harness 全部嵌套/后台组合和 compaction 分段重建仍未完成全面验证。
 
 共享验收入口：`scripts/test_subagents_e2e.py --harness HARNESS ...`（七个 harness 均可选）。
 测试凭据只从指定环境变量读取。

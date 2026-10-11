@@ -21,11 +21,12 @@ from roller.capture import CallRecorder, read_jsonl
 
 
 class FullCallCaptureTests(unittest.TestCase):
-    def forward(self, root, recorder, payload, *, chat_session=None):
+    def forward(self, root, recorder, payload, *, chat_session=None, native_run=None):
         body=json.dumps({'model':'model','messages':[{'role':'user','content':'hello'}]}).encode()
         handler=MagicMock()
         handler.server.proxy=WireTraceProxy('http://model.test',root/'wire.jsonl',mode='full',capture_recorder=recorder,
-            capture_identity_header='x-roller-native-session-id' if chat_session else None)
+            capture_identity_header='x-roller-native-session-id' if chat_session else None,
+            capture_run_header='x-roller-native-run-id' if native_run else None)
         handler.headers={'Content-Length':str(len(body)),'Content-Type':'application/json','Authorization':'Bearer private-credential'}
         handler.rfile=io.BytesIO(body)
         handler.wfile=io.BytesIO()
@@ -33,6 +34,8 @@ class FullCallCaptureTests(unittest.TestCase):
         if chat_session:
             handler.path='/v1/chat/completions'
             handler.headers['x-roller-native-session-id']=chat_session
+        if native_run:
+            handler.headers['x-roller-native-run-id']=native_run
         handler.command='POST'
         handler._record.side_effect=lambda b:_ProxyHandler._record(handler,b)
         response=MagicMock(status=200,headers={'Content-Type':'application/json'})
@@ -42,6 +45,8 @@ class FullCallCaptureTests(unittest.TestCase):
             _ProxyHandler._handle(handler)
             if chat_session:
                 self.assertNotIn('x-roller-native-session-id',dict((k.lower(),v) for k,v in send.call_args.args[0].header_items()))
+            if native_run:
+                self.assertNotIn('x-roller-native-run-id',dict((k.lower(),v) for k,v in send.call_args.args[0].header_items()))
         return handler.wfile.getvalue()
 
     def test_full_response_is_captured_without_changing_delivery(self):
@@ -71,6 +76,13 @@ class FullCallCaptureTests(unittest.TestCase):
             events=read_jsonl(recorder.events)
             self.assertEqual(events[0]['native_identity'],{'session_id':'child-session'})
             self.assertEqual(recorder.response_path(1).read_bytes(),payload)
+
+    def test_native_notification_run_is_local_and_not_sent_to_provider(self):
+        payload=b'{"id":"m","choices":[]}'
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);recorder=CallRecorder(root/'capture/attempt-0001')
+            self.assertEqual(self.forward(root,recorder,payload,chat_session='root',native_run='announce:child'),payload)
+            self.assertEqual(read_jsonl(recorder.events)[0]['native_identity'],{'session_id':'root','run_id':'announce:child'})
 
 
 class ForwardPathTests(unittest.TestCase):

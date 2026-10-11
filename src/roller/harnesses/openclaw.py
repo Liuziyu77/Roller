@@ -497,6 +497,7 @@ exec node --input-type=module -e "$1"
                 mode=log_mode,
                 capture_recorder=self.capture.recorder if self.capture else None,
                 capture_identity_header="x-roller-native-session-id" if self.capture else None,
+                capture_run_header="x-roller-native-run-id" if self.capture else None,
                 strip_thinking=not self.config.keep_thinking,
                 normalize_reasoning_replay=self.config.keep_thinking,
             )
@@ -1341,15 +1342,20 @@ class OpenClawSession(InteractiveSession):
             )
         if self.harness.config.capture_calls:
             remaining = self.request.timeout_seconds - (time.monotonic() - self.started)
-            if remaining <= 0:
-                raise TimeoutError("OpenClaw task timed out before subagent drain")
-            script = (Path(__file__).resolve().parents[1] / "assets/openclaw_drain.mjs").read_text()
-            self.harness._checked([
-                "exec", "-e", f"OPENCLAW_STATE_DIR={self.state_dir}",
-                "-e", f"ROLLER_CAPTURE_ROOT_SESSION={self.session_id}",
-                "-e", f"ROLLER_CAPTURE_TIMEOUT_MS={max(1, int(remaining * 1000))}",
-                self.container, "node", "--input-type=module", "-e", script,
-            ], "OpenClaw subagent completion drain", timeout=remaining)
+            try:
+                if remaining <= 0:
+                    raise TimeoutError("OpenClaw capture deadline exhausted before subagent drain")
+                script = (Path(__file__).resolve().parents[1] / "assets/openclaw_drain.mjs").read_text()
+                self.harness._checked([
+                    "exec", "-e", f"OPENCLAW_STATE_DIR={self.state_dir}",
+                    "-e", f"ROLLER_CAPTURE_ROOT_SESSION={self.session_id}",
+                    "-e", f"ROLLER_CAPTURE_TIMEOUT_MS={max(1, int(remaining * 1000))}",
+                    self.container, "node", "--input-type=module", "-e", script,
+                ], "OpenClaw subagent completion drain", timeout=remaining)
+            except Exception as exc:
+                # The root turn already succeeded. Incomplete collection must
+                # remain a capture failure, not fabricate a failed root turn.
+                self.harness.capture.errors.append(f"OpenClaw subagent drain failed: {exc}")
         content, assistant_count = self.harness._latest_assistant_content(
             self.container,
             state_dir=self.state_dir,
