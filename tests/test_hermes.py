@@ -323,6 +323,43 @@ class HermesSessionTests(unittest.TestCase):
         self.assertEqual(len([c for c in self.runtime.calls if c[:2] == ["rm", "-f"]]), 1)
         self.assertNotIn("test-private-key", json.dumps(result.metadata))
 
+    def test_finish_sums_child_usage_before_capture_cleanup(self):
+        session = self.session(capture_calls=True, api_base="http://localhost:1234/v1")
+        session.container_started = True
+
+        def copy_children(*args):
+            children = session.capture.recorder.directory / "native" / "children"
+            children.mkdir(parents=True)
+            for name, tokens in (("a", 11), ("b", 17)):
+                rows = [event("assistant", "child only")]
+                rows[0]["usage"] = {"prompt_tokens": tokens, "completion_tokens": 2,
+                                    "prompt_tokens_details": {"cached_tokens": 3}}
+                # The same provider response is also retained as evidence;
+                # it must not count as a second call.
+                rows.append({"type": "response", "response": {"usage": rows[0]["usage"]}})
+                (children / (name + ".jsonl")).write_text(
+                    "".join(json.dumps(row) + "\n" for row in rows))
+
+        import shutil
+        def finish_capture(status):
+            shutil.rmtree(session.capture.recorder.directory / "native")
+            return {}
+
+        with patch.object(session.capture, "copy_native", side_effect=copy_children), \
+             patch.object(session.capture, "finish", side_effect=finish_capture):
+            result = session.finish("ok")
+        self.assertEqual(result.status, "ok", result.error)
+        # Root: 2 calls, 10 input / 3 output / 4 cached. Children: 2 calls.
+        self.assertEqual(result.usage["request_count"], 4)
+        self.assertEqual(result.usage["input_tokens"], 38)
+        self.assertEqual(result.usage["output_tokens"], 7)
+        self.assertEqual(result.usage["total_tokens"], 45)
+        self.assertEqual(result.usage["cache_read_tokens"], 10)
+        sft = actf_to_sft(json.loads((self.root / "rollout/trace_ACTF.json").read_text()))
+        self.assertNotIn("child only", json.dumps(sft))
+        self.assertIs(session.finish("ok"), result)
+        self.assertEqual(result.usage["request_count"], 4)
+
     def test_native_failure_is_error_and_key_is_redacted(self):
         self.runtime.turn_result = {"ok": False, "error": "rejected test-private-key"}
         harness = HermesHarness(HermesConfig(api_key_env="ROLLER_TEST_KEY"), 0, self.runtime)

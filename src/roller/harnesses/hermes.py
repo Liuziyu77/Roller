@@ -336,7 +336,17 @@ class HermesSession(InteractiveSession):
                     children = self.capture.recorder.directory / "native" / "children"
                     if children.is_dir():
                         for child in children.glob("*.jsonl"):
-                            child.rename(children.parent / ("child-" + child.name))
+                            child_trace = children.parent / ("child-" + child.name)
+                            child.rename(child_trace)
+                            # Count child model responses once, independently of
+                            # the root ACTF, before compact capture removes raw logs.
+                            try:
+                                child_usage = extract_hermes_usage(child_trace)
+                            except Exception as exc:
+                                self.capture.errors.append("Hermes child usage extraction failed: " + self.redact(str(exc)))
+                            else:
+                                for key in ZERO_USAGE:
+                                    usage[key] += child_usage[key]
                         children.rmdir()
                 self.capture_metadata = self.capture.finish(status)
             if problems and status == "ok":
