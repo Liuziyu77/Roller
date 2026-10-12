@@ -156,7 +156,18 @@ def response_finished(protocol: str, output: dict[str, Any]) -> bool:
     if protocol == "anthropic-messages":
         return output.get("stop_reason") in {"end_turn", "tool_use", "stop_sequence"}
     choices = output.get("choices", [])
-    return len(choices) == 1 and isinstance(choices[0].get("message"), dict) and choices[0].get("finish_reason") in {"stop", "tool_calls", "function_call"}
+    if len(choices) != 1 or not isinstance(choices[0].get("message"), dict):
+        return False
+    choice = choices[0]
+    if choice.get("finish_reason") == "tool_calls":
+        # Some compatible gateways return this finish reason with only XML
+        # text. There is no executable tool call to pair with a result.
+        calls = choice["message"].get("tool_calls")
+        return isinstance(calls, list) and bool(calls) and all(
+            isinstance(call, dict) and isinstance(call.get("id"), str) and bool(call["id"])
+            and isinstance(call.get("function"), dict) and bool(call["function"].get("name"))
+            for call in calls)
+    return choice.get("finish_reason") in {"stop", "function_call"}
 
 
 def tool_call_ids(protocol: str, output: dict[str, Any]) -> set[str]:

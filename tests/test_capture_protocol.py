@@ -57,6 +57,21 @@ class SharedProtocolTests(unittest.TestCase):
         write_jsonl(directory / "native/journal.jsonl", rows)
         return directory, rows
 
+    def test_tool_calls_finish_without_calls_is_not_exportable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            directory, _ = self.capture(base)
+            payload = response("malformed", "<invoke name=write>...</invoke>")
+            payload["choices"][0]["finish_reason"] = "tool_calls"
+            (directory / "responses/call-00000002.body").write_text(json.dumps(payload))
+            manifest = finalize_opencode_capture(directory, execution_status="ok", debug_retention="on-error")
+            call = read_jsonl(directory / "calls.jsonl")[1]
+            self.assertEqual(call["capture_status"], "partial")
+            self.assertEqual(call["export_status"], "unavailable")
+            self.assertEqual(manifest["capture_status"], "partial")
+            self.assertTrue(manifest["raw_retained"])
+            validate_capture(base, {"manifest": "capture/attempt-0001/manifest.json", "capture_status": "partial"})
+
     def test_parallel_same_prompt_and_response_ids_use_exact_session_identity(self):
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp); directory, _ = self.capture(base)

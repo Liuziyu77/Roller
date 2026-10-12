@@ -38,7 +38,8 @@ Call 的 `context` 保留实际发送的完整请求体；`output` 是重组后�
 | `export_status` | 这次调用是否能进入逐调用导出？ |
 
 仅当模型响应正常结束、输入响应完整、身份明确、模型匹配且没有采集错误时，
-Call 才可导出。未归属、失败、中断的请求仍保留在 attempt 的调用和原始
+Call 才可导出。Chat Completions 仅有 tool_calls 结束标记、没有实际工具调用
+ID/name 的异常响应也标记 partial 并禁止导出。未归属、失败、中断的请求仍保留在 attempt 的调用和原始
 证据中。整体采集可以是 partial，同时包含可导出的完整调用。
 
 ## 关系语义
@@ -118,7 +119,10 @@ retained=false，避免留下失效文件引用。采集状态不因调试材料
   已验证一次 root → child → grandchild 前台委派；嵌套返回缺失 toolUseResult 时，
   必须核对原生元数据 ID、启动事件 UUID 与已采集的 child 身份。恢复同一 child 的新委派
   按新工具 ID 判断是否结束，不能复用此前完成状态。
-- OpenCode：已有原生子任务适配；未完成的后台任务标记 partial，尚未新增原生后台 drain。
+- OpenCode：已有原生子任务适配；固定 bundled 版本的 task schema 没有 background 参数。
+  不把不存在的后台调用场景算作通过。当前原生 subagent_depth 默认为 1；
+  子代理能看到 task，但孙代理创建会被原生深度限制拒绝。拒绝轨迹保留，不虚构孙代理身份。
+  若其他原生证据出现后台执行，当前没有新增 drain，采集会保持 partial。
 - Codex：保留 Responses 原生 output（包括加密 reasoning）及所有线程 rollout；
   spawn 返回的是启动回执，wait 返回完成结果。多轮执行通过已确认的根线程 ID resume，
   防止 `resume --last` 误选最近的子线程。根 ACTF 的工具快照只取根线程，完整快照仍作为证据保存。
