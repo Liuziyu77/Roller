@@ -57,6 +57,7 @@ class PiConfig:
     reasoning_effort: str | None = None
     max_steps: int = 12
     context_length: int = 128000
+    input_modalities: tuple[str, ...] = ("text", "image")
     output_tokens: int = 8192
     wire_trace_mode: str = "actf"
     keep_thinking: bool = True
@@ -65,6 +66,8 @@ class PiConfig:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "reasoning_effort", pi_effort(self.reasoning_effort) or "off")
+        if self.input_modalities not in (("text",), ("text", "image")):
+            raise ValueError("Pi input modalities must be text or text,image")
         if not self.docker_image.strip():
             raise ValueError("Pi docker image must be non-empty")
         if self.container_user is not None and not self.container_user.strip():
@@ -242,6 +245,7 @@ class PiSession(InteractiveSession):
             "thinking": pi_effort(resolve_thinking(self.request.task.thinking, config.reasoning_effort)),
             "max_steps": config.max_steps, "timeout_seconds": timeout,
             "context_length": config.context_length, "output_tokens": config.output_tokens,
+            "input_modalities": list(config.input_modalities),
             "tools": list(PI_TOOLS),
             "context_paths": [item.target for item in self.request.task.context_files if item.role != "skill"],
             "system_prompt": f"You are running a Roller task. Work in {config.workspace_container_path}. "
@@ -372,6 +376,7 @@ class PiSession(InteractiveSession):
             metadata={"raw_trace_schema": "roller.pi-events/v1", "pi_version": self.pi_version, "api_mode": "openai-completions",
                 "provenance": provenance, "output_collection": output_metadata, "turn_count": self.turns,
                 "retained_container": self.container if retained else None,
-                "settings": {"reasoning_effort": resolve_thinking(self.request.task.thinking, config.reasoning_effort), "max_steps": config.max_steps, "context_length": config.context_length, "output_tokens": config.output_tokens, "tools": list(PI_TOOLS), "keep_thinking": config.keep_thinking}},
+                "settings": {"reasoning_effort": resolve_thinking(self.request.task.thinking, config.reasoning_effort), "max_steps": config.max_steps, "context_length": config.context_length, "output_tokens": config.output_tokens,
+                    "input_modalities": list(config.input_modalities), "tools": list(PI_TOOLS), "keep_thinking": config.keep_thinking}},
         )
         return self._result

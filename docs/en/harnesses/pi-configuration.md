@@ -66,6 +66,7 @@ This table lists Pi-specific runtime flags only. See section 3 for API addresses
 | --- | --- |
 | `--pi-image` | Precedes `--docker-image`, `ROLLER_PI_IMAGE`, and `roller-pi:0.85.1` |
 | `--pi-max-steps` | At most 12 model requests per user message, also bounded by task/turn deadlines |
+| `--pi-input-modalities` | `text,image` by default; use `text` for text-only models. Declares SDK capabilities; does not add vision support to the upstream model. Recorded in the run lock and checked on resume. |
 | `--pi-context-length` | 128000, at least 1024. Match the actual model service |
 | `--pi-output-tokens` | 8192. Positive and smaller than the context window. Sent as `max_tokens` |
 | `--thinking` / `runtime.thinking` | `off/minimal/low/medium/high/xhigh/max`. Defaults to `off`, with `none` as an alias |
@@ -106,6 +107,16 @@ Docker tests use a deterministic local streaming endpoint and a fake key with th
 With a DeepSeek image available, also set `ROLLER_PI_MIXED_DOCKER_TEST=1` to verify Pi ↔ DeepSeek pairings and Resume in both directions.
 
 See [Coverage](https://github.com/Liuziyu77/Roller/blob/main/examples/coverage/README.en.md). Offline configuration validation, real-container tests, and external model acceptance are distinct verification layers.
+
+### Issue #46 regression coverage
+
+The Pi Docker suite checks the actual Bearer token against a synthetic credential, rejects an incorrect token, reads two images through native `read`, and compares request image bytes/order with ACTF and SFT. It also covers text-only input capability, native reasoning, run-level SFT, resume, and Viewer image data. Pi's Chat Completions transport adds a synthetic user message for tool images; canonical comparisons fold this back into the corresponding tool result.
+
+On 2026-10-08, real Pi 0.85.1 runs with `kimi-k3` and `glm-5.3-flash` each read two 64×64 PNGs, wrote `red, blue`, and returned the same answer (four model requests each). Raw/wire requests, image bytes/order, canonical ACTF/SFT projection, run-level SFT, and unchanged traces after resume were verified. Kimi returned three reasoning messages, preserved exactly; GLM returned no visible reasoning in this run. Viewer API image data and Chrome visual verification both passed: both real trajectories display the red image in the first read result and the blue image in the second, with the expected text/image order and layout. This does not establish support for other models or gateways.
+
+Additional runs on the same date completed the two-image task with `gpt-5.6-sol` and `bailian/deepseek-v4.1-flash`, both answering `red, blue` with the current credential. On this gateway, GPT returned 400 for tools with `high` on Chat Completions, then succeeded with `--thinking off` (four requests). DeepSeek succeeded with `high` (three requests, two preserved reasoning messages). Image bytes/order, ACTF/SFT, run-level SFT, and Viewer image API checks passed; parallel DeepSeek image reads were compared canonically at the tool-result group boundary. Resume and browser visual checks were not repeated for these additional runs. Response model names were `gpt-5.6-sol-2026-07-09` and `deepseek-v4.1-flash`; these may be gateway aliases and do not independently establish backend model identity.
+
+Input capabilities are recorded in the run lock. Runs created before this setting was recorded may require a new run directory instead of resume; retain historical evidence. Credentials and local validation artifacts are excluded from version control.
 
 ## 8. Common issues
 

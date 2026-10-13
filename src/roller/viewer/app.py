@@ -14,6 +14,8 @@ from pathlib import Path
 from typing import Any, Mapping
 from urllib.parse import parse_qs, urlparse
 
+from roller.sft import SFTConversionError, _image_data_uri
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_PAGE_SIZE = 80
@@ -104,6 +106,34 @@ def _text_view(value: Any, limit: int) -> dict[str, Any]:
         "length": len(content),
         "truncated": len(content) > limit,
     }
+
+
+def _observation_view(value: Any, limit: int) -> dict[str, Any]:
+    """Expose validated inline images in their original tool-result order."""
+    view = _text_view(value, limit)
+    if not isinstance(value, list):
+        return view
+    blocks = []
+    display = []
+    remaining = limit
+    for block in value:
+        if isinstance(block, dict) and block.get("type") == "image":
+            try:
+                uri = _image_data_uri(block, "viewer image")
+            except SFTConversionError:
+                pass  # Malformed images remain visible as diagnostic text.
+            else:
+                blocks.append({"type": "image", "url": uri})
+                display.append("<image>")
+                continue
+        text = _content_text([block])
+        display.append(text)
+        blocks.append({"type": "text", "text": text[:remaining]})
+        remaining = max(0, remaining - len(text))
+    if any(block["type"] == "image" for block in blocks):
+        view = _text_view("\n".join(display), limit)
+        view["blocks"] = blocks
+    return view
 
 
 def _preview(value: Any, limit: int = 180) -> str:
@@ -499,7 +529,7 @@ class RollerRun:
                         "tool_name": _string(observation.get("toolName")),
                         "is_error": bool(observation.get("isError", False)),
                         "timestamp": observation.get("timestamp"),
-                        "content": _text_view(observation.get("content"), text_limit),
+                        "content": _observation_view(observation.get("content"), text_limit),
                     }
                 )
         return {

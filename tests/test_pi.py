@@ -172,7 +172,20 @@ class PiHarnessTests(unittest.TestCase):
     def test_sdk_runner_resolves_key_from_environment_and_enables_images(self):
         source = RUNNER_PATH.with_name("runner.mjs").read_text(encoding="utf-8")
         self.assertIn('apiKey: "$PI_API_KEY"', source)
-        self.assertIn('input: ["text", "image"]', source)
+        self.assertIn('input: config.input_modalities', source)
+
+    def test_input_modalities_configuration(self):
+        self.assertEqual(PiConfig().input_modalities, ("text", "image"))
+        self.assertEqual(PiConfig(input_modalities=("text",)).input_modalities, ("text",))
+        for value in ((), ("image",), ("text", "audio"), "text", ["text"]):
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, "modalities"):
+                PiConfig(input_modalities=value)
+        parser = _build_parser()
+        for value in ("text", "text,image"):
+            args = parser.parse_args(["collect", "--tasks", "tasks.jsonl", "--pi-input-modalities", value])
+            self.assertEqual(args.pi_input_modalities, value)
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            parser.parse_args(["collect", "--tasks", "tasks.jsonl", "--pi-input-modalities", "image"])
 
     def test_session_outputs_cleanup_and_redaction(self):
         runtime = FakeRuntime()
