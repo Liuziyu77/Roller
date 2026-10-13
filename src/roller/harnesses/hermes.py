@@ -56,6 +56,7 @@ class HermesConfig:
     max_iterations: int = 12
     context_length: int | None = None
     vision: bool = True
+    toolsets: tuple[str, ...] | None = None
     wire_trace_mode: str = "actf"
     keep_thinking: bool = True
     keep_container_on_error: bool = False
@@ -63,6 +64,8 @@ class HermesConfig:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "reasoning_effort", hermes_effort(self.reasoning_effort))
+        if self.toolsets is not None and (not self.toolsets or any(not isinstance(name, str) or not name.strip() for name in self.toolsets)):
+            raise ValueError("Hermes toolsets must contain non-empty names")
         if not self.docker_image.strip():
             raise ValueError("Hermes docker image must be non-empty")
         if self.container_user is not None and not self.container_user.strip():
@@ -234,7 +237,7 @@ class HermesSession(InteractiveSession):
             "session_id": self.container, "model": self.request.model, "message": message,
             "thinking": hermes_effort(resolve_thinking(self.request.task.thinking, config.reasoning_effort)),
             "max_iterations": config.max_iterations, "timeout_seconds": timeout,
-            "context_length": config.context_length, "vision": config.vision,
+            "context_length": config.context_length, "vision": config.vision, "toolsets": list(config.toolsets) if config.toolsets is not None else None,
             "system_prompt": f"You are running a Roller task. Work in {config.workspace_container_path}. "
                 f"Task inputs are in the workspace. Save deliverables under {self.request.task.output_dir}. "
                 f"Task context files (read when relevant): {context or '(none)'}. "
@@ -350,6 +353,6 @@ class HermesSession(InteractiveSession):
             metadata={"raw_trace_schema": "roller.hermes-events/v1", "hermes_version": self.hermes_version,
                 "provenance": provenance, "output_collection": output_metadata, "turn_count": self.turns,
                 "retained_container": self.container if retained else None,
-                "settings": {"reasoning_effort": resolve_thinking(self.request.task.thinking, config.reasoning_effort), "max_iterations": config.max_iterations, "context_length": config.context_length, "vision": config.vision, "toolsets": ["terminal", "file", *(["vision"] if config.vision else [])], "keep_thinking": config.keep_thinking}},
+                "settings": {"reasoning_effort": resolve_thinking(self.request.task.thinking, config.reasoning_effort), "max_iterations": config.max_iterations, "context_length": config.context_length, "vision": config.vision, "toolsets": list(config.toolsets) if config.toolsets is not None else None, "disabled_toolsets": [] if config.vision else ["vision"], "keep_thinking": config.keep_thinking}},
         )
         return self._result

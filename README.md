@@ -41,9 +41,9 @@ Docker 中的 Agent Harness
 | OpenClaw（默认） | OpenAI Responses 或 Chat Completions | 自定义/开源模型、动态 User Simulator、多模态输入 | 模型通过 JSON 配置；保留原生 reasoning |
 | Codex | Responses | Codex CLI 工具轨迹、GPT 与兼容 Responses 服务 | 保留原生 reasoning；可作为 Task Agent 或 User Simulator |
 | Claude Code | Anthropic `/v1/messages` | Claude Code 工具轨迹与 native thinking | 保留原生 thinking；可作为 Task Agent 或 User Simulator |
-| Hermes | OpenAI Chat Completions | 原生请求与工具消息 → ACTF/SFT | 固定版本，容器内 terminal/file；可作为 Task Agent 或 User Simulator |
+| Hermes | OpenAI Chat Completions | 原生请求与工具消息 → ACTF/SFT | 固定版本，原生工具发现；可作为 Task Agent 或 User Simulator |
 | OpenCode | OpenAI Chat Completions | CLI session / tools → ACTF/SFT | 固定版本，文本与文件工具；支持 Agent / Simulator |
-| DeepSeek Harness | DeepSeek Chat Completions | 原生 SDK / 持久化 Bash → ACTF/SFT | 固定 sdk-minimal profile；支持 Agent / Simulator |
+| DeepSeek Harness | DeepSeek Chat Completions | 原生 SDK / 持久化 Bash → ACTF/SFT | 默认完整 sdk profile，可选 sdk-minimal；支持 Agent / Simulator |
 | Pi Agent | OpenAI Chat Completions | 原生 AgentSession / 七种工具 → ACTF/SFT | 固定 SDK 版本；支持 Agent / Simulator |
 
 七种 Harness 使用相同的 Task、Sample、ACTF 和 SFT 格式，也共用 Viewer、重试和 Resume 流程。镜像、API 和 reasoning 参数不同，详见对应的 [Harness 指南](docs/README.md#按-harness-选择)。

@@ -14,7 +14,6 @@ from unittest.mock import Mock, patch
 
 from roller.cli import _build_parser, _collect
 from roller.harnesses.opencode import (
-    OPENCODE_TOOLS,
     RUNNER_PATH,
     OpenCodeConfig,
     OpenCodeHarness,
@@ -340,11 +339,15 @@ class OpenCodeHarnessTests(unittest.TestCase):
         self.assertEqual(environment["no_proxy"], expected)
 
     def test_native_skill_tool_is_allowed(self):
-        self.assertIn("skill", OPENCODE_TOOLS)
         spec = importlib.util.spec_from_file_location("opencode_runner_tools", RUNNER_PATH)
         runner = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(runner)
-        self.assertIn("skill", runner.TOOLS)
+        policy = runner.tool_permissions()
+        for name in ("skill", "webfetch", "task", "future_native_tool"):
+            self.assertEqual(policy.get(name, policy["*"]), "allow")
+        policy = runner.tool_permissions(["webfetch"])
+        self.assertEqual(policy["webfetch"], "deny")
+        self.assertEqual(policy["*"], "allow")
 
     def test_skillsbench_prompt_preserves_upstream_output_paths(self):
         task = Task(

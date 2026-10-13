@@ -5,6 +5,7 @@ from copy import deepcopy
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -239,6 +240,36 @@ class HermesBridgeTests(unittest.TestCase):
         self.assertEqual(rewritten[1]["content"], "loaded")
         self.assertEqual(rewritten[2]["content"][1]["image_url"]["url"], data_url)
         self.assertIsInstance(messages[1]["content"], list)
+
+    def test_runner_uses_native_toolsets_and_explicit_vision_opt_out(self):
+        import sys
+        from types import SimpleNamespace
+        spec = importlib.util.spec_from_file_location("hermes_tool_selection", RUNNER_PATH)
+        runner = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(runner)
+        captured = []
+
+        class NativeAgent:
+            def __init__(self, **kwargs):
+                captured.append(kwargs)
+
+            def run_conversation(self, *args, **kwargs):
+                return {"completed": True, "final_response": "OK", "messages": []}
+
+        modules = {"run_agent": SimpleNamespace(AIAgent=NativeAgent),
+                   "agent.auxiliary_client": SimpleNamespace(set_runtime_main=lambda *a, **k: None,
+                                                             reset_runtime_main=lambda *a: None)}
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(sys.modules, modules), patch.dict(
+            os.environ, {"HERMES_HOME": tmp, "OPENAI_BASE_URL": "http://localhost/v1", "OPENAI_API_KEY": "test"}
+        ):
+            config = {"model": "test", "message": "hello", "session_id": "s", "max_iterations": 2,
+                      "system_prompt": "test", "timeout_seconds": 10}
+            runner.run_turn(config, tmp)
+            self.assertIsNone(captured[-1]["enabled_toolsets"])
+            self.assertIsNone(captured[-1]["disabled_toolsets"])
+            runner.run_turn({**config, "toolsets": ["web", "vision"], "vision": False}, tmp)
+            self.assertEqual(captured[-1]["enabled_toolsets"], ["web", "vision"])
+            self.assertEqual(captured[-1]["disabled_toolsets"], ["vision"])
 
     def test_persistence_hook_keeps_tools_before_compaction_and_across_processes(self):
         spec = importlib.util.spec_from_file_location("roller_hermes_runner_test", RUNNER_PATH)

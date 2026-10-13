@@ -274,3 +274,14 @@ roller bench report RUN_DIR [--output REPORT.json]
 `collect --bench` 会自动使用每条 benchmark task 的 timeout。手工采用 export 再 collect 的流程时，需要为 collect 添加 `--task-timeouts`。两种流程都可以用 `--pass-env` 传入 grader 需要的环境变量。
 
 字段语义、评分时序、`stage` 防泄漏规则和聚合口径见 [Bench 接入与评分](../benches/bench-format.md)。
+
+## 原生工具选择
+
+| Option | Default | Behavior |
+| --- | --- | --- |
+| `--hermes-toolset NAME` | Native discovery | Repeat to select native toolsets |
+| `--opencode-deny-tool NAME` | None | Repeat to deny native tools/permissions |
+| `--deepseek-profile NAME` | `sdk` | Native SDK profile; `sdk-minimal` selects shell-only |
+| `--deepseek-permission-mode MODE` | `danger-full-access` | Container-only permissions; also accepts `read-only` / `workspace-write` |
+
+See [tool availability](../harnesses/tool-availability.md) for runtime prerequisites and isolation boundaries.

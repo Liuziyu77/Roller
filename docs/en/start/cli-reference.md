@@ -278,3 +278,14 @@ Prefer `collect --bench`. It converts tasks, runs containers, grades results, an
 `collect --bench` automatically uses each benchmark task's timeout. For a manual export followed by collect, add `--task-timeouts` to collect. Both workflows can use `--pass-env` for environment variables required by the grader.
 
 See [Bench integration and scoring](../benches/bench-format.md) for field semantics, scoring order, `stage` leak prevention, and aggregation rules.
+
+## Native tool selection
+
+| Option | Default | Behavior |
+| --- | --- | --- |
+| `--hermes-toolset NAME` | Native discovery | Repeat to select native toolsets |
+| `--opencode-deny-tool NAME` | None | Repeat to deny native tools/permissions |
+| `--deepseek-profile NAME` | `sdk` | Native SDK profile; `sdk-minimal` selects shell-only |
+| `--deepseek-permission-mode MODE` | `danger-full-access` | Container-only permissions; also accepts `read-only` / `workspace-write` |
+
+See [tool availability](../harnesses/tool-availability.md) for runtime prerequisites and isolation boundaries.

@@ -47,6 +47,17 @@ def write_events(path, events=None):
     path.write_text("".join(json.dumps(e)+"\n" for e in (sample_events() if events is None else events)))
 
 
+class DeepSeekProfileTests(unittest.TestCase):
+    def test_native_default_and_explicit_minimal_profile(self):
+        self.assertEqual(DeepSeekConfig().profile, "sdk")
+        self.assertEqual(DeepSeekConfig(profile="sdk-minimal").profile, "sdk-minimal")
+        args = _build_parser().parse_args(["collect", "--tasks", "tasks.jsonl", "--deepseek-profile", "sdk-minimal"])
+        self.assertEqual(args.deepseek_profile, "sdk-minimal")
+        for value in ("", "../sdk", "sdk\n", None):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                DeepSeekConfig(profile=value)
+
+
 class DeepSeekTraceTests(unittest.TestCase):
     def test_native_tools_reasoning_and_usage(self):
         events = sample_events()

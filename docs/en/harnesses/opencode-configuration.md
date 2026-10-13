@@ -10,7 +10,7 @@ The OpenCode Harness supports:
 - Task Agents and User Simulators, both accepting `"harness": "opencode"`.
 - Task Bundle, read-only inputs, Context, setup, task environment variables, custom `output_dir`, and in-container grading.
 - streaming **OpenAI Chat Completions** with tool calls.
-- `bash/read/write/edit/apply_patch/glob/grep` tool permissions. The actual toolset is determined by the pinned version and the model.
+- Native tool discovery, with explicit exclusions through `--opencode-deny-tool NAME`.
 - image attachments produced by OpenCode's `read` tool for image-capable models.
 - ACTF, SFT, reasoning export, and usage.
 - `--wire-trace actf|full|off`.
@@ -76,7 +76,7 @@ Dedicated options apply to both participants. The run lock includes the binary v
 
 Each participant gets an independent container and HOME/XDG directories. Inputs are mounted read-only. Context files are copied to declared paths and listed in the prompt. Setup, selected environment variables, output collection, and in-container grading use the shared Roller task contract.
 
-The adapter permits bash, read, write, edit, apply_patch, glob, and grep. Native model selection determines which tools are exposed. Each user turn resumes the same native session and workspace with a new CLI process. Background process handles do not survive. Auto-sharing, updates, model catalog refresh, LSP, formatters, compaction, pruning, and implicit project configuration are disabled. Context/skill coverage checks file accessibility. Skill tools, MCP, subagents, and network tools are outside the initial scope.
+Native model selection and the registry determine which tools are exposed. Roller permits native tools for noninteractive execution; `--opencode-deny-tool NAME` adds explicit exclusions. Each turn resumes the same session/workspace. Auto-sharing, updates, model refresh, LSP, formatters, compaction, pruning and implicit project configuration remain disabled. Optional integrations still require dependencies and credentials in the container.
 
 ## 6. Trace outputs and Resume
 

@@ -34,16 +34,7 @@ RUNNER_PATH = Path(__file__).resolve().parents[1] / "assets" / "opencode" / "run
 STATE = "/roller/opencode-state"
 RUNNER = "/roller/opencode_runner.py"
 PLUGIN = "/roller/opencode_journal.mjs"
-OPENCODE_TOOLS = (
-    "bash",
-    "read",
-    "write",
-    "edit",
-    "apply_patch",
-    "glob",
-    "grep",
-    "skill",
-)
+
 ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 LOCAL_PROXY_BYPASS = ("localhost", "127.0.0.1", "::1")
 
@@ -100,6 +91,7 @@ class OpenCodeConfig:
     context_length: int = 128000
     output_tokens: int = 8192
     vision: bool = True
+    deny_tools: tuple[str, ...] = ()
     wire_trace_mode: str = "actf"
     keep_thinking: bool = True
     keep_container_on_error: bool = False
@@ -107,6 +99,8 @@ class OpenCodeConfig:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "reasoning_effort", opencode_effort(self.reasoning_effort))
+        if any(not isinstance(name, str) or not name.strip() for name in self.deny_tools):
+            raise ValueError("OpenCode denied tools must contain non-empty names")
         if not self.docker_image.strip():
             raise ValueError("OpenCode docker image must be non-empty")
         if self.container_user is not None and not self.container_user.strip():
@@ -303,7 +297,7 @@ class OpenCodeSession(InteractiveSession):
             "thinking": opencode_effort(resolve_thinking(self.request.task.thinking, config.reasoning_effort)),
             "max_steps": config.max_steps, "timeout_seconds": timeout,
             "context_length": config.context_length, "output_tokens": config.output_tokens,
-            "vision": config.vision,
+            "vision": config.vision, "deny_tools": list(config.deny_tools),
             "system_prompt": _system_prompt(
                 self.request, config.workspace_container_path
             ),
@@ -445,6 +439,6 @@ class OpenCodeSession(InteractiveSession):
                 "warnings": warnings,
                 "trajectory_conversion": trajectory_conversion,
                 "retained_container": self.container if retained else None,
-                "settings": {"reasoning_effort": resolve_thinking(self.request.task.thinking, config.reasoning_effort), "max_steps": config.max_steps, "context_length": config.context_length, "output_tokens": config.output_tokens, "vision": config.vision, "tools": list(OPENCODE_TOOLS), "keep_thinking": config.keep_thinking}},
+                "settings": {"reasoning_effort": resolve_thinking(self.request.task.thinking, config.reasoning_effort), "max_steps": config.max_steps, "context_length": config.context_length, "output_tokens": config.output_tokens, "vision": config.vision, "deny_tools": list(config.deny_tools), "tool_policy": "native", "keep_thinking": config.keep_thinking}},
         )
         return self._result

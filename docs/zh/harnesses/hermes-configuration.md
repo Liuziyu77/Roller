@@ -11,7 +11,7 @@ Hermes Harness 支持：
 - Task Bundle、只读 inputs、Context 文件、`runtime.setup`、任务环境变量和完整 `output_dir` 回收。
 - 并行、retry、run lock 和 Resume 完整性检查。
 - 带工具调用的 **OpenAI Chat Completions**。
-- Hermes `local` terminal backend，启用 `terminal`、`file` 和可选的 `vision` 工具集。
+- Hermes `local` terminal backend，使用原生工具发现；`--hermes-toolset NAME` 可重复显式选择工具集。
 - 模型和服务支持图片输入时，可通过 `vision_analyze` 加载本地图片。
 - ACTF、SFT、结果文件、provenance 和 usage。
 - `--wire-trace actf|full|off`。
@@ -80,7 +80,7 @@ Hermes 的专属 API/镜像参数同时适用于 Agent 和 Simulator。Run lock 
 
 ## 5. 会话、工作区与轨迹
 
-每个参与者使用独立的一次性容器。Hermes 的 `local` terminal backend 在这个容器内执行，启用 `terminal`、`file` 和可选的 `vision` 工具集。输入只读挂载、Context 文件、setup、任务环境变量、输出回收和容器内评分使用 Roller 的统一工作区。
+每个参与者使用独立的一次性容器。Hermes 的 `local` terminal backend 在这个容器内执行，使用原生工具发现；`--hermes-toolset NAME` 可重复显式选择工具集。输入只读挂载、Context 文件、setup、任务环境变量、输出回收和容器内评分使用 Roller 的统一工作区。
 
 所有 Context 角色的文件会复制到声明路径，并在任务 system prompt 中列出，任务可显式读取。桥接关闭隐式 profile/context 搜索、持久 Memory、SOUL identity、checkpoint、后台 review 和 rollout 期间的自动依赖安装。因此可以验证 Context/skill 文件可访问性。不会启用 Hermes 自动发现或学习 skill 的服务。
 
@@ -131,3 +131,5 @@ ROLLER_HERMES_DOCKER_TEST=1 PYTHONPATH=src \
 - rollout 超时：执行被停止并回收已有轨迹，按需调整 `--timeout` 或 `--hermes-max-iterations`。
 - Resume 被拒绝：run lock 中的版本、镜像摘要、API 地址、迭代上限、工具集或导出设置发生变化，应使用新的运行目录。
 - `--wire-trace full` 无法启动：需要显式 API base 和 host 网络。
+
+[工具开放情况审计](tool-availability.md)。`--hermes-toolset NAME` 可重复指定，省略时使用原生工具发现。

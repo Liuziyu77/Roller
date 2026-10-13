@@ -1,6 +1,6 @@
 # DeepSeek Harness guide
 
-This page covers only DeepSeek-Harness-specific images, the API, the native session, and troubleshooting. Roller drives the official [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) native `dsh` runtime through its Python SDK. Both SDK and runtime are pinned to **0.1.5rc1**, using the official `sdk-minimal` profile. For Task fields see [Task format reference](../tasks/task-format.md). For output semantics shared by all Harnesses see [Trajectory output file guide](../traces/trajectory-outputs.md).
+This page covers only DeepSeek-Harness-specific images, the API, the native session, and troubleshooting. Roller drives the official [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) native `dsh` runtime through its Python SDK. Both SDK and runtime are pinned to **0.1.5rc1**, using the official full `sdk` profile by default. For Task fields see [Task format reference](../tasks/task-format.md). For output semantics shared by all Harnesses see [Trajectory output file guide](../traces/trajectory-outputs.md).
 
 ## 1. Supported scope
 
@@ -10,7 +10,7 @@ The DeepSeek Harness supports:
 - Task Agents and User Simulators, both accepting `"harness": "deepseek"`.
 - Task Bundle, read-only inputs, Context, `runtime.setup`, task environment variables, custom `output_dir`, artifact collection, and in-container grading.
 - streaming Chat Completions, tool calls, and DeepSeek thinking fields.
-- persistent `bash` from the official `sdk-minimal` profile.
+- native tools from the full `sdk` profile; `--deepseek-profile sdk-minimal` selects shell-only.
 - ACTF, SFT, provenance, and usage.
 - `--wire-trace actf|full|off`.
 - native `--thinking off/low/high/max` mapping.
@@ -72,9 +72,9 @@ Options apply to both roles. The run lock records image digest, version, profile
 
 ## 5. Sessions, workspace, and traces
 
-Each participant owns a container and an isolated `DSH_HOME`. One SDK/runtime process and native Bash PTY persist across turns, retaining conversation history, files, shell variables, and working directory. Roller supports read-only inputs, copied Context files listed in the system prompt, setup commands, selected environment variables, custom outputs, and container grading.
+Each participant owns a container and an isolated `DSH_HOME`. One SDK/runtime process persists across turns, retaining conversation history and files. Only sdk-minimal retains a shell PTY and shell variables. Roller supports read-only inputs, copied Context files listed in the system prompt, setup commands, selected environment variables, custom outputs, and container grading.
 
-The official `sdk-minimal` profile advertises only persistent `bash`. File tasks use that tool. It omits automatic compaction, implicit workspace instructions, skills, MCP, Web tools, and subagents. Context/skill cases check file accessibility. Roller's fixed patch adds request journaling, disables automatic model retries and official API session/plugin upload extensions, and sets the selected model's context/output limits.
+The default full `sdk` profile exposes native filesystem, search, shell and other tools. Select `--deepseek-profile sdk-minimal` explicitly for the former bash-only behavior. Tool availability and permissions belong to the selected profile. Roller retains request logging, model budgets and retry controls.
 
 `trace.jsonl` uses `roller.deepseek-events/v1`, retaining serialized requests and native SDK notifications. ACTF/SFT preserve actual system prompts, schemas, reasoning, calls, and results. Errors, truncated or empty replies, incomplete tool calls, and content that cannot be represented losslessly as text are rejected. Timeouts stop the container and recover available artifacts. Resume validates each participant's artifacts. DeepSeek does not produce OpenClaw cache traces.
 
@@ -101,3 +101,5 @@ Common errors:
 - rollout timeout: the container is stopped and available artifacts recovered. Adjust `--timeout` or `--deepseek-max-steps` as needed.
 - Resume refused: the image digest, version, profile, tools, endpoint, step limit, or token limits recorded in the run lock changed. Use a fresh run directory.
 - `--wire-trace full` fails to start: an explicit base URL and host networking are required.
+
+`--deepseek-permission-mode` defaults to `danger-full-access` inside the disposable container, avoiding an unavailable nested sandbox. `read-only` and `workspace-write` require a native sandbox backend; unanswered approvals fail closed. Host inputs remain read-only mounts. Full sdk bash uses separate processes (shell variables do not persist); sdk-minimal uses a persistent PTY. Both retain files and sessions.

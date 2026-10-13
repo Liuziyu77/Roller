@@ -1,6 +1,6 @@
 # DeepSeek Harness 指南
 
-本页只说明 DeepSeek Harness 专属的镜像、API、原生会话和排错。Roller 通过官方 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Python SDK 驱动原生 `dsh` 运行时，固定 SDK 和 runtime 为 **0.1.5rc1**，采用官方 `sdk-minimal` profile。Task 字段见 [Task 格式参考](../tasks/task-format.md)，所有 Harness 共用的产物语义见 [轨迹产出文件指南](../traces/trajectory-outputs.md)。
+本页只说明 DeepSeek Harness 专属的镜像、API、原生会话和排错。Roller 通过官方 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Python SDK 驱动原生 `dsh` 运行时，固定 SDK 和 runtime 为 **0.1.5rc1**，默认采用官方完整 `sdk` profile。Task 字段见 [Task 格式参考](../tasks/task-format.md)，所有 Harness 共用的产物语义见 [轨迹产出文件指南](../traces/trajectory-outputs.md)。
 
 ## 1. 适用范围
 
@@ -10,7 +10,7 @@ DeepSeek Harness 支持：
 - Task Agent 与 User Simulator 均可设置 `"harness": "deepseek"`。
 - Task Bundle、只读 inputs、Context、`runtime.setup`、任务环境变量、自定义 `output_dir`、产物回收及容器内评分。
 - 流式 Chat Completions、工具调用和 DeepSeek thinking 字段。
-- 官方 `sdk-minimal` profile 的持久化 `bash`。
+- 完整 `sdk` profile 的原生工具；`--deepseek-profile sdk-minimal` 可选择仅 shell 工具。
 - ACTF、SFT、provenance 和 usage。
 - `--wire-trace actf|full|off`。
 - 原生 `--thinking off/low/high/max` 映射。
@@ -73,9 +73,9 @@ DeepSeek Harness 连接支持流式响应、工具调用和 DeepSeek thinking �
 
 ## 5. 会话、工作区与轨迹
 
-每个参与者使用独立容器与 `DSH_HOME`。同一会话内复用 SDK/runtime 进程和原生 Bash PTY，多轮之间保留对话历史、工作区、shell 变量和工作目录。输入只读挂载。Context 复制到声明路径，system prompt 列出相关文件。支持 setup、环境变量、自定义输出目录、产物回收及容器评分。
+每个参与者使用独立容器与 `DSH_HOME`。同一会话内复用 SDK/runtime 进程，多轮之间保留对话历史和工作区。仅 sdk-minimal 保留 Bash PTY 和 shell 变量。输入只读挂载。Context 复制到声明路径，system prompt 列出相关文件。支持 setup、环境变量、自定义输出目录、产物回收及容器评分。
 
-官方 `sdk-minimal` 只向模型提供持久化 `bash`。文件读写、搜索等任务通过它完成。该 profile 没有自动压缩、隐式工作区指令发现、skills、MCP、Web 或子 Agent。Context/skill 样例验证文件可访问性。Roller 的固定 patch 加入请求日志，关闭自动模型重试和官方 API 的 session/plugin 附加上传字段，设置当前模型的窗口与输出上限。
+默认完整 `sdk` 提供原生文件、搜索和 shell 等工具；`--deepseek-profile sdk-minimal` 可显式选择原有仅 bash 模式。工具及权限由所选 profile 决定。Roller patch 保留请求记录、模型预算和重试控制。
 
 `trace.jsonl` 使用 `roller.deepseek-events/v1`，保存实际序列化请求及 SDK 原生通知。ACTF/SFT 使用实际 system prompt、工具 schema、reasoning、调用参数和工具结果。失败、截断、空回复、未完成工具调用及无法无损表示的非文本内容会被拒绝。超时停止整个容器并回收已有文件，Resume 按参与者分别验证，DeepSeek 不要求 OpenClaw cache trace。
 
@@ -102,3 +102,5 @@ Docker 测试以本地确定性 API 和虚构 Key 运行真实 SDK、Bash 与文
 - rollout 超时：整个容器被停止并回收已有文件，按需调整 `--timeout` 或 `--deepseek-max-steps`。
 - Resume 被拒绝：run lock 中镜像摘要、固定版本、profile、工具、API、步数或 token 上限发生变化，应使用新的运行目录。
 - `--wire-trace full` 无法启动：需要显式 API base 和 host 网络。
+
+`--deepseek-permission-mode` 默认 `danger-full-access`，仅作用于一次性容器，避免在没有二次沙箱后端的容器中拒绝工具执行。可选择 `read-only` 或 `workspace-write`，但需要原生沙箱后端；交互审批没有答复时会拒绝。宿主输入仍只读挂载。完整 sdk 的 bash 每次创建进程，不保留 shell 变量；sdk-minimal 使用持久 PTY。两者均保留文件和会话。

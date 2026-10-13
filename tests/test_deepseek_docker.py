@@ -36,7 +36,8 @@ class DeepSeekDockerTests(unittest.TestCase):
                 body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
                 requests.append(body)
                 messages = body["messages"]
-                prompt = next(m["content"] for m in reversed(messages) if m["role"] == "user")
+                prompt = next(m["content"] for m in reversed(messages) if m["role"] == "user" and not m["content"].startswith("Current runtime context."))
+                prompt = prompt.split("\n\nCurrent runtime context.", 1)[0]
                 delta = {"role": "assistant"}
                 finish = "stop"
                 if prompt.startswith("You are the User Simulator"):
@@ -56,7 +57,7 @@ class DeepSeekDockerTests(unittest.TestCase):
                         raise AssertionError(prompt)
                     verb, token, path = match.groups()
                     command = f"mkdir -p {shlex.quote(str(Path(path).parent))}; printf %s {shlex.quote(token)} > {shlex.quote(path)}" if verb == "Write" else "cat " + shlex.quote(path)
-                    delta["tool_calls"] = [{"index": 0, "id": f"pair-call-{len(requests)}", "type": "function", "function": {"name": "bash", "arguments": json.dumps({"command": command})}}]
+                    delta["tool_calls"] = [{"index": 0, "id": f"pair-call-{len(requests)}", "type": "function", "function": {"name": "bash", "arguments": json.dumps({"description": "Execute test command", "command": command, "description": "Run the local test command"})}}]
                     finish = "tool_calls"
                 chunk = {"id": f"local-{len(requests)}", "object": "chat.completion.chunk", "created": 1, "model": "roller-test"}
                 chunks = [{**chunk, "choices": [{"index": 0, "delta": delta, "finish_reason": None}]},
@@ -130,7 +131,7 @@ class DeepSeekDockerTests(unittest.TestCase):
                 if mode == "steps":
                     delta = {"role": "assistant", "tool_calls": [{"index": 0, "id": "limit-call",
                         "type": "function", "function": {"name": "bash", "arguments": json.dumps({
-                            "command": "printf TOOL_RAN > outputs/partial.txt"})}}]}
+                            "description": "Write test artifact", "command": "printf TOOL_RAN > outputs/partial.txt"})}}]}
                 reason = "tool_calls" if mode == "steps" else "length" if mode == "length" else "stop"
                 chunk = {"id": "local", "object": "chat.completion.chunk", "created": 1, "model": "roller-test"}
                 chunks = [{**chunk, "choices": [{"index": 0, "delta": delta, "finish_reason": None}]},
@@ -169,6 +170,12 @@ class DeepSeekDockerTests(unittest.TestCase):
                         self.assertIn("max steps exceeded", (root / result.trace_path).read_text())
 
     def test_real_tools_multiturn_full_trace_and_resume(self):
+        self._check_multiturn_profile("sdk-minimal")
+
+    def test_full_sdk_tools_multiturn_and_resume(self):
+        self._check_multiturn_profile("sdk")
+
+    def _check_multiturn_profile(self, profile):
         requests = []
         script = (
             "from pathlib import Path; import os; "
@@ -201,9 +208,9 @@ class DeepSeekDockerTests(unittest.TestCase):
                 requests.append(body)
                 message = {"role": "assistant", "content": "DONE", "reasoning_content": "The requested work is complete."}
                 if len(requests) == 1:
-                    message.update(content=None, tool_calls=[{"id": "call-local-1", "type": "function", "function": {"name": "bash", "arguments": json.dumps({"command": "export ROLLER_PERSIST=KEPT; python3 -c " + shlex.quote(script)})}}])
+                    message.update(content=None, tool_calls=[{"id": "call-local-1", "type": "function", "function": {"name": "bash", "arguments": json.dumps({"description": "Execute test command", "command": ("export ROLLER_PERSIST=KEPT; " if profile == "sdk-minimal" else "printf KEPT > scratch/persist.txt; ") + "python3 -c " + shlex.quote(script)})}}])
                 elif len(requests) == 3:
-                    message.update(content=None, tool_calls=[{"id": "call-local-2", "type": "function", "function": {"name": "bash", "arguments": json.dumps({"command": "printf '%s' \"$ROLLER_PERSIST\" > outputs/persistent.txt"})}}])
+                    message.update(content=None, tool_calls=[{"id": "call-local-2", "type": "function", "function": {"name": "bash", "arguments": json.dumps({"description": "Execute test command", "command": ("printf '%s' \"$ROLLER_PERSIST\" > outputs/persistent.txt" if profile == "sdk-minimal" else "cat scratch/persist.txt > outputs/persistent.txt")})}}])
                 payload = {"id": f"chatcmpl-{len(requests)}", "object": "chat.completion.chunk", "created": 1, "model": "roller-test"}
                 chunks = []
                 delta = {"role": "assistant", "reasoning_content": message["reasoning_content"]}
@@ -243,6 +250,7 @@ class DeepSeekDockerTests(unittest.TestCase):
                         "code": "from pathlib import Path\ndef grade(workspace_path):\n    root = Path(workspace_path)\n    return {'overall_score': float((root/'outputs/answer.txt').read_text() == 'INPUT|CONTEXT|SETUP|ENV|READ_ONLY' and (root/'outputs/persistent.txt').read_text() == 'KEPT')}\n"}},
             }]))
             command = ["collect", "--tasks", str(tasks), "--deepseek-image", os.environ.get("ROLLER_DEEPSEEK_IMAGE", DEFAULT_DEEPSEEK_IMAGE), "--deepseek-api-base", f"http://127.0.0.1:{server.server_port}/v1", "--deepseek-api-key-env", "ROLLER_LOCAL_KEY", "--wire-trace", "full", "--timeout", "240", "--output", str(root / "runs"), "--run-name", "local"]
+            command += ["--deepseek-profile", profile]
             environment = {"ROLLER_LOCAL_KEY": "test-local-secret", "ROLLER_EXAMPLE_TOKEN": "ENV", "NO_PROXY": "localhost,127.0.0.1", "no_proxy": "localhost,127.0.0.1"}
             with patch.dict(os.environ, environment), contextlib.redirect_stdout(io.StringIO()):
                 code = _collect(_build_parser().parse_args(command))
@@ -250,6 +258,9 @@ class DeepSeekDockerTests(unittest.TestCase):
                 self.assertEqual(len(infos), 1)
                 info = json.loads(infos[0].read_text())
                 self.assertEqual(code, 0, info)
+                if profile == "sdk":
+                    names = {tool["function"]["name"] for tool in requests[0]["tools"]}
+                    self.assertTrue({"bash", "read", "write", "edit", "glob", "grep"} <= names, names)
                 sample = infos[0].parent
                 self.assertEqual((sample / "results/answer.txt").read_text(), "INPUT|CONTEXT|SETUP|ENV|READ_ONLY")
                 self.assertEqual((root / "note.txt").read_text(), "INPUT")
