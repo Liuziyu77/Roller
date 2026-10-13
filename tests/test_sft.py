@@ -268,6 +268,53 @@ class SFTConversionTests(unittest.TestCase):
         self.assertNotIn("<image>", json.dumps(record))
 
 
+class ParallelResultOrderTests(unittest.TestCase):
+    def test_all_completion_orders_preserve_ids_content_and_images(self):
+        from itertools import permutations
+        trajectory = _trajectory()
+        step = trajectory["steps"][0]
+        calls = []
+        results = []
+        expected_images = []
+        # Intentionally non-lexical IDs and the same tool for every call.
+        for index, call_id in enumerate(("call-z", "call-a", "call-m")):
+            calls.append({"id": call_id, "name": "read", "arguments": {"path": str(index)}})
+            blocks = [{"type": "text", "text": str(index)}]
+            for frame in range(index):
+                payload = base64.b64encode(f"image-{index}-{frame}".encode()).decode()
+                blocks.append({"type": "image", "mimeType": "image/png", "data": payload})
+                expected_images.append("data:image/png;base64," + payload)
+            results.append({"tool_call_id": call_id, "toolName": "read", "content": blocks})
+        step["assistant_content"]["tool_calls"] = calls
+        expected = None
+        for order in permutations(results):
+            with self.subTest(order=[r["tool_call_id"] for r in order]):
+                step["observation"] = list(order)
+                original = deepcopy(trajectory)
+                record = actf_to_sft(trajectory)
+                emitted = [m for m in record["messages"] if m["role"] == "tool"]
+                self.assertEqual([m["tool_call_id"] for m in emitted], [c["id"] for c in calls])
+                self.assertEqual([m["content"] for m in emitted], ["0", "1\n<image>", "2\n<image>\n<image>"])
+                self.assertEqual(record["images"], expected_images)
+                validate_sft_record(record)
+                self.assertEqual(trajectory, original)
+                if expected is not None:
+                    self.assertEqual(record, expected)
+                expected = record
+
+    def test_invalid_pairings_still_fail(self):
+        for case in ("duplicate", "unknown", "missing", "wrong-name"):
+            with self.subTest(case=case):
+                trajectory = _trajectory()
+                observations = trajectory["steps"][0]["observation"]
+                if case == "duplicate": observations.append(deepcopy(observations[0]))
+                elif case == "unknown": observations[0]["toolCallId"] = "unknown"
+                elif case == "missing": observations.clear()
+                else: observations[0]["toolName"] = "other"
+                with self.assertRaises(SFTConversionError):
+                    actf_to_sft(trajectory)
+
+
 class MultimodalSFTTests(unittest.TestCase):
     png = base64.b64encode(b"png-bytes").decode()
     jpeg = base64.b64encode(b"jpeg-bytes").decode()
