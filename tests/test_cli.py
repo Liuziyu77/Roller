@@ -9,10 +9,74 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from roller.cli import _build_parser, _collect, _docker_preflight, _jsonl_equivalent
+from roller.cli import _build_parser, _collect, _docker_preflight, _jsonl_equivalent, _validate_thinking_requests
+from roller.models import RunRequest, Task, UserSimulatorSpec
+from roller.thinking_capabilities import ThinkingCapabilities, ThinkingCapability
+from roller.harnesses.codex import codex_effort
 
 
 class CliTests(unittest.TestCase):
+    def test_review_preflight_matrix_uses_runtime_endpoint_and_codex_rules(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            tasks = root / "tasks.jsonl"
+            tasks.write_text(json.dumps({"id": "hello", "prompt": "say hello"}) + "\n")
+            capabilities = root / "capabilities.json"
+            capabilities.write_text(json.dumps({
+                "schema_version": "roller.thinking-capabilities/v1",
+                "profiles": [{"harness": "claude-code", "model": "served-model",
+                              "api_base": "http://gateway.test", "supported_efforts": ["low"]}],
+            }))
+            for endpoint in ("http://gateway.test", "http://gateway.test/v1",
+                             "http://gateway.test/v1/messages"):
+                args = _build_parser().parse_args([
+                    "collect", "--tasks", str(tasks), "--harness", "claude-code",
+                    "--model", "served-model", "--thinking", "high",
+                    "--claude-api-base", endpoint,
+                    "--thinking-capabilities", str(capabilities), "--dry-run",
+                ])
+                with self.subTest(endpoint=endpoint), self.assertRaisesRegex(ValueError, "not declared supported"):
+                    _collect(args)
+            for effort in ("off", "adaptive"):
+                args = _build_parser().parse_args([
+                    "collect", "--tasks", str(tasks), "--harness", "codex",
+                    "--model", "served-model", "--thinking", effort, "--dry-run",
+                ])
+                with self.subTest(effort=effort), self.assertRaises(ValueError):
+                    _collect(args)
+
+    def test_codex_preflight_rejects_runtime_unsupported_efforts(self):
+        for effort in ("off", "adaptive"):
+            with self.subTest(effort=effort), self.assertRaises(ValueError):
+                request = RunRequest(0, Task(id="task", prompts=("hello",), source_index=0,
+                                             thinking=effort), "model", 30)
+                _validate_thinking_requests([request], cli_harness="codex", harness="codex",
+                                            api_base=None, default_effort=None,
+                                            effort_validator=codex_effort, capabilities=None)
+
+    def test_capabilities_use_logical_effort_for_simulator_and_resolve_endpoint(self):
+        profiles = ThinkingCapabilities((ThinkingCapability(
+            harness="claude-code", model="sim-model", supported_efforts=frozenset({"ultra"}),
+            api_base="http://gateway.test",
+        ),))
+        task = Task(id="task", prompts=("hello",), source_index=0,
+                    user_simulator=UserSimulatorSpec(instruction="test", harness="claude-code", model="sim-model", thinking="ultra"))
+        request = RunRequest(0, task, "agent-model", 30)
+        _validate_thinking_requests(
+            [request], cli_harness="pi", harness="claude-code",
+            api_base=lambda model: "http://gateway.test/", default_effort="low",
+            effort_validator=lambda effort: "ultracode", capabilities=profiles,
+        )
+        denied = ThinkingCapabilities((ThinkingCapability(
+            harness="claude-code", model="sim-model", supported_efforts=frozenset({"low"}),
+        ),))
+        with self.assertRaisesRegex(ValueError, "not declared supported"):
+            _validate_thinking_requests(
+                [request], cli_harness="pi", harness="claude-code",
+                api_base=None, default_effort="low",
+                effort_validator=lambda effort: "ultracode", capabilities=denied,
+            )
+
     def test_retired_cot_flags_are_rejected(self) -> None:
         for flag, value in (
             ("--external-thinking", "external"),
@@ -213,12 +277,71 @@ def grade(transcript, workspace_path):
         }
 
         self.assertIn("thinking", groups["Harness runtime and trajectory"])
+        self.assertIn("thinking_capabilities", groups["Harness runtime and trajectory"])
         self.assertIn("wire_trace", groups["Harness runtime and trajectory"])
         self.assertIn("model_config", groups["OpenClaw"])
+        self.assertIn("openclaw_model_request_timeout", groups["OpenClaw"])
+        self.assertIn("openclaw_max_tokens", groups["OpenClaw"])
         self.assertNotIn("thinking", groups["OpenClaw"])
         self.assertIn("api_base", groups["Harness API"])
         self.assertIn("api_key_env", groups["Harness API"])
         self.assertIn("pi_api_base", groups["Harness API"])
+
+    def test_thinking_capabilities_reject_unsupported_effort_before_rollout(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            tasks = root / "tasks.jsonl"
+            tasks.write_text(
+                json.dumps({"id": "hello", "prompt": "say hello"}) + "\n",
+                encoding="utf-8",
+            )
+            model_config = root / "models.json"
+            model_config.write_text(json.dumps({"providers": {"test": {
+                "baseUrl": "http://gateway.test/v1", "api": "openai-completions",
+                "models": [{"id": "served-model", "name": "served-model"}],
+            }}}))
+            for harness in ("hermes", "opencode", "deepseek", "pi", "codex", "claude-code", "openclaw"):
+                with self.subTest(harness=harness):
+                    model = "test/served-model" if harness == "openclaw" else "served-model"
+                    capabilities = root / f"{harness}-capabilities.json"
+                    capabilities.write_text(
+                        json.dumps(
+                            {
+                                "schema_version": "roller.thinking-capabilities/v1",
+                                "profiles": [
+                                    {
+                                        "harness": harness,
+                                        "model": model,
+                                        "api_base": "http://gateway.test/v1",
+                                        "supported_efforts": ["low"],
+                                    }
+                                ],
+                            }
+                        ),
+                        encoding="utf-8",
+                    )
+                    args = _build_parser().parse_args(
+                        [
+                            "collect",
+                            "--tasks",
+                            str(tasks),
+                            "--harness",
+                            harness,
+                            "--model",
+                            model,
+                            "--api-base",
+                            "http://gateway.test/v1/",
+                            "--thinking",
+                            "high",
+                            "--thinking-capabilities",
+                            str(capabilities),
+                            "--dry-run",
+                        ] + (["--model-config", str(model_config)] if harness == "openclaw" else [])
+                    )
+                    with self.assertRaisesRegex(
+                        ValueError, "not declared supported"
+                    ):
+                        _collect(args)
 
     def test_parser_accepts_codex_harness_options(self) -> None:
         args = _build_parser().parse_args(
@@ -244,6 +367,26 @@ def grade(transcript, workspace_path):
         self.assertEqual(args.thinking, "xhigh")
         self.assertEqual(args.reasoning_summary, "detailed")
         self.assertTrue(args.codex_websockets)
+
+    def test_parser_accepts_openclaw_model_request_timeout(self) -> None:
+        args = _build_parser().parse_args(
+            [
+                "collect",
+                "--tasks",
+                "tasks.jsonl",
+                "--harness",
+                "openclaw",
+                "--model-config",
+                "models.json",
+                "--openclaw-model-request-timeout",
+                "300",
+                "--openclaw-max-tokens",
+                "32768",
+            ]
+        )
+
+        self.assertEqual(args.openclaw_model_request_timeout, 300)
+        self.assertEqual(args.openclaw_max_tokens, 32768)
 
     def test_parser_accepts_claude_code_harness_options(self) -> None:
         args = _build_parser().parse_args(

@@ -52,8 +52,8 @@ for all seven Harnesses:
 OpenClaw's default `actf` wire mode temporarily captures the tools schema, writes
 it into ACTF/SFT, then deletes the intermediate `wire_trace.jsonl` and
 `cache_trace.jsonl`, reducing the final sample size. Codex's default `actf`
-builds a permissive tool schema from the native session and does not start a
-request proxy. Claude Code temporarily captures the Anthropic system and full
+captures original Responses tools through an HTTP proxy when `--api-base` is configured,
+and retains `tools_capture.jsonl` after conversion. Claude Code temporarily captures the Anthropic system and full
 `input_schema` when `--api-base` is set explicitly; with no API base or with
 `--wire-trace off`, it derives a permissive schema from actual `tool_use`.
 
@@ -251,9 +251,9 @@ Generation conditions:
   `""` and tools is `null`;
 - Codex system comes from native base instructions, developer/system messages,
   and `<environment_context>` before the first turn. The task user message is
-  matched to the corresponding turn by content. The native session does not
-  contain a full tool schema, so a permissive schema is generated from actual
-  call names and argument fields.
+  matched to the corresponding turn by content. Original tools come from Responses request capture, including unused tools.
+  ACTF retains the native definitions and per-request snapshots in `tools_capture`;
+  missing, changing, or unsupported definitions make SFT unavailable.
 - Claude Code merges streamed native events that share the same `message.id`,
   writes plaintext `thinking/reasoning/analysis` into `reasoning_content`, and
   associates `tool_use_id` with a later `tool_result`. Ciphertext
@@ -263,11 +263,10 @@ Generation conditions:
 
 OpenClaw ACTF freezes only the first valid assembled system prompt from the
 cache trace and the first non-empty tools schema from the wire trace at the top
-level. Codex ACTF uses native system events and a schema derived from actual
-calls. Claude Code ACTF uses the first captured Anthropic system/tools, and
+level. Codex ACTF uses native system events and original request tool definitions. Claude Code ACTF uses the first captured Anthropic system/tools, and
 falls back to native derivation when there is no wire. None of them store the
-full messages/input of every request per step, and none of them express
-system/tools changing between calls. Use full wire to inspect those changes;
+full messages/input of every request per step. Codex additionally retains
+per-request tool snapshots and rejects changing tools in SFT. Use full wire to inspect those changes;
 OpenClaw can also combine it with the full cache trace.
 
 As long as raw exists, Roller attempts conversion, including samples whose
@@ -302,12 +301,12 @@ Generation conditions:
 - Every tool call has a non-empty, globally unique ID;
 - Every tool call has exactly one tool result in the same step;
 - The called tool exists in the top-level tools schema;
-- Arguments can be encoded as a JSON object;
+- Function arguments can be encoded as a JSON object; Codex custom input remains a string;
 - The tool result is a string, text blocks, or image blocks with embedded
   base64 bytes.
 
-Both GPT Responses flat tools and Chat Completions nested tools are unified to
-a nested function schema. An image tool result is exported as an `<image>`
+Codex preserves native Responses tool definitions, namespaces, and custom grammars.
+Other harnesses normalize flat/nested functions to nested function schemas. An image tool result is exported as an `<image>`
 placeholder plus a top-level `images` data-URI list; see
 [SFT data format](sft-format.md) for the alignment contract. Anything that
 cannot be exported losslessly — audio or other unknown block types,
@@ -453,8 +452,8 @@ service:
 - OpenClaw `actf` records only the model, non-message parameters, message count,
   and the first non-empty tools schema. It does not record full messages/input.
   That temporary file is deleted after conversion;
-- Codex `actf` does not start a proxy and builds ACTF directly from the native
-  session;
+- Codex `actf` captures original tool definitions over HTTP when an API base is configured;
+  `tools_capture.jsonl` is retained while the temporary wire file is deleted;
 - Claude Code `actf` temporarily records the first Anthropic system/tools and
   non-message parameters when an API base is set explicitly, then deletes the
   file after conversion;
@@ -548,18 +547,19 @@ participant, use that participant's own raw/ACTF/SFT.
 | Harness / mode | Proxy requirement | ACTF tools | Final auxiliary files | When to use |
 | --- | --- | --- | --- | --- |
 | OpenClaw `actf` (default) | Enabled when a proxyable `baseUrl` exists; degrades when missing | Full schema when capture succeeds, otherwise `null` | cache/wire not kept | Regular batch collection |
-| Codex `actf` (default) | Does not start a proxy | Permissive schema from native actual calls | wire not kept | Regular batch collection |
+| Codex `actf` (default) | Configured API base, HTTP, host network | Original Responses definitions; no inference | `tools_capture.jsonl` | Regular batch collection |
 | Claude Code `actf` (default) | Starts when `--api-base` is set explicitly | Captures Anthropic `input_schema`; derives from native when there is no proxy | wire not kept | Regular batch collection |
 | OpenClaw `full` | Provider must have an absolute `baseUrl` | Full schema | `wire_trace`, plus `cache_trace` when cache is enabled | Request-level audit |
-| Codex `full` | Must set `--api-base --network host` explicitly | Native permissive schema | `wire_trace` | Request-level audit |
+| Codex `full` | API base, HTTP, host network required | Original Responses definitions | `wire_trace`, `tools_capture.jsonl` | Request-level audit |
 | Claude Code `full` | Must set `--api-base --network host` explicitly | Captures Anthropic `input_schema` | `wire_trace` | Request-level audit |
-| `off` | Does not start a proxy for recording | OpenClaw is `null`; Codex/Claude Code derive from native | none kept | Minimal diagnostics-off mode |
+| `off` | Does not start a proxy for recording | OpenClaw/Codex are `null`; Claude Code derives from native | none kept | Minimal diagnostics-off mode |
 
 After OpenClaw `off` or a degraded `actf`, SFT validation fails for missing tool
 schema if the trajectory actually called tools. When there are no tool calls,
-SFT `tools` is `[]`. Codex and Claude Code derive a schema from native actual
-calls, so they do not depend on wire for this structural check, but the derived
-schema does not contain the full tool interface definition.
+SFT `tools` is `[]`. Claude Code retains its native schema fallback. Codex never
+infers schemas: absent capture (including `off`, WebSockets, or no API base),
+changing definitions, and programmatic `additional_tools` make SFT unavailable.
+See [Codex tool capture](../harnesses/codex-configuration.md#9-trajectories-and-request-recording).
 
 ### 6.2 Thinking
 
@@ -579,6 +579,66 @@ does not return a reasoning summary/content, ACTF/SFT have no
 encrypted reasoning does not enter SFT.
 
 The default `--keep-thinking` retains visible reasoning returned by the service. This includes GPT summaries, Claude visible thinking, and plaintext reasoning returned by open models.
+
+When a reasoning effort was explicitly requested, sample `info.json` records
+`runtime.thinking_audit`. This audit counts only visible reasoning retained in
+ACTF. If `off` was requested but visible reasoning is still present, its status
+is `mismatch` and Roller records a runtime warning without deleting or changing
+the returned text. With `--no-keep-thinking`, the status is `not_observable`:
+an empty exported field is not evidence that the model performed no hidden
+reasoning.
+
+Samples with a `mismatch` keep their execution status and per-sample SFT for
+inspection, but record `runtime.sft_eligibility = {"eligible": false,
+"reason": "thinking_effort_mismatch"}` and are excluded from `sft.jsonl`,
+including on resume. `no_visible_reasoning` is not proof that reasoning was
+disabled. Failed or timed-out samples retain available raw/ACTF evidence but
+do not export per-sample SFT.
+
+Before pruning auxiliary traces, both agent and user-simulator archives record:
+
+- `runtime.wire_effort_audit`: checks each outgoing request, including retries.
+  Explicit conflicts are `mismatch`; omitted controls, budgets alone, and unknown
+  encodings are `unverified`; missing readable requests are `not_observable`.
+  Default `actf` mode also reads native request snapshots for Pi, DeepSeek,
+  Hermes, and OpenCode when no wire requests were captured. `source` identifies
+  the evidence used. The audit survives pruning.
+  `matched` describes client parameters, not provider compliance.
+- `runtime.completion_audit`: flags a final `length`, `max_tokens`, or
+  `max_output_tokens` stop, or an empty text answer without tool calls, as
+  `incomplete`. Unknown/missing stop reasons are not inferred. `not_flagged`
+  does not mean the task passed. A final observed response with `incomplete` or
+  a token-limit finish reason also flags truncation, even if ACTF says `stop`;
+  an earlier truncated request followed by a completed request does not.
+  `actf_completion_audit` retains the original ACTF finding when overridden.
+- Explicit wire mismatches and these incomplete trajectories set
+  `sft_eligibility.eligible=false`, excluding them from the agent aggregate.
+  Omitted controls alone do not trigger exclusion. Convertible per-sample SFT
+  remains diagnostic evidence. Failed/timed-out simulator archives also omit SFT;
+  successful simulator artifacts retain diagnostics and never enter the agent
+  aggregate. Resume does not backfill new audits on previously collected samples.
+
+When strict conversion produces no ACTF, Pi/OpenClaw can record
+`completion_audit.source=native` from completed native assistant messages,
+ignoring context history and partial deltas. Unknown schemas remain unobservable;
+conversion is not relaxed and failed SFT is not exported.
+
+The proxy extracts model names and finish reasons from JSON/SSE responses into
+wire `response_metadata` events linked by `request_seq`, without retaining
+additional response text. Archived `runtime.model_identity_audit` records each
+wire `requested_model`, `response_models`, and `finish_reasons`. A `name_mismatch`
+produces a warning but no automatic training exclusion: aliases can be legitimate.
+These are server-declared names, not proof of actual backend routing. Compressed
+or unknown protocols, missing fields, and capture limits do not imply a match.
+The runtime audit survives default actf-mode wire pruning.
+
+The terminal completion message and run `summary.training` report SFT inclusion/
+exclusion, thinking mismatches, and unverified/not-observable wire audits. Counts
+refer to processed primary-agent samples, including resumed ones, not HTTP
+requests or simulators. Categories can overlap; missing legacy audits do not
+imply a match. Reporting shares the export exclusion policy; it adds no strict
+switch and changes neither execution status nor CLI exit codes. Inclusion does
+not imply that a task grader passed.
 
 Even with `--wire-trace off`, `--no-keep-thinking` must still start a proxy to
 strip request history, so OpenClaw still requires a proxyable `baseUrl` in

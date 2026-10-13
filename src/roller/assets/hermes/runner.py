@@ -100,6 +100,31 @@ class Journal:
                 self.tools_seen.add(call_id)
 
 
+def request_audit_parameters(kwargs):
+    """Retain only the SDK parameters needed to audit the actual request."""
+    controls = {}
+    for key in ("reasoning_effort", "enable_thinking"):
+        if key in kwargs:
+            controls[key] = kwargs[key]
+    for key, fields in (
+        ("reasoning", ("effort", "enabled")),
+        ("output_config", ("effort",)),
+        ("thinking", ("type",)),
+        ("chat_template_kwargs", ("enable_thinking",)),
+    ):
+        value = kwargs.get(key)
+        if isinstance(value, dict):
+            selected = {field: value[field] for field in fields if field in value}
+            if selected:
+                controls[key] = selected
+    extra_body = kwargs.get("extra_body")
+    if isinstance(extra_body, dict):
+        selected = request_audit_parameters(extra_body)
+        if selected:
+            controls["extra_body"] = selected
+    return controls
+
+
 def journaled_agent(base_class, journal):
     class RecordedAgent(base_class):
         def _interruptible_api_call(self, api_kwargs):
@@ -109,7 +134,11 @@ def journaled_agent(base_class, journal):
             outgoing["messages"] = openai_compatible_tool_media(native_messages)
             # Capture untruncated assembled prompts and actual schemas, without
             # HTTP authorization headers or the SDK client configuration.
-            journal.write("request", messages=outgoing["messages"], tools=outgoing.get("tools", []), model=outgoing.get("model"))
+            journal.write(
+                "request", messages=outgoing["messages"],
+                tools=outgoing.get("tools", []), model=outgoing.get("model"),
+                **request_audit_parameters(outgoing),
+            )
             response = super()._interruptible_api_call(outgoing)
             data = plain(response)
             journal.write("response", response=data)

@@ -182,6 +182,13 @@ roller collect ... --thinking high
 
 `none` 在 OpenClaw 中会被视为 `off`。其他档位是否可用，取决于 OpenClaw 版本、模型和 API 服务。
 
+各模型可用的档位、`compat` 配置示例和验收方法见 [OpenClaw thinking 档位](openclaw-thinking.md)。
+
+显式开启 thinking 且模型配置没有 `reasoning` 能力字段时，Roller 会为了兼容旧配置在本次 rollout 的副本中补充 `reasoning: true`；显式的 `reasoning: false` 会原样保留。旧配置中的 `tags: ["reasoning"]` 会自动转换为当前 OpenClaw 接受的布尔字段。
+
+> [!IMPORTANT]
+> legacy `wildclawbench-ubuntu:v1.3` 内含 OpenClaw `2026.3.11`，只可靠支持到 `high`；Roller 会拒绝其 `xhigh/adaptive/max/ultra`。只更新 Roller 仓库不会替换 Docker 镜像，运行时版本以 sample `info.json` 的 `runtime.openclaw_version` 为准。
+
 轨迹能否保存 reasoning 文本，取决于模型服务实际返回的内容。如果服务只返回 reasoning token 数量，没有返回可见文本，`reasoning_content` 会为空，Roller 不会根据 token 反推内容。
 
 `--keep-thinking` 默认开启，会保留模型返回的可见 reasoning。使用 `--no-keep-thinking` 可以从轨迹和后续请求历史中移除这些内容。

@@ -136,6 +136,7 @@ Roller CLI 可以识别下列逻辑档位，但每个 Harness 只支持其中一
 | 参数 | 默认值 | 用途 |
 | --- | --- | --- |
 | `--thinking LEVEL` | 未设置 | 设置 Harness 的 reasoning 或 thinking 档位 |
+| `--thinking-capabilities PATH` | 未设置 | 加载带版本的模型/端点能力声明，在运行前校验档位 |
 | `--keep-thinking` / `--no-keep-thinking` | 开启 | 决定 ACTF 和 SFT 是否导出可见 reasoning |
 | `--wire-trace MODE` | `actf` | 选择 `off`、`actf` 或 `full` 请求记录模式 |
 
@@ -144,6 +145,34 @@ off | minimal | low | medium | high | xhigh | adaptive | max | ultra
 ```
 
 输入 `none` 会先规范化为 `off`。不受支持的值会在启动 rollout 前报错。
+
+七种 Harness 均可通过配置声明 provider/model 能力，无需在
+Roller 代码中添加模型名规则：
+
+```json
+{
+  "schema_version": "roller.thinking-capabilities/v1",
+  "profiles": [
+    {
+      "harness": "hermes",
+      "model": "served-model-id",
+      "api_base": "https://gateway.example/v1",
+      "supported_efforts": ["low", "medium", "high"]
+    }
+  ]
+}
+```
+
+使用 `--thinking-capabilities` 传入该文件。Harness 与实际请求的 model ID 必须精确
+匹配；`api_base` 可省略，端点专用条目优先于通用条目。命中 profile 后，请求不受支持的
+档位会在启动容器和模型请求前失败。未命中的模型仍由 provider 校验，Roller 不会静默替换
+档位。文件 SHA-256 会写入 run lock。
+
+profile 支持注册的七种 harness，并检查主 Agent 与 user simulator。未知 harness、JSON 字段
+和 model/端点两侧的空白会报错。声明使用 Roller 的逻辑档位，而不是协议转换后的字段值
+（例如 Claude 的 `ultra` 不写成 `ultracode`）。OpenClaw 的 model 写完整 `provider/model`，
+端点从该 provider 的 model-config `baseUrl` 解析。无法解析端点时只匹配不带端点的通用条目；
+能力声明不覆盖原生不支持的档位，也不改写请求。
 
 ### Wire trace 模式
 

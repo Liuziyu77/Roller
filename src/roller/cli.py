@@ -12,7 +12,7 @@ import tempfile
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Callable, Sequence
 
 from roller.collector import CollectionConfig, Collector, check_retired_cot_samples
 from roller.benches import (
@@ -60,6 +60,7 @@ from roller.harnesses.codex import (
     DEFAULT_CODEX_IMAGE,
     CodexConfig,
     CodexHarness,
+    codex_effort,
     redact_api_base,
 )
 from roller.harnesses.openclaw import (
@@ -78,6 +79,11 @@ from roller.run_lock import (
 from roller.storage import atomic_write_json, safe_component
 from roller.tasks import TaskFormatError, build_requests, load_tasks
 from roller.thinking import THINKING_LEVELS, normalize_thinking, resolve_thinking
+from roller.trajectory_audit import training_summary
+from roller.thinking_capabilities import (
+    ThinkingCapabilities,
+    load_thinking_capabilities,
+)
 from roller.version import __version__
 from roller.viewer import serve as serve_viewer
 
@@ -140,6 +146,12 @@ def _build_parser() -> argparse.ArgumentParser:
         type=float,
         default=1.0,
         help="multiply every exported task timeout (default: 1.0)",
+    )
+    bench_export.add_argument(
+        "--runs-per-task",
+        type=int,
+        default=1,
+        help="duplicate each selected task for repeated benchmark runs (default: 1)",
     )
 
     bench_report = bench_sub.add_parser(
@@ -293,6 +305,14 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     runtime.add_argument(
+        "--thinking-capabilities",
+        metavar="PATH",
+        help=(
+            "optional versioned JSON capability declarations keyed by harness, "
+            "model, and endpoint; unsupported efforts fail before rollout"
+        ),
+    )
+    runtime.add_argument(
         "--pass-env",
         action="append",
         default=[],
@@ -327,6 +347,21 @@ def _build_parser() -> argparse.ArgumentParser:
     openclaw.add_argument("--gateway-port", type=int, default=18789)
     openclaw.add_argument("--gateway-port-step", type=int, default=10)
     openclaw.add_argument("--gateway-startup-timeout", type=float, default=30.0)
+    openclaw.add_argument(
+        "--openclaw-model-request-timeout",
+        type=int,
+        metavar="SECONDS",
+        help=(
+            "per-provider model request and stream-idle timeout; overrides "
+            "models.providers.<id>.timeoutSeconds"
+        ),
+    )
+    openclaw.add_argument(
+        "--openclaw-max-tokens",
+        type=int,
+        metavar="TOKENS",
+        help="override maxTokens for the selected OpenClaw model",
+    )
     openclaw.add_argument("--session-id", default="roller")
     openclaw.add_argument("--search-provider")
     openclaw.add_argument(
@@ -595,6 +630,35 @@ def _with_task_timeout(request):
     return dataclasses.replace(request, timeout_seconds=declared)
 
 
+def _validate_thinking_requests(
+    requests: Sequence[Any],
+    *,
+    cli_harness: str | None,
+    harness: str,
+    api_base: str | None | Callable[[str], str | None],
+    default_effort: str | None,
+    effort_validator: Callable[[str | None], str | None],
+    capabilities: ThinkingCapabilities | None,
+) -> None:
+    def validate(model: str, selected: str | None) -> None:
+        effort = resolve_thinking(selected, default_effort)
+        effort_validator(effort)
+        if capabilities is not None:
+            capabilities.validate(
+                harness=harness,
+                model=model,
+                api_base=api_base(model) if callable(api_base) else api_base,
+                effort=effort,
+            )
+
+    for request in requests:
+        if (cli_harness or request.task.harness) == harness:
+            validate(request.model, request.task.thinking)
+        spec = request.task.user_simulator
+        if spec is not None and spec.harness == harness:
+            validate(spec.model or request.model, spec.thinking)
+
+
 def _collect(args: argparse.Namespace) -> int:
     if args.samples is None:
         args.samples = 3 if args.bench == "skillsbench" else 1
@@ -765,6 +829,29 @@ def _collect(args: argparse.Namespace) -> int:
         if not model_config_path.is_file():
             raise FileNotFoundError(f"model config not found: {model_config_path}")
         model_config = load_model_config(model_config_path)
+    if args.openclaw_model_request_timeout is not None and model_config is None:
+        raise ValueError("--openclaw-model-request-timeout requires --model-config")
+    if args.openclaw_max_tokens is not None and model_config is None:
+        raise ValueError("--openclaw-max-tokens requires --model-config")
+
+    thinking_capabilities: ThinkingCapabilities | None = None
+    thinking_capabilities_path: Path | None = None
+    thinking_capabilities_digest: str | None = None
+    if args.thinking_capabilities:
+        thinking_capabilities_path = (
+            Path(args.thinking_capabilities).expanduser().resolve()
+        )
+        if not thinking_capabilities_path.is_file():
+            raise FileNotFoundError(
+                "thinking capabilities not found: "
+                f"{thinking_capabilities_path}"
+            )
+        thinking_capabilities = load_thinking_capabilities(
+            thinking_capabilities_path
+        )
+        thinking_capabilities_digest = hashlib.sha256(
+            thinking_capabilities_path.read_bytes()
+        ).hexdigest()
 
     codex_config_path: Path | None = None
     codex_config_digest: str | None = None
@@ -809,6 +896,8 @@ def _collect(args: argparse.Namespace) -> int:
             network=args.network,
             session_id=args.session_id,
             model_config=model_config,
+            model_request_timeout_seconds=args.openclaw_model_request_timeout,
+            model_max_tokens=args.openclaw_max_tokens,
             pass_env=_deduplicate((*OPENCLAW_COMMON_ENV_NAMES, *args.pass_env)),
             search_provider=args.search_provider,
             thinking=args.thinking,
@@ -819,6 +908,17 @@ def _collect(args: argparse.Namespace) -> int:
             keep_container_on_error=args.keep_container_on_error,
             set_image_model=args.set_image_model,
             docker_binary=args.docker_binary,
+        )
+        def openclaw_endpoint(model: str) -> str | None:
+            providers = (model_config or {}).get("providers", {})
+            provider = providers.get(model.split("/", 1)[0], {}) if isinstance(providers, dict) else {}
+            endpoint = provider.get("baseUrl") if isinstance(provider, dict) else None
+            return endpoint if isinstance(endpoint, str) else None
+
+        _validate_thinking_requests(
+            requests, cli_harness=cli_harness, harness="openclaw",
+            api_base=openclaw_endpoint, default_effort=args.thinking,
+            effort_validator=normalize_thinking, capabilities=thinking_capabilities,
         )
     if "codex" in selected_harnesses:
         if args.collect_path and "openclaw" not in selected_harnesses:
@@ -841,6 +941,11 @@ def _collect(args: argparse.Namespace) -> int:
             keep_thinking=args.keep_thinking,
             keep_container_on_error=args.keep_container_on_error,
             docker_binary=args.docker_binary,
+        )
+        _validate_thinking_requests(
+            requests, cli_harness=cli_harness, harness="codex",
+            api_base=codex_api_base, default_effort=args.thinking,
+            effort_validator=codex_effort, capabilities=thinking_capabilities,
         )
     if "claude-code" in selected_harnesses:
         if args.collect_path and "openclaw" not in selected_harnesses:
@@ -867,12 +972,11 @@ def _collect(args: argparse.Namespace) -> int:
             keep_container_on_error=args.keep_container_on_error,
             docker_binary=args.docker_binary,
         )
-        for request in requests:
-            if (cli_harness or request.task.harness) == "claude-code":
-                claude_effort(resolve_thinking(request.task.thinking, claude_code_config.reasoning_effort))
-            spec = request.task.user_simulator
-            if spec is not None and spec.harness == "claude-code":
-                claude_effort(resolve_thinking(spec.thinking, claude_code_config.reasoning_effort))
+        _validate_thinking_requests(
+            requests, cli_harness=cli_harness, harness="claude-code",
+            api_base=claude_code_config.api_base, default_effort=args.thinking,
+            effort_validator=claude_effort, capabilities=thinking_capabilities,
+        )
 
     if "hermes" in selected_harnesses:
         hermes_config = HermesConfig(
@@ -885,12 +989,15 @@ def _collect(args: argparse.Namespace) -> int:
             wire_trace_mode=args.wire_trace, keep_thinking=args.keep_thinking,
             keep_container_on_error=args.keep_container_on_error, docker_binary=args.docker_binary,
         )
-        for request in requests:
-            if (cli_harness or request.task.harness) == "hermes":
-                hermes_effort(resolve_thinking(request.task.thinking, hermes_config.reasoning_effort))
-            spec = request.task.user_simulator
-            if spec is not None and spec.harness == "hermes":
-                hermes_effort(resolve_thinking(spec.thinking, hermes_config.reasoning_effort))
+        _validate_thinking_requests(
+            requests,
+            cli_harness=cli_harness,
+            harness="hermes",
+            api_base=hermes_api_base or "https://api.openai.com/v1",
+            default_effort=hermes_config.reasoning_effort,
+            effort_validator=hermes_effort,
+            capabilities=thinking_capabilities,
+        )
 
     if "opencode" in selected_harnesses:
         opencode_config = OpenCodeConfig(
@@ -904,12 +1011,15 @@ def _collect(args: argparse.Namespace) -> int:
             wire_trace_mode=args.wire_trace, keep_thinking=args.keep_thinking,
             keep_container_on_error=args.keep_container_on_error, docker_binary=args.docker_binary,
         )
-        for request in requests:
-            if (cli_harness or request.task.harness) == "opencode":
-                opencode_effort(resolve_thinking(request.task.thinking, opencode_config.reasoning_effort))
-            spec = request.task.user_simulator
-            if spec is not None and spec.harness == "opencode":
-                opencode_effort(resolve_thinking(spec.thinking, opencode_config.reasoning_effort))
+        _validate_thinking_requests(
+            requests,
+            cli_harness=cli_harness,
+            harness="opencode",
+            api_base=opencode_api_base or "https://api.openai.com/v1",
+            default_effort=opencode_config.reasoning_effort,
+            effort_validator=opencode_effort,
+            capabilities=thinking_capabilities,
+        )
 
     if "deepseek" in selected_harnesses:
         deepseek_config = DeepSeekConfig(
@@ -922,12 +1032,15 @@ def _collect(args: argparse.Namespace) -> int:
             wire_trace_mode=args.wire_trace, keep_thinking=args.keep_thinking,
             keep_container_on_error=args.keep_container_on_error, docker_binary=args.docker_binary,
         )
-        for request in requests:
-            if (cli_harness or request.task.harness) == "deepseek":
-                deepseek_effort(resolve_thinking(request.task.thinking, deepseek_config.reasoning_effort))
-            spec = request.task.user_simulator
-            if spec is not None and spec.harness == "deepseek":
-                deepseek_effort(resolve_thinking(spec.thinking, deepseek_config.reasoning_effort))
+        _validate_thinking_requests(
+            requests,
+            cli_harness=cli_harness,
+            harness="deepseek",
+            api_base=deepseek_api_base or "https://api.deepseek.com",
+            default_effort=deepseek_config.reasoning_effort,
+            effort_validator=deepseek_effort,
+            capabilities=thinking_capabilities,
+        )
 
     if "pi" in selected_harnesses:
         pi_config = PiConfig(
@@ -940,12 +1053,15 @@ def _collect(args: argparse.Namespace) -> int:
             wire_trace_mode=args.wire_trace, keep_thinking=args.keep_thinking,
             keep_container_on_error=args.keep_container_on_error, docker_binary=args.docker_binary,
         )
-        for request in requests:
-            if (cli_harness or request.task.harness) == "pi":
-                pi_effort(resolve_thinking(request.task.thinking, pi_config.reasoning_effort))
-            spec = request.task.user_simulator
-            if spec is not None and spec.harness == "pi":
-                pi_effort(resolve_thinking(spec.thinking, pi_config.reasoning_effort))
+        _validate_thinking_requests(
+            requests,
+            cli_harness=cli_harness,
+            harness="pi",
+            api_base=pi_api_base or "https://api.openai.com/v1",
+            default_effort=pi_config.reasoning_effort,
+            effort_validator=pi_effort,
+            capabilities=thinking_capabilities,
+        )
 
     if args.dry_run:
         # Exercise all path, hash, collision and size checks without leaving a run directory.
@@ -1015,6 +1131,8 @@ def _collect(args: argparse.Namespace) -> int:
             "model_config_path": (
                 str(model_config_path) if model_config_path else None
             ),
+            "model_request_timeout_seconds": args.openclaw_model_request_timeout,
+            "model_max_tokens": args.openclaw_max_tokens,
             "gateway_port_start": args.gateway_port,
             "gateway_port_step": args.gateway_port_step,
             "network": args.network,
@@ -1145,6 +1263,12 @@ def _collect(args: argparse.Namespace) -> int:
             "limit": args.limit,
             "resume": args.resume,
             "task_schema": "roller.task/v1",
+            "thinking_capabilities_path": (
+                str(thinking_capabilities_path)
+                if thinking_capabilities_path
+                else None
+            ),
+            "thinking_capabilities_sha256": thinking_capabilities_digest,
             "conversation": {
                 "user_simulator_tasks": sum(
                     task.user_simulator is not None for task in tasks
@@ -1197,6 +1321,9 @@ def _collect(args: argparse.Namespace) -> int:
                     "simulator_harnesses": sorted(simulator_harnesses),
                     "task_schema": "roller.task/v1",
                     "output_collection": "all",
+                    "thinking_capabilities_sha256": (
+                        thinking_capabilities_digest
+                    ),
                     "task_images": {
                         task.id: {
                             "image": task.docker_image,
@@ -1297,7 +1424,15 @@ def _collect(args: argparse.Namespace) -> int:
                 if binding is not None and binding.grade is not None:
                     # Grading has to read the container the agent just wrote to,
                     # so it runs inside the session rather than after teardown.
-                    return GradedHarness(
+                    try:
+                        adapter = get_bench(binding.name)
+                    except KeyError:
+                        return GradedHarness(
+                            agent,
+                            binding,
+                            grading_semaphore=grading_semaphore,
+                        )
+                    return adapter.wrap_harness(
                         agent,
                         binding,
                         grading_semaphore=grading_semaphore,
@@ -1336,6 +1471,14 @@ def _collect(args: argparse.Namespace) -> int:
     assert results is not None
     failed = sum(result.get("status") in {"error", "timeout"} for result in results)
     print(f"Collected {len(results)} trajectories ({failed} failed).")
+    training = training_summary(results)
+    print(
+        f"SFT: {training['sft_included']} included, "
+        f"{training['sft_excluded']} excluded. "
+        f"Thinking audit: {training['thinking_mismatch']} mismatch; "
+        f"wire {training['wire_unverified']} unverified, "
+        f"{training['wire_not_observable']} not observable."
+    )
     print(f"Run directory: {run_dir}")
     print(f"Info: {run_dir / 'info.json'}")
     if bench_context is not None:
@@ -1377,6 +1520,41 @@ def _bench(args: argparse.Namespace) -> int:
         )
         if not rows:
             raise TaskFormatError(f"{adapter.name}: selection matched no tasks")
+        if args.runs_per_task < 1:
+            raise TaskFormatError("--runs-per-task must be positive")
+        if args.runs_per_task > 1:
+            repeated: list[dict[str, Any]] = []
+            width = max(2, len(str(args.runs_per_task)))
+            for row in rows:
+                task_id = row.get("id")
+                bench = row.get("bench")
+                if not isinstance(task_id, str) or not task_id:
+                    raise TaskFormatError(
+                        f"{adapter.name}: exported task has no valid id"
+                    )
+                if not isinstance(bench, dict):
+                    raise TaskFormatError(
+                        f"{adapter.name}: exported task {task_id!r} has no bench block"
+                    )
+                metadata = bench.get("metadata", {})
+                if not isinstance(metadata, dict):
+                    raise TaskFormatError(
+                        f"{adapter.name}: exported task {task_id!r} has invalid metadata"
+                    )
+                upstream_task_id = metadata.get("upstream_task_id") or task_id
+                for run_index in range(1, args.runs_per_task + 1):
+                    clone = json.loads(json.dumps(row))
+                    clone["id"] = f"{task_id}__run_{run_index:0{width}d}"
+                    clone_metadata = clone["bench"].setdefault("metadata", {})
+                    clone_metadata.update(
+                        {
+                            "upstream_task_id": upstream_task_id,
+                            "run_index": run_index,
+                            "runs_per_task": args.runs_per_task,
+                        }
+                    )
+                    repeated.append(clone)
+            rows = repeated
         output = Path(args.output).expanduser().resolve()
         output.parent.mkdir(parents=True, exist_ok=True)
         with output.open("w", encoding="utf-8") as handle:
@@ -1423,6 +1601,7 @@ def _bench_report(args: argparse.Namespace) -> int:
                 "bench_scores": payload.get("scores"),
                 "bench_score_key": payload.get("score_key"),
                 "bench_category": payload.get("category"),
+                "bench_metadata": payload.get("metadata"),
                 "bench_error": payload.get("error"),
             }
         )

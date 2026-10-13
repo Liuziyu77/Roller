@@ -120,8 +120,8 @@ The contract is:
 - `tool` contains only `role`, `tool_call_id`, and string `content`.
 - The assistant after a tool call follows the matching tool message directly.
   No empty user message is inserted.
-- `tools` keeps the function schema the model actually saw. It is `[]` when no
-  schema is available and the trajectory did not call tools.
+- `tools` keeps captured tool definitions. Codex preserves the native Responses list (flat functions, namespaces, custom grammars, and built-in tools), including unused tools and all original schema fields; consumers must support this format. Other harnesses keep the existing nested function representation. Codex requires captured definitions even when no tools were called; missing capture never becomes an empty list.
+- Codex custom calls use `{"id":"...","type":"custom","custom":{"name":"...","input":"original string"}}`. Function/custom call namespace fields are preserved. Changing schemas or programmatic `additional_tools` items retain their exact snapshots in ACTF and make SFT explicitly unavailable.
 
 ## 3. ACTF mapping
 
@@ -146,7 +146,7 @@ The exporter requires:
 - Every assistant tool call has a non-empty, globally unique ID;
 - Every call has exactly one matching tool result in the same step;
 - The call's tool name exists in the top-level tools schema;
-- Arguments can be encoded as a JSON object;
+- Function arguments can be encoded as a JSON object; Codex custom input remains a string;
 - Tool results contain only strings, text blocks, or image blocks with
   embedded base64 bytes.
 
@@ -204,3 +204,9 @@ networks. The sample therefore retains raw/ACTF and records SFT as unavailable.
 For a User Simulator rollout, the Task Agent SFT is in the root sample. The
 simulated user's own SFT is at `user_simulator/trace_SFT.json`. Run-level
 `sft.jsonl` aggregates only the Task Agent.
+
+## Parallel tool result ordering
+
+Tools called in one assistant message may finish in any order. SFT export pairs results by `tool_call_id` and emits tool messages in that assistant message's `tool_calls` array order. It does not sort by tool name or lexicographic ID, or move results across steps. Duplicate, missing, unmatched and name-mismatched results still fail conversion.
+
+Images are appended to the top-level `images` list after ordering results, so the Nth `<image>` still maps to `images[N-1]`. Raw traces and ACTF observation order remain unchanged for inspection of completion order. This canonicalizes training output; reversed results were not necessarily mispaired when consumed by ID. Existing SFT files are not automatically rewritten; re-export to apply this ordering.

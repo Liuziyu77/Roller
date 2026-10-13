@@ -11,7 +11,6 @@ from roller.harnesses.codex import (
     CodexConfig,
     CodexHarness,
     redact_api_base,
-    validate_codex_thinking,
 )
 from roller.models import RunRequest, Task
 
@@ -82,10 +81,16 @@ class CodexHarnessTests(unittest.TestCase):
             harness._effective_effort(self._request("adaptive"))
         self.assertEqual(harness._effective_effort(self._request("max")), "max")
 
-    def test_default_cli_rejects_unsupported_advanced_effort(self) -> None:
-        with self.assertRaisesRegex(RuntimeError, "does not accept"):
-            validate_codex_thinking("codex-cli 0.149.0", "max")
-        validate_codex_thinking("codex-cli 0.150.0", "max")
+    def test_forwards_advanced_effort_to_codex_for_runtime_validation(self) -> None:
+        for effort in ("max", "ultra"):
+            with self.subTest(effort=effort):
+                harness = CodexHarness(CodexConfig(reasoning_effort=effort), 0)
+                command = harness._codex_command(
+                    "container", self._request(), "hello", resume=False
+                )
+                self.assertIn(
+                    f'model_reasoning_effort="{effort}"', command
+                )
 
     def test_requires_absolute_http_api_base(self) -> None:
         with self.assertRaisesRegex(ValueError, "absolute http"):
@@ -112,7 +117,7 @@ class CodexHarnessTests(unittest.TestCase):
                 + "\n",
                 encoding="utf-8",
             )
-            proxy = MagicMock(log_path=log_path)
+            proxy = MagicMock(log_path=log_path, recording_error=None, responses_tools_path=None)
             harness._wire_proxy = proxy
 
             harness._stop_wire_proxy()

@@ -108,7 +108,8 @@ SFT record 不包含 schema version、task/model、usage、时间戳、step ID�
 - `tool_calls[*]` 使用 function-call 结构，`function.arguments` 是紧凑 JSON 字符串。
 - `tool` 只包含 `role`、`tool_call_id` 和字符串 `content`。
 - 工具调用后的 assistant 直接跟在对应 tool message 后，不插入空 user message。
-- `tools` 保留模型实际看到的 function schema；没有可用 schema 且轨迹未调用工具时为 `[]`。
+- `tools` 保留捕获的工具定义。Codex 使用原始 Responses 列表（扁平 function、namespace、custom grammar、内置工具），包含未调用工具及原始 schema 全部字段；训练端需支持该格式。其他 harness 保持原有嵌套 function 表达。Codex 即使没有调用工具也必须捕获定义，缺少捕获不会被替换成空列表。
+- Codex custom call 使用 `{"id":"...","type":"custom","custom":{"name":"...","input":"原始字符串"}}`，function/custom call 的 namespace 字段保留。工具定义跨请求变化或存在 programmatic `additional_tools` item 时，ACTF 保留完整快照，SFT 明确不可用。
 
 ## 3. ACTF 映射
 
@@ -183,3 +184,9 @@ SFT，因为导出过程不会读取文件或网络。该样本会保留 raw/ACT
 
 User Simulator rollout 的任务 Agent SFT 位于根 sample，模拟用户自己的 SFT 位于
 `user_simulator/trace_SFT.json`；run 级 `sft.jsonl` 只汇总任务 Agent。
+
+## 并行工具结果的顺序
+
+同一条 assistant 消息中的多个工具调用可以按任意顺序完成。SFT 导出按 `tool_call_id` 配对，然后按该消息的 `tool_calls` 数组顺序输出 tool 消息；不会按工具名或 ID 字典序排序，也不会跨 step 移动结果。重复、缺失、无对应调用或工具名不匹配的结果仍会拒绝导出。
+
+图片在结果重排后按消息顺序加入顶层 `images`，因此第 N 个 `<image>` 仍对应 `images[N-1]`。原始轨迹和 ACTF 的 observation 顺序保持不变，供检查实际完成顺序。此规则统一训练数据顺序，不表示原来的逆序结果在按 ID 配对时发生了内容错配。已生成的 SFT 文件不会自动重写，重新导出时才应用此规则。

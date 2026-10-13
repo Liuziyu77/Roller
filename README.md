@@ -50,11 +50,12 @@ Docker 中的 Agent Harness
 
 ## Reasoning 采集
 
-默认 `--keep-thinking` 保存服务实际返回的可见 reasoning。`--thinking` 控制原生推理档位，不能保证服务返回完整的内部推理文本。
+默认 `--keep-thinking` 保存服务实际返回的可见 reasoning。`--thinking` 控制原生推理档位。
+OpenClaw 各模型的可用档位、配置方式和限制见 [Thinking 档位表](docs/zh/harnesses/openclaw-thinking.md)。
 
 | 模型类型 | ACTF/SFT 保存内容 |
 | --- | --- |
-| GPT reasoning 系列 | 服务返回的可见 summary/content，不扩写压缩 summary |
+| GPT reasoning 系列 | 服务返回的可见 summary/content |
 | Claude 系列 | 服务实际返回的可见 thinking/summary |
 | Qwen、GLM 等开源模型 | 服务实际返回的明文 reasoning |
 

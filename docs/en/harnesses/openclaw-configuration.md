@@ -182,6 +182,13 @@ roller collect ... --thinking high
 
 OpenClaw treats `none` as `off`. Other levels depend on the OpenClaw version, model, and API service.
 
+See [OpenClaw thinking levels](openclaw-thinking.md) for per-model levels, `compat` examples, and how to verify the result.
+
+When thinking is explicitly enabled and the model config omits a `reasoning` capability, Roller adds `reasoning: true` to the rollout-local copy for legacy compatibility. An explicit `reasoning: false` is preserved. Legacy `tags: ["reasoning"]` is automatically converted to the boolean field current OpenClaw accepts.
+
+> [!IMPORTANT]
+> Legacy `wildclawbench-ubuntu:v1.3` ships OpenClaw `2026.3.11` and only reliably supports up to `high`; Roller rejects `xhigh/adaptive/max/ultra` on it. Updating the Roller repo does not replace the Docker image. The runtime version is `runtime.openclaw_version` in the sample `info.json`.
+
 Whether a trace can store reasoning text depends on what the model service returns. If the service reports only a reasoning-token count and no visible text, `reasoning_content` is empty. Roller does not reconstruct text from hidden tokens.
 
 `--keep-thinking` is enabled by default and keeps visible reasoning returned by the model. Use `--no-keep-thinking` to remove it from the trace and later request history.

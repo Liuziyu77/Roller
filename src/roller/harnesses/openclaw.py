@@ -64,11 +64,15 @@ COMMON_ENV_NAMES = (
 _OPENCLAW_2026_3_11_UNSAFE_THINKING = frozenset(
     {"xhigh", "adaptive", "max", "ultra"}
 )
-_OPENCLAW_2026_7_1_UNSAFE_THINKING = frozenset({"ultra"})
 
 
 def validate_openclaw_thinking(version: str, thinking: str | None) -> None:
-    """Reject advanced levels known to be silently changed by a legacy image."""
+    """Guard the legacy downgrade; modern model profiles belong to OpenClaw.
+
+    A version string or CLI help text is not a model capability table. Modern
+    OpenClaw validates explicit levels against its provider/model/runtime
+    profile, including custom catalog compatibility settings.
+    """
 
     if (
         thinking in _OPENCLAW_2026_3_11_UNSAFE_THINKING
@@ -79,16 +83,6 @@ def validate_openclaw_thinking(version: str, thinking: str | None) -> None:
             "the bundled 2026.3.11 runtime predates the current advanced thinking "
             "profiles and can silently downgrade the request. Use off|minimal|low|"
             "medium|high, or select a newer OpenClaw image with --docker-image."
-        )
-    if (
-        thinking in _OPENCLAW_2026_7_1_UNSAFE_THINKING
-        and re.search(r"(?:^|\s)2026\.7\.1(?:\s|$)", version)
-    ):
-        raise RuntimeError(
-            f"OpenClaw {version!r} does not accept --thinking {thinking!r}; "
-            "this stable runtime supports off|minimal|low|medium|high|xhigh|"
-            "adaptive|max. Select one of those levels or a later OpenClaw "
-            "version that explicitly lists ultra in `openclaw agent --help`."
         )
 
 
@@ -132,9 +126,11 @@ def prepare_model_config(
     *,
     proxy: WireTraceProxy | None = None,
     enable_reasoning: bool = False,
+    request_timeout_seconds: int | None = None,
+    max_tokens: int | None = None,
 ) -> dict[str, Any]:
     """Copy a model config and apply rollout-local transport/model settings."""
-    prepared = rewrite_model_config(config, proxy) if proxy is not None else deepcopy(config)
+    prepared = rewrite_model_config(config, proxy) if proxy is not None else deepcopy(dict(config))
     providers = prepared.get("providers")
     if not isinstance(providers, dict):
         return prepared
@@ -150,14 +146,20 @@ def prepare_model_config(
             tags = model.pop("tags", None)
             if isinstance(tags, list) and "reasoning" in tags:
                 model.setdefault("reasoning", True)
-    if enable_reasoning and "/" in model_name:
+    if "/" in model_name:
         provider_name, model_id = model_name.split("/", 1)
         provider = providers.get(provider_name)
         models = provider.get("models") if isinstance(provider, dict) else None
+        if isinstance(provider, dict) and request_timeout_seconds is not None:
+            provider["timeoutSeconds"] = request_timeout_seconds
         if isinstance(models, list):
             for model in models:
                 if isinstance(model, dict) and model.get("id") == model_id:
-                    model["reasoning"] = True
+                    if enable_reasoning:
+                        # Preserve explicit capabilities and provider mappings.
+                        model.setdefault("reasoning", True)
+                    if max_tokens is not None:
+                        model["maxTokens"] = max_tokens
                     break
     return prepared
 
@@ -201,6 +203,8 @@ class OpenClawConfig:
     workspace_container_path: str = "/tmp_workspace"
     session_id: str = "roller"
     model_config: Mapping[str, Any] | None = None
+    model_request_timeout_seconds: int | None = None
+    model_max_tokens: int | None = None
     pass_env: tuple[str, ...] = COMMON_ENV_NAMES
     search_provider: str | None = None
     thinking: str | None = None
@@ -227,6 +231,13 @@ class OpenClawConfig:
             raise ValueError("workspace_container_path must be absolute")
         if not self.session_id or "/" in self.session_id:
             raise ValueError("session_id must be a non-empty path-safe value")
+        if (
+            self.model_request_timeout_seconds is not None
+            and self.model_request_timeout_seconds <= 0
+        ):
+            raise ValueError("model_request_timeout_seconds must be positive")
+        if self.model_max_tokens is not None and self.model_max_tokens <= 0:
+            raise ValueError("model_max_tokens must be positive")
         for path in self.collect_paths:
             if not path.startswith("/"):
                 raise ValueError(f"collected container path must be absolute: {path}")
@@ -314,6 +325,8 @@ if not files:
     )
 content = ''
 assistant_count = 0
+stop_reason = ''
+error_message = ''
 if files:
     rows = []
     for line in files[0].read_text(errors='replace').splitlines():
@@ -331,6 +344,8 @@ if files:
         message = row.get('message') if isinstance(row, dict) else None
         if not isinstance(message, dict) or message.get('role') != 'assistant':
             continue
+        stop_reason = message.get('stopReason', message.get('stop_reason', ''))
+        error_message = message.get('errorMessage', message.get('error_message', ''))
         value = message.get('content')
         if isinstance(value, str):
             content = value
@@ -343,7 +358,12 @@ if files:
         elif isinstance(value, dict) and isinstance(value.get('text'), str):
             content = value['text']
         break
-print(json.dumps({'content': content, 'assistant_count': assistant_count}, ensure_ascii=False))
+print(json.dumps({
+    'content': content,
+    'assistant_count': assistant_count,
+    'stop_reason': stop_reason,
+    'error': error_message,
+}, ensure_ascii=False))
 """.strip()
 
     _SDK_LAST_ASSISTANT_SCRIPT = """
@@ -353,13 +373,28 @@ const { readLatestAssistantTextByIdentity, readSessionTranscriptEvents } =
   await import('openclaw/plugin-sdk/session-transcript-runtime');
 const events = await readSessionTranscriptEvents(scope);
 const latest = await readLatestAssistantTextByIdentity(scope);
-const assistantCount = events.filter((event) =>
+const assistants = events.filter((event) =>
   event && typeof event === 'object' && event.message &&
   typeof event.message === 'object' && event.message.role === 'assistant'
-).length;
+);
+const last = assistants.length ? assistants[assistants.length - 1].message : {};
+const blocks = last?.content;
+let content = '';
+if (typeof blocks === 'string') {
+  content = blocks;
+} else if (Array.isArray(blocks)) {
+  content = blocks
+    .filter((block) => block && typeof block === 'object' && block.type === 'text')
+    .map((block) => typeof block.text === 'string' ? block.text : '')
+    .join('\\n');
+} else if (blocks && typeof blocks === 'object' && typeof blocks.text === 'string') {
+  content = blocks.text;
+}
 process.stdout.write(JSON.stringify({
-  content: typeof latest?.text === 'string' ? latest.text : '',
-  assistant_count: assistantCount,
+  content,
+  assistant_count: assistants.length,
+  stop_reason: last?.stopReason ?? last?.stop_reason ?? '',
+  error: last?.errorMessage ?? last?.error_message ?? '',
 }));
 """.strip()
 
@@ -618,6 +653,8 @@ exec node --input-type=module -e "$1"
             request.model,
             proxy=self._wire_proxy,
             enable_reasoning=thinking not in (None, "off"),
+            request_timeout_seconds=self.config.model_request_timeout_seconds,
+            max_tokens=self.config.model_max_tokens,
         )
         temporary_path: Path | None = None
         try:
@@ -913,6 +950,12 @@ exec node --input-type=module -e "$1"
         assistant_count = (
             payload.get("assistant_count") if isinstance(payload, dict) else None
         )
+        stop_reason = payload.get("stop_reason") if isinstance(payload, dict) else None
+        if stop_reason in {"aborted", "error"}:
+            detail = payload.get("error") if isinstance(payload, dict) else None
+            raise RuntimeError(
+                detail if isinstance(detail, str) and detail else f"OpenClaw {stop_reason}"
+            )
         if not isinstance(content, str) or not content.strip():
             raise RuntimeError("OpenClaw turn produced no visible assistant response")
         if isinstance(assistant_count, bool) or not isinstance(assistant_count, int):
@@ -1538,6 +1581,12 @@ class OpenClawSession(InteractiveSession):
                 "warnings": warnings,
                 "trajectory_conversion": trajectory_conversion,
                 "attempt": self.attempt,
+                "settings": {
+                    "reasoning_effort": self.harness._effective_thinking(
+                        self.request
+                    ),
+                    "keep_thinking": self.harness.config.keep_thinking,
+                },
                 "provenance": provenance,
             },
         )

@@ -1,7 +1,7 @@
 {
   "mode": "merge",
   "providers": {
-    "my-gpt-proxy": {
+    "openai": {
       "baseUrl": "${MY_PROXY_BASE_URL}",
       "apiKey": "${MY_PROXY_API_KEY}",
       "api": "openai-responses",
@@ -10,14 +10,7 @@
           "id": "gpt-5.6-sol",
           "name": "GPT-5.6 Sol",
           "reasoning": true,
-          "thinkingLevelMap": {
-            "off": "none",
-            "low": "low",
-            "medium": "medium",
-            "high": "high",
-            "xhigh": "xhigh",
-            "max": "max"
-          }
+          "agentRuntime": {"id": "openclaw"}
         }
       ]
     },
@@ -30,16 +23,9 @@
           "id": "my-reasoning-model",
           "name": "My OpenAI-compatible reasoning model",
           "reasoning": true,
-          "thinkingLevelMap": {
-            "off": "none",
-            "low": "low",
-            "medium": "medium",
-            "high": "high",
-            "xhigh": "xhigh",
-            "max": "max"
-          },
           "compat": {
-            "supportsReasoningEffort": true
+            "supportsReasoningEffort": true,
+            "supportedReasoningEfforts": ["low", "medium", "high"]
           }
         }
       ]

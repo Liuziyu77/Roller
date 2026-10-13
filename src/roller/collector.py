@@ -20,6 +20,9 @@ from roller.integrity import (
 from roller.models import HarnessResult, RunRequest
 from roller.sft import SFTConversionError, validate_sft_record, write_sft
 from roller.storage import atomic_write_json, safe_component, write_jsonl
+from roller.trajectory_audit import (
+    record_training_audits, sft_exclusion_reason, training_summary,
+)
 
 logger = logging.getLogger(__name__)
 # New factories may inspect the request to select a task-level harness.  The
@@ -183,6 +186,7 @@ class Collector:
             "trace.jsonl",
             "trace_ACTF.json",
             "trace_SFT.json",
+            "tools_capture.jsonl",  # Exact Codex Responses tool snapshots.
             "signature_recovery.jsonl",  # Preserve historical artifacts; never generated now.
             "info.json",
             "results",
@@ -235,6 +239,7 @@ class Collector:
             if trace_source.resolve() != trace_path.resolve():
                 shutil.copy2(trace_source, trace_path)
 
+        trajectory = None
         if trajectory_source is not None:
             if trajectory_source.resolve() != actf_path.resolve():
                 shutil.copy2(trajectory_source, actf_path)
@@ -242,7 +247,8 @@ class Collector:
                 trajectory = json.loads(actf_path.read_text(encoding="utf-8"))
                 if not isinstance(trajectory, dict):
                     raise ValueError("canonical ACTF trajectory must be a JSON object")
-                write_sft(sft_path, trajectory)
+                if final.status == "ok":
+                    write_sft(sft_path, trajectory)
             except SFTConversionError as exc:
                 logger.warning(
                     "[%s | %s] SFT export unavailable: %s",
@@ -264,6 +270,14 @@ class Collector:
                 )
                 final.status = "error"
                 final.error = f"trajectory conversion failed: {exc}"
+        # Failed/partial rollouts are diagnostic evidence, not training exports.
+        # Also remove stale exports left by an earlier attempt or failed write.
+        if final.status != "ok":
+            sft_path.unlink(missing_ok=True)
+        record_training_audits(
+            metadata, trajectory if isinstance(trajectory, dict) else None,
+            sample_dir / "wire_trace.jsonl",
+        )
         if attempts and attempts[-1].get("status") != final.status:
             attempts[-1]["status"] = final.status
             attempts[-1]["error"] = final.error
@@ -432,6 +446,7 @@ class Collector:
             "timeout": sum(result.get("status") == "timeout" for result in results),
             "skipped": sum(result.get("status") == "skipped" for result in results),
             "usage": self._usage_summary(results),
+            "training": training_summary(results),
         }
         summary["completed"] = summary["ok"] + summary["skipped"]
         summary["failed"] = summary["error"] + summary["timeout"]
@@ -468,14 +483,9 @@ class Collector:
     def _write_sft_dataset(self, results: list[dict[str, Any]]) -> None:
         def rows() -> Iterator[dict[str, Any]]:
             for result in results:
-                if result.get("status") not in {"ok", "skipped"}:
+                if sft_exclusion_reason(result) is not None:
                     continue
                 path = self._sample_dir_from_result(result) / "trace_SFT.json"
-                runtime = result.get("runtime")
-                if trajectory_conversion_unavailable(
-                    runtime if isinstance(runtime, dict) else None
-                ) in {"actf", "sft"}:
-                    continue
                 try:
                     row = json.loads(path.read_text(encoding="utf-8"))
                 except (OSError, json.JSONDecodeError) as exc:

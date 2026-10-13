@@ -193,6 +193,7 @@ def openclaw_events_to_actf(
     retry_after_empty_error = False
     steps: list[dict[str, Any]] = []
     current: dict[str, Any] | None = None
+    last_message_was_dropped_empty_attempt = False
 
     def finish_current(fallback: str | None = None) -> None:
         nonlocal current
@@ -210,6 +211,7 @@ def openclaw_events_to_actf(
         message = _message_event(row)
         if message is None:
             continue
+        last_message_was_dropped_empty_attempt = False
         role = message.get("role")
         message_time = _timestamp(row.get("timestamp") or message.get("timestamp"))
         if role == "user":
@@ -237,6 +239,7 @@ def openclaw_events_to_actf(
                 # finished_at derived from genuine conversation events only.
                 continue
             content, reasoning, tool_calls = _assistant_parts(message.get("content"))
+            stop_reason = message.get("stopReason", message.get("stop_reason", ""))
             tool_call_namespace = (
                 f"session-{session_index}" if multiple_sessions else None
             )
@@ -250,6 +253,11 @@ def openclaw_events_to_actf(
                 # event in the native trace for auditability, but do not turn it
                 # into an invalid empty ACTF/SFT assistant message.
                 retry_after_empty_error = bool(message.get("errorMessage"))
+                last_message_was_dropped_empty_attempt = stop_reason in {
+                    "aborted",
+                    "error",
+                    "length",
+                }
                 continue
             retry_after_empty_error = False
             finish_current(message_time)
@@ -281,7 +289,7 @@ def openclaw_events_to_actf(
                     "completion_tokens_len": int(parsed.counts[1]) if parsed else 0,
                     "llm_infer_ms": None,
                     "env_action_ms": None,
-                    "stop_reason": message.get("stopReason", message.get("stop_reason", "")),
+                    "stop_reason": stop_reason,
                 },
                 "user_content": pending_user,
                 "tools": deepcopy(tool_calls),
@@ -307,7 +315,13 @@ def openclaw_events_to_actf(
     )
     finish_current(last_time)
     started_at = steps[0]["started_at"] if steps else first_time or ""
-    finished_at = steps[-1]["finished_at"] if steps else last_time or started_at
+    finished_at = (
+        last_time
+        if last_message_was_dropped_empty_attempt and last_time
+        else steps[-1]["finished_at"]
+        if steps
+        else last_time or started_at
+    )
     return {
         "schema_version": "ACTF_v1.0",
         "system_prompt": system_prompt,

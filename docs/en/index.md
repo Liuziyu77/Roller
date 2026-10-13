@@ -70,6 +70,7 @@ start/docker-builds
 :caption: Harness setup
 
 harnesses/openclaw-configuration
+harnesses/openclaw-thinking
 harnesses/codex-configuration
 harnesses/claude-code-configuration
 harnesses/hermes-configuration
@@ -104,4 +105,5 @@ benches/bench-format
 benches/wildclawbench
 benches/skillsbench
 benches/pinchbench
+benches/qwenclawbench
 ~~~
