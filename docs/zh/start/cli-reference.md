@@ -51,7 +51,7 @@ roller collect --tasks tasks.jsonl --model provider/model
 
 这些参数决定运行哪些 task、运行多少次，以及把结果保存到哪里。它们适用于所有 Harness。
 
-### 输入与运行对象
+### 3.1 输入与运行对象
 
 这组参数告诉 Roller 从哪里读取任务，以及由哪个模型和 Harness 执行。
 
@@ -62,7 +62,7 @@ roller collect --tasks tasks.jsonl --model provider/model
 | `--model-label LABEL` | 实际服务模型 ID | 为 sample 目录和容器设置安全的本地名称，不改变发送给模型服务的 ID，只适用于最终只有一个模型的运行 |
 | `--harness NAME` | task `harness` 或 `openclaw` | 选择 `openclaw`、`codex`、`claude-code`、`hermes`、`opencode`、`deepseek` 或 `pi` |
 
-### 执行规模与任务范围
+### 3.2 执行规模与任务范围
 
 这组参数控制并行数、重复次数、重试和本次选取的 task 范围。
 
@@ -77,7 +77,7 @@ roller collect --tasks tasks.jsonl --model provider/model
 | `--start-index N` | `0` | 从规范化 task 列表的第 N 条开始 |
 | `--limit N` | 不限制 | 最多选择 N 条 task |
 
-### 输出、检查与续跑
+### 3.3 输出、检查与续跑
 
 这组参数控制结果目录，并决定是预检查、开始新 run 还是继续原 run。
 
@@ -88,7 +88,7 @@ roller collect --tasks tasks.jsonl --model provider/model
 | `--dry-run` | 关闭 | 检查 task、文件和运行计划，不启动 Docker |
 | `--resume` | 关闭 | 继续同一个 run，并跳过产物完整的成功 sample，详见第 6 节 |
 
-### 兼容与调试
+### 3.4 兼容与调试
 
 这组参数主要用于旧数据格式或排查运行日志。新 task 通常不需要修改前三项。
 
@@ -99,7 +99,7 @@ roller collect --tasks tasks.jsonl --model provider/model
 | `--id-key NAME` | `id` | 指定旧数据中的 ID 字段名 |
 | `--log-level LEVEL` | `INFO` | 设置 `DEBUG`、`INFO`、`WARNING` 或 `ERROR` 日志级别 |
 
-### 输入文件限制
+### 3.5 输入文件限制
 
 这组参数限制 task 可以带入容器的文件大小，主要用于防止误传过大的输入。
 
@@ -112,7 +112,7 @@ roller collect --tasks tasks.jsonl --model provider/model
 
 这些参数控制 Harness 容器如何启动、如何连接模型服务，以及轨迹中保留哪些信息。具体支持范围仍由所选 Harness 决定。
 
-### 容器与连接
+### 4.1 容器与连接
 
 这组参数用于选择镜像、Docker 运行方式和模型服务连接信息。
 
@@ -127,7 +127,7 @@ roller collect --tasks tasks.jsonl --model provider/model
 | `--pass-env NAME` | 无 | 额外向 Harness 容器传入一个非空环境变量，可重复 |
 | `--keep-container-on-error` | 关闭 | 失败后保留已停止的容器，便于检查现场 |
 
-### Reasoning 与轨迹
+### 4.2 Reasoning 与轨迹
 
 `--thinking` 用于设置模型的 reasoning 或 thinking 强度。同一设置也可以写在 task 的 `runtime.thinking` 中。Task 设置优先于命令行，两处都省略时使用 Harness 或模型的默认值。
 
@@ -174,7 +174,7 @@ profile 支持注册的七种 harness，并检查主 Agent 与 user simulator。
 端点从该 provider 的 model-config `baseUrl` 解析。无法解析端点时只匹配不带端点的通用条目；
 能力声明不覆盖原生不支持的档位，也不改写请求。
 
-### Wire trace 模式
+### 4.3 Wire trace 模式
 
 Wire trace 用于决定是否记录模型服务的实际 HTTP 请求，常规采集使用默认的 `actf` 即可。
 
@@ -186,7 +186,7 @@ Wire trace 用于决定是否记录模型服务的实际 HTTP 请求，常规采
 
 `full` 可能保存 prompt、reasoning、工具参数和结果等完整请求文本，因此文件更大，也更敏感。不同 Harness 的支持范围与网络要求见对应 Harness 指南，文件格式见 {ref}`轨迹产出文件指南 <wire-trace-jsonl>`。
 
-### 兼容性提示
+### 4.4 兼容性提示
 
 `--external-thinking` 已移除。旧命令应改用 `--thinking`，不再需要的参数应直接删除。
 

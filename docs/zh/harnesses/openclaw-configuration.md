@@ -1,12 +1,19 @@
 # OpenClaw Harness 指南
 
-本页介绍 OpenClaw 专属的镜像、模型 provider、API adapter、thinking、搜索、gateway 和排错。Task 字段见 [Task 格式参考](../tasks/task-format.md)，各 Harness 的产物说明见 [轨迹产出文件指南](../traces/trajectory-outputs.md)。
+OpenClaw Harness 用于通过 OpenClaw Agent 执行文本、文件、图片或 Web Search task。它可以连接 OpenAI Responses 或 Chat Completions 兼容服务。本页按照镜像、模型 API、专属参数、Thinking、轨迹和搜索的顺序介绍首次使用所需内容。
+
+第一次运行可先按照[快速上手](../start/getting-started.md)完成一次采集。本页用于继续配置自定义模型和 OpenClaw 专属功能。Task 字段见 [Task 格式参考](../tasks/task-format.md)，通用产物见 [轨迹产出文件指南](../traces/trajectory-outputs.md)。
 
 ## 1. 适用范围
 
-OpenClaw Harness 适合使用 OpenClaw Agent 运行 task。它支持 OpenAI Responses 和 Chat Completions 兼容模型，也支持文本与图片输入、thinking、多轮会话和 Web Search。
+OpenClaw Harness 适合以下场景：
 
-第一次使用可以先按照[快速上手](../start/getting-started.md)完成一次 OpenClaw 采集。本页用于配置自定义模型、环境变量和 OpenClaw 专属功能。
+- 使用 OpenAI Responses 或 Chat Completions 兼容模型服务。
+- 处理文本、普通文件和图片。
+- 运行单轮或多轮 task。
+- 按需使用 Thinking 和 Web Search。
+
+Task 消息目前不能直接包含图片内容块。图片需要先通过 `files.inputs` 放入工作区，再由 OpenClaw 的图片工具读取。
 
 ## 2. 镜像准备
 
@@ -19,29 +26,34 @@ OpenClaw Harness 适合使用 OpenClaw Agent 运行 task。它支持 OpenAI Resp
 
 Roller 默认使用固定版本的官方稳定镜像 `ghcr.io/openclaw/openclaw:2026.7.1-2`，其中包含
 OpenClaw、Node.js 与 Python 3。Roller 直接运行该镜像，无需修改 OpenClaw 源码或构建
-派生镜像。可以在线拉取，也可以离线加载：
+派生镜像。
+
+可以在线拉取固定版本镜像：
 
 ```bash
 docker pull --platform linux/amd64 ghcr.io/openclaw/openclaw:2026.7.1-2
+```
 
-# docker load 可以直接读取 gzip 压缩的 docker save 归档
-docker load -i /path/to/openclaw-2026.7.1-2-linux-amd64.tar.gz
+也可以加载已有归档：
+
+```bash
+docker load -i openclaw-2026.7.1-2-linux-amd64.tar.gz
 ```
 
 其他镜像仍可通过参数或环境变量指定：
 
 ```bash
-roller collect ... --docker-image your-openclaw-image:tag
+roller collect ... --docker-image custom-openclaw-image:tag
 
 # 或作为默认值
-export ROLLER_OPENCLAW_IMAGE=your-openclaw-image:tag
+export ROLLER_OPENCLAW_IMAGE=custom-openclaw-image:tag
 ```
 
 如果 Docker daemon 在另一台机器上，可以使用 Docker CLI 自带的 `DOCKER_HOST` 等配置。Roller 调用的是本机 `docker` 命令，因此 `docker version` 能连接成功时，Roller 通常也能使用同一个 daemon。
 
 ```bash
 docker version
-docker image inspect your-openclaw-image:tag
+docker image inspect custom-openclaw-image:tag
 ```
 
 使用官方 OpenClaw 镜像时，无需额外设置容器用户。Roller 会在一次性容器中自动准备可写工作区和本地 Gateway 配置，这些设置不会改变宿主机权限。只有自定义镜像已经为默认用户准备好可写工作区，并希望使用该用户运行时，才需要传入 `--container-user image`。
@@ -50,7 +62,7 @@ docker image inspect your-openclaw-image:tag
 
 OpenClaw 通过模型配置文件读取模型名称、API 协议、服务地址和凭证。配置文件中的敏感值使用环境变量占位，运行前再从当前 shell 加载。
 
-### 模型配置
+### 3.1 模型配置
 
 `--model-config` 接受一份 OpenClaw models JSON。基础文本模板是
 [`examples/config/openclaw/models.json`](../../../examples/config/openclaw/models.json)，GPT 与
@@ -79,9 +91,9 @@ Chat Completions reasoning 模板是
 my-openai-proxy/my-model
 ```
 
-配置中的模型 ID 应改为模型服务实际使用的名称，命令中的值必须与配置完全一致。`${ENV_NAME}` 从当前 shell 读取，引用的环境变量缺失或为空时，Roller 会在启动 rollout 前报错。
+配置中的模型 ID 应改为模型服务实际使用的名称，命令中的值必须与配置完全一致。`${ENV_NAME}` 从当前 shell 读取，引用的环境变量缺失或为空时，Roller 会在启动 task 前报错。
 
-### API 协议
+### 3.2 API 协议
 
 `api` 用于选择模型服务支持的协议：
 
@@ -92,20 +104,33 @@ my-openai-proxy/my-model
 
 `apiKey` 必须是非空值。服务无需鉴权时，可以填写 `"apiKey":"not-required"`。
 
-### 加载环境变量
+### 3.3 加载环境变量
 
-模型配置中的 API 地址和凭证通过 `${ENV_NAME}` 从当前 shell 读取。可以先复制仓库提供的环境变量模板：
-
-推荐从示例创建一个不会提交到 Git 的本地文件：
+模型配置中的 API 地址和凭证通过 `${ENV_NAME}` 从当前 shell 读取。先从示例创建本地文件，再把其中的 `MY_PROXY_BASE_URL` 和 `MY_PROXY_API_KEY` 改成模型服务提供的实际值：
 
 ```bash
 cp examples/env/api.env.example examples/env/api.env
 
-# 编辑后加载到当前 shell
+# 保存后加载到当前 shell
 set -a
 source examples/env/api.env
 set +a
 ```
+
+完成模型配置并加载环境变量后，可以先运行一个 task 检查配置：
+
+```bash
+roller collect \
+  --harness openclaw \
+  --tasks examples/tasks/tasks.jsonl \
+  --model my-openai-proxy/my-model \
+  --model-config examples/config/openclaw/models.json \
+  --limit 1 \
+  --output runs \
+  --run-name openclaw-demo
+```
+
+命令中的 `my-openai-proxy/my-model` 必须与第 3.1 节的模型配置一致。第一次运行只执行一个 task，便于先确认配置是否正确。
 
 以下常用变量会在宿主机存在且非空时自动传入 OpenClaw 容器：
 
@@ -126,7 +151,7 @@ http_proxy                https_proxy               no_proxy
 | `--docker-image` / `--openclaw-image` | `ROLLER_OPENCLAW_IMAGE` 或内置值 | 覆盖 OpenClaw 镜像，混合 Harness 运行使用专属形式 |
 | `--container-user` | `0` | 一次性 task 容器用户。`image` 使用镜像默认用户 |
 | `--docker-binary` | `docker` | Docker CLI 名称或路径 |
-| `--model-config` | 无 | 自定义 provider/model JSON |
+| `--model-config` | 无 | 自定义模型服务和模型 JSON |
 | `--network` | `host` | 容器网络模式 |
 | `--gateway-port` | `18789` | gateway 起始端口 |
 | `--gateway-port-step` | `10` | worker 之间的端口间隔 |
@@ -135,7 +160,7 @@ http_proxy                https_proxy               no_proxy
 | `--thinking` | 无 | 设置模型的 reasoning 强度，常用档位和保存规则见第 6 节 |
 | `--keep-thinking` / `--no-keep-thinking` | 开启 | 是否保留轨迹和请求历史中的 thinking |
 | `--cache-trace` / `--no-cache-trace` | 开启 | 是否记录每次组装的 system prompt。ACTF 固化首个有效值 |
-| `--wire-trace` | `actf` | tools schema / 完整请求体记录模式 |
+| `--wire-trace` | `actf` | 工具定义或完整请求的记录模式 |
 | `--search-provider` | 无 | OpenClaw Web Search provider |
 | `--pass-env NAME` | 无 | 增加一个环境变量名，可重复 |
 | `--set-image-model` / `--no-set-image-model` | 开启 | 是否设置 OpenClaw image model |
@@ -166,7 +191,7 @@ roller collect --help
 }
 ```
 
-完整模板见 [`examples/config/openclaw/models-multimodal.json`](../../../examples/config/openclaw/models-multimodal.json)。`input` 只是告诉 OpenClaw 如何使用模型。实际 API 后端仍必须支持对应 adapter 下的图像输入。
+完整模板见 [`examples/config/openclaw/models-multimodal.json`](../../../examples/config/openclaw/models-multimodal.json)。`input` 只是告诉 OpenClaw 如何使用模型。实际 API 后端仍必须支持对应 API 协议下的图像输入。
 
 图片通过 `files.inputs` 进入任务工作区，再由 OpenClaw 的图像查看工具打开。Task 的 `messages[].content` 当前只支持字符串，不能直接写入图片内容块。纯文本模型仍可处理文本和普通文件，但不能完成需要理解图片内容的任务。
 
@@ -174,36 +199,98 @@ roller collect --help
 
 ## 6. Thinking 配置
 
-OpenClaw 常用的 thinking 档位是 `off`、`low`、`medium` 和 `high`。例如：
+Thinking 是模型在给出最终答案前进行推理的过程。`--thinking` 用来设置 OpenClaw 请求的推理强度。这个参数只影响模型如何生成回答，不会修改 task 的内容。
+
+### 6.1 什么时候需要设置
+
+第一次运行时可以不传 `--thinking`，让 OpenClaw 和模型使用默认设置。需要控制推理强度时，再在命令中加入该参数：
 
 ```bash
 roller collect ... --thinking high
 ```
 
-`none` 在 OpenClaw 中会被视为 `off`。其他档位是否可用，取决于 OpenClaw 版本、模型和 API 服务。
+同一设置也可以写在 task 的 `runtime.thinking` 中。两处同时存在时，task 中的设置优先。两处都没有设置时，使用 OpenClaw 或模型的默认值。
 
-各模型可用的档位、`compat` 配置示例和验收方法见 [OpenClaw thinking 档位](openclaw-thinking.md)。
+### 6.2 如何选择档位
 
-显式开启 thinking 且模型配置没有 `reasoning` 能力字段时，Roller 会为了兼容旧配置在本次 rollout 的副本中补充 `reasoning: true`；显式的 `reasoning: false` 会原样保留。旧配置中的 `tags: ["reasoning"]` 会自动转换为当前 OpenClaw 接受的布尔字段。
+常用档位如下：
 
-> [!IMPORTANT]
-> legacy `wildclawbench-ubuntu:v1.3` 内含 OpenClaw `2026.3.11`，只可靠支持到 `high`；Roller 会拒绝其 `xhigh/adaptive/max/ultra`。只更新 Roller 仓库不会替换 Docker 镜像，运行时版本以 sample `info.json` 的 `runtime.openclaw_version` 为准。
+| 档位 | 含义 |
+| --- | --- |
+| `off` | 请求关闭额外推理。部分模型或 API 服务可能不支持，也可能仍使用自己的默认推理方式 |
+| `low` | 使用较少的推理，通常响应更快、消耗更少 |
+| `medium` | 在速度和推理强度之间取中间值 |
+| `high` | 使用更多推理，适合较复杂的任务，但通常需要更多时间和 token |
 
-轨迹能否保存 reasoning 文本，取决于模型服务实际返回的内容。如果服务只返回 reasoning token 数量，没有返回可见文本，`reasoning_content` 会为空，Roller 不会根据 token 反推内容。
+Roller 还可以识别 `minimal`、`xhigh`、`adaptive`、`max` 和 `ultra`。这些属于扩展档位，只有 OpenClaw、模型和 API 服务都支持时才能使用。`none` 会被当作 `off`。
 
-`--keep-thinking` 默认开启，会保留模型返回的可见 reasoning。使用 `--no-keep-thinking` 可以从轨迹和后续请求历史中移除这些内容。
+Roller 能识别某个档位，不代表当前模型一定支持它。运行时会依次经过 Roller、OpenClaw 和模型 API，任意一层不支持都会报错。因此，首次使用某个模型时，优先选择模型服务明确支持的档位，并先运行一个 task 验证。
+
+> [!NOTE]
+> `wildclawbench-ubuntu:v1.3` 中的旧版 OpenClaw 只可靠支持到 `high`。`xhigh`、`adaptive`、`max` 和 `ultra` 不能用于这个镜像。
+
+### 6.3 怎样运行
+
+下面的命令只运行一个 task，适合先检查 thinking 配置是否可用：
+
+```bash
+roller collect \
+  --harness openclaw \
+  --tasks examples/tasks/tasks.jsonl \
+  --model my-provider/my-model \
+  --model-config examples/config/openclaw/models.json \
+  --thinking high \
+  --limit 1 \
+  --output runs \
+  --run-name thinking-check
+```
+
+`my-provider` 必须与模型配置中的 provider 名一致，`my-model` 必须与该 provider 下的 model `id` 一致。示例中的名称需要替换为实际使用的配置。
+
+将 thinking 设置为 `off` 以外的档位时，如果 model 配置没有声明 `reasoning`，Roller 会在本次运行使用的配置副本中补充 `reasoning: true`。如果配置已经明确写了 `reasoning: false`，Roller 会保留该设置，此时应确认模型是否支持 thinking。
+
+部分 API 服务只接受特定档位，或者使用自己的 reasoning 字段。这类服务需要按照其接口说明设置 `compat`。不要直接复制其他模型的 `compat` 配置。完整的通用参数规则见 [CLI 参数参考](../start/cli-reference.md)。
+
+### 6.4 推理内容如何保存
+
+`--thinking` 控制模型使用的推理强度，`--keep-thinking` 控制可见推理内容是否写入轨迹。这两个参数作用不同。
+
+`--keep-thinking` 默认开启。如果模型服务返回了可见的 reasoning，Roller 会将其保存到 ACTF 和 SFT，并保留在后续多轮请求的历史中。使用 `--no-keep-thinking` 可以移除这部分内容，但不会关闭模型推理。
+
+有些服务只返回 reasoning token 数量，不返回具体文本。此时即使模型进行了推理，`reasoning_content` 也可能为空。Roller 不会根据 token 数量生成或补写推理文本。
+
+### 6.5 检查 Thinking 是否生效
+
+建议先使用 `--limit 1` 运行一个短 task，再开始批量采集。依次检查：
+
+1. 命令是否正常结束，以及 run `info.json` 中是否记录错误。
+2. sample `info.json` 中的 `status` 是否为 `ok`。
+3. ACTF 和 SFT 文件是否正常生成。
+
+如果需要确认模型实际收到的 thinking 参数，可以临时加入 `--wire-trace full`，然后查看 sample 目录中的 `wire_trace.jsonl`。该文件可能包含请求内容，只在排错时使用。
+
+如果 OpenClaw 提示档位不受支持，先改用模型服务明确支持的档位。仍无法确定时，可以暂时删除 `--thinking`，确认默认配置能够正常运行后再继续调整。
 
 ## 7. 轨迹与请求记录
 
 本节说明 Roller 会记录哪些 OpenClaw 运行信息，以及如何在需要排错时保存完整模型请求。
 
-默认开启的 `--cache-trace` 会把 OpenClaw 组装的 system prompt 写入 `trace_ACTF.json`。`--wire-trace` 决定是否继续记录工具 schema 或完整请求：
+一次运行会生成以下主要轨迹文件：
+
+| 文件 | 用途 |
+| --- | --- |
+| `trace.jsonl` | 保存 OpenClaw 原生会话事件，主要用于排错 |
+| `trace_ACTF.json` | 将回复、thinking、工具调用和结果整理成统一结构 |
+| `trace_SFT.json` | 将成功轨迹整理成训练数据格式 |
+
+
+默认开启的 `--cache-trace` 会把 OpenClaw 组装的 system prompt 写入 `trace_ACTF.json`。`--wire-trace` 决定是否继续记录工具定义或完整请求：
 
 | `--wire-trace` | 记录内容 | 适用场景 |
 | --- | --- | --- |
-| `actf`（默认） | 将 tools schema 写入 `trace_ACTF.json`，不保存完整请求 | 日常采集 |
+| `actf`（默认） | 将工具定义写入 `trace_ACTF.json`，不保存完整请求 | 日常采集 |
 | `full` | 额外保存完整请求到 `wire_trace.jsonl`，并生成脱敏后的 `cache_trace.jsonl` | 排错或审计模型实际收到的内容 |
-| `off` | 不记录 wire 数据，ACTF 中的 `tools` 为 `null` | 不需要请求信息时 |
+| `off` | 不记录请求数据，ACTF 中的 `tools` 为 `null` | 不需要请求信息时 |
 
 `trace.jsonl` 记录的是 OpenClaw session 事件，不一定等于实际发送给模型的完整请求。需要检查模型实际收到的 messages、tools 和参数时，使用 `--wire-trace full`。
 
@@ -237,7 +324,16 @@ roller collect \
   --search-provider brave
 ```
 
-## 9. 常见问题
+## 9. 首次运行检查
+
+第一次运行建议使用 `--limit 1`，确认配置正确后再开始批量采集。命令结束后依次检查：
+
+1. run 目录的 `info.json` 中 `state` 为 `finished`。
+2. sample 的 `info.json` 中 `status` 为 `ok`。
+3. sample 中存在 `trace.jsonl`、`trace_ACTF.json` 和 `trace_SFT.json`。
+4. task 要求生成文件时，`results/` 中存在对应文件。
+
+## 10. 常见问题
 
 **(1) Docker preflight 失败**
 
@@ -249,7 +345,7 @@ roller collect \
 
 **(3) 模型请求返回 404 或协议错误**
 
-通常是 `baseUrl` 末尾路径或 `api` adapter 不匹配。确认服务端实现的是 Responses API 还是 Chat Completions API。
+通常是 `baseUrl` 末尾路径或 `api` 协议不匹配。确认服务端实现的是 Responses API 还是 Chat Completions API。
 
 **(4) gateway 端口冲突**
 
@@ -261,4 +357,4 @@ roller collect ... --gateway-port 22000
 
 **(5) 任务成功回复但 sample 失败**
 
-Roller 要求成功 sample 至少具有 OpenClaw raw trace。通常还要求可转换的 ACTF 和标准化 SFT。少数原生附件或多模态内容无法无损投影时，`runtime.trajectory_conversion` 会结构化记录该情况，而不会污染 benchmark score。还应检查输出目录里是否存在被拒绝的符号链接或特殊文件。具体产出条件见 [轨迹产出文件指南](../traces/trajectory-outputs.md)，结果安全规则见 [结果存储](../tasks/task-bundle-and-storage.md#5-输出回收)。
+先查看 sample 的 `info.json` 和 `trace.jsonl`。常见原因包括轨迹转换失败，或者输出目录中包含不能安全回收的符号链接和特殊文件。详细规则见 [轨迹产出文件指南](../traces/trajectory-outputs.md)和[结果存储](../tasks/task-bundle-and-storage.md#5-输出回收)。

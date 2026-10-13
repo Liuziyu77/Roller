@@ -18,11 +18,8 @@ to use them for training, analysis, and debugging.
 | Inspect Task Agent delivered files | `results/` | Recovers only the output directories the task declared plus extra collect paths |
 | Inspect the dialogue both sides can see | `conversation.json` | Does not include hidden reasoning, tool calls, or tool results |
 
-Use SFT for training and ACTF for analysis. For adapter, context assembly, or
-upstream issues, inspect session raw and full wire. Here, session raw means
-`trace.jsonl`; `wire_trace.jsonl` records requests for diagnosis.
-Wire traces repeat history across turns and grow close to O(N²), so they are
-unsuitable for direct use as training data.
+Use SFT for training and ACTF for analysis. When troubleshooting Harness execution, context assembly, or model-service behavior, inspect the native session in `trace.jsonl` and complete request records in `wire_trace.jsonl`.
+Complete request records repeat conversation history across turns and grow quickly, so they are unsuitable for direct use as training data.
 
 ## 2. Directory layout
 
@@ -730,7 +727,7 @@ artifacts. Re-check that hash separately when you need a content-level audit.
 
 ## 8. Recommended configurations
 
-### Batch-generate text/tool SFT
+### 8.1 Batch-generate text/tool SFT
 
 ```bash
 roller collect \
@@ -745,7 +742,7 @@ roller collect \
 Keep the default `--cache-trace` and `--keep-thinking`. This configuration
 produces complete ACTF/SFT and deletes the larger diagnostic intermediate layer.
 
-### Debug reasoning, compaction, or request history
+### 8.2 Debug reasoning, compaction, or request history
 
 ```bash
 roller collect \

@@ -58,7 +58,7 @@ An SFT record does not include schema version, task/model, usage, timestamps,
 step ID, stop reason, run path, or other metadata. That information remains in
 the adjacent `info.json` and `trace_ACTF.json`.
 
-### Multimodal records
+### 1.1 Multimodal records
 
 When a tool result carries an image that the ACTF layer captured losslessly as
 base64 bytes, the record additionally has a top-level `images` list. The image
@@ -205,7 +205,7 @@ For a User Simulator rollout, the Task Agent SFT is in the root sample. The
 simulated user's own SFT is at `user_simulator/trace_SFT.json`. Run-level
 `sft.jsonl` aggregates only the Task Agent.
 
-## Parallel tool result ordering
+## 6. Parallel tool result ordering
 
 Tools called in one assistant message may finish in any order. SFT export pairs results by `tool_call_id` and emits tool messages in that assistant message's `tool_calls` array order. It does not sort by tool name or lexicographic ID, or move results across steps. Duplicate, missing, unmatched and name-mismatched results still fail conversion.
 

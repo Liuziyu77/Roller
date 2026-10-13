@@ -150,12 +150,12 @@ reached only through loopback or an SSH tunnel.
 
 ## 8. Common questions
 
-### Newly finished tasks do not appear on the page
+**(1) Newly finished tasks do not appear on the page**
 
 Click **Refresh** in the top-right. The Viewer does not continuously poll the
 disk, so a large run does not generate extra I/O.
 
-### Port already in use
+**(2) Port already in use**
 
 Choose another port:
 
@@ -163,7 +163,7 @@ Choose another port:
 roller view /path/to/run --port 8766
 ```
 
-### The Viewer reports this is not a Roller run
+**(3) The Viewer reports this is not a Roller run**
 
 The input path must be the run root, not `samples/`, a single sample, or
 `trace_ACTF.json`. A valid root contains run `info.json` or `samples/`.

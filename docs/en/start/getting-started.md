@@ -174,15 +174,30 @@ The Viewer shows the ACTF timeline. Inspector is for the system prompt, tools sc
 - Understand the training format: [SFT data format](../traces/sft-format.md)
 - See every CLI option: [CLI reference](cli-reference.md)
 
-## Common first-run issues
+## 10. Common issues
 
-| Symptom | What to check |
-| --- | --- |
-| Docker preflight failed | Whether `docker version` can reach the Server. Whether the image has been pulled/loaded |
-| OpenClaw cannot find the model | Whether `--model` matches `provider/models[].id` in the JSON exactly |
-| Config reports a missing environment variable | Whether you `source examples/env/api.env`. Whether placeholder names match |
-| `/responses` returns 404 | The service only supports Chat Completions. Set the OpenClaw provider `api` to `openai-completions` |
-| A run with the same name already exists | Use `--resume` for the original experiment. Change `--run-name` for a new one |
-| Viewer does not show new tasks | Confirm you passed the run root directory, refresh the page, and check run `info.json` |
+**(1) Docker preflight failed**
+
+Check whether `docker version` can reach the Server and whether the image has been pulled or loaded.
+
+**(2) OpenClaw cannot find the model**
+
+Check whether `--model` matches `provider/models[].id` in the JSON exactly.
+
+**(3) Configuration reports a missing environment variable**
+
+Check whether `source examples/env/api.env` has been run and whether the placeholder names match.
+
+**(4) `/responses` returns 404**
+
+The service may support only Chat Completions. Set the OpenClaw provider `api` to `openai-completions`.
+
+**(5) A run with the same name already exists**
+
+Use `--resume` for the original experiment. Change `--run-name` for a new one.
+
+**(6) Viewer does not show new tasks**
+
+Confirm that the run root directory was passed, refresh the page, and check run `info.json`.
 
 The OpenClaw Harness guide lists additional OpenClaw-specific errors.

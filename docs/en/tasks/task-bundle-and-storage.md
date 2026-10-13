@@ -221,7 +221,7 @@ The root sample still represents the Task Agent; `user_simulator/` represents th
 
 ## 7. Raw Trace, ACTF, and SFT
 
-### `trace.jsonl`
+### 7.1 `trace.jsonl`
 
 This file records the original events from the OpenClaw transcript. With the default image, Roller exports
 by session identity through the official public transcript SDK, then serializes each event to JSONL; only legacy OpenClaw falls back
@@ -231,7 +231,7 @@ OpenClaw may assemble, compact, or trim context before a call, so a saved sessio
 in every model request. To inspect the messages/input the model actually received, use `--wire-trace full`; see
 [Trajectory output file guide](../traces/trajectory-outputs.md#32-session-history-is-not-the-model-request-context).
 
-### `trace_ACTF.json`
+### 7.2 `trace_ACTF.json`
 
 The ACTF file stores an `ACTF_v1.0` trajectory object directly:
 
@@ -256,7 +256,7 @@ Conversion rules:
 
 If the Harness finishes successfully but no usable raw trace is available, the sample is marked `error`. If a trusted OpenClaw/OpenCode converter cannot represent an otherwise valid raw trace as ACTF, or ACTF contains non-text content that cannot be represented losslessly as SFT, evaluation remains `ok`. `runtime.trajectory_conversion` records the unavailable target and error; unavailable files are omitted rather than fabricated.
 
-### `trace_SFT.json` and `sft.jsonl`
+### 7.3 `trace_SFT.json` and `sft.jsonl`
 
 `trace_SFT.json` is projected from ACTF. Its top level is strictly `messages` and `tools` only; it does not include
 task/model, usage, timestamps, or other run metadata. The run-root `sft.jsonl` aggregates every successful Task Agent with a lossless SFT projection in request
@@ -268,14 +268,14 @@ Conditions for every trace layer, auxiliary file, parameter combination, and fai
 
 ## 8. Security and privacy boundaries
 
-### Files
+### 8.1 Files
 
 - Inputs and Context reject symlinks and special files.
 - Paths must not escape the declared scope with `..`.
 - Only `output_dir` is collected; other files in the workspace are not saved.
 - Symlinks and special files in the output are not copied.
 
-### API Key
+### 8.2 API Key
 
 - `${ENV_NAME}` is expanded only at runtime.
 - Temporary OpenClaw model config is created in the system temp directory, injected into the container, then deleted.
@@ -284,7 +284,7 @@ Conditions for every trace layer, auxiliary file, parameter combination, and fai
 
 Do not put real keys in tasks, JSON examples, or READMEs in the repository. Prefer a local `.env` that Git ignores, or an external secret manager.
 
-### Context
+### 8.3 Context
 
 `capture=hash` still stores an irreversible content hash; if even the hash must not be kept, use `capture=none`. That turns off safe Resume for the task, because Roller cannot confirm whether Context changed.
 

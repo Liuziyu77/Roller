@@ -219,7 +219,7 @@ User Simulator sample 会增加：
 
 ## 7. Raw Trace、ACTF 与 SFT
 
-### `trace.jsonl`
+### 7.1 `trace.jsonl`
 
 该文件记录 OpenClaw transcript 中的原始事件。默认镜像下，Roller 通过官方公开
 transcript SDK 按 session identity 导出，再逐事件序列化为 JSONL；legacy OpenClaw 才回退
@@ -229,7 +229,7 @@ OpenClaw 可以在调用前组装、压缩或裁剪 context，因此 session 中
 逐字进入每次模型请求。需要核对模型实际收到的 messages/input 时使用 `--wire-trace full`；详见
 [轨迹产出文件指南](../traces/trajectory-outputs.md#32-session-历史不等于模型请求-context)。
 
-### `trace_ACTF.json`
+### 7.2 `trace_ACTF.json`
 
 ACTF 文件直接保存 `ACTF_v1.0` trajectory object：
 
@@ -254,7 +254,7 @@ ACTF 文件直接保存 `ACTF_v1.0` trajectory object：
 
 如果 Harness 成功结束但没有可用 raw trace，sample 会标记为 `error`。若可信的 OpenClaw/OpenCode 转换器无法把有效 raw 无损表示为 ACTF，或 ACTF 含有无法无损表示为纯文本 SFT 的内容，评测状态仍保持 `ok`；`runtime.trajectory_conversion` 会记录缺失层和错误，不会伪造产物。
 
-### `trace_SFT.json` 与 `sft.jsonl`
+### 7.3 `trace_SFT.json` 与 `sft.jsonl`
 
 `trace_SFT.json` 由 ACTF 投影得到，顶层严格只有 `messages` 和 `tools`，不包含
 task/model、usage、时间戳或其他运行 metadata。Run 根目录的 `sft.jsonl` 按 request
@@ -267,14 +267,14 @@ task/model、usage、时间戳或其他运行 metadata。Run 根目录的 `sft.j
 
 ## 8. 安全与隐私边界
 
-### 文件
+### 8.1 文件
 
 - 输入和 Context 拒绝符号链接与特殊文件。
 - 路径不允许使用 `..` 逃逸声明范围。
 - 输出只回收 `output_dir`，不保存工作区中的其他文件。
 - 输出中的符号链接和特殊文件不会被复制。
 
-### API Key
+### 8.2 API Key
 
 - `${ENV_NAME}` 只在运行时展开。
 - OpenClaw 临时模型配置在系统临时目录创建，注入容器后删除。
@@ -283,7 +283,7 @@ task/model、usage、时间戳或其他运行 metadata。Run 根目录的 `sft.j
 
 不要把真实 Key 写入仓库中的 task、JSON 示例或 README。推荐使用被 Git 忽略的本地 `.env` 或外部 secret manager。
 
-### Context
+### 8.3 Context
 
 `capture=hash` 仍会保存不可逆内容 hash；如果连 hash 都不能保留，应使用 `capture=none`。这样做会关闭该 task 的安全 Resume，因为 Roller 无法确认 Context 是否变化。
 
