@@ -51,7 +51,7 @@ Roller removes duplicate `--model` values. When you specify multiple models, eve
 
 These flags decide which tasks to run, how many runs to create, and where to save the results. They work with every Harness.
 
-### Inputs and runtime selection
+### 3.1 Inputs and runtime selection
 
 These flags tell Roller where to read tasks and which model and Harness should execute them.
 
@@ -62,7 +62,7 @@ These flags tell Roller where to read tasks and which model and Harness should e
 | `--model-label LABEL` | Actual service model ID | Sets a safe local name for sample directories and containers without changing the upstream model ID, only for runs with one final model |
 | `--harness NAME` | task `harness` or `openclaw` | Selects `openclaw`, `codex`, `claude-code`, `hermes`, `opencode`, `deepseek`, or `pi` |
 
-### Execution scale and task range
+### 3.2 Execution scale and task range
 
 These flags control concurrency, repetitions, retries, and which part of the task list runs.
 
@@ -77,7 +77,7 @@ These flags control concurrency, repetitions, retries, and which part of the tas
 | `--start-index N` | `0` | Starts at task N in the normalized task list |
 | `--limit N` | Unlimited | Selects at most N tasks |
 
-### Output, validation, and continuation
+### 3.3 Output, validation, and continuation
 
 These flags control the result directory and whether Roller validates, starts, or continues a run.
 
@@ -88,7 +88,7 @@ These flags control the result directory and whether Roller validates, starts, o
 | `--dry-run` | Off | Checks tasks, files, and the run plan without starting Docker |
 | `--resume` | Off | Continues the same run and skips complete successful samples, see section 6 |
 
-### Compatibility and debugging
+### 3.4 Compatibility and debugging
 
 These flags mainly support legacy data or logging. New task files usually do not need the first three.
 
@@ -99,7 +99,7 @@ These flags mainly support legacy data or logging. New task files usually do not
 | `--id-key NAME` | `id` | Selects the ID field in legacy data |
 | `--log-level LEVEL` | `INFO` | Sets `DEBUG`, `INFO`, `WARNING`, or `ERROR` logging |
 
-### Input file limits
+### 3.5 Input file limits
 
 These flags limit the files that one task can bring into a container and help prevent unexpectedly large inputs.
 
@@ -112,7 +112,7 @@ These flags limit the files that one task can bring into a container and help pr
 
 These flags control how a Harness container starts, connects to a model service, and records trajectory data. The selected Harness still determines the supported values.
 
-### Container and connection
+### 4.1 Container and connection
 
 These flags select the image, Docker runtime settings, and model-service connection.
 
@@ -127,7 +127,7 @@ These flags select the image, Docker runtime settings, and model-service connect
 | `--pass-env NAME` | None | Passes one additional non-empty environment variable into the Harness container and can be repeated |
 | `--keep-container-on-error` | Off | Keeps the stopped container after failure for inspection |
 
-### Reasoning and traces
+### 4.2 Reasoning and traces
 
 `--thinking` sets the model's reasoning or thinking effort. The same setting can appear in a task as `runtime.thinking`. The task value takes precedence over the CLI. If both are omitted, Roller uses the Harness or model default.
 
@@ -178,7 +178,7 @@ that provider's model-config `baseUrl`. If the endpoint is unavailable, only
 generic profiles match. Declarations never override native effort restrictions
 or rewrite requests.
 
-### Wire trace modes
+### 4.3 Wire trace modes
 
 Wire trace controls whether Roller records the actual HTTP requests sent to the model service. The default `actf` mode is sufficient for normal collection.
 
@@ -190,7 +190,7 @@ Wire trace controls whether Roller records the actual HTTP requests sent to the 
 
 `full` can retain complete request text including prompts, reasoning, tool arguments, and results. This makes the output larger and more sensitive. See the matching Harness guide for support and network requirements, and see {ref}`Trajectory outputs <wire-trace-jsonl>` for the file format.
 
-### Compatibility note
+### 4.4 Compatibility note
 
 `--external-thinking` has been removed. Replace it with `--thinking` and delete obsolete arguments from old commands.
 

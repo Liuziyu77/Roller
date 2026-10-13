@@ -55,7 +55,7 @@ Roller 为每条成功轨迹生成训练文件 `trace_SFT.json`，同时保留 r
 SFT record 不包含 schema version、task/model、usage、时间戳、step ID、stop reason、
 运行路径或其他 metadata。这些信息仍保留在相邻的 `info.json` 和 `trace_ACTF.json`。
 
-### 多模态 record
+### 1.1 多模态 record
 
 当工具结果携带图片、且 ACTF 层已无损捕获为 base64 字节时，record 会额外增加顶层
 `images` 列表。图片不再内联保留：它在消息文本中的位置变成保留占位符 `<image>`，
@@ -185,7 +185,7 @@ SFT，因为导出过程不会读取文件或网络。该样本会保留 raw/ACT
 User Simulator rollout 的任务 Agent SFT 位于根 sample，模拟用户自己的 SFT 位于
 `user_simulator/trace_SFT.json`；run 级 `sft.jsonl` 只汇总任务 Agent。
 
-## 并行工具结果的顺序
+## 6. 并行工具结果的顺序
 
 同一条 assistant 消息中的多个工具调用可以按任意顺序完成。SFT 导出按 `tool_call_id` 配对，然后按该消息的 `tool_calls` 数组顺序输出 tool 消息；不会按工具名或 ID 字典序排序，也不会跨 step 移动结果。重复、缺失、无对应调用或工具名不匹配的结果仍会拒绝导出。
 

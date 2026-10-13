@@ -51,7 +51,7 @@ Docker 中的 Agent Harness
 ## Reasoning 采集
 
 默认 `--keep-thinking` 保存服务实际返回的可见 reasoning。`--thinking` 控制原生推理档位。
-OpenClaw 各模型的可用档位、配置方式和限制见 [Thinking 档位表](docs/zh/harnesses/openclaw-thinking.md)。
+OpenClaw 各模型的可用档位、配置方式和限制见 [OpenClaw Harness 指南的 Thinking 配置](docs/zh/harnesses/openclaw-configuration.md#6-thinking-配置)。
 
 | 模型类型 | ACTF/SFT 保存内容 |
 | --- | --- |
@@ -60,7 +60,6 @@ OpenClaw 各模型的可用档位、配置方式和限制见 [Thinking 档位表
 | Qwen、GLM 等开源模型 | 服务实际返回的明文 reasoning |
 
 只返回 reasoning token 数或加密状态时，`reasoning_content` 可以为空。工具参数不会转换成 reasoning。
-
 
 ## 最小运行流程
 
@@ -74,13 +73,14 @@ OpenClaw 各模型的可用档位、配置方式和限制见 [Thinking 档位表
 conda create -n roller python=3.11 -y
 conda activate roller
 
-python --version
 python -m pip install -e .
 roller --version
 docker version
 
-docker pull --platform linux/amd64 ghcr.io/openclaw/openclaw:2026.7.1-2
+docker pull ghcr.io/openclaw/openclaw:2026.7.1-2
 ```
+
+在 macOS 上使用 Docker Desktop 时，需要在 **Settings → Resources → Network** 中打开 **Enable host networking**，然后重启 Docker Desktop。
 
 已有 `docker save` 归档时可离线加载：
 
@@ -102,7 +102,7 @@ source examples/env/api.env
 set +a
 ```
 
-再把 [`examples/config/openclaw/models.json`](examples/config/openclaw/models.json) 中的 model `id` 改成服务端真实模型名。运行时 model ref 由 provider 名与 model id 组成：
+再把 [`examples/config/openclaw/models.json`](examples/config/openclaw/models.json) 中的 model `id` 改成服务端真实模型名。配置文件中的 model `id` 与命令中 provider 后面的 model ID 必须完全一致。运行时 model ref 由 provider 名与 model id 组成：
 
 ```text
 my-openai-proxy/my-model

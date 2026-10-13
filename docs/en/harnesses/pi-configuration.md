@@ -1,49 +1,33 @@
 # Pi Agent Harness guide
 
-This page covers only Pi-specific images, the API, the native session, and troubleshooting. Roller runs the official [Pi Coding Agent SDK](https://pi.dev/docs/latest/sdk), pinning `@earendil-works/pi-coding-agent`, `pi-agent-core`, and `pi-ai` to **0.85.1**. Its native `AgentSession` owns the model loop and tools. For Task fields see [Task format reference](../tasks/task-format.md). For output semantics shared by all Harnesses see [Trajectory output file guide](../traces/trajectory-outputs.md).
+The Pi Agent Harness runs tasks through Pi Coding Agent when they need shell commands, file editing, or local-image inspection. It connects to an OpenAI Chat Completions service with streaming and tool-call support. This guide follows the order needed for a first run: image, API, Harness-specific flags, sessions, and outputs.
+
+Roller currently pins the official [Pi Coding Agent SDK](https://pi.dev/docs/latest/sdk) 0.85.1. For Task fields, see [Task format reference](../tasks/task-format.md). For shared outputs, see [Trajectory output file guide](../traces/trajectory-outputs.md).
+
+For a first run, complete sections 1 through 3 and run the example command. Read the later sections on Harness-specific flags, sessions, and trajectories when those features are needed.
 
 ## 1. Scope
 
-The Pi Harness supports:
+Use the Pi Agent Harness when a task needs:
 
-- single-turn `prompt` and predefined multi-turn `messages` (one native `AgentSession` per participant across turns).
-- Task Agent and User Simulator, both accepting `"harness": "pi"`.
-- Task Bundle, read-only inputs, Context, setup, explicit environment variables, custom `output_dir`, artifact collection, and grading before container teardown.
-- streaming **OpenAI Chat Completions** with tool calls.
-- seven native tools: `read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`.
-- local-image loading through `read` when the model and service support image input.
-- ACTF, SFT, reasoning export, and usage (cache tokens counted separately).
-- `--wire-trace actf|full|off`.
-- `--thinking off/minimal/low/medium/high/xhigh/max` (sent as `reasoning_effort`).
+- an OpenAI Chat Completions endpoint with streaming and tool calls.
+- shell commands, content search, or file editing.
+- local-image inspection with a vision-capable model.
+- single-turn, multi-turn, Task Agent, or User Simulator execution.
 
-Not currently supported:
-
-- direct multimodal task messages and video.
-- interactive login.
-- other Pi provider protocols.
-- custom extensions/plugins.
-- automatic compaction.
-- the OpenClaw cache trace (Resume does not require it).
+It does not accept images or video directly in task messages. Account login, other Pi providers, custom plugins, and automatic compaction are also disabled.
 
 ## 2. Image preparation
 
+Build the Pi image from the Roller repository root:
+
 ```bash
 docker build -t roller-pi:0.85.1 docker/pi
-export OPENAI_API_KEY='your-key'
-export OPENAI_BASE_URL='https://api.example.com/v1'
-
-python -m roller collect \
-  --tasks examples/coverage/cases/formats/jsonl/pi.jsonl \
-  --harness pi --model your-model \
-  --thinking off --parallel 2 --timeout 180 --retries 0 \
-  --output runs/pi --run-name smoke
 ```
 
-This adapter supports streaming **OpenAI Chat Completions** with tool calls. Model IDs reach the API unchanged, including IDs containing `/`. The host needs Roller, Python 3.10+, and Docker. Node and the SDK run inside the container. The default base is `node:22.22.0-bookworm-slim`. A `BASE_IMAGE` override must provide Node 22.19+ and npm on Debian/Ubuntu.
+The image contains Node.js, the Pi SDK, and runtime tools. The host does not need those dependencies installed separately. After the build, configure the API address, API key, and model ID in section 3.
 
-The image also installs the official `fd 10.2.0` binary with SHA-256 verification for the native `find` tool. Runtime tool downloads remain disabled.
-
-For `DEBIAN_MIRROR` and `DEBIAN_SECURITY_MIRROR`, see [Docker builds and package mirrors](../start/docker-builds.md). Set `NPM_REGISTRY` to override npm downloads, or leave it unset to keep the existing npm configuration.
+The default base image is `node:22.22.0-bookworm-slim`. For another base image, npm registry, or Debian mirror, see [Docker builds and package mirrors](../start/docker-builds.md).
 
 ## 3. Environment variables and API
 
@@ -57,6 +41,23 @@ The Pi Harness connects to an OpenAI Chat Completions service with streaming and
 
 The value of `--pi-api-key-env` or `--api-key-env` is the name of a host environment variable, not the key itself. The key is read at execution time and is not written to public configuration.
 
+Replace `...`, the API address, and `model-id` with values from the model service. The first command runs one task so the configuration can be checked before a larger run:
+
+```bash
+export ROLLER_PI_KEY='...'
+
+roller collect \
+  --harness pi \
+  --tasks examples/tasks/tasks.jsonl \
+  --model model-id \
+  --api-base https://api.example.com/v1 \
+  --api-key-env ROLLER_PI_KEY \
+  --docker-image roller-pi:0.85.1 \
+  --limit 1 \
+  --output runs \
+  --run-name pi-demo
+```
+
 (pi-cli-flags)=
 ## 4. Pi-specific flags
 
@@ -69,47 +70,47 @@ This table lists Pi-specific runtime flags only. See section 3 for API addresses
 | `--pi-context-length` | 128000, at least 1024. Match the actual model service |
 | `--pi-output-tokens` | 8192. Positive and smaller than the context window. Sent as `max_tokens` |
 | `--thinking` / `runtime.thinking` | `off/minimal/low/medium/high/xhigh/max`. Defaults to `off`, with `none` as an alias |
-| `--wire-trace` | Every mode journals native requests. `full` additionally captures HTTP requests and requires an explicit API base and host networking |
-| `--no-keep-thinking` | Removes reasoning only from ACTF/SFT. Raw events and continuation history retain it |
+| `--wire-trace` | Every mode journals native requests. `full` additionally captures HTTP requests and requires an explicit API address with `--network host` |
+| `--no-keep-thinking` | Removes reasoning only from ACTF/SFT. Native events and continuation history retain it |
 
 Thinking is sent as `reasoning_effort`: `off` becomes `none`, and other levels retain their names. The endpoint must support the selected value. Vendor-specific thinking protocols are not translated automatically.
 
-Pi-specific flags configure both participant roles. Mixed runs can specify separate API settings and images for other Harnesses. Run locks record versions, image digests, tools, connection settings, and execution bounds. Resume validates each participant's artifacts.
+The same settings apply when Pi is the Task Agent or User Simulator. After changing the image, API address, or execution limits, use a new `--run-name` to avoid a conflict with the previous run configuration.
 
 ## 5. Multimodal capabilities
 
-Pi enables seven native tools: `read`, `bash`, `edit`, `write`, `grep`, `find`, and `ls`. Vision-capable models and OpenAI-compatible services can open local images through `read`. Image results are preserved in raw, ACTF, and multimodal SFT.
+Pi enables seven native tools: `read`, `bash`, `edit`, `write`, `grep`, `find`, and `ls`. Vision-capable models and OpenAI-compatible services can open local images through `read`. Image results are preserved in the native trace, ACTF, and multimodal SFT.
 
 Images enter the workspace through `files.inputs`. Task `messages[].content` currently accepts strings only and cannot contain image blocks directly. Text-only models can still process text and ordinary files, but they cannot complete tasks that require understanding image content. Video, other Pi provider protocols, and custom extensions or plugins are not currently supported.
 
 ## 6. Sessions and workspace
 
-Each participant has its own container and `PI_CODING_AGENT_DIR`, retaining one native `AgentSession` across turns. Conversation history and workspace files persist. Pi starts a separate Shell for each Bash call: `export` and `cd` do not persist across calls. Store persistent state in files or combine related operations in a single command.
+Each Agent or Simulator runs in an isolated container. Inputs are read-only, Context files are copied to their declared task paths, and output files are collected into the sample `results/` directory.
 
-Automatic compaction, session/provider retries, telemetry, remote model catalog updates, and extension discovery are disabled. Roller preserves Pi's native system prompt and appends workspace, output, and Context guidance.
+Multi-turn messages for the same participant reuse one Pi session, so conversation history and workspace files remain available. Pi starts a new Shell for every Bash call, so `export` and `cd` do not carry over automatically. Write persistent information to files or combine related work in one Bash command.
 
-Inputs are mounted read-only. Context is copied to its declared paths, and non-skill Context is added to the native system prompt through the official loader. Skill files remain accessible but are not automatically registered as Pi skills. Setup, explicit environment variables, custom output directories, artifact collection, and grading before container teardown are supported.
+Collection does not enable automatic compaction, remote model updates, or custom extensions. Context and skill files remain readable by path.
 
 ## 7. Trajectories and request recording
 
-`trace.jsonl` uses `roller.pi-events/v1`, containing native events, model contexts, actual requests, and Roller turn boundaries. ACTF/SFT use the captured system prompt and tool schemas and preserve text, reasoning, tool arguments, and results. Cache tokens are counted separately.
+A run produces three main trajectory files:
 
-Empty replies, truncation, API errors, step limits, and unmatched tool calls do not produce successful trajectories. Conversion rejects changes to the system prompt/tool schemas and non-text content that would be lost. Timeouts stop the container and recover existing output files. Pi does not require an OpenClaw cache trace.
+| File | Purpose |
+| --- | --- |
+| `trace.jsonl` | Records native Pi events and actual model requests for troubleshooting |
+| `trace_ACTF.json` | Normalizes the conversation, reasoning, tool calls, and results |
+| `trace_SFT.json` | Converts a successful trajectory into training-data format |
 
-## 8. Validation
+Empty replies, truncation, API errors, step-limit failures, or unmatched tool calls are not marked successful. A timeout stops the container and preserves available trajectories and result files when possible.
 
-```bash
-python examples/coverage/suite.py validate --case '*/pi'
-python examples/coverage/suite.py run --case '*/pi' --dry-run
-ROLLER_PI_DOCKER_TEST=1 PYTHONPATH=src \
-  python -m unittest discover -s tests -p test_pi_docker.py -v
-```
+## 8. First-run check
 
-Docker tests use a deterministic local streaming endpoint and a fake key with the real Pi SDK and tools, consuming no model quota. Public input coverage has 204 tasks, including four vision tasks. The 13 Agent × Simulator pairings involving Pi add 52 tasks. Select them with `--case 'simulators/pair/pi--*' --case 'simulators/pair/*--pi'`. External vision tests also require a model and service that support image input.
+For a first run, use one simple task and then check:
 
-With a DeepSeek image available, also set `ROLLER_PI_MIXED_DOCKER_TEST=1` to verify Pi ↔ DeepSeek pairings and Resume in both directions.
-
-See [Coverage](https://github.com/Liuziyu77/Roller/blob/main/examples/coverage/README.en.md). Offline configuration validation, real-container tests, and external model acceptance are distinct verification layers.
+1. `info.json` in the run directory has `state` set to `finished`.
+2. The sample `info.json` has `status` set to `ok`.
+3. The sample contains `trace.jsonl`, `trace_ACTF.json`, and `trace_SFT.json`.
+4. If the task creates files, the expected files exist under `results/`.
 
 ## 9. Common issues
 
@@ -117,9 +118,9 @@ See [Coverage](https://github.com/Liuziyu77/Roller/blob/main/examples/coverage/R
 
 Empty replies, truncation, API errors, step limits, and unmatched tool calls all fail. Inspect `trace.jsonl` to locate the cause.
 
-**(2) The converter rejects a trajectory**
+**(2) Trajectory files were not generated**
 
-Changes to the system prompt or tool schemas, and non-text content that would be lost, are rejected.
+Inspect the sample `info.json` and `trace.jsonl` first. If the reply was truncated or a tool call did not finish, raise `--pi-max-steps` or `--timeout` and retry.
 
 **(3) Bash state disappears**
 
@@ -129,10 +130,10 @@ Pi starts a separate Shell per Bash call, so `export`/`cd` do not persist. Store
 
 Automatic compaction is disabled. Raise `--pi-context-length` to match the real model service.
 
-**(5) Rollout times out**
+**(5) Task execution times out**
 
 The container is stopped and existing output files recovered. Adjust `--timeout` or `--pi-max-steps` as needed.
 
 **(6) `--wire-trace full` fails to start**
 
-An explicit API base and `--network host` are required.
+Set an explicit API address and keep `--network host` enabled.
