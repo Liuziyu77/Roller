@@ -88,6 +88,11 @@ OpenCode 的关联头仅在本地代理使用，代理向模型服务转发前�
 主 ACTF/SFT 只转换主参与者的消息和请求配置；子任务内部消息留在自己的
 Call 中。`calls.jsonl` 是逐调用的协议数据，不能直接当成主轨迹 SFT。
 
+旧版 Claude Code 样本可能把子代理步骤混入主 ACTF/SFT。新版 resume 会在执行模型前
+识别并拒绝复用这类样本，给出明确错误，避免静默重跑或沿用错误的主 SFT。
+可以使用新的 run 目录重新采集；若需保留旧执行结果，应先在原始轨迹的副本上
+离线重新投影并校验，不能直接修改旧 SFT 后继续 resume。
+
 ## 文件与边界
 
 每个 `capture/attempt-NNNN/` 默认只有 `manifest.json`、`calls.jsonl` 和

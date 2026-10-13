@@ -49,24 +49,52 @@ def root_session_ids(events: list[dict[str, Any]]) -> set[str]:
 
 def native_messages(events: list[dict[str, Any]], *, root_only: bool = False) -> list[dict[str, Any]]:
     messages, parts = {}, {}
+
+    def record_message(info: dict[str, Any]) -> None:
+        mid = info["id"]
+        previous = messages.get(mid, {})
+        previous_sid = previous.get("sessionID")
+        current_sid = info.get("sessionID")
+        if current_sid is not None and not isinstance(current_sid, str):
+            raise ValueError(f"OpenCode message {mid} has invalid session identity")
+        if previous_sid and current_sid and previous_sid != current_sid:
+            raise ValueError(f"OpenCode message {mid} has conflicting session identity")
+        merged = {**previous, **deepcopy(info)}
+        if previous_sid and not current_sid:
+            merged["sessionID"] = previous_sid
+        messages[mid] = merged
+
     for event in events:
         if event.get("type") == "session_export":
             for message in event["data"]["messages"]:
                 info = message["info"]
-                messages[info["id"]] = deepcopy(info)
+                record_message(info)
                 for part in message["parts"]:
                     parts[part["id"]] = deepcopy(part)
         elif event.get("type") == "event":
             native = event["event"]
             if native.get("type") == "message.updated":
                 info = native["properties"]["info"]
-                messages[info["id"]] = deepcopy(info)
+                record_message(info)
             elif native.get("type") == "message.part.updated":
                 part = native["properties"]["part"]
                 parts[part["id"]] = deepcopy(part)
     # OpenCode's native IDs are sortable and preserve creation order. Use time
     # first for messages; updates must not move a message to the end.
     roots = root_session_ids(events)
+    if roots:
+        identities: dict[str, set[str]] = {}
+        for part in parts.values():
+            sid = part.get("sessionID")
+            if isinstance(sid, str) and sid:
+                identities.setdefault(part["messageID"], set()).add(sid)
+        for mid, info in messages.items():
+            candidates = identities.get(mid, set())
+            if info.get("sessionID"):
+                candidates = candidates | {info["sessionID"]}
+            if len(candidates) != 1:
+                raise ValueError(f"OpenCode message {mid} has missing or conflicting session identity")
+            info["sessionID"] = next(iter(candidates))
     return [{"info": info, "parts": sorted((p for p in parts.values() if p["messageID"] == info["id"]), key=lambda p: p["id"])}
             for info in sorted(messages.values(), key=lambda i: (i.get("time", {}).get("created", 0), i["id"]))
             if not root_only or not roots or info.get("sessionID") in roots]

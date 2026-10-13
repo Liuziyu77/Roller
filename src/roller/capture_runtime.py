@@ -2,7 +2,7 @@
 from pathlib import Path
 import shutil
 
-from roller.capture import CallRecorder
+from roller.capture import CallRecorder, recover_capture_retention
 
 
 class CaptureRuntime:
@@ -31,6 +31,7 @@ class CaptureRuntime:
     def finish(self, status: str) -> dict:
         self.recorder.seal()
         try:
+            recover_capture_retention(self.recorder.directory)
             if self.harness == "codex":
                 from roller.codex_capture import read_codex_native
                 native = read_codex_native(self.recorder.directory)

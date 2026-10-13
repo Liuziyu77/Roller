@@ -14,7 +14,7 @@ import zlib
 from pathlib import Path
 from typing import Any
 
-from roller.capture import read_jsonl, _safe_file, apply_capture_retention
+from roller.capture import read_jsonl, _safe_file, apply_capture_retention, recover_capture_retention
 from roller.model_protocols import decode_response, response_finished, tool_call_ids, tool_result_ids
 from roller.storage import atomic_write_json, write_jsonl
 
@@ -44,6 +44,7 @@ Relations carry file/event evidence and optionally a parent native message ID.
 
 def finalize_capture(directory: Path, native: NativeCapture, *, execution_status: str,
                      recorder_error: str | None = None, debug_retention: str = "full") -> dict[str, Any]:
+    recover_capture_retention(directory)
     event_path = directory / "events.jsonl"
     if not event_path.exists():
         event_path = directory / "raw/events.jsonl"

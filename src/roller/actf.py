@@ -182,12 +182,18 @@ def _provider_message_ids(message: dict[str, Any]) -> set[str]:
 def _announcement_inputs(rows: list[dict[str, Any]]) -> tuple[dict[str, str], bool]:
     """Bind actual announcement input to the new native provider response IDs."""
     runs: dict[str, list[dict[str, Any]]] = {}
+    unresolved = False
     for row in rows:
         run = row.get("runId", "")
-        if isinstance(run, str) and run.startswith("announce:v1:") and ":subagent:" not in row.get("sessionKey", ""):
+        if not isinstance(run, str) or not run.startswith("announce:v1:"):
+            continue
+        session_key = row.get("sessionKey", "")
+        if not isinstance(session_key, str):
+            unresolved = True
+            continue
+        if ":subagent:" not in session_key:
             runs.setdefault(run, []).append(row)
     inputs: dict[str, str] = {}
-    unresolved = False
     for events in runs.values():
         context = next((e for e in events if e.get("stage") == "stream:context"), None)
         after = next((e for e in reversed(events) if e.get("stage") == "session:after"), None)
@@ -395,7 +401,11 @@ def convert_openclaw_trace(
     system_prompts = _cache_trace_system_prompts(cache_trace) if cache_trace is not None else []
     notification_inputs, unresolved = _announcement_inputs(_read_events(cache_trace)) if cache_trace is not None else ({}, False)
     native_events = _read_events(source)
-    native_ids = set().union(*(_provider_message_ids(e.get("message", {})) for e in native_events))
+    native_ids = set().union(*(
+        _provider_message_ids(message)
+        for event in native_events
+        if isinstance(message := event.get("message"), dict)
+    ))
     matched_inputs = {text for mid, text in notification_inputs.items() if mid in native_ids}
     unresolved = unresolved or bool(set(notification_inputs.values()) - matched_inputs)
     trajectory = openclaw_events_to_actf(

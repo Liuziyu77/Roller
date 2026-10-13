@@ -7,7 +7,8 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from roller.models import RunRequest
-from roller.capture import read_jsonl, validate_capture
+from roller.capture import validate_capture
+from roller.claude_code_actf import _read_events as read_claude_events
 from roller.harness_registry import requires_cache_trace
 from roller.sft import actf_to_sft, validate_sft_record
 
@@ -35,6 +36,18 @@ def trajectory_conversion_unavailable(
         return None
     target = conversion.get("target", "actf")
     return target if target in {"actf", "sft"} else None
+
+
+def has_legacy_claude_sidechain(trajectory: Mapping[str, Any]) -> bool:
+    """Identify older ACTF records that mixed child steps into the root."""
+
+    steps = trajectory.get("steps")
+    return isinstance(steps, list) and any(
+        isinstance(step, Mapping)
+        and isinstance(step.get("extra"), Mapping)
+        and step["extra"].get("is_sidechain") is True
+        for step in steps
+    )
 
 
 def _json_object(path: Path) -> dict[str, Any]:
@@ -170,13 +183,18 @@ def _validate_trajectory_files(
     if isinstance(capture, dict):
         validate_capture(base, capture)
     if info.get("harness") == "claude-code" and not sft_unavailable:
-        if any(row.get("subtype") == "compact_boundary" for row in read_jsonl(raw_path)):
+        if any(row.get("subtype") == "compact_boundary" for row in read_claude_events(raw_path)):
             raise ValueError("Claude compaction requires per-call context export, not linear SFT")
 
     if raw_only:
         return
 
     actf = _json_object(actf_path)
+    if info.get("harness") == "claude-code" and has_legacy_claude_sidechain(actf):
+        raise ValueError(
+            "legacy Claude Code sidechain steps are mixed into root ACTF/SFT; "
+            "the sample cannot be safely reused or silently rerun"
+        )
     if actf.get("schema_version") != "ACTF_v1.0":
         raise ValueError("trace_ACTF.json has an unsupported schema_version")
     steps = actf.get("steps")

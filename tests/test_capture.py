@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from roller.capture import CallRecorder, read_jsonl, validate_capture
+from roller.capture import (CallRecorder, apply_capture_retention, read_jsonl,
+                            recover_capture_retention, validate_capture)
 from roller.claude_capture import anthropic_response, finalize_claude_capture
 from roller.claude_code_actf import claude_code_events_to_actf
 from roller.sft import SFTConversionError, actf_to_sft
@@ -100,6 +103,100 @@ class CaptureTests(unittest.TestCase):
                 f.write("{}\n")
             with self.assertRaisesRegex(ValueError, "hash mismatch"):
                 validate_capture(base, {"manifest": "capture/attempt-0001/manifest.json", "capture_status": "complete"})
+
+    def test_interrupted_retention_restores_a_valid_attempt(self):
+        for point in ("before_swap", "between_renames", "after_swap"):
+            with self.subTest(point=point), tempfile.TemporaryDirectory() as tmp:
+                base = Path(tmp)
+                directory, _ = self.make_capture(base)
+                manifest = finalize_claude_capture(directory, execution_status="ok", debug_retention="full")
+                stage = directory.with_name(f".{directory.name}.retention-stage")
+                backup = directory.with_name(f".{directory.name}.retention-backup")
+                original_rename = Path.rename
+                original_rmtree = shutil.rmtree
+
+                def interrupted_rename(source, target):
+                    if (point == "before_swap" and source == directory or
+                            point == "between_renames" and source == stage):
+                        raise SystemExit("simulated process exit")
+                    return original_rename(source, target)
+
+                def interrupted_cleanup(path, *args, **kwargs):
+                    if point == "after_swap" and Path(path) == backup:
+                        raise SystemExit("simulated process exit")
+                    return original_rmtree(path, *args, **kwargs)
+
+                with patch.object(Path, "rename", interrupted_rename), patch(
+                    "roller.capture.shutil.rmtree", interrupted_cleanup
+                ):
+                    with self.assertRaisesRegex(SystemExit, "simulated process exit"):
+                        apply_capture_retention(directory, manifest, "off")
+
+                if point == "after_swap":
+                    # Cleanup may already have removed part of the old directory.
+                    (backup / "raw/events.jsonl").unlink()
+                self.assertTrue(recover_capture_retention(directory))
+                recovered = json.loads((directory / "manifest.json").read_text())
+                validate_capture(base, {"manifest": "capture/attempt-0001/manifest.json",
+                                        "capture_status": recovered["capture_status"]})
+                self.assertFalse(stage.exists())
+                self.assertFalse(backup.exists())
+                self.assertEqual(recovered["raw_retained"], point != "after_swap")
+                if point == "between_renames":
+                    finalized = finalize_claude_capture(directory, execution_status="ok", debug_retention="off")
+                    self.assertFalse(finalized["raw_retained"])
+
+    def test_resume_preserves_unfinished_sample_after_retention_interruption(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run = Path(tmp)
+            sample = run / "samples/model/00000000_sample"
+            directory, _ = self.make_capture(sample)
+            manifest = finalize_claude_capture(directory, execution_status="ok", debug_retention="full")
+            stage = directory.with_name(f".{directory.name}.retention-stage")
+            original_rename = Path.rename
+
+            def interrupt_between_moves(source, target):
+                if source == stage:
+                    raise SystemExit("simulated process exit")
+                return original_rename(source, target)
+
+            with patch.object(Path, "rename", interrupt_between_moves):
+                with self.assertRaises(SystemExit):
+                    apply_capture_retention(directory, manifest, "off")
+
+            request = RunRequest(0, Task(id="sample", prompts=("hello",), source_index=0), "model", 30)
+            starts = []
+            def factory(slot):
+                starts.append(slot)
+                raise AssertionError("model execution must not restart")
+
+            with self.assertRaisesRegex(ValueError, "Resume stopped before rerunning the model"):
+                Collector(CollectionConfig(run_dir=run, resume=True), factory).collect([request])
+            self.assertEqual(starts, [])
+            self.assertTrue((directory / "raw/events.jsonl").is_file())
+            self.assertFalse(stage.exists())
+
+    def test_backup_cleanup_error_does_not_invalidate_published_capture(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            directory, _ = self.make_capture(base)
+            manifest = finalize_claude_capture(directory, execution_status="ok", debug_retention="full")
+            backup = directory.with_name(f".{directory.name}.retention-backup")
+            original_rmtree = shutil.rmtree
+
+            def fail_backup_cleanup(path, *args, **kwargs):
+                if Path(path) == backup:
+                    raise OSError("simulated cleanup error")
+                return original_rmtree(path, *args, **kwargs)
+
+            with patch("roller.capture.shutil.rmtree", fail_backup_cleanup):
+                compact = apply_capture_retention(directory, manifest, "off")
+            self.assertFalse(compact["raw_retained"])
+            self.assertTrue(backup.exists())
+            self.assertTrue(recover_capture_retention(directory))
+            self.assertFalse(backup.exists())
+            validate_capture(base, {"manifest": "capture/attempt-0001/manifest.json",
+                                    "capture_status": "complete"})
 
     def test_interrupted_capture_retains_raw_only_when_policy_requests_it(self):
         for mode in ("off", "on-error"):

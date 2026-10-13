@@ -7,11 +7,16 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
+import shutil
 import threading
 import uuid
+from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, BinaryIO
+
+logger = logging.getLogger(__name__)
 
 def read_jsonl(path: Path) -> list[dict[str, Any]]:
     rows = []
@@ -260,13 +265,71 @@ def native_directory(directory: Path) -> Path:
     return legacy if legacy.exists() else directory / "raw/native"
 
 
+def _retention_paths(directory: Path) -> tuple[Path, Path]:
+    return (directory.with_name(f".{directory.name}.retention-stage"),
+            directory.with_name(f".{directory.name}.retention-backup"))
+
+
+def _validated_manifest(directory: Path) -> dict[str, Any]:
+    try:
+        manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
+        status = manifest["capture_status"]
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise ValueError(f"capture retention recovery has no valid manifest in {directory}") from exc
+    validate_capture(directory, {"manifest": "manifest.json", "capture_status": status})
+    return manifest
+
+
+def recover_capture_retention(directory: Path, *, prefer_raw: bool = False) -> bool:
+    """Complete or roll back an interrupted compact/v2 directory publication."""
+
+    stage, backup = _retention_paths(directory)
+    if any(path.is_symlink() for path in (directory, stage, backup)):
+        raise ValueError("capture retention transaction must not contain symlinks")
+    if not stage.exists() and not backup.exists():
+        return False
+
+    def valid(path: Path) -> bool:
+        try:
+            _validated_manifest(path)
+        except ValueError:
+            return False
+        return True
+
+    if backup.exists():
+        live_valid = directory.exists() and valid(directory)
+        backup_valid = valid(backup)
+        if backup_valid and (prefer_raw or not live_valid):
+            if directory.exists():
+                shutil.rmtree(directory)
+            backup.rename(directory)
+        elif live_valid:
+            shutil.rmtree(backup)
+        elif stage.exists() and valid(stage):
+            if directory.exists():
+                shutil.rmtree(directory)
+            stage.rename(directory)
+            shutil.rmtree(backup)
+        else:
+            raise ValueError(f"capture retention has no valid attempt to restore: {directory}")
+    elif not directory.exists() and stage.exists() and valid(stage):
+        stage.rename(directory)
+    elif not directory.exists():
+        raise ValueError(f"capture retention stage has no valid attempt: {directory}")
+    else:
+        _validated_manifest(directory)
+    if stage.exists():
+        shutil.rmtree(stage)
+    return True
+
+
 def apply_capture_retention(directory: Path, manifest: dict[str, Any], mode: str) -> dict[str, Any]:
     """Check the full capture before publishing optional debug evidence."""
-    import shutil
     from roller.storage import atomic_write_json, write_jsonl
 
     if mode not in {"off", "on-error", "full"}:
         raise ValueError("invalid capture debug retention")
+    recover_capture_retention(directory)
     validate_capture(directory, {"manifest": "manifest.json", "capture_status": manifest["capture_status"]})
     calls = read_jsonl(directory / "calls.jsonl")
     relations = read_jsonl(directory / "relations.jsonl")
@@ -274,7 +337,10 @@ def apply_capture_retention(directory: Path, manifest: dict[str, Any], mode: str
               or any(c["execution_status"] == "failed" for c in calls)
               or any(r["type"] == "child_failed" for r in relations))
     retain = mode == "full" or (mode == "on-error" and failed)
+    manifest = deepcopy(manifest)
     if not retain:
+        stage, backup = _retention_paths(directory)
+        stage.mkdir()
         for call in calls:
             call["response_path"] = None
             call["response_evidence_retained"] = False
@@ -285,13 +351,29 @@ def apply_capture_retention(directory: Path, manifest: dict[str, Any], mode: str
             for evidence in relation.get("evidence", []):
                 evidence["source"] = evidence.pop("path")
                 evidence["retained"] = False
-        write_jsonl(directory / "calls.jsonl", calls)
-        write_jsonl(directory / "relations.jsonl", relations)
-        shutil.rmtree(directory / "raw")
+        write_jsonl(stage / "calls.jsonl", calls)
+        write_jsonl(stage / "relations.jsonl", relations)
+    else:
+        stage = directory
     manifest.update(storage_layout="compact/v2", debug_retention=mode, raw_retained=retain)
-    manifest["files"] = [{"path": p.relative_to(directory).as_posix(),
+    manifest["files"] = [{"path": p.relative_to(stage).as_posix(),
                           "sha256": hashlib.sha256(p.read_bytes()).hexdigest()}
-                         for p in sorted(directory.rglob("*")) if p.is_file() and p.name != "manifest.json"]
-    atomic_write_json(directory / "manifest.json", manifest)
+                         for p in sorted(stage.rglob("*")) if p.is_file() and p.name != "manifest.json"]
+    atomic_write_json(stage / "manifest.json", manifest)
+    validate_capture(stage, {"manifest": "manifest.json", "capture_status": manifest["capture_status"]})
+    if not retain:
+        directory.rename(backup)
+        try:
+            stage.rename(directory)
+            validate_capture(directory, {"manifest": "manifest.json", "capture_status": manifest["capture_status"]})
+        except Exception:
+            recover_capture_retention(directory, prefer_raw=True)
+            raise
+        try:
+            shutil.rmtree(backup)
+        except OSError as exc:
+            # The newly published attempt is valid; stale backup cleanup can
+            # safely be retried by recover_capture_retention on the next run.
+            logger.warning("capture retention backup cleanup deferred: %s", exc)
     validate_capture(directory, {"manifest": "manifest.json", "capture_status": manifest["capture_status"]})
     return manifest

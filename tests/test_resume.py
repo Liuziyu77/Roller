@@ -161,6 +161,36 @@ class CliResumeCompatibilityTests(unittest.TestCase):
             with self.subTest(harness=harness):
                 self.assert_disabled_legacy_run_resumes(*self.seed(harness, harness))
 
+    def test_legacy_claude_sidechain_resume_stops_before_changing_run(self):
+        args, run = self.seed("legacy-sidechain", "claude-code")
+        sample = next(run.glob("samples/*/*"))
+        actf_path = sample / "trace_ACTF.json"
+        actf = json.loads(actf_path.read_text())
+        child = json.loads(json.dumps(actf["steps"][0]))
+        child["step_id"] = len(actf["steps"]) + 1
+        child["extra"] = {"is_sidechain": True}
+        actf["steps"].append(child)
+        actf_path.write_text(json.dumps(actf))
+        before = self.snapshot(run)
+        before_calls = list(self.calls)
+
+        with self.assertRaisesRegex(ValueError, "legacy Claude Code sidechain"):
+            self.invoke(args, resume=True)
+
+        self.assertEqual(self.snapshot(run), before)
+        self.assertEqual(self.calls, before_calls)
+
+    def test_claude_truncated_native_tail_still_resumes(self):
+        args, run = self.seed("truncated-tail", "claude-code")
+        sample = next(run.glob("samples/*/*"))
+        with (sample / "trace.jsonl").open("a") as stream:
+            stream.write('{"type":')
+        before_calls = list(self.calls)
+
+        self.assertEqual(self.invoke(args, resume=True), 0)
+        self.assertEqual(self.calls, before_calls)
+        self.assertEqual(json.loads((run / "info.json").read_text())["summary"]["skipped"], 1)
+
     def test_cli_resumes_disabled_legacy_lock_for_mixed_agent_and_simulator(self):
         for agent, simulator in (("codex", "claude-code"), ("claude-code", "codex")):
             with self.subTest(agent=agent, simulator=simulator):

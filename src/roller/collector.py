@@ -4,6 +4,7 @@ import json
 import inspect
 import logging
 import queue
+import re
 import shutil
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -13,8 +14,9 @@ from pathlib import Path
 from typing import Any, Callable, Iterator
 
 from roller.harnesses.base import Harness
-from roller.capture import read_jsonl, validate_capture
+from roller.capture import read_jsonl, recover_capture_retention, validate_capture
 from roller.integrity import (
+    has_legacy_claude_sidechain,
     trajectory_conversion_unavailable,
     validate_resumable_sample,
 )
@@ -46,16 +48,46 @@ def _sample_directory(run_dir: Path, request: RunRequest) -> Path:
 
 
 def check_retired_cot_samples(run_dir: Path, requests: list[RunRequest]) -> None:
-    """Reject retired projections before either CLI or Collector writes anything."""
+    """Recover capture publications and reject incompatible old samples before collection."""
 
     for request in requests:
         sample_dir = _sample_directory(run_dir, request)
         for base in (sample_dir, sample_dir / "user_simulator"):
             info_path = base / "info.json"
+            capture_root = base / "capture"
+            if capture_root.is_dir():
+                interrupted = {
+                    match.group(1)
+                    for entry in capture_root.iterdir()
+                    if (match := re.fullmatch(
+                        r"\.(attempt-\d+)\.retention-(?:stage|backup)", entry.name
+                    )) is not None
+                }
+                for attempt in interrupted:
+                    recover_capture_retention(
+                        capture_root / attempt, prefer_raw=not info_path.is_file()
+                    )
+                if interrupted and not info_path.is_file():
+                    raise ValueError(
+                        f"{base}: capture retention was interrupted; a valid capture attempt was recovered, "
+                        "but the sample has no finalized info.json. Resume stopped before rerunning the model."
+                    )
             try:
                 info = json.loads(info_path.read_text(encoding="utf-8"))
             except (OSError, ValueError):
                 continue
+            if isinstance(info, dict) and info.get("harness") == "claude-code" and info.get("status") == "ok":
+                actf_path = base / "trace_ACTF.json"
+                try:
+                    actf = json.loads(actf_path.read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    actf = None
+                if isinstance(actf, dict) and has_legacy_claude_sidechain(actf):
+                    raise ValueError(
+                        f"{actf_path}: legacy Claude Code sidechain steps are mixed into root ACTF/SFT; "
+                        "resume stopped before changing the run or calling the model. "
+                        "Reproject the existing raw trace offline or use a new run directory."
+                    )
             runtime = info.get("runtime") if isinstance(info, dict) else None
             if not isinstance(runtime, dict):
                 continue

@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from roller.capture import read_jsonl, native_directory
+from roller.capture import read_jsonl, native_directory, recover_capture_retention
 from roller.capture_protocol import NativeCapture, finalize_capture
 from roller.opencode_actf import native_messages
 
@@ -90,6 +90,7 @@ def read_opencode_native(directory: Path) -> NativeCapture:
 
 
 def finalize_opencode_capture(directory: Path, *, execution_status: str,
-                              recorder_error: str | None = None, debug_retention: str = "full") -> dict[str, Any]:
+                            recorder_error: str | None = None, debug_retention: str = "full") -> dict[str, Any]:
+    recover_capture_retention(directory)
     return finalize_capture(directory, read_opencode_native(directory),
                             execution_status=execution_status, recorder_error=recorder_error, debug_retention=debug_retention)

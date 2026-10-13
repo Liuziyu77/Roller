@@ -68,22 +68,27 @@ class CaptureLifecycleTests(unittest.TestCase):
             validate_capture(d, {'manifest':'manifest.json','capture_status':'complete'})
 
     def test_nested_claude_metadata_requires_spawn_event_and_known_child(self):
-        for matched in (True, False):
-            with self.subTest(matched=matched), tempfile.TemporaryDirectory() as tmp:
+        for variant in ("matched", "wrong_spawn", "unknown_format"):
+            with self.subTest(variant=variant), tempfile.TemporaryDirectory() as tmp:
                 d = Path(tmp)
                 events = [
                     {'type':'assistant','uuid':'root-spawn','sessionId':'root','message':{'id':'r1','content':[{'type':'tool_use','id':'t1','name':'Agent','input':{}}]}},
                     {'type':'assistant','uuid':'child-spawn','sessionId':'root','agentId':'child','isSidechain':True,'message':{'id':'r2','content':[{'type':'tool_use','id':'t2','name':'Agent','input':{}}]}},
                     {'type':'assistant','uuid':'grand-final','sessionId':'root','agentId':'grand','isSidechain':True,'message':{'id':'r3','stop_reason':'end_turn','content':[{'type':'text','text':'GRAND'}]}},
                     {'type':'user','sessionId':'root','toolUseResult':{'agentId':'child','status':'completed'},'message':{'role':'user','content':[{'type':'tool_result','tool_use_id':'t1','content':'CHILD'}]}},
-                    {'type':'user','sessionId':'root','agentId':'child','isSidechain':True,'sourceToolAssistantUUID':'child-spawn' if matched else 'wrong',
+                    {'type':'user','sessionId':'root','agentId':'child','isSidechain':True,'sourceToolAssistantUUID':'wrong' if variant == 'wrong_spawn' else 'child-spawn',
                      'message':{'role':'user','content':[{'type':'tool_result','tool_use_id':'t2','content':[{'type':'text','text':'GRAND'},{'type':'text','text':"agentId: grand (use SendMessage with to: 'grand', summary: '<5-10 word recap>' to continue this agent)\n<usage>subagent_tokens: 1</usage>"}]}]}},
                 ]
+                if variant == "unknown_format":
+                    events[-1]["message"]["content"][0]["content"][-1]["text"] = "agentId: grand (new native metadata format)"
                 write_jsonl(d/'native/root.jsonl',events)
                 native = read_claude_native(d)
                 relation = next(r for r in native.relations if r['type']=='spawn' and r['tool_call_id']=='t2')
                 self.assertEqual(relation['parent_participant_id'],'agent:child')
-                self.assertEqual(relation.get('child_participant_id'),'agent:grand' if matched else None)
+                self.assertEqual(relation.get('child_participant_id'),'agent:grand' if variant == 'matched' else None)
+                if variant != "matched":
+                    self.assertEqual(relation["status"], "unknown")
+                    self.assertIn("metadata does not match", relation["reason"])
 
     def test_claude_native_notification_closes_background_lifecycle(self):
         for completed, resumed in ((True, False), (False, False), (True, True)):

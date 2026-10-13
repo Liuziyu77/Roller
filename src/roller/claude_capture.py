@@ -6,7 +6,7 @@ from typing import Any
 import xml.etree.ElementTree as ET
 import re
 
-from roller.capture import read_jsonl, native_directory
+from roller.capture import read_jsonl, native_directory, recover_capture_retention
 from roller.capture_protocol import NativeCapture, finalize_capture
 from roller.model_protocols import anthropic_response
 
@@ -59,6 +59,7 @@ def read_claude_native(directory: Path) -> NativeCapture:
             if isinstance(block, dict) and block.get("type") == "tool_use" and block.get("name") == "Agent":
                 tools[block["id"]] = (pid, event, source)
     seen_results = set()
+    unresolved_reasons: dict[str, str] = {}
     for pid, event, source in native:
         content = event.get("message", {}).get("content", [])
         for block in content if isinstance(content, list) else []:
@@ -75,9 +76,13 @@ def read_claude_native(directory: Path) -> NativeCapture:
                 blocks = block.get("content", [])
                 metadata = blocks[-1].get("text", "") if isinstance(blocks, list) and blocks and isinstance(blocks[-1], dict) else ""
                 match = re.fullmatch(r"agentId: ([a-z0-9]+) \(use SendMessage with to: '([a-z0-9]+)', summary: '[^']*' to continue this agent\)\n<usage>.*</usage>", metadata, re.DOTALL)
-                if (not match or match[1] != match[2] or pid != parent
+                if not match:
+                    unresolved_reasons[tool_id] = "Claude Code Agent result metadata does not match the supported native format"
+                    continue
+                if (match[1] != match[2] or pid != parent
                         or event.get("sourceToolAssistantUUID") != spawn.get("uuid")
                         or "agent:" + match[1] not in participants):
+                    unresolved_reasons[tool_id] = "Claude Code Agent result metadata does not match the spawn or known child"
                     continue
                 result = {"agentId": match[1], "status": "failed" if block.get("is_error") else "completed"}
             seen_results.add(tool_id)
@@ -150,7 +155,7 @@ def read_claude_native(directory: Path) -> NativeCapture:
             relations.append({"type": "spawn", "status": "unknown", "tool_call_id": tool_id,
                 "parent_participant_id": pid, "child_participant_id": None,
                 "evidence": [{"path": source, "event_id": event.get("uuid")}],
-                "reason": "native Agent result did not identify a child"})
+                "reason": unresolved_reasons.get(tool_id, "native Agent result did not identify a child")})
 
     background = any(event.get("message", {}).get("content") and any(
         isinstance(b, dict) and b.get("name") == "Agent" and b.get("input", {}).get("run_in_background")
@@ -174,6 +179,7 @@ def read_claude_native(directory: Path) -> NativeCapture:
 
 
 def finalize_claude_capture(directory: Path, *, execution_status: str,
-                           recorder_error: str | None = None, debug_retention: str = "full") -> dict[str, Any]:
+                            recorder_error: str | None = None, debug_retention: str = "full") -> dict[str, Any]:
+    recover_capture_retention(directory)
     return finalize_capture(directory, read_claude_native(directory),
                             execution_status=execution_status, recorder_error=recorder_error, debug_retention=debug_retention)
