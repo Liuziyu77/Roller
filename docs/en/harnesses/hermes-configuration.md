@@ -2,7 +2,7 @@
 
 This page covers only Hermes-specific images, the API, reasoning, and troubleshooting. Roller runs [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent) through its Python `AIAgent` interface, pinned to commit `d15ed4445207dda418b984e8bda0f68f48b8c6f3` (0.21.1). For Task fields see [Task format reference](../tasks/task-format.md). For output semantics shared by all Harnesses see [Trajectory output file guide](../traces/trajectory-outputs.md).
 
-## 1. Supported scope
+## 1. Scope
 
 The Hermes Harness supports:
 
@@ -25,7 +25,7 @@ Not currently supported:
 - persistent memory and skill learning.
 - the OpenClaw cache trace (Resume does not require it).
 
-## 2. Image preparation and first run
+## 2. Image preparation
 
 From the Roller repository root:
 
@@ -78,19 +78,27 @@ This table lists Hermes-specific runtime flags only. See section 3 for API addre
 
 Participant-specific API/image settings apply to Hermes on either side of a mixed conversation. Run locks include the Hermes revision, image digest, endpoint, key variable name, iteration cap, toolsets, and export settings. Keys are read at execution time and are not written into the public examples or run configuration.
 
-## 5. Sessions, workspace, and traces
+## 5. Multimodal capabilities
 
-Each participant gets its own disposable container. Hermes uses its `local` terminal backend **inside that container**, with the `terminal`, `file`, and optional `vision` toolsets. Immutable inputs, context files, setup commands, task environment variables, output directories, and container-based grading use Roller's normal workspace contract.
+Hermes uses the `local` terminal backend with the `terminal`, `file`, and optional `vision` toolsets. Vision-capable models and services can open local images through `vision_analyze`. For a text-only model, disable the image tool with `--no-hermes-vision`.
+
+Images enter the workspace through `files.inputs`. Image tool results are preserved in raw, ACTF, and multimodal SFT. Task `messages[].content` currently accepts strings only and cannot contain image blocks directly. Video and remote terminal backends are not currently supported.
+
+## 6. Sessions and workspace
+
+Each participant uses an isolated disposable container. Read-only inputs, Context files, setup, task environment variables, output collection, and in-container scoring use Roller's standard workspace.
 
 Context files of all roles are copied to their declared workspace paths and listed in the task system prompt. Tasks may explicitly read them. The bridge disables implicit profile/context discovery, persistent memory, SOUL identity loading, checkpoints, background review, and automatic dependency installation during rollouts. This supports file-based context and skill fixtures. It does not enable Hermes' skill discovery/learning service.
 
 Each user turn starts a Python agent and restores Hermes' native message history in the same container. Workspace files and conversation history persist across turns. Python process state, including background process handles, does not. Models should finish terminal work within each turn. Sessions are isolated across Agent/Simulator, workers, and retry attempts.
 
+## 7. Trajectories and request recording
+
 The append-only `rollout/trace.jsonl` journal records actual request messages/tool schemas, model responses/usage, and tool results observed at native persistence hooks before compression. Full request snapshots remain in raw data. ACTF/SFT represent the logical executed conversation. Native `vision_analyze` results retain image bytes. For OpenAI-compatible gateways that reject images on the `tool` role, the bridge sends the same bytes in a following `user` media message while preserving the original tool result in the journal. Context summaries in subsequent API requests do not replace earlier executed tools in the exported trajectory. This is a Roller bridge journal, not Hermes' optional ShareGPT export or an OpenClaw trace.
 
 The usual outputs are `trace_ACTF.json`, `trace_SFT.json`, results, provenance, and usage. The bridge rejects incomplete turns, empty final replies, malformed tool arguments, missing schemas, and corrupt JSONL. Timeouts stop execution and retain available partial artifacts. Hermes emits no OpenClaw cache trace, so Resume does not require one. `--wire-trace full` still requires the wire trace. Context with `capture: none` still prevents reuse.
 
-## 6. Validation scope
+## 8. Validation
 
 See the {download}`coverage guide <../../../examples/coverage/README.en.md>` for the test matrix, model configuration, result checks, and Resume auditing.
 
@@ -108,7 +116,7 @@ The adapter supports Chat Completions, terminal/file execution, and local-image 
 
 `PIP_INDEX_URL` controls pip installation of uv. Prefer an HTTPS index with a valid certificate. A trusted internal HTTP index on a non-loopback host requires an explicit `PIP_TRUSTED_HOST`. `PYPI_DOWNLOAD_BASE` changes only the download prefix in `uv.lock`. The mirror must preserve the `/packages/` layout, versions, and SHA-256 hashes. Uv connection trust uses the separate `UV_INSECURE_HOST` argument. Pip settings do not apply to uv. Hermes source still needs to be fetched from GitHub.
 
-## 7. Adapter tests
+### Adapter tests
 
 Run the normal suite without Docker or model credentials, then opt into the real container test with a local deterministic API:
 
@@ -122,12 +130,24 @@ The Docker test uses a localhost HTTP server and a synthetic key. It verifies ac
 
 Use `--case '*/hermes' --exclude-case 'vision/*'` to select the 200 model-independent nonvision input tasks. Add `--case 'simulators/pair/*'` to include all 196 Agent/Simulator tasks (396 in total, requiring all seven Harnesses). Both `suite.py` and `merge.py` accept these filters.
 
-## 8. Common issues
+## 9. Common issues
 
-Common errors:
+**(1) The endpoint reports a context window error**
 
-- the endpoint reports a context window error: this revision requires at least 64,000 tokens. Set `--hermes-context-length` to the model’s actual supported size.
-- a trajectory is not counted as successful: incomplete turns, empty final replies, malformed tool arguments/schemas, or corrupt JSONL all fail. Inspect raw to locate the cause.
-- rollout timeout: execution is stopped and available artifacts retained. Adjust `--timeout` or `--hermes-max-iterations` as needed.
-- Resume refused: the revision, image digest, endpoint, iteration cap, toolsets, or export settings recorded in the run lock changed. Use a fresh run directory.
-- `--wire-trace full` fails to start: an explicit API base and host networking are required.
+This revision requires at least 64,000 tokens. Set `--hermes-context-length` to the model’s actual supported size.
+
+**(2) A trajectory is not counted as successful**
+
+Incomplete turns, empty final replies, malformed tool arguments/schemas, or corrupt JSONL all fail. Inspect raw to locate the cause.
+
+**(3) Rollout times out**
+
+Execution is stopped and available artifacts retained. Adjust `--timeout` or `--hermes-max-iterations` as needed.
+
+**(4) Resume refused**
+
+The revision, image digest, endpoint, iteration cap, toolsets, or export settings recorded in the run lock changed. Use a fresh run directory.
+
+**(5) `--wire-trace full` fails to start**
+
+An explicit API base and host networking are required.

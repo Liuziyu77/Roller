@@ -42,7 +42,7 @@ The two modes cannot appear in the same task. Single-turn and predefined multi-t
 | `harness` | no | `openclaw` | Harness used by the Simulator: `openclaw`, `codex`, `claude-code`, `hermes`, `opencode`, `deepseek`, or `pi` |
 | `model` | no | Task Agent model | Model ref used by the Simulator |
 | `max_turns` | no | `6` | Maximum number of instructions sent to the Task Agent, range `1–100` |
-| `thinking` | no | CLI default | Overrides the Simulator only; uses the same logical levels and validation as [`--thinking`](../harnesses/openclaw-configuration.md#5-thinking-system-prompt-and-wire-trace) |
+| `thinking` | no | CLI default | Overrides the Simulator only; uses the same logical levels and validation as [`--thinking`](../harnesses/openclaw-configuration.md#6-thinking-configuration) |
 
 CLI `--model` overrides only the Task Agent model; `user_simulator.model` still follows the task configuration. When the Simulator model is omitted, it follows the Task Agent model actually used for this run.
 
@@ -150,7 +150,7 @@ roller collect \
   --run-name user_simulator_hr
 ```
 
-`--parallel N` still means N rollouts at once. Each dynamic rollout occupies two containers at the same time and produces two sets of model calls and two traces. Port planning is in [OpenClaw configuration](../harnesses/openclaw-configuration.md#7-parallelism-containers-and-ports).
+`--parallel N` still means N rollouts at once. Each dynamic rollout occupies two containers at the same time and produces two sets of model calls and two traces. If OpenClaw reports a port conflict, see the common issues in the [OpenClaw guide](../harnesses/openclaw-configuration.md).
 
 ## 8. Saving and using traces
 

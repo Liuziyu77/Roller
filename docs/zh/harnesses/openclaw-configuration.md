@@ -2,7 +2,13 @@
 
 本页介绍 OpenClaw 专属的镜像、模型 provider、API adapter、thinking、搜索、gateway 和排错。Task 字段见 [Task 格式参考](../tasks/task-format.md)，各 Harness 的产物说明见 [轨迹产出文件指南](../traces/trajectory-outputs.md)。
 
-## 1. 运行要求与镜像准备
+## 1. 适用范围
+
+OpenClaw Harness 适合使用 OpenClaw Agent 运行 task。它支持 OpenAI Responses 和 Chat Completions 兼容模型，也支持文本与图片输入、thinking、多轮会话和 Web Search。
+
+第一次使用可以先按照[快速上手](../start/getting-started.md)完成一次 OpenClaw 采集。本页用于配置自定义模型、环境变量和 OpenClaw 专属功能。
+
+## 2. 镜像准备
 
 采集前需要准备：
 
@@ -38,20 +44,13 @@ docker version
 docker image inspect your-openclaw-image:tag
 ```
 
-官方镜像默认用户是 `node`，而 Roller task 需要创建 `/tmp_workspace` 并执行用户提供的 setup
-命令。为保持旧 benchmark 镜像的行为，Roller 默认用 `--container-user 0` 在**一次性 task
-容器内部**运行。这不会赋予宿主机 root 权限。自定义镜像已经为默认用户准备好可写工作区时，
-可以传 `--container-user image`。Roller 还会为每个 rollout 生成仅存在于容器进程环境中的
-临时 Gateway token，并固定 `gateway.mode=local`、`gateway.bind=loopback`。token 不写入 run、
-task、轨迹或模型配置。
+使用官方 OpenClaw 镜像时，无需额外设置容器用户。Roller 会在一次性容器中自动准备可写工作区和本地 Gateway 配置，这些设置不会改变宿主机权限。只有自定义镜像已经为默认用户准备好可写工作区，并希望使用该用户运行时，才需要传入 `--container-user image`。
 
-OpenClaw `2026.7.1` 的 session registry 位于
-`$OPENCLAW_STATE_DIR/state/openclaw.sqlite`。Roller 不直接查询数据库，而是通过官方公开的
-`openclaw/plugin-sdk/session-transcript-runtime` 按 `{agentId, sessionKey, sessionId}` 导出
-事件。legacy `2026.3.11` 不识别 `OPENCLAW_STATE_DIR`，Roller 会自动回退到
-`/root/.openclaw` 和 session JSONL。
+## 3. 环境变量与 API
 
-## 2. 模型配置文件
+OpenClaw 通过模型配置文件读取模型名称、API 协议、服务地址和凭证。配置文件中的敏感值使用环境变量占位，运行前再从当前 shell 加载。
+
+### 模型配置
 
 `--model-config` 接受一份 OpenClaw models JSON。基础文本模板是
 [`examples/config/openclaw/models.json`](../../../examples/config/openclaw/models.json)，GPT 与
@@ -74,38 +73,28 @@ Chat Completions reasoning 模板是
 }
 ```
 
-运行时的 model ref 是 `provider/model`，对应上例中的：
+命令中的 `--model` 使用 `provider/model-id` 格式。`provider` 对应 `providers` 下的名称，`model-id` 对应 `models[].id`。上例应使用：
 
 ```text
 my-openai-proxy/my-model
 ```
 
-Roller 在宿主机展开 `${ENV_NAME}`，把合并后的配置临时注入容器。引用的环境变量缺失或为空时，会在启动 rollout 前报错。临时文件使用后立即删除，最终 run 不保存展开后的 JSON。
+配置中的模型 ID 应改为模型服务实际使用的名称，命令中的值必须与配置完全一致。`${ENV_NAME}` 从当前 shell 读取，引用的环境变量缺失或为空时，Roller 会在启动 rollout 前报错。
 
-### API base 与 adapter
+### API 协议
 
-`baseUrl` 用来设置自定义 API base，例如：
+`api` 用于选择模型服务支持的协议：
 
-```text
-https://api.example.com/v1
-```
-
-具体请求路径由 OpenClaw 根据 `api` adapter 生成：
-
-| `api` | 典型后端 |
+| `api` | 适用服务 |
 | --- | --- |
 | `openai-responses` | 实现 OpenAI Responses API 的服务 |
 | `openai-completions` | 只实现 Chat Completions 兼容接口的服务 |
 
-如果服务端只提供 `/v1/chat/completions`，应选择 `openai-completions`，而不是把完整 endpoint 当成 `baseUrl`。模型 ID、adapter 和服务端能力必须一致。Roller 不会替后端转换不受支持的协议。
+`apiKey` 必须是非空值。服务无需鉴权时，可以填写 `"apiKey":"not-required"`。
 
-命令行的 `provider/model` 必须与 JSON 完全对应：`providers.my-provider` 配合 `--model my-provider/...`，`models[].id = "my-model"` 配合 `--model .../my-model`。`baseUrl` 通常包含 `/v1`，具体以服务端文档为准。
+### 加载环境变量
 
-无鉴权的自建服务也需要非空 `apiKey` 以通过 OpenAI client 的配置校验。如果服务端忽略 Authorization header，可以使用 `"apiKey":"not-required"`。
-
-## 3. 环境变量与 API
-
-OpenClaw 的模型 API 地址、adapter 和凭证占位符写在第 2 节的模型配置文件中。本节说明如何在宿主机准备这些凭证，并将任务所需的其他环境变量安全传入容器。
+模型配置中的 API 地址和凭证通过 `${ENV_NAME}` 从当前 shell 读取。可以先复制仓库提供的环境变量模板：
 
 推荐从示例创建一个不会提交到 Git 的本地文件：
 
@@ -127,33 +116,39 @@ HTTP_PROXY                HTTPS_PROXY               NO_PROXY
 http_proxy                https_proxy               no_proxy
 ```
 
-还有两种传入方式：
+(openclaw-cli-flags)=
+## 4. OpenClaw 专属参数
 
-- `runtime.env`：该 task 的硬依赖。变量缺失时直接失败。
-- `--pass-env NAME`：为本次 run 增加一个可选透传变量。
+本节只列 OpenClaw 运行时需要特别关注的参数。所有 Harness 共用的任务、并行、重试和输出参数见 [CLI 参数参考](../start/cli-reference.md)。
 
-例如，某个 task 必须使用内部服务：
+| 参数 | 默认值 | 用途 |
+| --- | --- | --- |
+| `--docker-image` / `--openclaw-image` | `ROLLER_OPENCLAW_IMAGE` 或内置值 | 覆盖 OpenClaw 镜像，混合 Harness 运行使用专属形式 |
+| `--container-user` | `0` | 一次性 task 容器用户。`image` 使用镜像默认用户 |
+| `--docker-binary` | `docker` | Docker CLI 名称或路径 |
+| `--model-config` | 无 | 自定义 provider/model JSON |
+| `--network` | `host` | 容器网络模式 |
+| `--gateway-port` | `18789` | gateway 起始端口 |
+| `--gateway-port-step` | `10` | worker 之间的端口间隔 |
+| `--gateway-startup-timeout` | `30` | 等待 gateway 就绪的秒数 |
+| `--session-id` | `roller` | OpenClaw session ID 前缀 |
+| `--thinking` | 无 | 设置模型的 reasoning 强度，常用档位和保存规则见第 6 节 |
+| `--keep-thinking` / `--no-keep-thinking` | 开启 | 是否保留轨迹和请求历史中的 thinking |
+| `--cache-trace` / `--no-cache-trace` | 开启 | 是否记录每次组装的 system prompt。ACTF 固化首个有效值 |
+| `--wire-trace` | `actf` | tools schema / 完整请求体记录模式 |
+| `--search-provider` | 无 | OpenClaw Web Search provider |
+| `--pass-env NAME` | 无 | 增加一个环境变量名，可重复 |
+| `--set-image-model` / `--no-set-image-model` | 开启 | 是否设置 OpenClaw image model |
+| `--keep-container-on-error` | 关闭 | 出错后保留容器以便排查 |
+| `--collect-path` | 无 | Legacy：额外回收容器绝对路径 |
 
-```json
-{
-  "runtime": {
-    "env": ["INTERNAL_SERVICE_TOKEN"]
-  }
-}
-```
-
-或者对所有 task 透传：
+全部参数以当前安装版本为准：
 
 ```bash
-roller collect ... --pass-env INTERNAL_SERVICE_TOKEN
+roller collect --help
 ```
 
-> [!IMPORTANT]
-> Task 与模型 JSON 只写环境变量名或 `${ENV_NAME}` 占位符。不要把真实 API Key 写进仓库、task、命令行参数或 README。
-
-为兼容 Interns2_data，宿主机的 `OPENROUTER_BASE_URL_OPENCLAW` 在没有设置 `OPENROUTER_BASE_URL` 时会映射为后者。新配置建议直接使用标准变量名。
-
-## 4. 文本模型与多模态模型
+## 5. 多模态能力
 
 普通文本模型使用：
 
@@ -173,234 +168,97 @@ roller collect ... --pass-env INTERNAL_SERVICE_TOKEN
 
 完整模板见 [`examples/config/openclaw/models-multimodal.json`](../../../examples/config/openclaw/models-multimodal.json)。`input` 只是告诉 OpenClaw 如何使用模型。实际 API 后端仍必须支持对应 adapter 下的图像输入。
 
+图片通过 `files.inputs` 进入任务工作区，再由 OpenClaw 的图像查看工具打开。Task 的 `messages[].content` 当前只支持字符串，不能直接写入图片内容块。纯文本模型仍可处理文本和普通文件，但不能完成需要理解图片内容的任务。
+
 默认情况下，Roller 也会尝试把 task model 配置为 OpenClaw 的 image model。旧版 OpenClaw 不支持该设置时只记录 warning。可以用 `--no-set-image-model` 关闭。
 
-## 5. Thinking、system prompt 与 wire trace
+## 6. Thinking 配置
 
-### 逻辑档位与 provider effort
-
-Roller 的 `--thinking` 接受 OpenClaw 的逻辑档位，再由 OpenClaw 转成对应的模型 API 参数：
-
-```text
-off | minimal | low | medium | high | xhigh | adaptive | max | ultra
-```
-
-另外接受 `none` 作为输入别名，并在进入 task、配置和轨迹元数据前统一规范化为 `off`。CLI 全局值、task 的 `runtime.thinking`、User Simulator 的 `thinking` 都使用同一套校验。task 值优先于 CLI 全局值。未设置时 Roller 不注入 thinking 默认值，也不向 `openclaw agent` 增加 `--thinking`。
-
-需要模型生成 reasoning 时显式传入：
+OpenClaw 常用的 thinking 档位是 `off`、`low`、`medium` 和 `high`。例如：
 
 ```bash
 roller collect ... --thinking high
 ```
 
-档位先由 Roller 原样交给 OpenClaw，再由 OpenClaw 当前 model profile 校验并映射成 provider 参数。各模型支持的档位有所不同：
+`none` 在 OpenClaw 中会被视为 `off`。其他档位是否可用，取决于 OpenClaw 版本、模型和 API 服务。
 
-| Roller 输入 | OpenClaw 规范值 | GPT-5.6 Sol 的 Responses API | 说明 |
-| --- | --- | --- | --- |
-| `none` / `off` | `off` | 所选 profile 映射时为 `none` | `none` 只是 Roller 的输入别名。自定义/代理 profile 也可能省略 API 字段而不是发送 `none`，应检查 wire trace |
-| `minimal` | `minimal` | 不支持 | 只用于声明支持它的其他模型 |
-| `low` | `low` | `low` | 原样映射 |
-| `medium` | `medium` | `medium` | 原样映射。GPT-5.6 Sol 未传 effort 时的 API 默认值也是 `medium` |
-| `high` | `high` | `high` | 原样映射 |
-| `xhigh` | `xhigh` | `xhigh` | 需要 OpenClaw profile 声明支持 |
-| `adaptive` | `adaptive` | 不是原生值 | 由支持自适应 thinking 的 OpenClaw profile 决定实际档位 |
-| `max` | `max` | `max` | 需要对应的 OpenClaw model profile |
-| `ultra` | `ultra` | 不是原生值 | 属于 OpenClaw 策略档位；是否接受及如何映射取决于所选 profile |
+各模型可用的档位、`compat` 配置示例和验收方法见 [OpenClaw thinking 档位](openclaw-thinking.md)。
 
-对 `gpt-5.6-sol` 的实际 Responses 请求已逐项验证：原生 API effort `none/low/medium/high/xhigh/max` 成功，`minimal/adaptive/ultra` 作为原生 API effort 会返回 400。但这不表示每个 OpenClaw provider profile 都按相同方式映射逻辑档位；尤其自定义/代理路由的 `off` 可能变成省略 effort。应检查 `wire_trace.jsonl`，不能只根据命令行值推断最终 API 字段。官方支持矩阵以 [OpenAI GPT-5.6 model guidance](https://developers.openai.com/api/docs/guides/model-guidance?model=gpt-5.6) 为准。
-
-Roller 不硬编码开源模型的档位映射。Chat Completions 服务应在 OpenClaw model profile 中声明 transport 能力。例如，只接受 `low` 和 `high` 的服务可配置为：
-
-```json
-{
-  "id": "my-reasoning-model",
-  "name": "My reasoning model",
-  "reasoning": true,
-  "compat": {
-    "supportsReasoningEffort": true,
-    "supportedReasoningEfforts": ["low", "high"]
-  }
-}
-```
-
-若该服务明确要把逻辑 `medium` 映射成 transport `high`，可在 `compat` 中增加
-`"reasoningEffortMap": {"medium": "high"}`。OpenClaw `2026.7.1` 的 schema 支持
-`compat.supportedReasoningEfforts` 和 `compat.reasoningEffortMap`。顶层 `thinkingLevelMap`
-描述 model 级逻辑能力，但不能代替 Chat Completions transport mapping。使用
-`enable_thinking` 的 Qwen-compatible 服务可以设置 `compat.thinkingFormat: "qwen"`。
-只能声明后端真实支持的档位；始终思考的模型不应虚构 `off`/`none` 能力。
+显式开启 thinking 且模型配置没有 `reasoning` 能力字段时，Roller 会为了兼容旧配置在本次 rollout 的副本中补充 `reasoning: true`；显式的 `reasoning: false` 会原样保留。旧配置中的 `tags: ["reasoning"]` 会自动转换为当前 OpenClaw 接受的布尔字段。
 
 > [!IMPORTANT]
-> 新版 OpenClaw 会按所选 provider/model/runtime profile 校验显式档位。Roller 不再维护第二份
-> 模型能力表，也不会仅根据新版 runtime 版本字符串拒绝 `ultra`。
-> legacy `wildclawbench-ubuntu:v1.3` 内含 `2026.3.11`，只可靠支持到 `high`；Roller 会拒绝
-> 其 `xhigh/adaptive/max/ultra`。只更新 Roller 仓库不会替换 Docker 镜像，运行时版本以
-> sample `info.json` 的 `runtime.openclaw_version` 为准。
+> legacy `wildclawbench-ubuntu:v1.3` 内含 OpenClaw `2026.3.11`，只可靠支持到 `high`；Roller 会拒绝其 `xhigh/adaptive/max/ultra`。只更新 Roller 仓库不会替换 Docker 镜像，运行时版本以 sample `info.json` 的 `runtime.openclaw_version` 为准。
 
-### Reasoning 内容与轨迹
+轨迹能否保存 reasoning 文本，取决于模型服务实际返回的内容。如果服务只返回 reasoning token 数量，没有返回可见文本，`reasoning_content` 会为空，Roller 不会根据 token 反推内容。
 
-显式开启 thinking 且模型配置没有 `reasoning` 能力字段时，Roller 会为了兼容旧配置在本次
-rollout 的副本中补充 `reasoning: true`；显式的 `reasoning: false` 会原样保留。
-所选 OpenClaw profile 决定 Chat Completions adapter 是否发送 `reasoning_effort`；Responses adapter
-会发送 reasoning 配置。旧配置中的 `tags: ["reasoning"]` 会自动转换为当前 OpenClaw
-接受的布尔字段。
+`--keep-thinking` 默认开启，会保留模型返回的可见 reasoning。使用 `--no-keep-thinking` 可以从轨迹和后续请求历史中移除这些内容。
 
-轨迹中能保存哪些 reasoning，取决于后端返回的内容。Chat Completions 通常通过流式 `reasoning_content`（也兼容 `reasoning` 和 `reasoning_text`），Responses API 通过 reasoning items。仅在 usage 中报告 `reasoning_tokens`、但不返回 summary/content 时，没有可写入轨迹的文本。
+## 7. 轨迹与请求记录
 
-对 Qwen、GLM 等能够返回明文 reasoning 的开源模型，默认 `--keep-thinking` 会把该文本保留到
-ACTF/SFT `reasoning_content`。
+本节说明 Roller 会记录哪些 OpenClaw 运行信息，以及如何在需要排错时保存完整模型请求。
 
-对于通过 Responses API 暴露压缩 reasoning summary 的 GPT reasoning 模型，应使用：
+默认开启的 `--cache-trace` 会把 OpenClaw 组装的 system prompt 写入 `trace_ACTF.json`。`--wire-trace` 决定是否继续记录工具 schema 或完整请求：
 
-```json
-{
-  "api": "openai-responses",
-  "models": [{"id": "my-gpt-model", "name": "My GPT model", "reasoning": true}]
-}
-```
+| `--wire-trace` | 记录内容 | 适用场景 |
+| --- | --- | --- |
+| `actf`（默认） | 将 tools schema 写入 `trace_ACTF.json`，不保存完整请求 | 日常采集 |
+| `full` | 额外保存完整请求到 `wire_trace.jsonl`，并生成脱敏后的 `cache_trace.jsonl` | 排错或审计模型实际收到的内容 |
+| `off` | 不记录 wire 数据，ACTF 中的 `tools` 为 `null` | 不需要请求信息时 |
 
-同一模型走 Chat Completions 时可以产生 reasoning token，却不一定返回可见的 `reasoning_content`。Roller 不会从隐藏 token 反推 thinking。
+`trace.jsonl` 记录的是 OpenClaw session 事件，不一定等于实际发送给模型的完整请求。需要检查模型实际收到的 messages、tools 和参数时，使用 `--wire-trace full`。
 
-### 保留与剥离
+`full` 会产生更大的文件，其中可能包含 prompt、reasoning、工具参数和结果等敏感内容，不适合在大批量采集中长期开启。使用 `actf` 或 `full` 时建议保留默认的 `--network host`，并确保模型配置提供可访问的绝对 `baseUrl`。详细文件说明见[轨迹产出文件指南](../traces/trajectory-outputs.md#32-session-历史不等于模型请求-context)。
 
-`--keep-thinking` 默认开启，同时控制：
+## 8. Web Search
 
-1. `trace_ACTF.json` 中 `steps[*].assistant_content.reasoning_content`。
-2. 后续 Chat Completions `messages` 或 Responses `input` 中的历史 thinking。
+Web Search 让 OpenClaw Agent 在执行 task 时查询网页信息。只有 task 需要联网搜索时才需要配置。处理本地文件、已有上下文或不依赖网页信息的 task，可以跳过本节。
 
-OpenAI-compatible 服务并不统一使用同一个返回字段。对于 Chat Completions，Roller 的本地
-传输代理会在响应进入 OpenClaw 前把非空 `reasoning`/`reasoning_text` 规范化为等价的
-`reasoning_content`。这是因为 OpenClaw `2026.7.1` 能记录前两者，却只为 generic custom
-provider 重放 `reasoning_content`。规范化不生成或总结文本，后续请求携带的内容与模型返回
-文本一致。已用官方 `2026.7.1` + GLM-5.2 工具任务验证：首个 assistant raw thinking 与
-第二次 `/chat/completions` 请求的 `reasoning_content` 完全相同。
+使用 Web Search 时，需要同时选择搜索服务并提供对应的 API Key。下面以 Brave Search 为例。
 
-`--no-keep-thinking` 会把 ACTF reasoning 置空，并在本地代理转发前移除 `reasoning_content`、`reasoning`、`reasoning_text`、thinking content block 和 Responses reasoning item。OpenClaw 本身没有关闭历史 thinking 的配置，因此该模式必须使用 wire 层代理。
-
-### ACTF、cache trace 与 wire trace
-
-默认 `--cache-trace` 记录 OpenClaw 每次 LLM call 组装的 system prompt。Roller 将首个有效
-值写入 `trace_ACTF.json` 顶层。默认 `--wire-trace actf` 通过本地反向代理捕获完整 tools
-schema，写入 ACTF 顶层后删除中间文件。
-
-| `--wire-trace` | 行为 |
-| --- | --- |
-| `actf`（默认） | 捕获 tools schema 并写入 ACTF，不记录完整 messages/input。缺少可代理 `baseUrl` 时降级为 `tools=null` |
-| `full` | 要求可代理 `baseUrl`，额外保留每次完整 JSON 请求体 `wire_trace.jsonl` 和按敏感 key 脱敏后的 `cache_trace.jsonl` |
-| `off` | 不保留 wire 数据，ACTF 的 `tools` 为 `null`。有可代理 model config 时仍可在内存中启用代理做 thinking 规范化/剥离 |
-
-OpenClaw session 文件保存持久化事件。模型调用前还可能发生 system/runtime 注入、compaction、tool-result pruning、context-engine/hook
-处理以及 provider 协议适配。因此 `trace.jsonl` 中存在的消息不保证逐字进入每次请求。
-ACTF/SFT 又是从该 session 文件投影，也不能证明模型当时看到了哪些完整历史。
-
-需要审计真实请求 context 时使用 `full`。代理位于 OpenClaw provider adapter 和真实模型
-API 之间。对合法 JSON，它在可选的历史 thinking 剥离之后记录与转发同一 request body。
-`wire_trace.jsonl` 因而保存 Roller 客户端实际交给上游 API 的 messages/input、tools 和
-参数。它不记录 headers、响应 body 或模型服务内部的二次处理，也不是字节级抓包。
-
-响应侧 `reasoning`/`reasoning_text` 规范化发生在上游响应返回 OpenClaw 的方向，因此不会
-出现在 request-only 的 `wire_trace.jsonl`。它会影响 OpenClaw raw 中 thinking block 的
-`thinkingSignature` 字段名，但不改变 thinking 文本。`trace.jsonl` 也因此不是上游 HTTP
-响应的逐字副本。
-
-多轮 full wire 会重复历史，体积接近 O(N²)，适合审计，不适合大批量常开。
-`cache_trace.jsonl` 保存前会递归脱敏 API key、token、authorization、password 和 secret
-等 JSON 字段。`wire_trace.jsonl` 不扫描 system/user/tool/reasoning 自由文本，必须按敏感
-数据管理。完整捕获边界、对照步骤和失败/重试语义见
-[轨迹产出文件指南](../traces/trajectory-outputs.md#32-session-历史不等于模型请求-context)。
-
-本地代理绑定宿主机 `127.0.0.1`，因此 `actf`、`full`、Chat Completions thinking 规范化和
-`--no-keep-thinking` 当前要求保留默认 `--network host`，且所选 provider 必须提供绝对
-`baseUrl`。
-
-## 6. Web Search
-
-例如使用 Brave Search：
+先在 `examples/env/api.env` 中填写：
 
 ```bash
-export BRAVE_API_KEY=your-key
+BRAVE_API_KEY=实际的-Brave-API-Key
+```
 
+保存后，将环境变量加载到当前 shell：
+
+```bash
+set -a
+source examples/env/api.env
+set +a
+```
+
+运行任务时指定 Brave：
+
+```bash
 roller collect \
   ... \
   --search-provider brave
 ```
 
-`--search-provider` 配置 OpenClaw 的搜索 provider，API Key 仍通过环境变量传入。即使 task 不搜索，某些预构建镜像也可能在启动时校验已有的搜索配置。遇到 unresolved secret 一类错误时，应检查镜像中的 OpenClaw 配置或提供对应变量。
+## 9. 常见问题
 
-## 7. 并行、容器与端口
-
-普通 rollout 使用一个独立容器。User Simulator rollout 同时使用任务 Agent 和 Simulator 两个容器。一个 session 会在多轮期间保持运行，不会每一轮重新创建容器。
-
-OpenClaw gateway 端口按 worker slot 计算：
-
-```text
-gateway_port = --gateway-port + worker_slot × --gateway-port-step
-```
-
-默认起始端口是 `18789`，步长是 `10`。User Simulator 使用从 `--parallel` 开始的另一组 slot。因此 `--parallel 4` 的动态对话最多会同时占用 8 个容器和 8 个 gateway 端口。
-
-使用默认 `--network host` 时，要确保端口范围在 Docker host 上空闲。并行 run 共用同一 Docker daemon 时，建议给它们设置不同的起始端口：
-
-```bash
-roller collect ... --gateway-port 22000 --gateway-port-step 10
-```
-
-(openclaw-cli-flags)=
-## 8. OpenClaw 专属参数
-
-本节只列 OpenClaw 运行时需要特别关注的参数。所有 Harness 共用的任务、并行、重试和输出参数见 [CLI 参数参考](../start/cli-reference.md)。
-
-| 参数 | 默认值 | 用途 |
-| --- | --- | --- |
-| `--docker-image` / `--openclaw-image` | `ROLLER_OPENCLAW_IMAGE` 或内置值 | 覆盖 OpenClaw 镜像，混合 Harness 运行使用专属形式 |
-| `--container-user` | `0` | 一次性 task 容器用户。`image` 使用镜像默认用户 |
-| `--docker-binary` | `docker` | Docker CLI 名称或路径 |
-| `--model-config` | 无 | 自定义 provider/model JSON |
-| `--network` | `host` | 容器网络模式 |
-| `--gateway-port` | `18789` | gateway 起始端口 |
-| `--gateway-port-step` | `10` | worker 之间的端口间隔 |
-| `--gateway-startup-timeout` | `30` | 等待 gateway 就绪的秒数 |
-| `--session-id` | `roller` | OpenClaw session ID 前缀 |
-| `--thinking` | 无 | 全局 OpenClaw 逻辑档位。完整值、模型映射和版本限制见第 5 节 |
-| `--keep-thinking` / `--no-keep-thinking` | 开启 | 是否保留轨迹和请求历史中的 thinking |
-| `--cache-trace` / `--no-cache-trace` | 开启 | 是否记录每次组装的 system prompt。ACTF 固化首个有效值 |
-| `--wire-trace` | `actf` | tools schema / 完整请求体记录模式 |
-| `--search-provider` | 无 | OpenClaw Web Search provider |
-| `--pass-env NAME` | 无 | 增加一个环境变量名，可重复 |
-| `--set-image-model` / `--no-set-image-model` | 开启 | 是否设置 OpenClaw image model |
-| `--keep-container-on-error` | 关闭 | 出错后保留容器以便排查 |
-| `--collect-path` | 无 | Legacy：额外回收容器绝对路径 |
-
-全部参数以当前安装版本为准：
-
-```bash
-roller collect --help
-```
-
-## 9. 运行元数据与安全
-
-Sample provenance 会记录 OpenClaw 版本、镜像及 digest、model ref、使用过的环境变量名称，以及脱敏后的 API base。API base 中的用户名、密码、query 和 fragment 不会进入结果。环境变量值和展开后的 API Key 也不会保存。
-
-`--keep-container-on-error` 适合本地排错，但保留的容器可能含有临时配置、输入或运行环境变量。检查完成后应自行删除容器，不要在共享 Docker host 上长期保留。
-
-## 10. 常见问题
-
-### Docker preflight 失败
+**(1) Docker preflight 失败**
 
 先运行 `docker version`。如果 Docker 使用远程 daemon，确认当前 shell 的 Docker context、`DOCKER_HOST` 和证书配置能够正常连接。
 
-### `model config references missing environment variable`
+**(2) `model config references missing environment variable`**
 
 模型 JSON 中的 `${ENV_NAME}` 没有在当前 shell 中设置，或值为空。加载本地 env 文件后重新运行。
 
-### 模型请求返回 404 或协议错误
+**(3) 模型请求返回 404 或协议错误**
 
 通常是 `baseUrl` 末尾路径或 `api` adapter 不匹配。确认服务端实现的是 Responses API 还是 Chat Completions API。
 
-### gateway 端口冲突
+**(4) gateway 端口冲突**
 
-调整 `--gateway-port`，并确保按照 `parallel × 参与者数量` 预留足够端口。
+如果出现端口已被占用的错误，可以更换 OpenClaw gateway 的起始端口：
 
-### 任务成功回复但 sample 失败
+```bash
+roller collect ... --gateway-port 22000
+```
+
+**(5) 任务成功回复但 sample 失败**
 
 Roller 要求成功 sample 至少具有 OpenClaw raw trace。通常还要求可转换的 ACTF 和标准化 SFT。少数原生附件或多模态内容无法无损投影时，`runtime.trajectory_conversion` 会结构化记录该情况，而不会污染 benchmark score。还应检查输出目录里是否存在被拒绝的符号链接或特殊文件。具体产出条件见 [轨迹产出文件指南](../traces/trajectory-outputs.md)，结果安全规则见 [结果存储](../tasks/task-bundle-and-storage.md#5-输出回收)。

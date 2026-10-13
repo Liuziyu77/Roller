@@ -25,7 +25,7 @@ Pi Harness 支持：
 - 自动压缩。
 - OpenClaw cache trace（Resume 不要求该文件）。
 
-## 2. 镜像准备与首次运行
+## 2. 镜像准备
 
 ```bash
 docker build -t roller-pi:0.85.1 docker/pi
@@ -76,23 +76,27 @@ Thinking 通过 `reasoning_effort` 发送，`off` 映射为 `none`，其他级�
 
 专属参数同时适用于 Pi Agent 和 Simulator。混合运行时可为其他 Harness 指定各自的 API、凭据变量和镜像。Run lock 记录版本、镜像摘要、工具、连接配置与执行上限，Resume 按参与者验证产物。
 
-## 5. 会话、工作区与工具
+## 5. 多模态能力
+
+Pi 启用 `read`、`bash`、`edit`、`write`、`grep`、`find` 和 `ls` 七个原生工具。具备视觉能力的模型和 OpenAI-compatible 服务可以通过 `read` 打开本地图片。图片结果会保留到 raw、ACTF 和多模态 SFT。
+
+图片通过 `files.inputs` 进入工作区。Task 的 `messages[].content` 当前只支持字符串，不能直接写入图片内容块。纯文本模型仍可处理文本和普通文件，但不能完成需要理解图片内容的任务。视频、其他 Pi provider 协议和自定义扩展或插件暂不支持。
+
+## 6. 会话与工作区
 
 每个参与者拥有独立容器和 `PI_CODING_AGENT_DIR`。同一参与者跨轮复用一个原生 `AgentSession`。对话历史和工作区文件持续保留。Pi 的 Bash 每次启动独立 Shell，`export` 和 `cd` 不会跨工具调用持续生效。需要持续状态时应写文件，或在同一条 Bash 命令中完成操作。
 
-启用七个原生工具：`read`、`bash`、`edit`、`write`、`grep`、`find`、`ls`。输入只读挂载。所选模型支持图片时，`read` 的原生图片结果会传给模型，并保留到 raw、ACTF 和多模态 SFT。Context 复制到声明路径。非 skill Context 通过官方 loader 加入原生 system prompt。Skill 文件可按提示读取，不自动注册为 Pi skill。支持 setup、显式环境变量、自定义输出目录、文件回收，以及容器销毁前评分。
-
 自动压缩、会话/模型重试、遥测、远程模型目录更新及自动扩展发现均关闭。Roller 保留 Pi 原生 system prompt，并追加工作区、输出目录和 Context 路径说明。
 
-## 6. 轨迹产物
+输入只读挂载。Context 复制到声明路径，非 skill Context 通过官方 loader 加入原生 system prompt。Skill 文件可按提示读取，不自动注册为 Pi skill。支持 setup、显式环境变量、自定义输出目录、文件回收，以及容器销毁前评分。
+
+## 7. 轨迹与请求记录
 
 `trace.jsonl` 使用 `roller.pi-events/v1`，包含原生事件、模型 context、实际请求及 Roller 轮次边界。ACTF/SFT 使用实际 system prompt 和工具 schema，保留文本、reasoning、调用参数和结果。cache token 单独统计。
 
 空响应、截断、API 错误、超出步数，以及未配对工具调用不会成为成功轨迹。转换器拒绝会改变 system prompt/schema 或丢失非文本内容的轨迹。超时停止容器并回收已生成文件。Pi 不要求 OpenClaw cache trace。
 
-Roller 支持 Pi 的文本与文件任务。模型与 OpenAI-compatible 服务支持图片输入时，也支持通过 `read` 打开本地图片。直接 user-message 图片附件、视频、交互登录、其他 Pi provider 协议、自定义扩展或插件和自动压缩暂不支持。
-
-## 7. 验证
+## 8. 验证
 
 ```bash
 python examples/coverage/suite.py validate --case '*/pi'
@@ -107,13 +111,28 @@ Docker 测试使用本地确定性流式 API 和虚构 Key，执行真实 Pi SDK
 
 完整矩阵见 [Coverage](https://github.com/Liuziyu77/Roller/blob/main/examples/coverage/README.md)。离线配置校验、真实容器测试与外部模型服务验收是不同验证层级。
 
-## 8. 常见问题
+## 9. 常见问题
 
-常见错误：
+**(1) 轨迹未被判定为成功**
 
-- 轨迹未被判定为成功：空响应、截断、API 错误、超出步数或未配对工具调用都会失败，检查 `trace.jsonl` 定位原因。
-- 转换器拒绝轨迹：会改变 system prompt/schema 或丢失非文本内容的轨迹会被拒绝。
-- Bash 状态丢失：Pi 的 Bash 每次启动独立 Shell，`export`/`cd` 不跨调用生效。需要持续状态应写文件或在同一条命令内完成。
-- 长任务超窗：自动压缩已关闭，按实际模型服务调大 `--pi-context-length`。
-- rollout 超时：容器被停止并回收已生成文件，按需调整 `--timeout` 或 `--pi-max-steps`。
-- `--wire-trace full` 无法启动：需要显式 API base 和 `--network host`。
+空响应、截断、API 错误、超出步数或未配对工具调用都会失败，检查 `trace.jsonl` 定位原因。
+
+**(2) 转换器拒绝轨迹**
+
+会改变 system prompt/schema 或丢失非文本内容的轨迹会被拒绝。
+
+**(3) Bash 状态丢失**
+
+Pi 的 Bash 每次启动独立 Shell，`export`/`cd` 不跨调用生效。需要持续状态应写文件或在同一条命令内完成。
+
+**(4) 长任务超窗**
+
+自动压缩已关闭，按实际模型服务调大 `--pi-context-length`。
+
+**(5) rollout 超时**
+
+容器被停止并回收已生成文件，按需调整 `--timeout` 或 `--pi-max-steps`。
+
+**(6) `--wire-trace full` 无法启动**
+
+需要显式 API base 和 `--network host`。
