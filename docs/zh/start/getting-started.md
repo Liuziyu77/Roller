@@ -173,15 +173,30 @@ Viewer 会展示 ACTF 时间线。Inspector 用于查看 system prompt、tools s
 - 理解训练格式：[SFT 数据格式](../traces/sft-format.md)
 - 查全部命令行选项：[CLI 参数参考](cli-reference.md)
 
-## 常见的首次运行问题
+## 10. 常见问题
 
-| 现象 | 检查项 |
-| --- | --- |
-| Docker preflight 失败 | `docker version` 是否能连接 Server。镜像是否已 pull/load |
-| OpenClaw 找不到模型 | `--model` 是否与 JSON 的 `provider/models[].id` 完全对应 |
-| 配置提示环境变量缺失 | 是否 `source examples/env/api.env`。占位符名称是否一致 |
-| `/responses` 返回 404 | 服务只支持 Chat Completions。把 OpenClaw provider 的 `api` 改为 `openai-completions` |
-| 同名 run 已存在 | 原实验使用 `--resume`，新实验更换 `--run-name` |
-| Viewer 没有新 task | 确认传入的是 run 根目录，刷新页面并检查 run `info.json` |
+**(1) Docker preflight 失败**
+
+检查 `docker version` 是否能连接 Server，以及镜像是否已 pull/load。
+
+**(2) OpenClaw 找不到模型**
+
+检查 `--model` 是否与 JSON 的 `provider/models[].id` 完全对应。
+
+**(3) 配置提示环境变量缺失**
+
+检查是否已执行 `source examples/env/api.env`，以及占位符名称是否一致。
+
+**(4) `/responses` 返回 404**
+
+服务可能只支持 Chat Completions。把 OpenClaw provider 的 `api` 改为 `openai-completions`。
+
+**(5) 同名 run 已存在**
+
+原实验使用 `--resume`，新实验更换 `--run-name`。
+
+**(6) Viewer 没有新 task**
+
+确认传入的是 run 根目录，刷新页面并检查 run `info.json`。
 
 OpenClaw Harness 指南还列有更多 OpenClaw 相关错误。

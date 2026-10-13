@@ -17,9 +17,8 @@
 | 查看 Task Agent 交付文件 | `results/` | 只回收 task 声明的输出目录和额外 collect path |
 | 查看动态双方可见对话 | `conversation.json` | 不包含隐藏 reasoning、tool call 和 tool result |
 
-训练使用 SFT，分析使用 ACTF；排查适配器、context 组装或上游行为时，查看 session raw
-和 full wire。本文用 session raw 指 `trace.jsonl`，用 `wire_trace.jsonl` 指请求侧诊断记录。
-Wire trace 的多轮请求重复包含历史，体积接近 O(N²)，不宜直接作为训练集。
+训练时使用 SFT，分析时使用 ACTF。排查 Harness 运行、上下文组装或模型服务行为时，查看原始会话 `trace.jsonl` 和完整请求记录 `wire_trace.jsonl`。
+完整请求记录会在多轮运行中重复保存历史内容，文件会快速增大，不适合直接作为训练数据。
 
 ## 2. 目录结构
 
@@ -595,7 +594,7 @@ Docker image ID、timeout 或轨迹语义选项变化时直接停止，避免不
 
 ## 8. 推荐配置
 
-### 批量生成文本/工具 SFT
+### 8.1 批量生成文本/工具 SFT
 
 ```bash
 roller collect \
@@ -610,7 +609,7 @@ roller collect \
 保留默认 `--cache-trace` 和 `--keep-thinking`。该配置会产出完整 ACTF/SFT，同时删除体积
 较大的诊断中间层。
 
-### 调试 reasoning、compaction 或请求历史
+### 8.2 调试 reasoning、compaction 或请求历史
 
 ```bash
 roller collect \

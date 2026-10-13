@@ -122,11 +122,11 @@ ID，不接受浏览器提交任意宿主机目录；run `info.json` 中逃逸�
 
 ## 8. 常见问题
 
-### 页面中没有新完成的 task
+**(1) 页面中没有新完成的 task**
 
 点击右上角“刷新”。Viewer 不持续轮询磁盘，以免大规模 run 产生额外 I/O。
 
-### 端口已占用
+**(2) 端口已占用**
 
 选择另一个端口：
 
@@ -134,7 +134,7 @@ ID，不接受浏览器提交任意宿主机目录；run `info.json` 中逃逸�
 roller view /path/to/run --port 8766
 ```
 
-### Viewer 报告不是 Roller run
+**(3) Viewer 报告不是 Roller run**
 
 输入路径必须是 run 根目录，而不是 `samples/`、单个 sample 或
 `trace_ACTF.json`。合法根目录包含 run `info.json` 或 `samples/`。
