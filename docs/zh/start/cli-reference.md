@@ -9,7 +9,7 @@
 - `--output` 和 `--run-name` 决定结果保存在哪里。
 - `--dry-run` 可以在不启动容器的情况下检查配置。
 
-当前 checkout 支持的完整参数始终以命令输出为准：
+当前使用的 Roller 版本支持哪些参数，始终以命令输出为准：
 
 ```bash
 roller --help
@@ -129,7 +129,9 @@ roller collect --tasks tasks.jsonl --model provider/model
 
 ### Reasoning 与轨迹
 
-这组参数控制推理档位和轨迹保留方式，不同 Harness 对档位和 wire trace 的支持并不相同。
+`--thinking` 用于设置模型的 reasoning 或 thinking 强度。同一设置也可以写在 task 的 `runtime.thinking` 中。Task 设置优先于命令行，两处都省略时使用 Harness 或模型的默认值。
+
+Roller CLI 可以识别下列逻辑档位，但每个 Harness 只支持其中一部分，并且可能采用不同的默认值和映射方式。具体范围见对应的 Harness 指南。
 
 | 参数 | 默认值 | 用途 |
 | --- | --- | --- |
@@ -137,8 +139,6 @@ roller collect --tasks tasks.jsonl --model provider/model
 | `--thinking-capabilities PATH` | 未设置 | 加载带版本的模型/端点能力声明，在运行前校验档位 |
 | `--keep-thinking` / `--no-keep-thinking` | 开启 | 决定 ACTF 和 SFT 是否导出可见 reasoning |
 | `--wire-trace MODE` | `actf` | 选择 `off`、`actf` 或 `full` 请求记录模式 |
-
-CLI 可以解析以下 thinking 逻辑值。每个 Harness 实际支持的子集、默认值和映射见对应指南。
 
 ```text
 off | minimal | low | medium | high | xhigh | adaptive | max | ultra
@@ -204,7 +204,7 @@ Wire trace 用于决定是否记录模型服务的实际 HTTP 请求，常规采
 | DeepSeek | {ref}`DeepSeek Harness 指南 <deepseek-cli-flags>` |
 | Pi Agent | {ref}`Pi Agent Harness 指南 <pi-cli-flags>` |
 
-需要核对当前 checkout 的完整参数列表时，运行：
+需要核对当前使用的 Roller 版本支持的完整参数列表时，运行：
 
 ```bash
 roller collect --help

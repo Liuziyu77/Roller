@@ -451,7 +451,7 @@ result。需要训练或分析任一参与方时，应使用各自的 raw/ACTF/S
 OpenClaw 的 `off` 或 `actf` 降级后，如果轨迹实际调用了工具，SFT 校验会因缺少工具 schema
 失败；没有工具调用时，SFT 的 `tools` 为 `[]`。Claude Code 保留原有 native schema 回退。
 Codex 不推导 schema：未捕获（包括 `off`、WebSocket、未配置 API 地址）、工具定义变化或
-programmatic `additional_tools` 都会使 SFT 不可用，详见 [Codex 工具捕获](../harnesses/codex-configuration.md#8-轨迹产出)。
+programmatic `additional_tools` 都会使 SFT 不可用，详见 [Codex 工具捕获](../harnesses/codex-configuration.md#9-轨迹与请求记录)。
 
 ### 6.2 Thinking
 
@@ -462,8 +462,8 @@ programmatic `additional_tools` 都会使 SFT 不可用，详见 [Codex 工具�
 
 `--thinking LEVEL` 设置 Harness/模型请求的推理档位；能否保存 reasoning 文本取决于服务的返回内容。GPT 原生
 effort、开源模型 profile 和 OpenClaw 镜像限制见
-[Thinking 配置](../harnesses/openclaw-configuration.md#5-thinkingsystem-prompt-与-wire-trace)；Claude Code
-映射见 [Thinking 与 effort](../harnesses/claude-code-configuration.md#5-thinking-与-effort)。
+[Thinking 配置](../harnesses/openclaw-configuration.md#6-thinking-配置)；Claude Code
+映射见 [Thinking 配置](../harnesses/claude-code-configuration.md#6-thinking-配置)。
 后端只报告 reasoning token、却不返回 reasoning summary/content 时，ACTF/SFT 没有可保存
 的 `reasoning_content`。GPT 的压缩 summary 会原样进入该字段，encrypted reasoning
 不会进入 SFT。

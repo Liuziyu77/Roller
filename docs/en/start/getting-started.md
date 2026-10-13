@@ -170,7 +170,7 @@ The Viewer shows the ACTF timeline. Inspector is for the system prompt, tools sc
 ## 9. Next steps
 
 - Write your own data: [Task format](../tasks/task-format.md)
-- Configure reasoning: [OpenClaw Harness guide](../harnesses/openclaw-configuration.md#5-thinking-system-prompt-and-wire-trace)
+- Configure reasoning: [OpenClaw Harness guide](../harnesses/openclaw-configuration.md#6-thinking-configuration)
 - Understand the training format: [SFT data format](../traces/sft-format.md)
 - See every CLI option: [CLI reference](cli-reference.md)
 

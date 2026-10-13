@@ -14,7 +14,8 @@ Claude Code Harness 支持：
 - 明文 `thinking/reasoning/analysis`、文本、多个 `tool_use`、`tool_result` 和 usage 转换。
 - `ACTF_v1.0`、单条 SFT、run 级 `sft.jsonl` 和 Viewer。
 - `--wire-trace actf|full|off`。
-- `--capture-calls`（兼容 `--claude-capture-calls`）：可选的完整 HTTP 调用捕获及主、子原生文件独立保存，需要 Anthropic 端点和 host 网络。
+- `--capture-calls`（兼容 `--claude-capture-calls`）：可选的主、子代理模型调用及关系采集，需要 Anthropic 端点和 host 网络。
+- 通过原生 `Read` 工具打开本地图片，并保留多模态轨迹。
 - 动态 User Simulator 和 Task Agent。两者可使用不同 model，Simulator 通过
   `user_simulator.harness` 独立选择 Harness。
 - Claude Code `settings.json`、`--max-turns`、`MAX_THINKING_TOKENS` 和 permission mode。
@@ -22,6 +23,7 @@ Claude Code Harness 支持：
 当前不支持：
 
 - 只有 OpenAI Chat Completions/Responses、没有 Anthropic `/v1/messages` 的 API。
+- Task `messages` 中直接携带图片内容块。
 - API 未以明文返回的内部 reasoning。Roller 只导出服务实际返回的可见 thinking 或 summary。
 
 ### Subagent 收集
@@ -160,8 +162,13 @@ curl -sS -X POST 'http://host:port/v1/messages' \
 
 单一 Claude Code 运行可以使用通用参数形式。混合 Harness 运行应使用 `--claude-code-image`、`--claude-api-base` 和 `--claude-api-key-env` 等专属形式，避免把设置应用到其他参与者。
 
+## 5. 多模态能力
 
-## 5. Thinking 与 effort
+Claude Code Harness 同时支持纯文本模型和具备视觉能力的模型。图片通过 `files.inputs` 进入工作区，Claude Code 可以使用原生 `Read` 工具打开本地图片。图片工具结果会保留到 raw、ACTF 和多模态 SFT，其中 SFT 使用 `<image>` 占位符和顶层 `images` 保存图片。
+
+视觉任务还要求所选模型和 Anthropic-compatible API 服务支持图片内容块。Task 的 `messages[].content` 当前只支持字符串，不能直接写入图片内容块。纯文本模型可以继续处理文本和普通文件，但不能完成需要理解图片内容的任务。
+
+## 6. Thinking 配置
 
 `--thinking LEVEL` 由 Claude Code Harness 映射到 `claude --effort LEVEL`：
 
@@ -176,7 +183,7 @@ curl -sS -X POST 'http://host:port/v1/messages' \
 | `ultra` | `ultracode` | Roller 逻辑名到固定 CLI 的名称映射 |
 
 `off/none`、`minimal` 和 `adaptive` 没有对应的 Claude Code CLI 档位，因此会在容器启动
-前拒绝，不会静默降级。Task 的 `runtime.thinking` 优先于命令行默认值。
+前拒绝，不会静默降级。
 
 还可以设置显式 thinking token 上限：
 
@@ -196,10 +203,6 @@ ACTF/SFT 的 `reasoning_content`。以下情况不会产生可训练明文：
 
 Roller 不根据 token 数或最终文本推测隐藏 reasoning。`--no-keep-thinking` 会清空 ACTF/SFT
 中的 reasoning，但不修改 raw session，也不修改后续 `--continue` 使用的 Claude Code context。
-
-## 6. Reasoning 的保存边界
-
-Roller 只保存服务实际返回的可见 thinking 或 summary。`--keep-thinking` 默认保留这些文本。`--no-keep-thinking` 只清空 ACTF/SFT reasoning，raw 不变。
 
 ## 7. Claude settings 与权限
 
@@ -225,7 +228,7 @@ IS_SANDBOX=1
 也可以按固定镜像支持的值选择其他 permission mode。`--claude-max-turns` 限制每次预定义
 user message 内 Claude Code 的 agent turns。它不等于 task 的 `messages` 数量。
 
-## 8. Context、工作区与多轮
+## 8. 会话与工作区
 
 Claude Code 容器工作目录是 `/roller/workspace`：
 
@@ -239,7 +242,7 @@ Claude Code 容器工作目录是 `/roller/workspace`：
 预定义 `messages` 的第一条启动新 session，后续消息使用 `--continue`。每个 rollout 有独立
 Docker 容器和 `$CLAUDE_CONFIG_DIR`，不会读取宿主机的 Claude 登录信息、settings 或 session。
 
-## 9. 轨迹产物
+## 9. 轨迹与请求记录
 
 默认 sample 结构与其他 Harness 一致：
 
@@ -300,7 +303,7 @@ Claude 原生 `tool_use` 转为 OpenAI-compatible function call，`tool_result` 
 消息。如果 wire 捕获了完整 Anthropic tool schema，会把 `input_schema` 标准化为
 `function.parameters`。否则根据实际调用参数生成 permissive schema。
 
-## 10. Wire trace
+### Wire trace
 
 使用自定义 `--api-base` 时，Claude Code 默认的 `--wire-trace actf` 会启动 rollout-local
 反向代理，临时捕获首个 system prompt、完整 tools schema 和非消息请求参数。生成 ACTF/SFT
@@ -322,7 +325,7 @@ messages、tools、thinking/output config 和 sampling 参数。它记录的是�
 `system_prompt` 为空，tools schema 只能根据实际调用推导。Wire 代理需要容器使用默认
 `--network host`。
 
-## 11. 验证与常见问题
+## 10. 验证
 
 实现阶段已用 Anthropic endpoint 和 Claude Code 2.1.207 做过以下协议探测，正式镜像固定为
 2.1.222：
@@ -333,17 +336,30 @@ messages、tools、thinking/output config 和 sampling 参数。它记录的是�
 - 第二条 CLI 调用使用 `--continue` 后复用同一 session。
 - 合并后的 ACTF/SFT 保留两条 user message、thinking、三个工具动作和最终回复。
 
-常见错误：
+## 11. 常见问题
 
-- `Invalid token`：检查 `--api-key-env` 指向的宿主机变量。
-- `No available channel for model`：模型虽然出现在列表中，但当前账号/分组没有可用路由。
-- URL 出现 `/v1/v1/messages`：不要手工把 `ANTHROPIC_BASE_URL` 传入容器，改用 Roller
-  `--api-base` 让它规范化。
-- `invalid beta flag`：使用显式 `--api-base` 和默认 `--wire-trace actf/full`，
-  Roller 会仅在 upstream 转发时移除 Claude SDK 的 `beta=true` query 和
-  `anthropic-beta` header。
-- model 拒绝 `budget_tokens` 或要求 adaptive thinking：移除
-  `--claude-max-thinking-tokens`，只使用该模型支持的 `--thinking` effort。
-- ACTF 有 thinking token 但 `reasoning_content` 为空：服务没有返回明文，不是转换器丢失。
+**(1) `Invalid token`**
+
+检查 `--api-key-env` 指向的宿主机变量。
+
+**(2) `No available channel for model`**
+
+模型虽然出现在列表中，但当前账号/分组没有可用路由。
+
+**(3) URL 出现 `/v1/v1/messages`**
+
+不要手工把 `ANTHROPIC_BASE_URL` 传入容器，改用 Roller `--api-base` 让它规范化。
+
+**(4) `invalid beta flag`**
+
+使用显式 `--api-base` 和默认 `--wire-trace actf/full`， Roller 会仅在 upstream 转发时移除 Claude SDK 的 `beta=true` query 和 `anthropic-beta` header。
+
+**(5) model 拒绝 `budget_tokens` 或要求 adaptive thinking**
+
+移除 `--claude-max-thinking-tokens`，只使用该模型支持的 `--thinking` effort。
+
+**(6) ACTF 有 thinking token 但 `reasoning_content` 为空**
+
+服务没有返回明文，不是转换器丢失。
 
 统一字段与适配器边界见 [Subagent 采集协议](../traces/subagent-capture-protocol.md)。

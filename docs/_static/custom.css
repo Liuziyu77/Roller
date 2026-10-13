@@ -3,6 +3,45 @@
     max-width: 1200px;
 }
 
+/* Keep wrapped text compact while giving new content sections clear separation. */
+.rst-content p,
+.rst-content li,
+.rst-content dt,
+.rst-content dd,
+.rst-content table.docutils th,
+.rst-content table.docutils td {
+    line-height: 24px;
+}
+
+.rst-content p {
+    margin-bottom: 1.25rem;
+}
+
+.rst-content h1 {
+    line-height: 1.2;
+    margin-bottom: 1.5rem;
+}
+
+.rst-content h2 {
+    line-height: 1.25;
+    margin-top: 2.5rem;
+    margin-bottom: 1.25rem;
+}
+
+.rst-content h3 {
+    line-height: 1.3;
+    margin-top: 2rem;
+    margin-bottom: 1.25rem;
+}
+
+.rst-content h4,
+.rst-content h5,
+.rst-content h6 {
+    line-height: 1.35;
+    margin-top: 1.5rem;
+    margin-bottom: 1.25rem;
+}
+
 /* Avoid white flashes and scroll-anchoring jumps during nav switches. */
 html,
 body,

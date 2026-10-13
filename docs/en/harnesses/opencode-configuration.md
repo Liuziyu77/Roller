@@ -2,7 +2,7 @@
 
 This page covers only OpenCode-specific images, the API, sessions, and troubleshooting. Roller runs pinned [OpenCode](https://opencode.ai/docs/cli/) **1.18.30** in a disposable Docker container, using native noninteractive runs, session continuation, and exports. For Task fields see [Task format reference](../tasks/task-format.md). For output semantics shared by all Harnesses see [Trajectory output file guide](../traces/trajectory-outputs.md).
 
-## 1. Supported scope
+## 1. Scope
 
 The OpenCode Harness supports:
 
@@ -23,7 +23,7 @@ Not currently supported:
 - custom provider SDKs, MCP, and persistent memory. Subagents require `--capture-calls`.
 - automatic compaction (long tasks need enough configured context. Exceeding the window fails).
 
-## 2. Image preparation and first run
+## 2. Image preparation
 
 ```bash
 docker build -t roller-opencode:1.18.30 docker/opencode
@@ -72,13 +72,21 @@ This table lists OpenCode-specific runtime flags only. See section 3 for API add
 
 Dedicated options apply to both participants. The run lock includes the binary version, image digest, endpoint, key variable name, tools, token limits, step limit, and export settings. Credentials are read during execution and are not included in public configuration.
 
-## 5. Sessions and workspace
+## 5. Multimodal capabilities
+
+OpenCode can use `bash`, `read`, `write`, `edit`, `apply_patch`, `glob`, and `grep`. Vision-capable models and services can open local images through `read`. For a text-only model, disable the image-input declaration with `--no-opencode-vision`.
+
+Images enter the workspace through `files.inputs`, and `read` produces image attachments. Image results are preserved in raw, ACTF, and multimodal SFT. Task `messages[].content` currently accepts strings only and cannot contain image blocks directly.
+
+## 6. Sessions and workspace
 
 Each participant gets an independent container and HOME/XDG directories. Inputs are mounted read-only. Context files are copied to declared paths and listed in the prompt. Setup, selected environment variables, output collection, and in-container grading use the shared Roller task contract.
 
-The adapter permits bash, read, write, edit, apply_patch, glob, and grep. Native model selection determines which tools are exposed. Each user turn resumes the same native session and workspace with a new CLI process. Background process handles do not survive. Auto-sharing, updates, model catalog refresh, LSP, formatters, compaction, pruning, and implicit project configuration are disabled. Context/skill coverage checks file accessibility. MCP and network tools remain outside scope. Subagents are enabled explicitly with `--capture-calls`.
+Each user turn resumes the same native session and workspace with a new CLI process. Background process handles do not survive. Each participant uses isolated HOME/XDG directories and does not read host OpenCode configuration.
 
-## 6. Trace outputs and Resume
+Auto-sharing, updates, model catalog refresh, LSP, formatters, compaction, and tool-result pruning are disabled. MCP and network tools remain outside scope. Subagents are enabled explicitly with `--capture-calls`; Context and skill coverage only checks that the relevant files are accessible.
+
+## 7. Trajectories and request recording
 
 A local plugin records the serialized provider request without rewriting it. `trace.jsonl` contains requests, native message/part updates, and session exports. ACTF merges native IDs and captures actual tool schemas, visible reasoning, tool calls, and results. Inline image attachments are retained as image blocks and exported to SFT. Bounded attachment metadata and a content hash remain in ACTF details for audit. Non-image attachments keep the bounded summary behavior.
 
@@ -86,7 +94,7 @@ Incomplete or empty replies, API errors, truncated replies, invalid journals, an
 
 OpenCode emits no OpenClaw cache trace. Resume validates each participant separately. Full mode still requires HTTP traces, and `capture: none` remains non-reusable.
 
-## 7. Validation
+## 8. Validation
 
 ```bash
 python examples/coverage/suite.py validate --case '*/opencode'
@@ -98,30 +106,42 @@ ROLLER_OPENCODE_DOCKER_TEST=1 PYTHONPATH=src \
 
 Docker tests use a deterministic local streaming API and a fake key while executing real OpenCode tools. No external model charges are incurred. The suite adds 204 input tasks and 36 simulator tasks, four per group. Select 200 nonvision inputs with `--case '*/opencode' --exclude-case 'vision/*'`. Select the nine relevant pairings with `--case 'simulators/pair/opencode--*' --case 'simulators/pair/*--opencode'`. Overlaps are deduplicated. See the {download}`coverage guide <../../../examples/coverage/README.en.md>`.
 
-## 8. Common issues
+## 9. Common issues
 
-Common errors:
+**(1) The endpoint does not support streaming or tool calls**
 
-- the endpoint does not support streaming or tool calls: the initial adapter requires streaming Chat Completions with tools. Use a compatible service.
-- a trajectory fails: incomplete sessions, empty replies, API errors, truncated replies, missing or changed tool schemas, and corrupt JSONL all fail. Inspect raw to locate the cause.
-- long tasks exceed the context window: automatic compaction is disabled. Raise `--opencode-context-length` to match the real service capability.
-- rollout timeout: the container is stopped and available artifacts recovered. Adjust `--timeout` or `--opencode-max-steps` as needed.
-- `--wire-trace full` fails to start: an explicit API base and host networking are required.
+The initial adapter requires streaming Chat Completions with tools. Use a compatible service.
 
+**(2) A trajectory fails**
 
-## 9. Subagent call capture
+Incomplete sessions, empty replies, API errors, truncated replies, missing or changed tool schemas, and corrupt JSONL all fail. Inspect raw to locate the cause.
+
+**(3) Long tasks exceed the context window**
+
+Automatic compaction is disabled. Raise `--opencode-context-length` to match the real service capability.
+
+**(4) Rollout times out**
+
+The container is stopped and available artifacts recovered. Adjust `--timeout` or `--opencode-max-steps` as needed.
+
+**(5) `--wire-trace full` fails to start**
+
+An explicit API base and host networking are required.
+
+## 10. Subagent call capture
 
 `--capture-calls` uses the same call/participant/relation schemas as Claude Code.
-It requires an explicit endpoint, host networking and wire tracing. Full HTTP
-requests/responses and native root/child sessions are retained separately. Root
+It requires an explicit endpoint, host networking, and wire tracing. A successful
+capture retains `manifest.json`, `calls.jsonl`, and `relations.jsonl`; raw HTTP
+and native evidence is retained on failure or with `--capture-debug full`. Root
 ACTF/SFT excludes child messages and child request configurations.
 
 A per-request native session header proves ownership; the local proxy removes
 it before forwarding. Capture mode restores Explore's write/edit/apply_patch/task/skill
 restrictions and applies the step limit to general/explore children. Bash exit
 codes can exist only in native metadata while the model receives `(no output)`;
-both facts are preserved without rewriting context. Background captures are
-partial; background drain is not implemented.
+both facts are preserved without rewriting context. Background captures remain
+partial because background drain is not implemented.
 
 See the [capture protocol (Chinese)](../../zh/traces/subagent-capture-protocol.md)
 for adapter boundaries and integrity rules.

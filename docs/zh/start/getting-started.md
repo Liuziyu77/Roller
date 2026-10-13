@@ -169,7 +169,7 @@ Viewer 会展示 ACTF 时间线。Inspector 用于查看 system prompt、tools s
 ## 9. 下一步
 
 - 写自己的数据：[Task 格式参考](../tasks/task-format.md)
-- 配置 reasoning：[OpenClaw Harness 指南](../harnesses/openclaw-configuration.md#5-thinkingsystem-prompt-与-wire-trace)
+- 配置 reasoning：[OpenClaw Harness 指南](../harnesses/openclaw-configuration.md#6-thinking-配置)
 - 理解训练格式：[SFT 数据格式](../traces/sft-format.md)
 - 查全部命令行选项：[CLI 参数参考](cli-reference.md)
 

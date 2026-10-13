@@ -71,8 +71,13 @@ class HermesTraceTests(unittest.TestCase):
         calls = events[2]["message"]["tool_calls"]
         calls.append({**deepcopy(calls[0]), "id": "call-2"})
         events.insert(3, event("tool", "SECOND", tool_call_id="call-2"))
-        sft = actf_to_sft(hermes_events_to_actf(events))
-        self.assertEqual([m["tool_call_id"] for m in sft["messages"] if m["role"] == "tool"], ["call-2", "call-1"])
+        trajectory = hermes_events_to_actf(events)
+        original = deepcopy(trajectory)
+        sft = actf_to_sft(trajectory)
+        results = [m for m in sft["messages"] if m["role"] == "tool"]
+        self.assertEqual([m["tool_call_id"] for m in results], ["call-1", "call-2"])
+        self.assertEqual([m["content"] for m in results], ["TOKEN", "SECOND"])
+        self.assertEqual(trajectory, original)
 
     def test_invalid_native_tools_are_rejected(self):
         for mutation in ("missing_schema", "bad_json", "nonobject", "duplicate_call", "orphan_result"):

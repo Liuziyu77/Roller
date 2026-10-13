@@ -2,7 +2,7 @@
 
 This guide covers Claude Code-specific images, the Anthropic Messages API, thinking, native session, and troubleshooting. For Task fields, see [Task format reference](../tasks/task-format.md). For the outputs shared by all Harnesses, see [Trajectory output file guide](../traces/trajectory-outputs.md).
 
-## 1. Supported scope
+## 1. Scope
 
 The Claude Code Harness supports:
 
@@ -14,8 +14,9 @@ The Claude Code Harness supports:
 - conversion of plaintext `thinking/reasoning/analysis`, text, multiple `tool_use`, `tool_result`, and usage.
 - `ACTF_v1.0`, one SFT record, run-level `sft.jsonl`, and Viewer.
 - `--wire-trace actf|full|off`.
-- `--capture-calls` (also `--claude-capture-calls`): optional full HTTP call capture and independent
-  native main/subagent files. Requires an Anthropic endpoint and host networking.
+- `--capture-calls` (also `--claude-capture-calls`): optional capture of main/subagent
+  model calls and their relations. Requires an Anthropic endpoint and host networking.
+- local-image viewing through the native `Read` tool, with multimodal trajectory export.
 - dynamic User Simulator and Task Agent. The two can use different models, and the Simulator
   selects its Harness independently via `user_simulator.harness`.
 - Claude Code `settings.json`, `--max-turns`, `MAX_THINKING_TOKENS`, and permission mode.
@@ -23,6 +24,7 @@ The Claude Code Harness supports:
 Not currently supported:
 
 - APIs that only have OpenAI Chat Completions/Responses and no Anthropic `/v1/messages`.
+- image blocks embedded directly in Task `messages`.
 - internal reasoning that the API does not return as plaintext. Roller exports only visible thinking or summaries returned by the service.
 
 ### Subagent collection
@@ -172,8 +174,13 @@ This table lists Claude Code-specific runtime flags only. See section 3 for API 
 
 A single Claude Code run can use the shared flag forms. In a mixed-Harness run, use dedicated forms such as `--claude-code-image`, `--claude-api-base`, and `--claude-api-key-env` so the settings apply only to the intended participant.
 
+## 5. Multimodal capabilities
 
-## 5. Thinking and effort
+The Claude Code Harness supports both text-only and vision-capable models. Images enter the workspace through `files.inputs`, and Claude Code can open local images with its native `Read` tool. Image tool results are preserved in raw, ACTF, and multimodal SFT, where SFT uses `<image>` placeholders and the top-level `images` field.
+
+Vision tasks also require the selected model and Anthropic-compatible API service to support image content blocks. Task `messages[].content` currently accepts strings only and cannot contain image blocks directly. Text-only models can continue to process text and ordinary files, but they cannot complete tasks that require understanding image content.
+
+## 6. Thinking configuration
 
 The Claude Code Harness maps `--thinking LEVEL` to `claude --effort LEVEL`:
 
@@ -188,7 +195,7 @@ The Claude Code Harness maps `--thinking LEVEL` to `claude --effort LEVEL`:
 | `ultra` | `ultracode` | Mapping from the Roller logical name to the pinned CLI name |
 
 `off/none`, `minimal`, and `adaptive` have no matching Claude Code CLI level, so they are rejected before
-container startup rather than mapped to another level. The task's `runtime.thinking` wins over the command-line default.
+container startup rather than mapped to another level.
 
 You can also set an explicit thinking token cap:
 
@@ -208,10 +215,6 @@ ACTF/SFT `reasoning_content`. The following cases produce no trainable plaintext
 
 Roller does not infer hidden reasoning from token counts or final text. `--no-keep-thinking` clears reasoning in ACTF/SFT
 but does not modify the raw session or the Claude Code context used by later `--continue`.
-
-## 6. Reasoning retention boundary
-
-Roller saves only visible thinking or summaries returned by the service. `--keep-thinking` preserves that text by default. `--no-keep-thinking` clears ACTF/SFT reasoning and leaves raw unchanged.
 
 ## 7. Claude settings and permissions
 
@@ -237,7 +240,7 @@ IS_SANDBOX=1
 You can choose another permission mode supported by the pinned image. `--claude-max-turns` limits Claude Code agent turns inside each predefined
 user message. It is not the same as the task's `messages` count.
 
-## 8. Context, workspace, and multi-turn
+## 8. Sessions and workspace
 
 The Claude Code container working directory is `/roller/workspace`:
 
@@ -251,7 +254,7 @@ The Claude Code container working directory is `/roller/workspace`:
 The first predefined `messages` item starts a new session. Later messages use `--continue`. Each rollout has its own
 Docker container and `$CLAUDE_CONFIG_DIR` and does not read host Claude login state, settings, or sessions.
 
-## 9. Trajectory outputs
+## 9. Trajectories and request recording
 
 The default sample layout matches the other Harnesses:
 
@@ -313,7 +316,7 @@ Native Claude `tool_use` becomes an OpenAI-compatible function call. `tool_resul
 message. If wire captured a complete Anthropic tool schema, `input_schema` is normalized to
 `function.parameters`. Otherwise a permissive schema is generated from the actual call arguments.
 
-## 10. Wire trace
+### Wire trace
 
 When a custom `--api-base` is set, Claude Code's default `--wire-trace actf` starts a rollout-local
 reverse proxy, temporarily capturing the first system prompt, the full tools schema, and non-message request parameters. After ACTF/SFT
@@ -335,7 +338,7 @@ records the actual forwarded target, and `dropped_request_headers` records only 
 `system_prompt` is empty and the tools schema can only be inferred from actual calls. The wire proxy requires the container to use the default
 `--network host`.
 
-## 11. Validation and common issues
+## 10. Validation
 
 During implementation the following protocol probes were run against an Anthropic endpoint and Claude Code 2.1.207. The production image is pinned at
 2.1.222:
@@ -346,15 +349,28 @@ During implementation the following protocol probes were run against an Anthropi
 - a second CLI invocation with `--continue` reuses the same session.
 - the merged ACTF/SFT keep two user messages, thinking, three tool actions, and the final reply.
 
-Common errors:
+## 11. Common issues
 
-- `Invalid token`: check the host variable pointed to by `--api-key-env`.
-- `No available channel for model`: the model appears in the list, but the current account/group has no available route.
-- URL shows `/v1/v1/messages`: do not pass `ANTHROPIC_BASE_URL` into the container by hand. Use Roller's
-  `--api-base` so it can normalize.
-- `invalid beta flag`: use an explicit `--api-base` and the default `--wire-trace actf/full`.
-  Roller removes the Claude SDK `beta=true` query and
-  `anthropic-beta` header only when forwarding upstream.
-- the model rejects `budget_tokens` or requires adaptive thinking: remove
-  `--claude-max-thinking-tokens` and use only a `--thinking` effort that model supports.
-- ACTF has thinking tokens but `reasoning_content` is empty: the service did not return plaintext. The converter did not drop it.
+**(1) `Invalid token`**
+
+check the host variable pointed to by `--api-key-env`.
+
+**(2) `No available channel for model`**
+
+the model appears in the list, but the current account/group has no available route.
+
+**(3) URL shows `/v1/v1/messages`**
+
+do not pass `ANTHROPIC_BASE_URL` into the container by hand. Use Roller's `--api-base` so it can normalize.
+
+**(4) `invalid beta flag`**
+
+use an explicit `--api-base` and the default `--wire-trace actf/full`. Roller removes the Claude SDK `beta=true` query and `anthropic-beta` header only when forwarding upstream.
+
+**(5) The model rejects `budget_tokens` or requires adaptive thinking**
+
+remove `--claude-max-thinking-tokens` and use only a `--thinking` effort that model supports.
+
+**(6) ACTF has thinking tokens but `reasoning_content` is empty**
+
+the service did not return plaintext. The converter did not drop it.
