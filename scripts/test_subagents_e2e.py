@@ -160,13 +160,13 @@ def main():
     parser.add_argument('--capture-debug', choices=['off', 'on-error', 'full'], default='on-error')
     parser.add_argument('--api-base',required=True)
     parser.add_argument('--api-key-env',required=True)
-    parser.add_argument('--model', help='default: gpt-5.5 for Codex, claude-opus-5 otherwise')
+    parser.add_argument('--model', help='default: gpt-5.5 for Codex/OpenClaw, claude-opus-5 otherwise')
     parser.add_argument('--harness',choices=HARNESS_NAMES,default='claude-code')
     parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--cases',nargs='+',choices=list(CASES),default=list(CASES))
     parser.add_argument('--max-output-tokens', type=int, default=4096, help='OpenClaw model output budget')
     parser.add_argument('--thinking', help='explicit reasoning effort for this test run')
-    parser.add_argument('--openclaw-api', choices=['openai-completions', 'openai-responses'], default='openai-completions')
+    parser.add_argument('--openclaw-api', choices=['openai-completions', 'openai-responses'], default='openai-responses')
     parser.add_argument('--gateway-port', type=int, default=18789, help='OpenClaw gateway port; use distinct ports for independent concurrent test runs')
     parser.add_argument('--check-followup', action='store_true', help='add a second user turn after delegation to verify native root-thread resume')
     parser.add_argument('--disable-experimental-betas',action='store_true',help='use Claude native compatibility setting for gateways rejecting beta request fields')
@@ -175,7 +175,7 @@ def main():
         os.environ['CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS']='1'
     if not os.environ.get(args.api_key_env):
         parser.error('credential environment variable is empty')
-    args.model = args.model or ('gpt-5.5' if args.harness == 'codex' else 'claude-opus-5')
+    args.model = args.model or ('gpt-5.5' if args.harness in {'codex', 'openclaw'} else 'claude-opus-5')
     args.output.mkdir(parents=True,exist_ok=True)
     results=[]
     quota_exhausted = False

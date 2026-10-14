@@ -113,8 +113,11 @@ class OpenCodeDockerTests(unittest.TestCase):
                 self.assertTrue((sample / "wire_trace.jsonl").is_file())
                 native_requests = [json.loads(line)["body"] for line in raw.splitlines()
                                    if json.loads(line).get("type") == "request"]
-                wire_requests = [json.loads(line)["body"] for line in
-                                 (sample / "wire_trace.jsonl").read_text().splitlines()]
+                wire_events = [json.loads(line) for line in
+                               (sample / "wire_trace.jsonl").read_text().splitlines()]
+                wire_requests = [event["body"] for event in wire_events
+                                 if event.get("method") == "POST"
+                                 and event.get("path", "").split("?", 1)[0].rstrip("/").endswith("/chat/completions")]
                 self.assertEqual(native_requests, wire_requests)
                 self.assertEqual(native_requests, requests)
                 self.assertIn("You are running a Roller task", sft["messages"][0]["content"])
