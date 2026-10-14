@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import shutil
 import tempfile
 import unittest
@@ -56,6 +57,24 @@ class CaptureTests(unittest.TestCase):
         write_jsonl(directory / "native/a.jsonl",[e for e in native if e['agentId']=='a'])
         write_jsonl(directory / "native/b.jsonl",[e for e in native if e['agentId']=='b'])
         return directory, native
+
+    def test_invalid_call_state_is_rejected_even_with_valid_file_hashes(self):
+        for field in ("execution_status", "capture_status", "export_status", "identity_status"):
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as tmp:
+                base = Path(tmp)
+                directory, _ = self.make_capture(base)
+                finalize_claude_capture(directory, execution_status="ok", debug_retention="full")
+                calls = read_jsonl(directory / "calls.jsonl")
+                calls[0][field] = "compelete"
+                write_jsonl(directory / "calls.jsonl", calls)
+                manifest_path = directory / "manifest.json"
+                manifest = json.loads(manifest_path.read_text())
+                next(item for item in manifest["files"] if item["path"] == "calls.jsonl")["sha256"] = hashlib.sha256(
+                    (directory / "calls.jsonl").read_bytes()).hexdigest()
+                manifest_path.write_text(json.dumps(manifest))
+                with self.assertRaisesRegex(ValueError, "invalid capture call state"):
+                    validate_capture(base, {"manifest": "capture/attempt-0001/manifest.json",
+                                            "capture_status": "complete"})
 
     def test_parallel_identical_prompts_are_attributed_by_response_id(self):
         with tempfile.TemporaryDirectory() as tmp:

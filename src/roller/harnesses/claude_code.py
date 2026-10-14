@@ -16,8 +16,7 @@ from typing import Any, Mapping, Sequence
 from urllib.parse import urlsplit, urlunsplit
 
 from roller.artifacts import ArtifactCollectionResult, collect_output_directory
-from roller.capture import CallRecorder
-from roller.claude_capture import finalize_claude_capture
+from roller.capture_runtime import CaptureRuntime
 from roller.claude_code_actf import convert_claude_code_trace
 from roller.harnesses.base import Harness, InteractiveHarness, InteractiveSession, TurnResult
 from roller.harnesses.docker import DockerRuntime, remove_container
@@ -231,21 +230,18 @@ class ClaudeCodeHarness(InteractiveHarness):
 
     def _start_wire_proxy(self, output_dir: Path, attempt: int = 1) -> None:
         self._wire_proxy = None
-        self._capture_recorder = None
+        self.capture = None
         if self.config.wire_trace_mode == "off" or not self.config.api_base:
             return
         log_path = output_dir / "wire_trace.jsonl"
         log_path.unlink(missing_ok=True)
         if self.config.capture_calls:
-            directory = output_dir / "capture" / f"attempt-{attempt:04d}"
-            if directory.exists():
-                shutil.rmtree(directory)
-            self._capture_recorder = CallRecorder(directory)
+            self.capture = CaptureRuntime(output_dir, attempt, "claude-code", self.config.capture_debug)
         self._wire_proxy = WireTraceProxy(
             self.config.api_base,
             log_path,
             mode="full" if self.config.wire_trace_mode == "full" or self.config.capture_calls else "tools",
-            capture_recorder=self._capture_recorder,
+            capture_recorder=self.capture.recorder if self.capture else None,
             # Claude Code 2.1.222 uses an SDK-internal ``?beta=true`` route.
             # Anthropic-compatible gateways commonly implement the stable
             # Messages path but reject this transport-only query flag.
@@ -260,7 +256,8 @@ class ClaudeCodeHarness(InteractiveHarness):
         proxy = self._wire_proxy
         try:
             proxy.stop()
-            recorder = getattr(self, "_capture_recorder", None)
+            capture = getattr(self, "capture", None)
+            recorder = capture.recorder if capture else None
             if recorder is not None:
                 recorder.seal()
             if proxy.log_path.is_file():
@@ -610,14 +607,14 @@ class ClaudeCodeHarness(InteractiveHarness):
                 files.extend(sorted(path for path in sidechain_dir.rglob("*.jsonl") if not path.is_symlink()))
             if self.config.capture_calls:
                 from roller.storage import atomic_write_json
-                native_dir = output_dir / "capture" / f"attempt-{attempt:04d}" / "native"
+                native_dir = self.capture.recorder.directory / "native"
                 native_dir.mkdir(parents=True, exist_ok=True)
                 sources = []
                 for index, path in enumerate(files):
                     if path.is_symlink():
                         continue
                     name = f"source-{index:04d}.jsonl"
-                    shutil.copyfile(path, native_dir / name)
+                    self.capture.add_native(path, name)
                     sources.append({"path": f"native/{name}",
                                     "native_path": path.relative_to(staging_root).as_posix()})
                 atomic_write_json(native_dir.parent / "native_index.json", sources)
@@ -634,16 +631,13 @@ class ClaudeCodeHarness(InteractiveHarness):
     def _capture_metadata(self, output_dir: Path, attempt: int, status: str) -> dict[str, Any]:
         if not self.config.capture_calls:
             return {}
-        directory = output_dir / "capture" / f"attempt-{attempt:04d}"
-        recorder = getattr(self, "_capture_recorder", None)
-        try:
-            manifest = finalize_claude_capture(directory, execution_status=status,
-                recorder_error=recorder.error if recorder else "capture recorder unavailable", debug_retention=self.config.capture_debug)
-            return {"capture": {"manifest": (directory / "manifest.json").relative_to(output_dir).as_posix(),
-                                "capture_status": manifest["capture_status"]}}
-        except Exception as exc:
-            logger.warning("Claude call capture finalization failed: %s", exc)
-            return {"capture": {"manifest": None, "capture_status": "partial", "error": str(exc)}}
+        if self.capture is None:
+            return {"capture": {"manifest": None, "capture_status": "partial",
+                                "error": "capture recorder unavailable"}}
+        metadata = self.capture.finish(status, error_formatter=str)
+        if metadata["capture"]["manifest"] is None:
+            logger.warning("Claude call capture finalization failed: %s", metadata["capture"]["error"])
+        return metadata
 
     def _collect_outputs(
         self, container: str, request: RunRequest, output_dir: Path

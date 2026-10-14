@@ -16,11 +16,10 @@ from urllib.parse import urlsplit
 import uuid
 
 from roller.artifacts import collect_output_directory
-from roller.capture import CallRecorder
+from roller.capture_runtime import CaptureRuntime
 from roller.harnesses.base import InteractiveHarness, InteractiveSession, TurnResult
 from roller.harnesses.docker import DockerRuntime, remove_container
 from roller.opencode_actf import convert_opencode_trace, extract_opencode_usage
-from roller.opencode_capture import finalize_opencode_capture
 from roller.models import HarnessResult, RunRequest
 from roller.storage import atomic_write_json
 from roller.thinking import normalize_thinking, resolve_thinking
@@ -190,7 +189,7 @@ class OpenCodeSession(InteractiveSession):
         self.image_digest = None
         self.opencode_version = None
         self.proxy = None
-        self.capture_recorder = None
+        self.capture = None
         self._result: HarnessResult | None = None
         self.turns = 0
 
@@ -230,10 +229,10 @@ class OpenCodeSession(InteractiveSession):
         environment["OPENAI_API_KEY"] = os.environ[config.api_key_env]
         api_base = config.api_base or "https://api.openai.com/v1"
         if config.capture_calls:
-            self.capture_recorder = CallRecorder(self.output_dir / "capture" / f"attempt-{self.attempt:04d}")
+            self.capture = CaptureRuntime(self.output_dir, self.attempt, "opencode", config.capture_debug)
         if config.wire_trace_mode == "full" or config.capture_calls:
             self.proxy = WireTraceProxy(api_base, self.output_dir / "wire_trace.jsonl", mode="full",
-                capture_recorder=self.capture_recorder,
+                capture_recorder=self.capture.recorder if self.capture else None,
                 capture_identity_header="x-roller-native-session-id" if config.capture_calls else None)
             self.proxy.start()
             api_base = self.proxy.proxy_base_url
@@ -379,9 +378,7 @@ class OpenCodeSession(InteractiveSession):
                         problems.append("no OpenCode journal was collected")
                     else:
                         if config.capture_calls:
-                            native_dir = self.capture_recorder.directory / "native"
-                            native_dir.mkdir(parents=True, exist_ok=True)
-                            shutil.copyfile(trace, native_dir / "journal.jsonl")
+                            self.capture.add_native(trace, "journal.jsonl")
                         usage = extract_opencode_usage(trace)
                         trajectory = trace.with_name("trace_ACTF.json")
                         converted = convert_opencode_trace(trace, trajectory, keep_thinking=config.keep_thinking)
@@ -429,16 +426,8 @@ class OpenCodeSession(InteractiveSession):
                         redact_jsonl_file(self.proxy.log_path)
                 except Exception as exc:
                     problems.append(self.redact(str(exc)))
-            if self.capture_recorder is not None:
-                self.capture_recorder.seal()
-                try:
-                    directory = self.capture_recorder.directory
-                    manifest = finalize_opencode_capture(directory, execution_status=status,
-                        recorder_error=self.capture_recorder.error, debug_retention=config.capture_debug)
-                    capture_metadata = {"capture": {"manifest": (directory / "manifest.json").relative_to(self.output_dir).as_posix(),
-                                                   "capture_status": manifest["capture_status"]}}
-                except Exception as exc:
-                    capture_metadata = {"capture": {"manifest": None, "capture_status": "partial", "error": self.redact(str(exc))}}
+            if self.capture is not None:
+                capture_metadata = self.capture.finish(status, error_formatter=lambda exc: self.redact(str(exc)))
             if problems and status == "ok":
                 status, error = "error", "; ".join(problems)
             retained = self.container_started and config.keep_container_on_error and status != "ok"

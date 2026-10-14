@@ -15,6 +15,7 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, BinaryIO
+from roller.capture_states import CallExecutionStatus, CaptureStatus, ExportStatus, IdentityStatus
 
 logger = logging.getLogger(__name__)
 
@@ -124,7 +125,7 @@ def _validate_capture(sample: Path, metadata: dict[str, Any]) -> None:
     manifest = json.loads(path.read_text(encoding="utf-8"))
     if manifest.get("schema_version") != "roller.capture/v1":
         raise ValueError("unsupported capture manifest")
-    if manifest.get("capture_status") not in {"complete", "partial"}:
+    if manifest.get("capture_status") not in CaptureStatus.VALUES:
         raise ValueError("invalid capture status")
     if metadata.get("capture_status") != manifest.get("capture_status"):
         raise ValueError("capture status does not match manifest")
@@ -186,6 +187,12 @@ def _validate_capture(sample: Path, metadata: dict[str, Any]) -> None:
         if part.get("call_ids") != [c["call_id"] for c in expected]:
             raise ValueError("participant call IDs do not match capture calls")
     for call in calls:
+        if (call.get("execution_status") not in CallExecutionStatus.VALUES
+                or call.get("capture_status") not in CaptureStatus.VALUES
+                or call.get("response_capture_status") not in CaptureStatus.VALUES
+                or call.get("export_status") not in ExportStatus.VALUES
+                or call.get("identity_status") not in IdentityStatus.VALUES):
+            raise ValueError("invalid capture call state")
         if lean and (call.get("response_path") is not None or call.get("response_evidence_retained") is not False):
             raise ValueError("lean call references raw response")
         if call.get("schema_version") != "roller.call/v1" or not isinstance(call.get("context"), dict):
@@ -194,12 +201,12 @@ def _validate_capture(sample: Path, metadata: dict[str, Any]) -> None:
             raise ValueError("unsupported capture call protocol")
         if call.get("participant_id") is not None and call["participant_id"] not in pids:
             raise ValueError("call participant is missing")
-        if call.get("capture_status") == "complete":
+        if call.get("capture_status") == CaptureStatus.COMPLETE:
             if (not lean and call.get("response_path") not in inventory) or not isinstance(call.get("output"), dict):
                 raise ValueError("complete call lacks response evidence")
-        if call.get("export_status") == "available" and (
-            call.get("capture_status") != "complete" or call.get("identity_status") != "observed"
-            or call.get("response_capture_status") != "complete" or call.get("execution_status") != "completed"
+        if call.get("export_status") == ExportStatus.AVAILABLE and (
+            call.get("capture_status") != CaptureStatus.COMPLETE or call.get("identity_status") != IdentityStatus.OBSERVED
+            or call.get("response_capture_status") != CaptureStatus.COMPLETE or call.get("execution_status") != CallExecutionStatus.COMPLETED
             or call.get("output_source") != "model" or call.get("participant_id") not in pids
             or call.get("errors")):
             raise ValueError("available call lacks complete model/identity evidence")
@@ -329,7 +336,6 @@ def apply_capture_retention(directory: Path, manifest: dict[str, Any], mode: str
 
     if mode not in {"off", "on-error", "full"}:
         raise ValueError("invalid capture debug retention")
-    recover_capture_retention(directory)
     validate_capture(directory, {"manifest": "manifest.json", "capture_status": manifest["capture_status"]})
     calls = read_jsonl(directory / "calls.jsonl")
     relations = read_jsonl(directory / "relations.jsonl")

@@ -6,8 +6,8 @@ from typing import Any
 import xml.etree.ElementTree as ET
 import re
 
-from roller.capture import read_jsonl, native_directory, recover_capture_retention
-from roller.capture_protocol import NativeCapture, finalize_capture
+from roller.capture import read_jsonl, native_directory
+from roller.capture_protocol import NativeCapture, finalize_native_capture
 from roller.model_protocols import anthropic_response
 
 
@@ -180,6 +180,6 @@ def read_claude_native(directory: Path) -> NativeCapture:
 
 def finalize_claude_capture(directory: Path, *, execution_status: str,
                             recorder_error: str | None = None, debug_retention: str = "full") -> dict[str, Any]:
-    recover_capture_retention(directory)
-    return finalize_capture(directory, read_claude_native(directory),
-                            execution_status=execution_status, recorder_error=recorder_error, debug_retention=debug_retention)
+    return finalize_native_capture(directory, read_claude_native,
+        execution_status=execution_status, recorder_error=recorder_error,
+        debug_retention=debug_retention)

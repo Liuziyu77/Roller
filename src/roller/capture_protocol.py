@@ -12,9 +12,10 @@ import shutil
 import gzip
 import zlib
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, Iterable
 
 from roller.capture import read_jsonl, _safe_file, apply_capture_retention, recover_capture_retention
+from roller.capture_states import CallExecutionStatus, CaptureStatus, ExportStatus, IdentityStatus
 from roller.model_protocols import decode_response, response_finished, tool_call_ids, tool_result_ids
 from roller.storage import atomic_write_json, write_jsonl
 
@@ -42,6 +43,95 @@ Relations carry file/event evidence and optionally a parent native message ID.
     lifecycle: dict[str, Any] | None = None
 
 
+def finalize_native_capture(directory: Path, reader: Callable[[Path], NativeCapture], *,
+                            execution_status: str, recorder_error: str | None = None,
+                            debug_retention: str = "full",
+                            native_errors: Iterable[str] = ()) -> dict[str, Any]:
+    """Use one publication path for every native evidence adapter."""
+    native = reader(directory)
+    native.errors.extend(native_errors)
+    return finalize_capture(directory, native, execution_status=execution_status,
+                            recorder_error=recorder_error, debug_retention=debug_retention)
+
+
+def _response_protocol(path: str, default: str) -> str:
+    endpoint = path.split("?", 1)[0].rstrip("/")
+    return next((protocol for suffix, protocol in {
+        "/messages": "anthropic-messages", "/chat/completions": "openai-chat-completions",
+        "/responses": "openai-responses",
+    }.items() if endpoint.endswith(suffix)), default)
+
+
+def _decode_captured_response(directory: Path, protocol: str,
+                              completion: dict[str, Any]) -> tuple[dict[str, Any] | None, list[str]]:
+    errors = []
+    if not completion.get("complete") or completion.get("error"):
+        errors.append(completion.get("error") or "response capture incomplete")
+    response_path = completion.get("response_path")
+    output = None
+    try:
+        if not response_path:
+            raise ValueError("response is missing")
+        payload = _safe_file(directory, response_path).read_bytes()
+        encoding = completion.get("content_encoding", "").lower()
+        if encoding == "gzip":
+            payload = gzip.decompress(payload)
+        elif encoding == "deflate":
+            payload = zlib.decompress(payload)
+        elif encoding not in {"", "identity"}:
+            raise ValueError("unsupported response content encoding")
+        output = decode_response(protocol, payload, completion.get("content_type", ""))
+    except (OSError, ValueError, KeyError, TypeError, zlib.error) as exc:
+        errors.append(str(exc))
+    if output is not None and (not isinstance(output.get("id"), str) or not output["id"]):
+        errors.append("model response has no valid response ID")
+    return output, errors
+
+
+def _attribute_call(native: NativeCapture, identity: dict[str, Any],
+                    output: dict[str, Any] | None) -> tuple[str | None, bool, str]:
+    session_id = identity.get("session_id")
+    matches = (native.session_owners.get(session_id, set()) if session_id else
+               native.response_owners.get(output.get("id"), set()) if output else set())
+    participant_id = next(iter(matches)) if len(matches) == 1 else None
+    confirmed = (participant_id in native.participants and
+                 native.participants[participant_id].get("identity_status") == IdentityStatus.OBSERVED)
+    return participant_id, confirmed, "native_session" if session_id else "response_message_id"
+
+
+def _call_outcome(protocol: str, event: dict[str, Any], completion: dict[str, Any],
+                  output: dict[str, Any] | None, participant_id: str | None,
+                  identity_confirmed: bool, errors: list[str]) -> dict[str, str]:
+    if participant_id is None:
+        errors.append("call has no unique native participant")
+    elif not identity_confirmed:
+        errors.append("native participant identity is unresolved")
+    finished = bool(output and response_finished(protocol, output))
+    if completion.get("http_status") != 200:
+        errors.append("model HTTP request did not succeed")
+    if not finished:
+        errors.append("model response did not finish normally")
+    if output and output.get("model") != event["body"].get("model"):
+        errors.append("response model does not match request")
+    return {
+        "response_capture_status": CaptureStatus.COMPLETE if completion.get("complete") and not completion.get("error") else CaptureStatus.PARTIAL,
+        "identity_status": IdentityStatus.OBSERVED if identity_confirmed else IdentityStatus.UNKNOWN,
+        "execution_status": CallExecutionStatus.COMPLETED if finished and completion.get("http_status") == 200 else CallExecutionStatus.FAILED,
+        "capture_status": CaptureStatus.COMPLETE if not errors else CaptureStatus.PARTIAL,
+        "export_status": ExportStatus.AVAILABLE if not errors else ExportStatus.UNAVAILABLE,
+    }
+
+
+def _matches_parent_call(call: dict[str, Any], model_ref: dict[str, Any] | None,
+                         parent_mid: str | None, tool_id: str | None) -> bool:
+    if model_ref:
+        return call["protocol"] == model_ref["protocol"] and any(
+            item.get("call_id") == model_ref["call_id"] and item.get("id") == model_ref["item_id"]
+            for item in call["output"].get("output", []) if item.get("type") == "function_call")
+    return bool((parent_mid and call["output"].get("id") == parent_mid)
+                or tool_id in tool_call_ids(call["protocol"], call["output"]))
+
+
 def finalize_capture(directory: Path, native: NativeCapture, *, execution_status: str,
                      recorder_error: str | None = None, debug_retention: str = "full") -> dict[str, Any]:
     recover_capture_retention(directory)
@@ -61,65 +151,22 @@ def finalize_capture(directory: Path, native: NativeCapture, *, execution_status
     responses = {e["request_seq"]: e for e in events if e.get("type") == "response"}
     calls = []
     for seq, event in sorted(requests.items()):
-        endpoint = event["path"].split("?", 1)[0].rstrip("/")
-        protocol = next((value for suffix, value in {
-            "/messages": "anthropic-messages", "/chat/completions": "openai-chat-completions",
-            "/responses": "openai-responses",
-        }.items() if endpoint.endswith(suffix)), native.protocol)
+        protocol = _response_protocol(event["path"], native.protocol)
         completion = responses.get(seq, {})
-        output = None
-        errors = []
-        if not completion.get("complete") or completion.get("error"):
-            errors.append(completion.get("error") or "response capture incomplete")
+        output, errors = _decode_captured_response(directory, protocol, completion)
         response_path = completion.get("response_path")
-        try:
-            if not response_path:
-                raise ValueError("response is missing")
-            payload = _safe_file(directory, response_path).read_bytes()
-            encoding = completion.get("content_encoding", "").lower()
-            if encoding == "gzip":
-                payload = gzip.decompress(payload)
-            elif encoding == "deflate":
-                payload = zlib.decompress(payload)
-            elif encoding not in {"", "identity"}:
-                raise ValueError("unsupported response content encoding")
-            output = decode_response(protocol, payload, completion.get("content_type", ""))
-        except (OSError, ValueError, KeyError, TypeError, zlib.error) as exc:
-            errors.append(str(exc))
-        if output is not None and (not isinstance(output.get("id"), str) or not output["id"]):
-            errors.append("model response has no valid response ID")
         identity = event.get("native_identity", {})
-        session_id = identity.get("session_id")
-        if session_id:
-            matches = native.session_owners.get(session_id, set())
-        else:
-            matches = native.response_owners.get(output.get("id"), set()) if output else set()
-        pid = next(iter(matches)) if len(matches) == 1 else None
-        identity_confirmed = pid in native.participants and native.participants[pid].get("identity_status") == "observed"
-        if pid is None:
-            errors.append("call has no unique native participant")
-        elif not identity_confirmed:
-            errors.append("native participant identity is unresolved")
-        finished = bool(output and response_finished(protocol, output))
-        if completion.get("http_status") != 200:
-            errors.append("model HTTP request did not succeed")
-        if not finished:
-            errors.append("model response did not finish normally")
-        if output and output.get("model") != event["body"].get("model"):
-            errors.append("response model does not match request")
+        pid, identity_confirmed, identity_basis = _attribute_call(native, identity, output)
+        outcome = _call_outcome(protocol, event, completion, output, pid, identity_confirmed, errors)
         call = {"schema_version": "roller.call/v1", "call_id": event["call_id"],
             "attempt_id": directory.name, "request_seq": seq, "participant_id": pid,
             "protocol": protocol, "output_source": "model",
             "started_at": event.get("timestamp"), "finished_at": completion.get("timestamp"),
             "request_path": event["path"], "context": event["body"], "output": output,
             "http_status": completion.get("http_status"), "response_path": response_path,
-            "response_capture_status": "complete" if completion.get("complete") and not completion.get("error") else "partial",
-            "identity_status": "observed" if identity_confirmed else "unknown",
-            "identity_basis": "native_session" if session_id else "response_message_id",
+            "identity_basis": identity_basis,
             **({"native_identity": identity} if identity else {}),
-            "execution_status": "completed" if finished and completion.get("http_status") == 200 else "failed",
-            "capture_status": "complete" if not errors else "partial",
-            "export_status": "available" if not errors else "unavailable", "errors": errors}
+            **outcome, "errors": errors}
         calls.append(call)
 
     relations = []
@@ -130,13 +177,8 @@ def finalize_capture(directory: Path, native: NativeCapture, *, execution_status
         parent = relation.get("parent_participant_id")
         tool_id = relation.get("tool_call_id")
         model_ref = relation.get("model_tool_ref")
-        def matches_parent(call):
-            if model_ref:
-                return call["protocol"] == model_ref["protocol"] and any(
-                    item.get("call_id") == model_ref["call_id"] and item.get("id") == model_ref["item_id"]
-                    for item in call["output"].get("output", []) if item.get("type") == "function_call")
-            return (parent_mid and call["output"].get("id") == parent_mid) or tool_id in tool_call_ids(call["protocol"], call["output"])
-        candidates = [c for c in calls if c["participant_id"] == parent and c["output"] and matches_parent(c)]
+        candidates = [c for c in calls if c["participant_id"] == parent and c["output"]
+                      and _matches_parent_call(c, model_ref, parent_mid, tool_id)]
         relation["parent_call_id"] = candidates[0]["call_id"] if len(candidates) == 1 else None
         if len(candidates) != 1:
             relation["status"] = "unknown"
@@ -178,15 +220,15 @@ def finalize_capture(directory: Path, native: NativeCapture, *, execution_status
         part["call_ids"] = [c["call_id"] for c in owned]
         part.pop("calls_path", None)
         expected = {mid for mid, owners in native.response_owners.items() if pid in owners}
-        captured = {c["output"]["id"] for c in owned if c["output"] and c["capture_status"] == "complete"}
+        captured = {c["output"]["id"] for c in owned if c["output"] and c["capture_status"] == CaptureStatus.COMPLETE}
         part["uncaptured_message_ids"] = sorted(expected - captured)
         expected_count = native.expected_call_counts.get(pid)
-        valid_count = sum(c["capture_status"] == "complete" for c in owned)
+        valid_count = sum(c["capture_status"] == CaptureStatus.COMPLETE for c in owned)
         count_ok = expected_count is None or expected_count == valid_count
         if expected_count is not None:
             part["native_completed_call_count"] = expected_count
             part["captured_complete_call_count"] = valid_count
-        part["capture_status"] = "complete" if part["native_files"] and (expected or expected_count) and not (expected - captured) and count_ok else "partial"
+        part["capture_status"] = CaptureStatus.COMPLETE if part["native_files"] and (expected or expected_count) and not (expected - captured) and count_ok else CaptureStatus.PARTIAL
     _compact_artifacts(directory, calls, relations, native.participants, events)
     files = [{"path": p.relative_to(directory).as_posix(), "sha256": hashlib.sha256(p.read_bytes()).hexdigest()}
              for p in sorted(directory.rglob("*")) if p.is_file() and p.name != "manifest.json"]
@@ -196,10 +238,10 @@ def finalize_capture(directory: Path, native: NativeCapture, *, execution_status
                 for end in relations)})
     lifecycle = native.lifecycle or {"status": "unsupported" if native.background_detected else "pending" if pending else "complete",
                                     "pending_participant_ids": pending}
-    complete = bool(calls) and not recorder_error and not native.errors and lifecycle["status"] == "complete" and not lifecycle["pending_participant_ids"] and all(c["capture_status"] == "complete" for c in calls) and all(p["capture_status"] == "complete" for p in native.participants.values()) and all(r["status"] == "observed" for r in relations)
+    complete = bool(calls) and not recorder_error and not native.errors and lifecycle["status"] == "complete" and not lifecycle["pending_participant_ids"] and all(c["capture_status"] == CaptureStatus.COMPLETE for c in calls) and all(p["capture_status"] == CaptureStatus.COMPLETE for p in native.participants.values()) and all(r["status"] == "observed" for r in relations)
     manifest = {"schema_version": "roller.capture/v1", "attempt_id": directory.name,
         "harness": native.harness, "storage_layout": "compact/v1", "execution_status": execution_status,
-        "capture_status": "complete" if complete else "partial", "recorder_error": recorder_error,
+        "capture_status": CaptureStatus.COMPLETE if complete else CaptureStatus.PARTIAL, "recorder_error": recorder_error,
         "native_errors": native.errors,
         "participants": list(native.participants.values()), "background_detected": native.background_detected,
         "lifecycle": lifecycle,
