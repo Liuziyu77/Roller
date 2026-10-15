@@ -137,6 +137,14 @@ def _validate_trajectory_files(
     raw_path = base / "trace.jsonl"
     actf_path = base / "trace_ACTF.json"
     sft_path = base / "trace_SFT.json"
+    trajectory = info.get("trajectory")
+    segments = trajectory.get("sft_segments") if isinstance(trajectory, Mapping) else None
+    if segments is not None and (not isinstance(segments, list) or not segments):
+        raise ValueError("SFT segment metadata must be a non-empty list")
+    if not segments and any(base.glob("trace_SFT.segment-*.json")):
+        raise ValueError("unreferenced SFT segment files are present")
+    if segments and trajectory.get("sft") is not None:
+        raise ValueError("compacted sample cannot also reference a linear SFT")
     if not raw_path.is_file():
         raise ValueError(f"required trajectory file is missing: {raw_path.name}")
     runtime = info.get("runtime")
@@ -148,7 +156,11 @@ def _validate_trajectory_files(
         and conversion_target == "actf"
     )
     sft_unavailable = conversion_target == "sft"
+    if segments and sft_unavailable:
+        raise ValueError("SFT-unavailable sample cannot reference SFT segments")
     if raw_only:
+        if segments:
+            raise ValueError("raw-only sample cannot contain SFT segments")
         trajectory = info.get("trajectory")
         if not isinstance(trajectory, Mapping):
             raise ValueError("info.json trajectory must be an object")
@@ -167,8 +179,10 @@ def _validate_trajectory_files(
                 raise ValueError("SFT-unavailable trajectory metadata must have null SFT")
             if sft_path.exists():
                 raise ValueError("SFT-unavailable sample contains an unexpected SFT artifact")
-        elif not sft_path.is_file():
+        elif not segments and not sft_path.is_file():
             raise ValueError(f"required trajectory file is missing: {sft_path.name}")
+        elif segments and sft_path.exists():
+            raise ValueError("compacted sample must not contain a linear SFT")
     if require_wire_trace and not (base / "wire_trace.jsonl").is_file():
         raise ValueError("required full-mode wire_trace.jsonl is missing")
     # Only OpenClaw emits cache traces. Finalized metadata records the actual
@@ -183,8 +197,12 @@ def _validate_trajectory_files(
     if isinstance(capture, dict):
         validate_capture(base, capture)
     if info.get("harness") == "claude-code" and not sft_unavailable:
-        if any(row.get("subtype") == "compact_boundary" for row in read_claude_events(raw_path)):
+        if not segments and any(row.get("subtype") == "compact_boundary" for row in read_claude_events(raw_path)):
             raise ValueError("Claude compaction requires per-call context export, not linear SFT")
+    if info.get("harness") == "codex" and not sft_unavailable and not segments:
+        from roller.capture import read_jsonl
+        if any(row.get("type") == "compacted" for row in read_jsonl(raw_path)):
+            raise ValueError("Codex compaction requires per-call context export, not linear SFT")
 
     if raw_only:
         return
@@ -206,7 +224,27 @@ def _validate_trajectory_files(
                 "trace_ACTF.json step_id values must be sequential from 1"
             )
 
-    if not sft_unavailable:
+    if segments and not sft_unavailable:
+        from roller.compaction_sft import build_compaction_segments
+        if info.get("harness") not in {"claude-code", "codex"}:
+            raise ValueError("unsupported harness for SFT segments")
+        capture_info = capture if isinstance(capture, Mapping) else {}
+        manifest = capture_info.get("manifest")
+        if not isinstance(manifest, str):
+            raise ValueError("SFT segments lack their captured Calls")
+        expected = build_compaction_segments(base, info["harness"], manifest)
+        if segments != [metadata for metadata, _ in expected]:
+            raise ValueError("SFT segment metadata does not match captured boundaries and Calls")
+        expected_paths = {item["path"] for item in segments}
+        actual_paths = {path.name for path in base.glob("trace_SFT.segment-*.json")}
+        if actual_paths != expected_paths:
+            raise ValueError("SFT segment files do not match metadata")
+        for metadata, record in expected:
+            actual = _json_object(base / metadata["path"])
+            validate_sft_record(actual)
+            if actual != record:
+                raise ValueError("SFT segment does not match captured Call context")
+    elif not sft_unavailable:
         actual_sft = _json_object(sft_path)
         try:
             validate_sft_record(actual_sft)

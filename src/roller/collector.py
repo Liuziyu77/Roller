@@ -233,7 +233,7 @@ class Collector:
             # Full mode: retain the diagnostic layers alongside the ACTF trajectory.
             keep |= {"cache_trace.jsonl", "wire_trace.jsonl"}
         for path in sample_dir.iterdir():
-            if path.name in keep:
+            if path.name in keep or (path.name.startswith("trace_SFT.segment-") and path.suffix == ".json"):
                 continue
             if path.is_dir() and not path.is_symlink():
                 shutil.rmtree(path)
@@ -255,6 +255,9 @@ class Collector:
         trace_path = sample_dir / "trace.jsonl"
         actf_path = sample_dir / "trace_ACTF.json"
         sft_path = sample_dir / "trace_SFT.json"
+        sft_segments: list[dict[str, Any]] = []
+        for stale in sample_dir.glob("trace_SFT.segment-*.json"):
+            stale.unlink()
         if trace_source is None and final.status == "ok":
             final.status = "error"
             final.error = "harness finished but no raw trace was found"
@@ -282,7 +285,28 @@ class Collector:
                 if not isinstance(trajectory, dict):
                     raise ValueError("canonical ACTF trajectory must be a JSON object")
                 if final.status == "ok":
-                    write_sft(sft_path, trajectory)
+                    from roller.compaction_sft import export_compaction_segments
+                    from roller.capture import read_jsonl
+                    compacted = (
+                        harness_name in {"claude-code", "codex"}
+                        and any(
+                            (row.get("subtype") == "compact_boundary" and not row.get("isSidechain"))
+                            if harness_name == "claude-code" else row.get("type") == "compacted"
+                            for row in read_jsonl(trace_path)
+                        )
+                    )
+                    if compacted:
+                        capture = metadata.get("capture") or {}
+                        manifest = capture.get("manifest") if isinstance(capture, dict) else None
+                        if not isinstance(manifest, str):
+                            raise SFTConversionError("compaction SFT requires captured Calls")
+                        sft_segments = export_compaction_segments(sample_dir, harness_name, manifest)
+                        sft_path.unlink(missing_ok=True)
+                        conversion = metadata.get("trajectory_conversion")
+                        if isinstance(conversion, dict) and conversion.get("target") == "sft":
+                            metadata.pop("trajectory_conversion")
+                    else:
+                        write_sft(sft_path, trajectory)
             except SFTConversionError as exc:
                 logger.warning(
                     "[%s | %s] SFT export unavailable: %s",
@@ -308,6 +332,9 @@ class Collector:
         # Also remove stale exports left by an earlier attempt or failed write.
         if final.status != "ok":
             sft_path.unlink(missing_ok=True)
+            for stale in sample_dir.glob("trace_SFT.segment-*.json"):
+                stale.unlink()
+            sft_segments = []
         record_training_audits(
             metadata, trajectory if isinstance(trajectory, dict) else None,
             sample_dir / "wire_trace.jsonl",
@@ -354,6 +381,7 @@ class Collector:
                 "actf": "trace_ACTF.json" if actf_path.is_file() else None,
                 "actf_schema": "ACTF_v1.0" if actf_path.is_file() else None,
                 "sft": "trace_SFT.json" if sft_path.is_file() else None,
+                **({"sft_segments": sft_segments} if sft_segments else {}),
             },
             "conversation": metadata.get("conversation"),
             "output_collection": metadata.get("output_collection"),
@@ -519,22 +547,27 @@ class Collector:
             for result in results:
                 if sft_exclusion_reason(result) is not None:
                     continue
-                path = self._sample_dir_from_result(result) / "trace_SFT.json"
-                try:
-                    row = json.loads(path.read_text(encoding="utf-8"))
-                except (OSError, json.JSONDecodeError) as exc:
-                    raise RuntimeError(
-                        f"cannot aggregate SFT sample {path}: {exc}"
-                    ) from exc
-                if not isinstance(row, dict):
-                    raise RuntimeError(f"invalid SFT sample shape: {path}")
-                try:
-                    validate_sft_record(row)
-                except ValueError as exc:
-                    raise RuntimeError(
-                        f"invalid SFT sample shape ({exc}): {path}"
-                    ) from exc
-                yield row
+                trajectory = result.get("trajectory") or {}
+                segments = trajectory.get("sft_segments") or []
+                paths = [self._sample_dir_from_result(result) / item["path"] for item in segments]
+                if not paths:
+                    paths = [self._sample_dir_from_result(result) / "trace_SFT.json"]
+                for path in paths:
+                    try:
+                        row = json.loads(path.read_text(encoding="utf-8"))
+                    except (OSError, json.JSONDecodeError) as exc:
+                        raise RuntimeError(
+                            f"cannot aggregate SFT sample {path}: {exc}"
+                        ) from exc
+                    if not isinstance(row, dict):
+                        raise RuntimeError(f"invalid SFT sample shape: {path}")
+                    try:
+                        validate_sft_record(row)
+                    except ValueError as exc:
+                        raise RuntimeError(
+                            f"invalid SFT sample shape ({exc}): {path}"
+                        ) from exc
+                    yield row
 
         write_jsonl(self.run_dir / "sft.jsonl", rows())
         def calls() -> Iterator[dict[str, Any]]:
