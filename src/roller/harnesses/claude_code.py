@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import re
 import shlex
 import shutil
 import subprocess
@@ -15,35 +14,32 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 from urllib.parse import urlsplit, urlunsplit
 
-from roller.artifacts import ArtifactCollectionResult, collect_output_directory
+from roller.artifacts import ArtifactCollectionResult
 from roller.capture_runtime import CaptureRuntime
 from roller.claude_code_actf import convert_claude_code_trace
-from roller.harnesses.base import Harness, InteractiveHarness, InteractiveSession, TurnResult
+from roller.harnesses.base import InteractiveHarness, InteractiveSession, TurnResult
+from roller.harnesses.container import (
+    CONTEXT_CONTAINER_PATH,
+    ENV_NAME as ENV_NAME_RE,
+    INPUTS_CONTAINER_PATH,
+    OUTPUTS_CONTAINER_PATH,
+    PROXY_ENV_NAMES as COMMON_ENV_NAMES,
+    ContainerCommands,
+    build_provenance,
+    docker_run_args,
+    output_collection_metadata,
+)
 from roller.harnesses.docker import DockerRuntime, remove_container
 from roller.models import HarnessResult, RunRequest
 from roller.storage import safe_component
 from roller.thinking import normalize_thinking, resolve_thinking
 from roller.usage import ZERO_USAGE, extract_claude_code_usage
-from roller.version import __version__
 from roller.wire_trace import WireTraceProxy, redact_jsonl_file
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_CLAUDE_CODE_IMAGE = "roller-claude-code:2.1.222"
 CLAUDE_HOME_CONTAINER_PATH = "/roller/claude-home"
-INPUTS_CONTAINER_PATH = "/roller/task/inputs"
-CONTEXT_CONTAINER_PATH = "/roller/task/context"
-OUTPUTS_CONTAINER_PATH = "/roller/task/outputs"
-ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-
-COMMON_ENV_NAMES = (
-    "HTTP_PROXY",
-    "HTTPS_PROXY",
-    "NO_PROXY",
-    "http_proxy",
-    "https_proxy",
-    "no_proxy",
-)
 
 CLAUDE_PERMISSION_MODES = (
     "default",
@@ -187,10 +183,11 @@ class ClaudeCodeConfig:
             )
 
 
-class ClaudeCodeHarness(InteractiveHarness):
+class ClaudeCodeHarness(ContainerCommands, InteractiveHarness):
     """Run Claude Code in an isolated container and retain native session JSONL."""
 
     name = "claude-code"
+    error_limit = 4000
 
     def __init__(
         self,
@@ -202,6 +199,7 @@ class ClaudeCodeHarness(InteractiveHarness):
         self.worker_slot = worker_slot
         self.runtime = runtime or DockerRuntime(config.docker_binary)
         self._wire_proxy: WireTraceProxy | None = None
+        self.capture: CaptureRuntime | None = None
 
     def create_session(
         self,
@@ -212,21 +210,6 @@ class ClaudeCodeHarness(InteractiveHarness):
         collect_outputs: bool = True,
     ) -> InteractiveSession:
         return ClaudeCodeSession(self, request, output_dir, attempt, collect_outputs=collect_outputs)
-
-    @staticmethod
-    def _error_text(result: subprocess.CompletedProcess[str]) -> str:
-        return (result.stderr or result.stdout or "unknown error").strip()[-4000:]
-
-    def _checked(
-        self,
-        args: Sequence[str],
-        description: str,
-        timeout: float | None = None,
-    ) -> subprocess.CompletedProcess[str]:
-        result = self.runtime.run(args, timeout=timeout)
-        if result.returncode != 0:
-            raise RuntimeError(f"{description} failed: {self._error_text(result)}")
-        return result
 
     def _start_wire_proxy(self, output_dir: Path, attempt: int = 1) -> None:
         self._wire_proxy = None
@@ -338,50 +321,7 @@ class ClaudeCodeHarness(InteractiveHarness):
         self, container: str, request: RunRequest
     ) -> dict[str, str]:
         environment = self._environment(request)
-        args = [
-            "run",
-            "-d",
-            "--name",
-            container,
-            "--label",
-            "ai.roller.harness=claude-code",
-        ]
-        if self.config.container_user is not None:
-            args.extend(["--user", self.config.container_user])
-        if self.config.network:
-            args.extend(["--network", self.config.network])
-        for key, value in sorted(environment.items()):
-            args.extend(["-e", f"{key}={value}"])
-
-        if request.bundle is not None:
-            args.extend(
-                ["-v", f"{request.bundle.inputs_root}:{INPUTS_CONTAINER_PATH}:ro"]
-            )
-            args.extend(
-                ["-v", f"{request.bundle.context_root}:{CONTEXT_CONTAINER_PATH}:ro"]
-            )
-            if (
-                not request.bundle.legacy_workspace
-                and request.task.input_mode == "mount"
-            ):
-                for input_file in request.task.inputs:
-                    input_path = request.bundle.inputs_root / input_file.path
-                    if input_path.exists():
-                        args.extend(
-                            [
-                                "-v",
-                                f"{input_path}:"
-                                f"{self.config.workspace_container_path}/"
-                                f"{input_file.path}:ro",
-                            ]
-                        )
-        elif request.task.workspace is not None:
-            if not request.task.workspace.is_dir():
-                raise FileNotFoundError(
-                    f"task workspace is not a directory: {request.task.workspace}"
-                )
-            args.extend(["-v", f"{request.task.workspace}:/roller-input:ro"])
-
+        args = docker_run_args(self.name, container, self.config, environment, request)
         args.extend(
             [self.config.docker_image, "/bin/bash", "-c", "tail -f /dev/null"]
         )
@@ -639,78 +579,23 @@ class ClaudeCodeHarness(InteractiveHarness):
             logger.warning("Claude call capture finalization failed: %s", metadata["capture"]["error"])
         return metadata
 
-    def _collect_outputs(
-        self, container: str, request: RunRequest, output_dir: Path
-    ) -> tuple[ArtifactCollectionResult, str | None]:
-        staging_root = output_dir / ".runtime-outputs"
-        if staging_root.exists():
-            shutil.rmtree(staging_root)
-        staging_root.mkdir(parents=True, exist_ok=True)
-        result = self.runtime.run(
-            [
-                "cp",
-                f"{container}:{self.config.workspace_container_path}/"
-                f"{request.task.output_dir}/.",
-                str(staging_root),
-            ]
-        )
-        copy_error = None if result.returncode == 0 else self._error_text(result)
-        try:
-            collected = collect_output_directory(staging_root, output_dir)
-        finally:
-            shutil.rmtree(staging_root, ignore_errors=True)
-        return collected, copy_error
-
-    def _image_digest(self) -> str | None:
-        result = self.runtime.run(
-            ["image", "inspect", self.config.docker_image, "--format", "{{.Id}}"]
-        )
-        return result.stdout.strip() if result.returncode == 0 else None
-
     def run(self, request: RunRequest, output_dir: Path, attempt: int) -> HarnessResult:
-        started = time.monotonic()
-        started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
-        container = (
-            f"roller-claude-{request.index}-{safe_component(request.display_model, 20)}-"
-            f"{uuid.uuid4().hex[:8]}"
-        ).lower()
-        status = "error"
-        error: str | None = None
-        container_started = False
-        return_codes: list[int] = []
-        trace_path: Path | None = None
-        trajectory_path: Path | None = None
-        artifact_result: ArtifactCollectionResult | None = None
-        output_copy_error: str | None = None
-        claude_version = ""
-        environment: dict[str, str] = {}
-        image_digest = self._image_digest()
-        stream_path = output_dir / "rollout" / f"claude-code.attempt-{attempt}.jsonl"
-        stream_path.parent.mkdir(parents=True, exist_ok=True)
-
+        session = ClaudeCodeSession(self, request, output_dir, attempt)
+        status, error = "error", None
         try:
-            self._start_wire_proxy(output_dir, attempt)
-            environment = self._start_container(container, request)
-            container_started = True
-            self._prepare_workspace(container, request)
-            self._prepare_context_and_setup(container, request)
-            self._prepare_settings(container)
-            claude_version = self._checked(
-                ["exec", container, "claude", "--version"],
-                "Claude Code version check",
-            ).stdout.strip()
+            session.start()
             for index, prompt in enumerate(request.task.prompts):
-                remaining = request.timeout_seconds - (time.monotonic() - started)
+                remaining = request.timeout_seconds - (time.monotonic() - session.started_monotonic)
                 if remaining <= 0:
                     raise TimeoutError("Claude Code task timed out")
-                return_codes.append(
+                session.return_codes.append(
                     self._run_turn(
-                        container,
+                        session.container,
                         request,
                         prompt,
                         resume=index > 0,
                         timeout_seconds=remaining,
-                        log_path=stream_path,
+                        log_path=session.stream_path,
                     )
                 )
             status = "ok"
@@ -720,173 +605,7 @@ class ClaudeCodeHarness(InteractiveHarness):
         except Exception as exc:
             status = "error"
             error = str(exc)
-        finally:
-            try:
-                self._stop_wire_proxy()
-            except Exception as exc:
-                logger.warning(
-                    "[%s] Claude Code wire proxy shutdown failed: %s",
-                    request.task.id,
-                    exc,
-                )
-
-        if container_started:
-            try:
-                trace_path = self._collect_trace(container, output_dir, attempt)
-            except Exception as exc:
-                logger.warning(
-                    "[%s] Claude Code trace collection failed: %s",
-                    request.task.id,
-                    exc,
-                )
-            try:
-                artifact_result, output_copy_error = self._collect_outputs(
-                    container, request, output_dir
-                )
-            except Exception as exc:
-                output_copy_error = str(exc)
-                logger.warning(
-                    "[%s] Claude Code output collection failed: %s",
-                    request.task.id,
-                    exc,
-                )
-
-        if trace_path is not None:
-            try:
-                trajectory_path = output_dir / "rollout" / "trace_ACTF.json"
-                trajectory = convert_claude_code_trace(
-                    trace_path,
-                    trajectory_path,
-                    user_messages=request.task.prompts,
-                    wire_trace=output_dir / "wire_trace.jsonl",
-                    keep_thinking=self.config.keep_thinking,
-                )
-                if not trajectory.get("steps"):
-                    raise ValueError(
-                        "Claude Code native trace produced no assistant steps"
-                    )
-            except Exception as exc:
-                trajectory_path = None
-                if status == "ok":
-                    status = "error"
-                    error = f"Claude Code trajectory conversion failed: {exc}"
-
-        if status == "ok" and trace_path is None:
-            status = "error"
-            error = "Claude Code finished but no native session trace was found"
-        if status == "ok" and output_copy_error is not None:
-            status = "error"
-            error = f"output collection failed: {output_copy_error}"
-        if status == "ok" and artifact_result is not None and not artifact_result.passed:
-            status = "error"
-            error = "unsafe output files were rejected"
-
-        retained_container: str | None = None
-        if container_started:
-            if self.config.keep_container_on_error and status != "ok":
-                retained_container = container
-            else:
-                removed = remove_container(self.runtime, container)
-                if removed.returncode != 0:
-                    logger.warning(
-                        "[%s] failed to remove container %s",
-                        request.task.id,
-                        container,
-                    )
-
-        elapsed = time.monotonic() - started
-        usage: dict[str, Any] = (
-            extract_claude_code_usage(trace_path, stream_path)
-            if trace_path is not None
-            else dict(ZERO_USAGE)
-        )
-        usage["elapsed_seconds"] = round(elapsed, 3)
-        output_metadata = (
-            {
-                "mode": "all",
-                "agent_output_dir": request.task.output_dir,
-                "passed": artifact_result.passed,
-                "path": (
-                    artifact_result.results_path.relative_to(output_dir).as_posix()
-                    if artifact_result.results_path is not None
-                    else None
-                ),
-                "file_count": artifact_result.file_count,
-                "directory_count": artifact_result.directory_count,
-                "files": list(artifact_result.files),
-                "errors": list(artifact_result.errors),
-            }
-            if artifact_result is not None
-            else None
-        )
-        provenance = {
-            "schema_version": "roller.provenance/v1",
-            "roller_version": __version__,
-            "task_id": request.task.id,
-            "task_bundle_digest": (
-                request.bundle.manifest_digest if request.bundle else None
-            ),
-            "input_tree_digest": (
-                request.bundle.input_tree_digest if request.bundle else None
-            ),
-            "input_manifest_digest": (
-                request.bundle.input_manifest_digest if request.bundle else None
-            ),
-            "context_manifest_digest": (
-                request.bundle.context_manifest_digest if request.bundle else None
-            ),
-            "resume_safe": request.bundle.resume_safe if request.bundle else None,
-            "harness": self.name,
-            "claude_code_version": claude_version,
-            "docker_image": self.config.docker_image,
-            "docker_image_digest": image_digest,
-            "model": request.model,
-            "api_base_urls": (
-                [redact_anthropic_base_url(self.config.api_base)]
-                if self.config.api_base
-                else []
-            ),
-            "environment_names": sorted(environment),
-            "attempt": attempt,
-            "started_at": started_at,
-            "finished_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        }
-        return HarnessResult(
-            status=status,
-            elapsed_seconds=elapsed,
-            error=error,
-            usage=usage,
-            trace_path=(
-                trace_path.relative_to(output_dir).as_posix()
-                if trace_path is not None
-                else None
-            ),
-            trajectory_path=(
-                trajectory_path.relative_to(output_dir).as_posix()
-                if trajectory_path is not None
-                else None
-            ),
-            metadata={
-                **self._capture_metadata(output_dir, attempt, status),
-                "raw_trace_schema": "claude-code-session-jsonl",
-                "claude_code_version": claude_version,
-                "container": retained_container,
-                "agent_return_codes": return_codes,
-                "turns": len(request.task.prompts),
-                "reasoning_effort": resolve_thinking(request.task.thinking, self.config.reasoning_effort),
-                "transport_effort": self._effective_effort(request),
-                "max_thinking_tokens": self.config.max_thinking_tokens,
-                "max_turns": self.config.max_turns,
-                "permission_mode": self.config.permission_mode,
-                "wire_trace": self.config.wire_trace_mode,
-                "keep_thinking": self.config.keep_thinking,
-                "settings_fingerprint": self.config.settings_fingerprint,
-                "output_collection": output_metadata,
-                "output_copy_error": output_copy_error,
-                "attempt": attempt,
-                "provenance": provenance,
-            },
-        )
+        return session.finish(status, error, user_messages=request.task.prompts)
 
 
 class ClaudeCodeSession(InteractiveSession):
@@ -917,9 +636,9 @@ class ClaudeCodeSession(InteractiveSession):
         self._pending_message = ""
         self.environment: dict[str, str] = {}
         self.claude_version = ""
-        self.image_digest = harness._image_digest()
         self.started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
         self.started_monotonic = time.monotonic()
+        self.image_digest = harness._image_digest()
         self.stream_path = output_dir / "rollout" / f"claude-code.attempt-{attempt}.jsonl"
         self._finished: HarnessResult | None = None
 
@@ -994,40 +713,52 @@ class ClaudeCodeSession(InteractiveSession):
         self.messages.append(prompt)
         return TurnResult(reply, time.monotonic() - turn_started, self.return_codes[-1])
 
-    def finish(self, status: str, error: str | None = None) -> HarnessResult:
+    def finish(
+        self,
+        status: str,
+        error: str | None = None,
+        *,
+        user_messages: Sequence[str] | None = None,
+    ) -> HarnessResult:
+        """Collect traces and outputs, release the container and build the result.
+
+        ``user_messages`` defaults to the messages delivered through :meth:`send`;
+        :meth:`ClaudeCodeHarness.run` passes the task prompts it ran directly.
+        """
+
         if self._finished is not None:
             return self._finished
-        config = self.harness.config
+        harness, config = self.harness, self.harness.config
+        task_id = self.request.task.id
+        messages = list(self.messages if user_messages is None else user_messages)
         trace_path: Path | None = None
         trajectory_path: Path | None = None
         artifact_result: ArtifactCollectionResult | None = None
         output_copy_error: str | None = None
-        final_status = status
-        final_error = error
         try:
-            self.harness._stop_wire_proxy()
+            harness._stop_wire_proxy()
         except Exception as exc:
-            logger.warning("[%s] Claude Code wire proxy shutdown failed: %s", self.request.task.id, exc)
+            logger.warning("[%s] Claude Code wire proxy shutdown failed: %s", task_id, exc)
         if self.container_started:
             try:
-                trace_path = self.harness._collect_trace(self.container, self.output_dir, self.attempt)
+                trace_path = harness._collect_trace(self.container, self.output_dir, self.attempt)
             except Exception as exc:
-                logger.warning("[%s] Claude Code trace collection failed: %s", self.request.task.id, exc)
+                logger.warning("[%s] Claude Code trace collection failed: %s", task_id, exc)
             if self.collect_outputs:
                 try:
-                    artifact_result, output_copy_error = self.harness._collect_outputs(
+                    artifact_result, output_copy_error = harness._collect_outputs(
                         self.container, self.request, self.output_dir
                     )
                 except Exception as exc:
                     output_copy_error = str(exc)
-                    logger.warning("[%s] Claude Code output collection failed: %s", self.request.task.id, exc)
+                    logger.warning("[%s] Claude Code output collection failed: %s", task_id, exc)
         if trace_path is not None:
             try:
                 trajectory_path = self.output_dir / "rollout" / "trace_ACTF.json"
                 trajectory = convert_claude_code_trace(
                     trace_path,
                     trajectory_path,
-                    user_messages=self.messages,
+                    user_messages=messages,
                     wire_trace=self.output_dir / "wire_trace.jsonl",
                     keep_thinking=config.keep_thinking,
                 )
@@ -1035,83 +766,60 @@ class ClaudeCodeSession(InteractiveSession):
                     raise ValueError("Claude Code native trace produced no assistant steps")
             except Exception as exc:
                 trajectory_path = None
-                if final_status == "ok":
-                    final_status, final_error = "error", f"Claude Code trajectory conversion failed: {exc}"
-        if final_status == "ok" and trace_path is None:
-            final_status, final_error = "error", "Claude Code finished but no native session trace was found"
-        if final_status == "ok" and output_copy_error is not None:
-            final_status, final_error = "error", f"output collection failed: {output_copy_error}"
-        if final_status == "ok" and artifact_result is not None and not artifact_result.passed:
-            final_status, final_error = "error", "unsafe output files were rejected"
+                if status == "ok":
+                    status, error = "error", f"Claude Code trajectory conversion failed: {exc}"
+        if status == "ok" and trace_path is None:
+            status, error = "error", "Claude Code finished but no native session trace was found"
+        if status == "ok" and output_copy_error is not None:
+            status, error = "error", f"output collection failed: {output_copy_error}"
+        if status == "ok" and artifact_result is not None and not artifact_result.passed:
+            status, error = "error", "unsafe output files were rejected"
         retained_container: str | None = None
         if self.container_started:
-            if config.keep_container_on_error and final_status != "ok":
+            if config.keep_container_on_error and status != "ok":
                 retained_container = self.container
             else:
-                removed = remove_container(self.harness.runtime, self.container)
+                removed = remove_container(harness.runtime, self.container)
                 if removed.returncode != 0:
-                    logger.warning("[%s] failed to remove container %s", self.request.task.id, self.container)
+                    logger.warning("[%s] failed to remove container %s", task_id, self.container)
         elapsed = time.monotonic() - self.started_monotonic
         usage = (
             extract_claude_code_usage(trace_path, self.stream_path)
             if trace_path is not None else dict(ZERO_USAGE)
         )
         usage["elapsed_seconds"] = round(elapsed, 3)
-        output_metadata = None
-        if artifact_result is not None:
-            output_metadata = {
-                "mode": "all",
-                "agent_output_dir": self.request.task.output_dir,
-                "passed": artifact_result.passed,
-                "path": (
-                    artifact_result.results_path.relative_to(self.output_dir).as_posix()
-                    if artifact_result.results_path is not None else None
-                ),
-                "file_count": artifact_result.file_count,
-                "directory_count": artifact_result.directory_count,
-                "files": list(artifact_result.files),
-                "errors": list(artifact_result.errors),
-            }
-        provenance = {
-            "schema_version": "roller.provenance/v1",
-            "roller_version": __version__,
-            "task_id": self.request.task.id,
-            "task_bundle_digest": self.request.bundle.manifest_digest if self.request.bundle else None,
-            "input_tree_digest": self.request.bundle.input_tree_digest if self.request.bundle else None,
-            "input_manifest_digest": self.request.bundle.input_manifest_digest if self.request.bundle else None,
-            "context_manifest_digest": self.request.bundle.context_manifest_digest if self.request.bundle else None,
-            "resume_safe": self.request.bundle.resume_safe if self.request.bundle else None,
-            "harness": self.harness.name,
-            "claude_code_version": self.claude_version,
-            "docker_image": config.docker_image,
-            "docker_image_digest": self.image_digest,
-            "model": self.request.model,
-            "api_base_urls": [redact_anthropic_base_url(config.api_base)] if config.api_base else [],
-            "environment_names": sorted(self.environment),
-            "attempt": self.attempt,
-            "started_at": self.started_at,
-            "finished_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        }
+        provenance = build_provenance(
+            self.request,
+            harness=harness.name,
+            claude_code_version=self.claude_version,
+            docker_image=config.docker_image,
+            docker_image_digest=self.image_digest,
+            api_base_urls=[redact_anthropic_base_url(config.api_base)] if config.api_base else [],
+            environment=self.environment,
+            attempt=self.attempt,
+            started_at=self.started_at,
+            finished_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        )
         try:
             reasoning_effort = resolve_thinking(self.request.task.thinking, config.reasoning_effort)
-            transport_effort = self.harness._effective_effort(self.request)
+            transport_effort = harness._effective_effort(self.request)
         except Exception:
             reasoning_effort = None
             transport_effort = None
-        result = HarnessResult(
-            status=final_status,
+        self._finished = HarnessResult(
+            status=status,
             elapsed_seconds=elapsed,
-            error=final_error,
+            error=error,
             usage=usage,
             trace_path=trace_path.relative_to(self.output_dir).as_posix() if trace_path else None,
             trajectory_path=trajectory_path.relative_to(self.output_dir).as_posix() if trajectory_path else None,
             metadata={
-                **self.harness._capture_metadata(self.output_dir, self.attempt, final_status),
+                **harness._capture_metadata(self.output_dir, self.attempt, status),
                 "raw_trace_schema": "claude-code-session-jsonl",
                 "claude_code_version": self.claude_version,
                 "container": retained_container,
                 "agent_return_codes": self.return_codes,
-                "turns": len(self.messages),
+                "turns": len(messages),
                 "reasoning_effort": reasoning_effort,
                 "transport_effort": transport_effort,
                 "max_thinking_tokens": config.max_thinking_tokens,
@@ -1120,11 +828,10 @@ class ClaudeCodeSession(InteractiveSession):
                 "wire_trace": config.wire_trace_mode,
                 "keep_thinking": config.keep_thinking,
                 "settings_fingerprint": config.settings_fingerprint,
-                "output_collection": output_metadata,
+                "output_collection": output_collection_metadata(artifact_result, self.request, self.output_dir),
                 "output_copy_error": output_copy_error,
                 "attempt": self.attempt,
                 "provenance": provenance,
             },
         )
-        self._finished = result
-        return result
+        return self._finished

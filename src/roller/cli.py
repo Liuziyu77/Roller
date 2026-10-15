@@ -27,7 +27,6 @@ from roller.bundles import BundlePolicy, TaskBundleStore
 from roller.conversation import ConversationManager
 from roller.image_build import prepare_task_images
 from roller.harnesses.claude_code import (
-    COMMON_ENV_NAMES as CLAUDE_CODE_COMMON_ENV_NAMES,
     DEFAULT_CLAUDE_CODE_IMAGE,
     CLAUDE_PERMISSION_MODES,
     ClaudeCodeConfig,
@@ -36,27 +35,23 @@ from roller.harnesses.claude_code import (
     redact_anthropic_base_url,
 )
 from roller.harness_registry import HARNESSES, HARNESS_NAMES
+from roller.harnesses.container import PROXY_ENV_NAMES
 from roller.harnesses.deepseek import (
-    COMMON_ENV_NAMES as DEEPSEEK_COMMON_ENV_NAMES,
     DEFAULT_DEEPSEEK_IMAGE, DEEPSEEK_VERSION, DEEPSEEK_TOOLS,
     DeepSeekConfig, DeepSeekHarness, deepseek_effort,
 )
 from roller.harnesses.pi import (
-    COMMON_ENV_NAMES as PI_COMMON_ENV_NAMES,
     DEFAULT_PI_IMAGE, PI_VERSION, PI_TOOLS,
     PiConfig, PiHarness, pi_effort,
 )
 from roller.harnesses.opencode import (
-    COMMON_ENV_NAMES as OPENCODE_COMMON_ENV_NAMES,
     DEFAULT_OPENCODE_IMAGE, OPENCODE_VERSION, OPENCODE_TOOLS,
     OpenCodeConfig, OpenCodeHarness, opencode_effort,
 )
 from roller.harnesses.hermes import (
-    COMMON_ENV_NAMES as HERMES_COMMON_ENV_NAMES,
     DEFAULT_HERMES_IMAGE, HERMES_REVISION, HermesConfig, HermesHarness, hermes_effort,
 )
 from roller.harnesses.codex import (
-    COMMON_ENV_NAMES as CODEX_COMMON_ENV_NAMES,
     DEFAULT_CODEX_IMAGE,
     CodexConfig,
     CodexHarness,
@@ -943,7 +938,7 @@ def _collect(args: argparse.Namespace) -> int:
             config_path=codex_config_path,
             api_base=codex_api_base,
             api_key_env=codex_api_key_env,
-            pass_env=_deduplicate((*CODEX_COMMON_ENV_NAMES, *args.pass_env)),
+            pass_env=_deduplicate((*PROXY_ENV_NAMES, *args.pass_env)),
             reasoning_effort=args.thinking,
             reasoning_summary=args.reasoning_summary,
             web_search=args.codex_web_search,
@@ -973,7 +968,7 @@ def _collect(args: argparse.Namespace) -> int:
             api_base=claude_api_base,
             api_key_env=claude_api_key_env,
             pass_env=_deduplicate(
-                (*CLAUDE_CODE_COMMON_ENV_NAMES, *args.pass_env)
+                (*PROXY_ENV_NAMES, *args.pass_env)
             ),
             reasoning_effort=args.thinking,
             max_thinking_tokens=args.claude_max_thinking_tokens,
@@ -991,94 +986,60 @@ def _collect(args: argparse.Namespace) -> int:
             effort_validator=claude_effort, capabilities=thinking_capabilities,
         )
 
+    def bridge_options(name: str, api_base: str | None, api_key_env: str) -> dict[str, Any]:
+        """Config fields shared by the Hermes, OpenCode, DeepSeek and Pi bridges."""
+
+        return dict(
+            docker_image=images[name],
+            container_user=None if args.container_user == "image" else args.container_user,
+            network=args.network, api_base=api_base, api_key_env=api_key_env,
+            pass_env=_deduplicate((*PROXY_ENV_NAMES, *args.pass_env)),
+            reasoning_effort=args.thinking, wire_trace_mode=args.wire_trace,
+            capture_calls=args.capture_calls, capture_debug=args.capture_debug,
+            keep_thinking=args.keep_thinking,
+            keep_container_on_error=args.keep_container_on_error, docker_binary=args.docker_binary,
+        )
+
     if "hermes" in selected_harnesses:
         hermes_config = HermesConfig(
-            docker_image=images["hermes"],
-            container_user=None if args.container_user == "image" else args.container_user,
-            network=args.network, api_base=hermes_api_base, api_key_env=hermes_api_key_env,
-            pass_env=_deduplicate((*HERMES_COMMON_ENV_NAMES, *args.pass_env)),
-            reasoning_effort=args.thinking, max_iterations=args.hermes_max_iterations,
+            **bridge_options("hermes", hermes_api_base, hermes_api_key_env),
+            max_iterations=args.hermes_max_iterations,
             context_length=args.hermes_context_length, vision=args.hermes_vision,
-            wire_trace_mode=args.wire_trace,
-            capture_calls=args.capture_calls, capture_debug=args.capture_debug, keep_thinking=args.keep_thinking,
-            keep_container_on_error=args.keep_container_on_error, docker_binary=args.docker_binary,
         )
-        _validate_thinking_requests(
-            requests,
-            cli_harness=cli_harness,
-            harness="hermes",
-            api_base=hermes_api_base or "https://api.openai.com/v1",
-            default_effort=hermes_config.reasoning_effort,
-            effort_validator=hermes_effort,
-            capabilities=thinking_capabilities,
-        )
-
     if "opencode" in selected_harnesses:
         opencode_config = OpenCodeConfig(
-            docker_image=images["opencode"],
-            container_user=None if args.container_user == "image" else args.container_user,
-            network=args.network, api_base=opencode_api_base, api_key_env=opencode_api_key_env,
-            pass_env=_deduplicate((*OPENCODE_COMMON_ENV_NAMES, *args.pass_env)),
-            reasoning_effort=args.thinking, max_steps=args.opencode_max_steps,
-            context_length=args.opencode_context_length, output_tokens=args.opencode_output_tokens,
-            vision=args.opencode_vision,
-            capture_calls=args.capture_calls, capture_debug=args.capture_debug,
-            wire_trace_mode=args.wire_trace, keep_thinking=args.keep_thinking,
-            keep_container_on_error=args.keep_container_on_error, docker_binary=args.docker_binary,
+            **bridge_options("opencode", opencode_api_base, opencode_api_key_env),
+            max_steps=args.opencode_max_steps, context_length=args.opencode_context_length,
+            output_tokens=args.opencode_output_tokens, vision=args.opencode_vision,
         )
-        _validate_thinking_requests(
-            requests,
-            cli_harness=cli_harness,
-            harness="opencode",
-            api_base=opencode_api_base or "https://api.openai.com/v1",
-            default_effort=opencode_config.reasoning_effort,
-            effort_validator=opencode_effort,
-            capabilities=thinking_capabilities,
-        )
-
     if "deepseek" in selected_harnesses:
         deepseek_config = DeepSeekConfig(
-            docker_image=images["deepseek"],
-            container_user=None if args.container_user == "image" else args.container_user,
-            network=args.network, api_base=deepseek_api_base, api_key_env=deepseek_api_key_env,
-            pass_env=_deduplicate((*DEEPSEEK_COMMON_ENV_NAMES, *args.pass_env)),
-            reasoning_effort=args.thinking, max_steps=args.deepseek_max_steps,
-            context_length=args.deepseek_context_length, output_tokens=args.deepseek_output_tokens,
-            wire_trace_mode=args.wire_trace,
-            capture_calls=args.capture_calls, capture_debug=args.capture_debug, keep_thinking=args.keep_thinking,
-            keep_container_on_error=args.keep_container_on_error, docker_binary=args.docker_binary,
+            **bridge_options("deepseek", deepseek_api_base, deepseek_api_key_env),
+            max_steps=args.deepseek_max_steps, context_length=args.deepseek_context_length,
+            output_tokens=args.deepseek_output_tokens,
         )
-        _validate_thinking_requests(
-            requests,
-            cli_harness=cli_harness,
-            harness="deepseek",
-            api_base=deepseek_api_base or "https://api.deepseek.com",
-            default_effort=deepseek_config.reasoning_effort,
-            effort_validator=deepseek_effort,
-            capabilities=thinking_capabilities,
-        )
-
     if "pi" in selected_harnesses:
         pi_config = PiConfig(
-            docker_image=images["pi"],
-            container_user=None if args.container_user == "image" else args.container_user,
-            network=args.network, api_base=pi_api_base, api_key_env=pi_api_key_env,
-            pass_env=_deduplicate((*PI_COMMON_ENV_NAMES, *args.pass_env)),
-            reasoning_effort=args.thinking, max_steps=args.pi_max_steps,
-            context_length=args.pi_context_length, output_tokens=args.pi_output_tokens,
-            wire_trace_mode=args.wire_trace,
-            capture_calls=args.capture_calls, capture_debug=args.capture_debug, keep_thinking=args.keep_thinking,
-            keep_container_on_error=args.keep_container_on_error, docker_binary=args.docker_binary,
+            **bridge_options("pi", pi_api_base, pi_api_key_env),
+            max_steps=args.pi_max_steps, context_length=args.pi_context_length,
+            output_tokens=args.pi_output_tokens,
         )
-        _validate_thinking_requests(
-            requests,
-            cli_harness=cli_harness,
-            harness="pi",
-            api_base=pi_api_base or "https://api.openai.com/v1",
-            default_effort=pi_config.reasoning_effort,
-            effort_validator=pi_effort,
-            capabilities=thinking_capabilities,
-        )
+    for name, bridge_config, effort_validator, default_api_base in (
+        ("hermes", hermes_config, hermes_effort, "https://api.openai.com/v1"),
+        ("opencode", opencode_config, opencode_effort, "https://api.openai.com/v1"),
+        ("deepseek", deepseek_config, deepseek_effort, "https://api.deepseek.com"),
+        ("pi", pi_config, pi_effort, "https://api.openai.com/v1"),
+    ):
+        if bridge_config is not None:
+            _validate_thinking_requests(
+                requests,
+                cli_harness=cli_harness,
+                harness=name,
+                api_base=bridge_config.api_base or default_api_base,
+                default_effort=bridge_config.reasoning_effort,
+                effort_validator=effort_validator,
+                capabilities=thinking_capabilities,
+            )
 
     if args.dry_run:
         # Exercise all path, hash, collision and size checks without leaving a run directory.
@@ -1398,44 +1359,30 @@ def _collect(args: argparse.Namespace) -> int:
                 args.grader_parallel or args.parallel
             )
 
+            harness_types = {
+                "openclaw": (OpenClawHarness, openclaw_config),
+                "codex": (CodexHarness, codex_config),
+                "claude-code": (ClaudeCodeHarness, claude_code_config),
+                "hermes": (HermesHarness, hermes_config),
+                "opencode": (OpenCodeHarness, opencode_config),
+                "deepseek": (DeepSeekHarness, deepseek_config),
+                "pi": (PiHarness, pi_config),
+            }
+
             def make_harness(
                 name: str,
                 slot: int,
                 task_image: str | None = None,
                 task_workspace: str | None = None,
             ):
+                if name not in harness_types:
+                    raise ValueError(f"unknown Harness: {name}")
+                harness_type, base_config = harness_types[name]
+                assert base_config is not None
                 replacements = {"docker_image": task_image} if task_image else {}
                 if task_workspace:
                     replacements["workspace_container_path"] = task_workspace
-                if name == "openclaw":
-                    assert openclaw_config is not None
-                    config = dataclasses.replace(openclaw_config, **replacements)
-                    return OpenClawHarness(config, slot)
-                if name == "codex":
-                    assert codex_config is not None
-                    config = dataclasses.replace(codex_config, **replacements)
-                    return CodexHarness(config, slot)
-                if name == "claude-code":
-                    assert claude_code_config is not None
-                    config = dataclasses.replace(claude_code_config, **replacements)
-                    return ClaudeCodeHarness(config, slot)
-                if name == "hermes":
-                    assert hermes_config is not None
-                    config = dataclasses.replace(hermes_config, **replacements)
-                    return HermesHarness(config, slot)
-                if name == "opencode":
-                    assert opencode_config is not None
-                    config = dataclasses.replace(opencode_config, **replacements)
-                    return OpenCodeHarness(config, slot)
-                if name == "deepseek":
-                    assert deepseek_config is not None
-                    config = dataclasses.replace(deepseek_config, **replacements)
-                    return DeepSeekHarness(config, slot)
-                if name == "pi":
-                    assert pi_config is not None
-                    config = dataclasses.replace(pi_config, **replacements)
-                    return PiHarness(config, slot)
-                raise ValueError(f"unknown Harness: {name}")
+                return harness_type(dataclasses.replace(base_config, **replacements), slot)
 
             def harness_factory(slot: int, request):
                 agent = make_harness(
