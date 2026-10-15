@@ -19,14 +19,24 @@ from urllib.parse import urlsplit, urlunsplit
 
 from roller.actf import convert_openclaw_trace
 from roller.capture_runtime import CaptureRuntime
-from roller.artifacts import ArtifactCollectionResult, collect_output_directory
+from roller.artifacts import ArtifactCollectionResult
 from roller.harnesses.base import InteractiveHarness, InteractiveSession, TurnResult
+from roller.harnesses.container import (
+    CONTEXT_CONTAINER_PATH,
+    ENV_NAME as ENV_NAME_RE,
+    INPUTS_CONTAINER_PATH,
+    OUTPUTS_CONTAINER_PATH,
+    PROXY_ENV_NAMES,
+    ContainerCommands,
+    build_provenance,
+    docker_run_args,
+    output_collection_metadata,
+)
 from roller.harnesses.docker import DockerRuntime, remove_container
 from roller.models import HarnessResult, RunRequest
 from roller.storage import safe_component
 from roller.thinking import normalize_thinking, resolve_thinking
 from roller.usage import ZERO_USAGE, extract_openclaw_usage
-from roller.version import __version__
 from roller.wire_trace import (
     WireTraceProxy,
     extract_wire_tools,
@@ -38,28 +48,18 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_OPENCLAW_IMAGE = "ghcr.io/openclaw/openclaw:2026.7.1-2"
 OPENCLAW_STATE_CONTAINER_PATH = "/tmp/roller-openclaw-state"
-INPUTS_CONTAINER_PATH = "/roller/task/inputs"
-CONTEXT_CONTAINER_PATH = "/roller/task/context"
-OUTPUTS_CONTAINER_PATH = "/roller/task/outputs"
 # OpenClaw diagnostics.cacheTrace output; records the assembled system prompt
 # (and full request messages) for every LLM call made by the agent.
 CACHE_TRACE_CONTAINER_PATH = "/tmp/roller-cache-trace.jsonl"
 TRANSCRIPT_EXPORT_CONTAINER_PATH = "/tmp/roller-session-trace.jsonl"
 TASK_ENVIRONMENT_CONTAINER_PATH = "/roller/task/environment"
 
-ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-
 COMMON_ENV_NAMES = (
     "OPENROUTER_API_KEY",
     "OPENROUTER_BASE_URL",
     "BRAVE_API_KEY",
     "TAVILY_API_KEY",
-    "HTTP_PROXY",
-    "HTTPS_PROXY",
-    "NO_PROXY",
-    "http_proxy",
-    "https_proxy",
-    "no_proxy",
+    *PROXY_ENV_NAMES,
 )
 
 _OPENCLAW_2026_3_11_UNSAFE_THINKING = frozenset(
@@ -251,7 +251,7 @@ class OpenClawConfig:
             raise ValueError(f"wire_trace_mode must be off|actf|full: {self.wire_trace_mode}")
 
 
-class OpenClawHarness(InteractiveHarness):
+class OpenClawHarness(ContainerCommands, InteractiveHarness):
     """Run OpenClaw in one disposable Docker container per trajectory."""
 
     name = "openclaw"
@@ -518,22 +518,6 @@ exec node --input-type=module -e "$1"
                 logger.warning("wire trace proxy shutdown failed: %s", exc)
             self._wire_proxy = None
 
-    @staticmethod
-    def _error_text(result: subprocess.CompletedProcess[str]) -> str:
-        text = (result.stderr or result.stdout or "unknown error").strip()
-        return text[-2000:]
-
-    def _checked(
-        self,
-        args: Sequence[str],
-        description: str,
-        timeout: float | None = None,
-    ) -> subprocess.CompletedProcess[str]:
-        result = self.runtime.run(args, timeout=timeout)
-        if result.returncode != 0:
-            raise RuntimeError(f"{description} failed: {self._error_text(result)}")
-        return result
-
     def _environment(self, request: RunRequest) -> dict[str, str]:
         environment: dict[str, str] = {}
         for name in self.config.pass_env:
@@ -555,49 +539,13 @@ exec node --input-type=module -e "$1"
 
     def _start_container(self, container: str, request: RunRequest) -> dict[str, str]:
         environment = self._environment(request)
-        args = [
-            "run",
-            "-d",
-            "--name",
-            container,
-            "--label",
-            "ai.roller.harness=openclaw",
-        ]
-        if self.config.container_user is not None:
-            args.extend(["--user", self.config.container_user])
-        if self.config.network:
-            args.extend(["--network", self.config.network])
-        for key, value in sorted(environment.items()):
-            args.extend(["-e", f"{key}={value}"])
         # Keep Roller independent of the image's default user/HOME. Official
         # OpenClaw images run as ``node`` while legacy benchmark images run as
         # ``root``; both can write this per-container state directory.
-        args.extend(["-e", f"OPENCLAW_STATE_DIR={OPENCLAW_STATE_CONTAINER_PATH}"])
-
-        if request.bundle is not None:
-            args.extend(["-v", f"{request.bundle.inputs_root}:{INPUTS_CONTAINER_PATH}:ro"])
-            args.extend(["-v", f"{request.bundle.context_root}:{CONTEXT_CONTAINER_PATH}:ro"])
-            if (
-                not request.bundle.legacy_workspace
-                and request.task.input_mode == "mount"
-            ):
-                for input_file in request.task.inputs:
-                    input_path = request.bundle.inputs_root / input_file.path
-                    if not input_path.exists():
-                        continue
-                    args.extend(
-                        [
-                            "-v",
-                            f"{input_path}:"
-                            f"{self.config.workspace_container_path}/{input_file.path}:ro",
-                        ]
-                    )
-        else:
-            workspace = request.task.workspace
-            if workspace is not None:
-                if not workspace.is_dir():
-                    raise FileNotFoundError(f"task workspace is not a directory: {workspace}")
-                args.extend(["-v", f"{workspace}:/roller-input:ro"])
+        args = docker_run_args(
+            self.name, container, self.config, environment, request,
+            extra_env={"OPENCLAW_STATE_DIR": OPENCLAW_STATE_CONTAINER_PATH},
+        )
         args.extend([self.config.docker_image, "/bin/bash", "-c", "tail -f /dev/null"])
         self._checked(args, "container startup", timeout=60)
         return environment
@@ -1094,36 +1042,6 @@ exec node --input-type=module -e "$1"
             )
         return records
 
-    def _collect_outputs(
-        self, container: str, request: RunRequest, output_dir: Path
-    ) -> tuple[ArtifactCollectionResult, str | None]:
-        staging_root = output_dir / ".runtime-outputs"
-        if staging_root.exists():
-            shutil.rmtree(staging_root)
-        staging_root.mkdir(parents=True, exist_ok=True)
-        result = self.runtime.run(
-            [
-                "cp",
-                f"{container}:{self.config.workspace_container_path}/"
-                f"{request.task.output_dir}/.",
-                str(staging_root),
-            ]
-        )
-        copy_error = None if result.returncode == 0 else self._error_text(result)
-        try:
-            collected = collect_output_directory(staging_root, output_dir)
-        finally:
-            shutil.rmtree(staging_root, ignore_errors=True)
-        return collected, copy_error
-
-    def _image_digest(self) -> str | None:
-        result = self.runtime.run(
-            ["image", "inspect", self.config.docker_image, "--format", "{{.Id}}"]
-        )
-        if result.returncode != 0:
-            return None
-        return result.stdout.strip() or None
-
     @staticmethod
     def _stop_process(process: subprocess.Popen[str] | None) -> None:
         if process is None or process.poll() is not None:
@@ -1551,51 +1469,17 @@ class OpenClawSession(InteractiveSession):
         api_base_urls = _model_base_urls(self.harness.config.model_config or {})
         if self.environment.get("OPENROUTER_BASE_URL"):
             api_base_urls.append(_redact_url(self.environment["OPENROUTER_BASE_URL"]))
-        provenance = {
-            "schema_version": "roller.provenance/v1",
-            "roller_version": __version__,
-            "task_id": self.request.task.id,
-            "task_bundle_digest": (
-                self.request.bundle.manifest_digest if self.request.bundle else None
-            ),
-            "input_tree_digest": (
-                self.request.bundle.input_tree_digest if self.request.bundle else None
-            ),
-            "input_manifest_digest": (
-                self.request.bundle.input_manifest_digest if self.request.bundle else None
-            ),
-            "context_manifest_digest": (
-                self.request.bundle.context_manifest_digest if self.request.bundle else None
-            ),
-            "resume_safe": self.request.bundle.resume_safe if self.request.bundle else None,
-            "harness": self.harness.name,
-            "openclaw_version": self.version,
-            "docker_image": self.harness.config.docker_image,
-            "docker_image_digest": self.image_digest,
-            "model": self.request.model,
-            "api_base_urls": list(dict.fromkeys(api_base_urls)),
-            "environment_names": sorted(self.environment),
-            "attempt": self.attempt,
-            "started_at": self.started_at,
-            "finished_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        }
-        output_metadata = (
-            {
-                "mode": "all",
-                "agent_output_dir": self.request.task.output_dir,
-                "passed": artifact_result.passed,
-                "path": (
-                    artifact_result.results_path.relative_to(self.output_dir).as_posix()
-                    if artifact_result.results_path is not None
-                    else None
-                ),
-                "file_count": artifact_result.file_count,
-                "directory_count": artifact_result.directory_count,
-                "files": list(artifact_result.files),
-                "errors": list(artifact_result.errors),
-            }
-            if artifact_result is not None
-            else None
+        provenance = build_provenance(
+            self.request,
+            harness=self.harness.name,
+            openclaw_version=self.version,
+            docker_image=self.harness.config.docker_image,
+            docker_image_digest=self.image_digest,
+            api_base_urls=list(dict.fromkeys(api_base_urls)),
+            environment=self.environment,
+            attempt=self.attempt,
+            started_at=self.started_at,
+            finished_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
         )
         self._finished = HarnessResult(
             status=status,
@@ -1624,7 +1508,9 @@ class OpenClawSession(InteractiveSession):
                 ),
                 "agent_return_codes": self.return_codes,
                 "turns": len(self.messages),
-                "output_collection": output_metadata,
+                "output_collection": output_collection_metadata(
+                    artifact_result, self.request, self.output_dir
+                ),
                 "output_copy_error": output_copy_error,
                 "legacy_artifacts": legacy_records,
                 "warnings": warnings,
