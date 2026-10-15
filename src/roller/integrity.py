@@ -8,7 +8,7 @@ from typing import Any, Mapping
 
 from roller.models import RunRequest
 from roller.capture import validate_capture
-from roller.claude_code_actf import _read_events as read_claude_events
+from roller.compaction_sft import SFT_SEGMENTS_DIR, build_compaction_segments, has_main_compaction
 from roller.harness_registry import requires_cache_trace
 from roller.sft import actf_to_sft, validate_sft_record
 
@@ -137,12 +137,13 @@ def _validate_trajectory_files(
     raw_path = base / "trace.jsonl"
     actf_path = base / "trace_ACTF.json"
     sft_path = base / "trace_SFT.json"
+    segment_dir = base / SFT_SEGMENTS_DIR
     trajectory = info.get("trajectory")
     segments = trajectory.get("sft_segments") if isinstance(trajectory, Mapping) else None
     if segments is not None and (not isinstance(segments, list) or not segments):
         raise ValueError("SFT segment metadata must be a non-empty list")
-    if not segments and any(base.glob("trace_SFT.segment-*.json")):
-        raise ValueError("unreferenced SFT segment files are present")
+    if not segments and segment_dir.exists():
+        raise ValueError("unreferenced SFT segment directory is present")
     if segments and trajectory.get("sft") is not None:
         raise ValueError("compacted sample cannot also reference a linear SFT")
     if not raw_path.is_file():
@@ -196,13 +197,8 @@ def _validate_trajectory_files(
     capture = runtime.get("capture") if isinstance(runtime, Mapping) else None
     if isinstance(capture, dict):
         validate_capture(base, capture)
-    if info.get("harness") == "claude-code" and not sft_unavailable:
-        if not segments and any(row.get("subtype") == "compact_boundary" for row in read_claude_events(raw_path)):
-            raise ValueError("Claude compaction requires per-call context export, not linear SFT")
-    if info.get("harness") == "codex" and not sft_unavailable and not segments:
-        from roller.capture import read_jsonl
-        if any(row.get("type") == "compacted" for row in read_jsonl(raw_path)):
-            raise ValueError("Codex compaction requires per-call context export, not linear SFT")
+    if not sft_unavailable and not segments and has_main_compaction(raw_path, info.get("harness")):
+        raise ValueError("compaction requires per-call context export, not linear SFT")
 
     if raw_only:
         return
@@ -225,7 +221,6 @@ def _validate_trajectory_files(
             )
 
     if segments and not sft_unavailable:
-        from roller.compaction_sft import build_compaction_segments
         if info.get("harness") not in {"claude-code", "codex"}:
             raise ValueError("unsupported harness for SFT segments")
         capture_info = capture if isinstance(capture, Mapping) else {}
@@ -236,7 +231,12 @@ def _validate_trajectory_files(
         if segments != [metadata for metadata, _ in expected]:
             raise ValueError("SFT segment metadata does not match captured boundaries and Calls")
         expected_paths = {item["path"] for item in segments}
-        actual_paths = {path.name for path in base.glob("trace_SFT.segment-*.json")}
+        if not segment_dir.is_dir() or segment_dir.is_symlink():
+            raise ValueError("SFT segment directory is missing or invalid")
+        files = list(segment_dir.iterdir())
+        if any(not path.is_file() or path.is_symlink() for path in files):
+            raise ValueError("SFT segment directory contains an invalid entry")
+        actual_paths = {path.relative_to(base).as_posix() for path in files}
         if actual_paths != expected_paths:
             raise ValueError("SFT segment files do not match metadata")
         for metadata, record in expected:

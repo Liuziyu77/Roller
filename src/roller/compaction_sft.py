@@ -12,8 +12,28 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from roller.capture import read_jsonl
+from roller.claude_code_actf import _read_events as read_claude_events
 from roller.sft import SFTConversionError, validate_sft_record
 from roller.storage import atomic_write_json
+
+SFT_SEGMENTS_DIR = "sft_segments"
+
+
+def _is_main_compaction(row: Mapping[str, Any], harness: str) -> bool:
+    if harness == "claude-code":
+        return row.get("subtype") == "compact_boundary" and not row.get("isSidechain")
+    return harness == "codex" and row.get("type") == "compacted"
+
+
+def _native_rows(path: Path, harness: str) -> list[dict[str, Any]]:
+    return read_claude_events(path) if harness == "claude-code" else read_jsonl(path)
+
+
+def has_main_compaction(path: Path, harness: str | None) -> bool:
+    """Whether the root trace contains a supported compaction boundary."""
+    if harness not in {"claude-code", "codex"}:
+        return False
+    return any(_is_main_compaction(row, harness) for row in _native_rows(path, harness))
 
 
 def _time(value: Any) -> datetime:
@@ -202,14 +222,12 @@ def _response(call: Mapping[str, Any]) -> list[dict[str, Any]]:
 def _boundaries(harness: str, rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], set[str]]:
     boundaries, summary_ids = [], set()
     for index, row in enumerate(rows):
+        if not _is_main_compaction(row, harness):
+            continue
         summary_id = None
         if harness == "claude-code":
-            if row.get("subtype") != "compact_boundary" or row.get("isSidechain"):
-                continue
             event_id = row.get("uuid")
-        elif harness == "codex":
-            if row.get("type") != "compacted":
-                continue
+        else:
             event_id = (row.get("payload") or {}).get("window_id")
             # The immediately preceding native assistant output is the summary,
             # even when previous HTTP attempts failed and were retried.
@@ -224,8 +242,6 @@ def _boundaries(harness: str, rows: list[dict[str, Any]]) -> tuple[list[dict[str
                         summary_id = payload["id"]
                         summary_ids.add(summary_id)
                     break
-        else:
-            return [], set()
         boundaries.append({"event_id": event_id, "timestamp": row.get("timestamp"),
                            "summary_response_id": summary_id})
     return boundaries, summary_ids
@@ -234,7 +250,7 @@ def _boundaries(harness: str, rows: list[dict[str, Any]]) -> tuple[list[dict[str
 def build_compaction_segments(sample_dir: Path, harness: str,
                               manifest_relative: str) -> list[tuple[dict[str, Any], dict[str, Any]]]:
     """Build verified main-agent windows without changing the sample directory."""
-    rows = read_jsonl(sample_dir / "trace.jsonl")
+    rows = _native_rows(sample_dir / "trace.jsonl", harness)
     boundaries, summary_ids = _boundaries(harness, rows)
     if not boundaries:
         return []
@@ -300,7 +316,7 @@ def build_compaction_segments(sample_dir: Path, harness: str,
             messages.extend(_response(call))
         record = {"messages": messages, "tools": tools, "target_start_index": target_start}
         validate_sft_record(record)
-        filename = f"trace_SFT.segment-{len(exported)+1:04d}.json"
+        filename = f"{SFT_SEGMENTS_DIR}/{len(exported)+1:04d}.json"
         metadata = {"path": filename, "window_index": window_index,
                     "boundary_event_id": boundaries[window_index-1]["event_id"] if window_index else None,
                     "first_call_id": window_calls[0]["call_id"],

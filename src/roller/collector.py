@@ -15,6 +15,7 @@ from typing import Any, Callable, Iterator
 
 from roller.harnesses.base import Harness
 from roller.capture import read_jsonl, recover_capture_retention, validate_capture
+from roller.compaction_sft import SFT_SEGMENTS_DIR, export_compaction_segments, has_main_compaction
 from roller.integrity import (
     has_legacy_claude_sidechain,
     trajectory_conversion_unavailable,
@@ -33,6 +34,14 @@ logger = logging.getLogger(__name__)
 HarnessFactory = Callable[..., Harness]
 RUN_CHECKPOINT_RESULT_INTERVAL = 25
 RUN_CHECKPOINT_TIME_INTERVAL_SECONDS = 30.0
+
+
+def _clear_sft_segments(sample_dir: Path) -> None:
+    path = sample_dir / SFT_SEGMENTS_DIR
+    if path.is_dir() and not path.is_symlink():
+        shutil.rmtree(path)
+    else:
+        path.unlink(missing_ok=True)
 
 
 def _now() -> str:
@@ -219,6 +228,7 @@ class Collector:
             "trace.jsonl",
             "trace_ACTF.json",
             "trace_SFT.json",
+            SFT_SEGMENTS_DIR,
             "tools_capture.jsonl",  # Exact Codex Responses tool snapshots.
             "signature_recovery.jsonl",  # Preserve historical artifacts; never generated now.
             "info.json",
@@ -233,7 +243,7 @@ class Collector:
             # Full mode: retain the diagnostic layers alongside the ACTF trajectory.
             keep |= {"cache_trace.jsonl", "wire_trace.jsonl"}
         for path in sample_dir.iterdir():
-            if path.name in keep or (path.name.startswith("trace_SFT.segment-") and path.suffix == ".json"):
+            if path.name in keep:
                 continue
             if path.is_dir() and not path.is_symlink():
                 shutil.rmtree(path)
@@ -256,8 +266,7 @@ class Collector:
         actf_path = sample_dir / "trace_ACTF.json"
         sft_path = sample_dir / "trace_SFT.json"
         sft_segments: list[dict[str, Any]] = []
-        for stale in sample_dir.glob("trace_SFT.segment-*.json"):
-            stale.unlink()
+        _clear_sft_segments(sample_dir)
         if trace_source is None and final.status == "ok":
             final.status = "error"
             final.error = "harness finished but no raw trace was found"
@@ -285,17 +294,7 @@ class Collector:
                 if not isinstance(trajectory, dict):
                     raise ValueError("canonical ACTF trajectory must be a JSON object")
                 if final.status == "ok":
-                    from roller.compaction_sft import export_compaction_segments
-                    from roller.capture import read_jsonl
-                    compacted = (
-                        harness_name in {"claude-code", "codex"}
-                        and any(
-                            (row.get("subtype") == "compact_boundary" and not row.get("isSidechain"))
-                            if harness_name == "claude-code" else row.get("type") == "compacted"
-                            for row in read_jsonl(trace_path)
-                        )
-                    )
-                    if compacted:
+                    if has_main_compaction(trace_path, harness_name):
                         capture = metadata.get("capture") or {}
                         manifest = capture.get("manifest") if isinstance(capture, dict) else None
                         if not isinstance(manifest, str):
@@ -332,8 +331,7 @@ class Collector:
         # Also remove stale exports left by an earlier attempt or failed write.
         if final.status != "ok":
             sft_path.unlink(missing_ok=True)
-            for stale in sample_dir.glob("trace_SFT.segment-*.json"):
-                stale.unlink()
+            _clear_sft_segments(sample_dir)
             sft_segments = []
         record_training_audits(
             metadata, trajectory if isinstance(trajectory, dict) else None,

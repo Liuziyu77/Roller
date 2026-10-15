@@ -60,6 +60,7 @@ def test_claude_preserved_assistant_is_prompt_not_target(tmp_path: Path) -> None
     manifest = _capture(tmp_path, root, calls)
     segments = export_compaction_segments(tmp_path, "claude-code", manifest)
     assert len(segments) == 2
+    assert [item["path"] for item in segments] == ["sft_segments/0001.json", "sft_segments/0002.json"]
     record = json.loads((tmp_path / segments[1]["path"]).read_text())
     validate_sft_record(record)
     assert record["target_start_index"] == 4
@@ -207,6 +208,7 @@ def test_collector_exports_aggregates_and_validates_compaction_segments(
     assert result["status"] == "ok"
     assert result["trajectory"]["sft"] is None
     assert len(result["trajectory"]["sft_segments"]) == 2
+    assert sorted(path.name for path in (sample / "sft_segments").iterdir()) == ["0001.json", "0002.json"]
     assert "trajectory_conversion" not in result["runtime"]
     # Capture schema validation is tested separately; this fixture contains
     # only the Calls and root attribution needed for compaction export.
