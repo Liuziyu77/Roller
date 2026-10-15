@@ -12,6 +12,9 @@ import json
 import os
 from pathlib import Path
 import threading
+from contextvars import ContextVar
+
+DELEGATE_CALL = ContextVar("roller_delegate_call", default=None)
 
 REVISION = "d15ed4445207dda418b984e8bda0f68f48b8c6f3"
 
@@ -125,13 +128,37 @@ def request_audit_parameters(kwargs):
     return controls
 
 
-def journaled_agent(base_class, journal):
+def journaled_agent(base_class, journal, *, capture=False, root_session_id=None):
     class RecordedAgent(base_class):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self._roller_journal = journal
+            if capture:
+                if self.session_id != root_session_id:
+                    child_path = journal.path.parent / "capture-native" / (self.session_id + ".jsonl")
+                    child_path.parent.mkdir(parents=True, exist_ok=True)
+                    self._roller_journal = Journal(child_path)
+                owner = DELEGATE_CALL.get()
+                self._roller_journal.write("participant", session_id=self.session_id,
+                    parent_session_id=getattr(self, "_parent_session_id", None),
+                    tool_call_id=owner[1] if owner and owner[0] == getattr(self, "_parent_session_id", None) else None)
+                callback = self.tool_start_callback
+                def tool_started(call_id, name, arguments):
+                    DELEGATE_CALL.set((self.session_id, call_id) if name == "delegate_task" else None)
+                    if callback:
+                        callback(call_id, name, arguments)
+                self.tool_start_callback = tool_started
+                self._disable_streaming = True
+
         def _interruptible_api_call(self, api_kwargs):
+            journal = self._roller_journal
             native_messages = api_kwargs.get("messages", [])
             journal.observe_tools(native_messages)
             outgoing = dict(api_kwargs)
             outgoing["messages"] = openai_compatible_tool_media(native_messages)
+            if capture:
+                outgoing["extra_headers"] = {**outgoing.get("extra_headers", {}),
+                    "x-roller-native-session-id": self.session_id}
             # Capture untruncated assembled prompts and actual schemas, without
             # HTTP authorization headers or the SDK client configuration.
             journal.write(
@@ -150,8 +177,21 @@ def journaled_agent(base_class, journal):
             return response
 
         def _flush_messages_to_session_db(self, messages, conversation_history=None):
-            journal.observe_tools(messages)
+            self._roller_journal.observe_tools(messages)
             return super()._flush_messages_to_session_db(messages, conversation_history)
+
+        def run_conversation(self, *args, **kwargs):
+            try:
+                result = super().run_conversation(*args, **kwargs)
+                self._roller_journal.observe_tools(result.get("messages", []))
+                if capture and self.session_id != root_session_id:
+                    self._roller_journal.write("child_end", completed=bool(result.get("completed")
+                        and not result.get("failed") and not result.get("error")))
+                return result
+            except BaseException:
+                if capture and self.session_id != root_session_id:
+                    self._roller_journal.write("child_end", completed=False)
+                raise
 
     return RecordedAgent
 
@@ -189,6 +229,16 @@ def run_turn(config, state_dir):
 
     state_dir = Path(state_dir)
     journal = Journal(state_dir / "trace.jsonl")
+    capture = bool(config.get("capture_calls"))
+    if capture:
+        (state_dir / "capture-native").mkdir(exist_ok=True)
+        # Native Hermes falls back to inline delegation for finite sessions.
+        os.environ["HERMES_SINGLE_QUERY_SESSION"] = "1"
+        recorded = journaled_agent(AIAgent, journal, capture=True, root_session_id=config["session_id"])
+        import run_agent
+        run_agent.AIAgent = recorded
+    else:
+        recorded = journaled_agent(AIAgent, journal)
     history_path = state_dir / "history.json"
     history = json.loads(history_path.read_text()) if history_path.exists() else []
     journal.write("message", message={"role": "user", "content": config["message"]})
@@ -207,11 +257,12 @@ def run_turn(config, state_dir):
         api_mode="chat_completions",
     )
     try:
-        agent = journaled_agent(AIAgent, journal)(
+        agent = recorded(
             model=config["model"], provider=provider, api_mode="chat_completions",
             base_url=os.environ["OPENAI_BASE_URL"], api_key=os.environ["OPENAI_API_KEY"],
             max_iterations=config["max_iterations"],
-            enabled_toolsets=["terminal", "file", *(["vision"] if config.get("vision", True) else [])],
+            enabled_toolsets=["terminal", "file", *(["vision"] if config.get("vision", True) else []),
+                             *(["delegation"] if capture else [])],
             quiet_mode=True, save_trajectories=False, session_id=config["session_id"],
             ephemeral_system_prompt=config["system_prompt"],
             skip_context_files=True, load_soul_identity=False, skip_memory=True,

@@ -799,6 +799,22 @@ class OpenClawHelpersTests(unittest.TestCase):
         starts = [command for command in runtime.commands if command[:2] == ["run", "-d"]]
         self.assertEqual(len(starts), 1)
 
+    def test_subagent_drain_failure_preserves_successful_root_turn(self) -> None:
+        runtime = FakeDockerRuntime()
+        request = RunRequest(0, Task("task", ("first",), 0), "provider/model", 30)
+        harness = OpenClawHarness(OpenClawConfig(docker_image="test-image", set_image_model=False, capture_calls=True, model_config={}), 0, runtime=runtime)
+        with tempfile.TemporaryDirectory() as tmp:
+            session = harness.create_session(request, Path(tmp), attempt=1)
+            session.container_started = True
+            session.gateway_process = FakeProcess(gateway=True)
+            harness.capture = mock.Mock(errors=[])
+            with mock.patch.object(harness, "_checked", side_effect=TimeoutError("pending announcement")):
+                turn = session.send("first", 30)
+            self.assertEqual(turn.content, "done")
+            self.assertEqual(turn.return_code, 0)
+            self.assertEqual(session.messages, ["first"])
+            self.assertIn("pending announcement", harness.capture.errors[0])
+
     def test_retained_error_container_is_stopped_to_release_gateway_port(self) -> None:
         runtime = FakeDockerRuntime()
         request = RunRequest(0, Task("task", ("first",), 0), "provider/model", 30)

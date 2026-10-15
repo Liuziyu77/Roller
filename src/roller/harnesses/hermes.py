@@ -15,6 +15,7 @@ from typing import Sequence
 from urllib.parse import urlsplit
 import uuid
 
+from roller.capture_runtime import CaptureRuntime
 from roller.artifacts import collect_output_directory
 from roller.harnesses.base import InteractiveHarness, InteractiveSession, TurnResult
 from roller.harnesses.docker import DockerRuntime, remove_container
@@ -56,6 +57,8 @@ class HermesConfig:
     max_iterations: int = 12
     context_length: int | None = None
     vision: bool = True
+    capture_calls: bool = False
+    capture_debug: str = "on-error"
     wire_trace_mode: str = "actf"
     keep_thinking: bool = True
     keep_container_on_error: bool = False
@@ -84,6 +87,8 @@ class HermesConfig:
                 valid = False
             if not valid:
                 raise ValueError("Hermes API base must be an absolute http(s) URL without credentials, query or fragment")
+        if self.capture_calls and (not self.api_base or self.network != "host" or self.wire_trace_mode == "off"):
+            raise ValueError("hermes call capture requires --api-base, --network host and wire tracing")
         if self.wire_trace_mode not in {"off", "actf", "full"}:
             raise ValueError("Hermes wire trace mode must be off|actf|full")
         if self.wire_trace_mode == "full" and (not self.api_base or self.network != "host"):
@@ -136,6 +141,8 @@ class HermesSession(InteractiveSession):
         self.image_digest = None
         self.hermes_version = None
         self.proxy = None
+        self.capture = CaptureRuntime(self.output_dir, attempt, "hermes", harness.config.capture_debug) if harness.config.capture_calls else None
+        self.capture_metadata = {}
         self._result: HarnessResult | None = None
         self.turns = 0
 
@@ -173,8 +180,10 @@ class HermesSession(InteractiveSession):
             raise ValueError(f"Hermes requires a non-empty API key in {config.api_key_env}")
         environment["OPENAI_API_KEY"] = os.environ[config.api_key_env]
         api_base = config.api_base or "https://api.openai.com/v1"
-        if config.wire_trace_mode == "full":
-            self.proxy = WireTraceProxy(api_base, self.output_dir / "wire_trace.jsonl", mode="full")
+        if config.wire_trace_mode == "full" or config.capture_calls:
+            self.proxy = WireTraceProxy(api_base, self.output_dir / "wire_trace.jsonl", mode="full",
+                capture_recorder=self.capture.recorder if self.capture else None,
+                capture_identity_header="x-roller-native-session-id" if self.capture else None)
             self.proxy.start()
             api_base = self.proxy.proxy_base_url
         environment.update(OPENAI_BASE_URL=api_base, HERMES_HOME="/roller/hermes-home", HERMES_DISABLE_LAZY_INSTALLS="1", TERMINAL_ENV="local", TERMINAL_CWD=config.workspace_container_path)
@@ -231,7 +240,7 @@ class HermesSession(InteractiveSession):
         # implicit host/profile discovery is disabled in the bridge.
         context = ", ".join(item.target for item in self.request.task.context_files)
         payload = {
-            "session_id": self.container, "model": self.request.model, "message": message,
+            "capture_calls": config.capture_calls, "session_id": self.container, "model": self.request.model, "message": message,
             "thinking": hermes_effort(resolve_thinking(self.request.task.thinking, config.reasoning_effort)),
             "max_iterations": config.max_iterations, "timeout_seconds": timeout,
             "context_length": config.context_length, "vision": config.vision,
@@ -319,6 +328,27 @@ class HermesSession(InteractiveSession):
                         redact_jsonl_file(self.proxy.log_path)
                 except Exception as exc:
                     problems.append(self.redact(str(exc)))
+            if self.capture is not None:
+                if trace is not None:
+                    self.capture.add_native(trace)
+                if config.capture_calls and self.harness.name == "hermes":
+                    self.capture.copy_native(runtime, self.container, STATE + "/capture-native/.", "children")
+                    children = self.capture.recorder.directory / "native" / "children"
+                    if children.is_dir():
+                        for child in children.glob("*.jsonl"):
+                            child_trace = children.parent / ("child-" + child.name)
+                            child.rename(child_trace)
+                            # Count child model responses once, independently of
+                            # the root ACTF, before compact capture removes raw logs.
+                            try:
+                                child_usage = extract_hermes_usage(child_trace)
+                            except Exception as exc:
+                                self.capture.errors.append("Hermes child usage extraction failed: " + self.redact(str(exc)))
+                            else:
+                                for key in ZERO_USAGE:
+                                    usage[key] += child_usage[key]
+                        children.rmdir()
+                self.capture_metadata = self.capture.finish(status)
             if problems and status == "ok":
                 status, error = "error", "; ".join(problems)
             retained = self.container_started and config.keep_container_on_error and status != "ok"
@@ -347,9 +377,9 @@ class HermesSession(InteractiveSession):
             status=status, error=self.redact(error) if error else None, elapsed_seconds=elapsed, usage=usage,
             trace_path=trace.relative_to(self.output_dir).as_posix() if trace else None,
             trajectory_path=trajectory.relative_to(self.output_dir).as_posix() if trajectory else None,
-            metadata={"raw_trace_schema": "roller.hermes-events/v1", "hermes_version": self.hermes_version,
+            metadata={**self.capture_metadata, "raw_trace_schema": "roller.hermes-events/v1", "hermes_version": self.hermes_version,
                 "provenance": provenance, "output_collection": output_metadata, "turn_count": self.turns,
                 "retained_container": self.container if retained else None,
-                "settings": {"reasoning_effort": resolve_thinking(self.request.task.thinking, config.reasoning_effort), "max_iterations": config.max_iterations, "context_length": config.context_length, "vision": config.vision, "toolsets": ["terminal", "file", *(["vision"] if config.vision else [])], "keep_thinking": config.keep_thinking}},
+                "settings": {"reasoning_effort": resolve_thinking(self.request.task.thinking, config.reasoning_effort), "max_iterations": config.max_iterations, "context_length": config.context_length, "vision": config.vision, "toolsets": ["terminal", "file", *(["delegation"] if config.capture_calls else []), *(["vision"] if config.vision else [])], "keep_thinking": config.keep_thinking}},
         )
         return self._result

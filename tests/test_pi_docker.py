@@ -212,7 +212,8 @@ class PiDockerTests(unittest.TestCase):
                         traces[path] = path.read_bytes()
                         events = [json.loads(line) for line in path.read_text().splitlines()]
                         native = [e["body"] for e in events if e["type"] == "request"]
-                        wire = [json.loads(line)["body"] for line in (participant / "wire_trace.jsonl").read_text().splitlines()]
+                        wire_events = [json.loads(line) for line in (participant / "wire_trace.jsonl").read_text().splitlines()]
+                        wire = [event["body"] for event in wire_events if "body" in event]
                         self.assertEqual(native, wire)
                         self.assertTrue((participant / "trace_SFT.json").is_file())
                         self.assertFalse((participant / "cache_trace.jsonl").exists())
@@ -368,8 +369,9 @@ class PiDockerTests(unittest.TestCase):
                 self.assertTrue((sample / "wire_trace.jsonl").is_file())
                 native_requests = [json.loads(line)["body"] for line in raw.splitlines()
                                    if json.loads(line).get("type") == "request"]
-                wire_requests = [json.loads(line)["body"] for line in
-                                 (sample / "wire_trace.jsonl").read_text().splitlines()]
+                wire_events = [json.loads(line) for line in
+                               (sample / "wire_trace.jsonl").read_text().splitlines()]
+                wire_requests = [event["body"] for event in wire_events if "body" in event]
                 self.assertEqual(native_requests, wire_requests)
                 self.assertEqual(native_requests, requests)
                 self.assertIn("You are running a Roller task", sft["messages"][0]["content"])

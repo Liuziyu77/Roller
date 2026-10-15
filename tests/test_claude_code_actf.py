@@ -87,6 +87,36 @@ def _events() -> list[dict]:
 
 
 class ClaudeCodeActfTests(unittest.TestCase):
+    def test_native_background_notification_survives_prompt_filter(self) -> None:
+        notice = "<task-notification><result>CHILD_DONE</result></task-notification>"
+        wrapper = "[SYSTEM NOTIFICATION - NOT USER INPUT]\nNative event.\n\n" + notice
+        for native_origin in (True, False):
+            with self.subTest(native_origin=native_origin):
+                events = _events()
+                events.insert(3, {
+                    "type": "user", "uuid": "notice", "timestamp": "2026-08-22T01:00:02.500Z", "origin": {"kind": "task-notification"} if native_origin else {},
+                    "message": {"role": "user", "content": notice},
+                })
+                trajectory = claude_code_events_to_actf(
+                    events, user_messages=["inspect input.txt"], notification_inputs={notice: wrapper})
+                users = [m["content"] for m in actf_to_sft(trajectory)["messages"] if m["role"] == "user"]
+                self.assertEqual(users, ["inspect input.txt", wrapper] if native_origin else ["inspect input.txt"])
+
+    def test_conversion_recovers_wire_notification_wrapper(self) -> None:
+        notice = "<task-notification><result>CHILD_DONE</result></task-notification>"
+        wrapper = "[SYSTEM NOTIFICATION - NOT USER INPUT]\nNative event.\n\n" + notice
+        events = _events()
+        events.insert(3, {"type": "user", "uuid": "notice", "timestamp": "2026-08-22T01:00:02.500Z", "origin": {"kind": "task-notification"},
+                          "message": {"role": "user", "content": notice}})
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source, wire = root / "native.jsonl", root / "wire.jsonl"
+            source.write_text("\n".join(json.dumps(e) for e in events))
+            wire.write_text(json.dumps({"body": {"messages": [{"role": "user", "content": [{"type": "text", "text": wrapper}]}]}}))
+            trajectory = convert_claude_code_trace(source, root / "trace.json", user_messages=["inspect input.txt"], wire_trace=wire)
+            users = [m["content"] for m in actf_to_sft(trajectory)["messages"] if m["role"] == "user"]
+            self.assertEqual(users, ["inspect input.txt", wrapper])
+
     def test_signed_thinking_preserves_only_native_text_and_does_not_mutate_raw(self) -> None:
         for native in ("", "Visible summary."):
             with self.subTest(native=native):

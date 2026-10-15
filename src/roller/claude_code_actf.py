@@ -312,6 +312,7 @@ def claude_code_events_to_actf(
     system_prompt: str = "",
     tools: list[dict[str, Any]] | None = None,
     keep_thinking: bool = True,
+    notification_inputs: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     """Convert Claude Code user/assistant session events to ``ACTF_v1.0``."""
 
@@ -356,6 +357,10 @@ def claude_code_events_to_actf(
         event_type = row.get("type")
         timestamp = _timestamp(row.get("timestamp"))
         sidechain = bool(row.get("isSidechain", False))
+        # A native child conversation is not part of the parent's model input.
+        # Keep it in raw/capture artifacts, never flatten it into root steps.
+        if sidechain or message.get("model") == "<synthetic>":
+            continue
 
         if event_type == "assistant":
             visible, reasoning, calls = _assistant_parts(message.get("content"))
@@ -478,13 +483,19 @@ def claude_code_events_to_actf(
         if not raw_text.strip():
             continue
         selected: str | None = None
-        if expected_users is None:
+        if isinstance(row.get("origin"), Mapping) and row["origin"].get("kind") == "task-notification":
+            # Native completion is input to the root model, not child output
+            # to flatten or another user-supplied prompt to filter out.
+            selected = (notification_inputs or {}).get(raw_text, raw_text)
+        elif expected_users is None:
             selected = raw_text
         elif expected_index < len(expected_users):
-            expected = expected_users[expected_index]
-            if _matches_expected_user(raw_text, expected):
-                selected = expected
-                expected_index += 1
+            for index in range(expected_index, len(expected_users)):
+                expected = expected_users[index]
+                if _matches_expected_user(raw_text, expected):
+                    selected = expected
+                    expected_index = index + 1
+                    break
         if selected is not None:
             pending_user = (
                 f"{pending_user}\n\n{selected}" if pending_user else selected
@@ -524,7 +535,7 @@ def claude_code_events_to_actf(
         ),
         first_time,
     )
-    return {
+    result = {
         "schema_version": "ACTF_v1.0",
         "system_prompt": system_prompt,
         "tools": normalized_tools,
@@ -532,6 +543,12 @@ def claude_code_events_to_actf(
         "started_at": steps[0]["started_at"] if steps else first_time,
         "finished_at": steps[-1]["finished_at"] if steps else last_time,
     }
+    if any(row.get("subtype") == "compact_boundary" for row in rows):
+        result["sft_unavailable_reason"] = (
+            "Claude context compaction cannot be represented by the linear ACTF projection; "
+            "use captured per-call contexts instead"
+        )
+    return result
 
 
 def convert_claude_code_trace(
@@ -544,14 +561,32 @@ def convert_claude_code_trace(
 ) -> dict[str, Any]:
     system_prompt = ""
     tools = None
+    notification_inputs: dict[str, str] = {}
     if wire_trace is not None:
         system_prompt, tools = extract_anthropic_wire_context(wire_trace)
+        if wire_trace.is_file():
+            for entry in _read_events(wire_trace):
+                body = entry.get("body", {})
+                for message in body.get("messages", []) if isinstance(body, Mapping) else []:
+                    if not isinstance(message, Mapping) or message.get("role") != "user":
+                        continue
+                    content = message.get("content", [])
+                    if isinstance(content, str):
+                        texts = [content]
+                    elif isinstance(content, list):
+                        texts = [b.get("text", "") for b in content if isinstance(b, Mapping)]
+                    else:
+                        texts = []
+                    for text in texts:
+                        if isinstance(text, str) and text.startswith("[SYSTEM NOTIFICATION - NOT USER INPUT]\n") and "<task-notification>" in text:
+                            notification_inputs[text[text.index("<task-notification>"):]] = text
     trajectory = claude_code_events_to_actf(
         _read_events(source),
         user_messages=user_messages,
         system_prompt=system_prompt,
         tools=tools,
         keep_thinking=keep_thinking,
+        notification_inputs=notification_inputs,
     )
     atomic_write_json(destination, trajectory)
     return trajectory

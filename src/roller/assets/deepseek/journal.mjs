@@ -32,6 +32,11 @@ export function apply(ctx) {
       if (typeof init?.body !== 'string') throw new Error('DeepSeek request body is not serialized JSON');
       const body = JSON.parse(init.body);
       appendFileSync(journal, JSON.stringify({type: 'request', turn, body}) + '\n');
+      if (config.capture_calls) {
+        const headers = new Headers(init.headers ?? (typeof input === 'object' ? input.headers : undefined));
+        headers.set('x-roller-native-session-id', config.session_id);
+        init = {...init, headers};
+      }
     }
     return original.call(globalThis, input, init);
   };

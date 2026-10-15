@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import unittest
+import json
+import tempfile
+from pathlib import Path
 
-from roller.actf import openclaw_events_to_actf
+from roller.actf import openclaw_events_to_actf, convert_openclaw_trace
 from roller.sft import actf_to_sft
 
 
@@ -60,6 +63,55 @@ def _events() -> list[dict]:
 
 
 class ActfConversionTests(unittest.TestCase):
+    def test_non_object_native_message_does_not_break_default_conversion(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            rows = [
+                {"type": "message", "message": {"role": "user", "content": "task"}},
+                {"type": "message", "message": {"role": "assistant", "content": "done"}},
+                {"type": "custom", "message": None},
+                {"type": "custom", "message": "unexpected"},
+            ]
+            source = root / "trace.jsonl"
+            source.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
+            trajectory = convert_openclaw_trace(source, root / "out.json", user_messages=["task"])
+            self.assertEqual(len(trajectory["steps"]), 1)
+            self.assertEqual(trajectory["steps"][0]["assistant_content"]["content"], "done")
+
+    def test_null_announcement_session_key_does_not_break_conversion(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "trace.jsonl"
+            source.write_text("\n".join(json.dumps(row) for row in _events()) + "\n")
+            cache = root / "cache.jsonl"
+            cache.write_text(json.dumps({"runId": "announce:v1:child:run", "sessionKey": None,
+                                         "stage": "stream:context", "messages": []}) + "\n")
+            trajectory = convert_openclaw_trace(source, root / "out.json", cache_trace=cache)
+            self.assertEqual(len(trajectory["steps"]), 2)
+            self.assertIn("sft_unavailable_reason", trajectory)
+
+    def test_announcement_input_uses_native_provider_response_binding(self):
+        notice = "A background task completed.\nsource: subagent\nCHILD_DONE"
+        signature = json.dumps({"id": "provider-final"})
+        assistant = {"role": "assistant", "content": [{"type": "text", "text": "Done", "textSignature": signature}], "stopReason": "stop"}
+        events = [{"type": "message", "message": {"role": "user", "content": "task"}}, {"type": "message", "message": assistant}]
+        base = {"runId": "announce:v1:child:run", "sessionKey": "agent:main:root"}
+        for complete in (True, False):
+            with self.subTest(complete=complete), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                cache_rows = [{**base, "stage": "stream:context", "messages": [{"role": "user", "content": notice}]}]
+                if complete:
+                    cache_rows.append({**base, "stage": "session:after", "messages": [assistant]})
+                (root / "trace.jsonl").write_text("\n".join(json.dumps(e) for e in events))
+                (root / "cache.jsonl").write_text("\n".join(json.dumps(e) for e in cache_rows))
+                trajectory = convert_openclaw_trace(root / "trace.jsonl", root / "out.json", user_messages=["task"], cache_trace=root / "cache.jsonl")
+                if complete:
+                    self.assertEqual(trajectory["steps"][0]["user_content"], notice)
+                    self.assertNotIn("sft_unavailable_reason", trajectory)
+                else:
+                    self.assertIn("sft_unavailable_reason", trajectory)
+
+
     def test_groups_assistant_tool_results_and_multiple_user_turns(self) -> None:
         trajectory = openclaw_events_to_actf(
             _events(), user_messages=("clean first", "clean second")

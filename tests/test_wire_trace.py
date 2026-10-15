@@ -17,6 +17,72 @@ from roller.wire_trace import (
     normalize_chat_completion_reasoning_response,
     strip_thinking_from_body,
 )
+from roller.capture import CallRecorder, read_jsonl
+
+
+class FullCallCaptureTests(unittest.TestCase):
+    def forward(self, root, recorder, payload, *, chat_session=None, native_run=None):
+        body=json.dumps({'model':'model','messages':[{'role':'user','content':'hello'}]}).encode()
+        handler=MagicMock()
+        handler.server.proxy=WireTraceProxy('http://model.test',root/'wire.jsonl',mode='full',capture_recorder=recorder,
+            capture_identity_header='x-roller-native-session-id' if chat_session else None,
+            capture_run_header='x-roller-native-run-id' if native_run else None)
+        handler.headers={'Content-Length':str(len(body)),'Content-Type':'application/json','Authorization':'Bearer private-credential'}
+        handler.rfile=io.BytesIO(body)
+        handler.wfile=io.BytesIO()
+        handler.path='/v1/messages'
+        if chat_session:
+            handler.path='/v1/chat/completions'
+            handler.headers['x-roller-native-session-id']=chat_session
+        if native_run:
+            handler.headers['x-roller-native-run-id']=native_run
+        handler.command='POST'
+        handler._record.side_effect=lambda b:_ProxyHandler._record(handler,b)
+        response=MagicMock(status=200,headers={'Content-Type':'application/json'})
+        stream=io.BytesIO(payload)
+        response.read1.side_effect=stream.read1
+        with patch('roller.wire_trace.urllib_request.urlopen',return_value=response) as send:
+            _ProxyHandler._handle(handler)
+            if chat_session:
+                self.assertNotIn('x-roller-native-session-id',dict((k.lower(),v) for k,v in send.call_args.args[0].header_items()))
+            if native_run:
+                self.assertNotIn('x-roller-native-run-id',dict((k.lower(),v) for k,v in send.call_args.args[0].header_items()))
+        return handler.wfile.getvalue()
+
+    def test_full_response_is_captured_without_changing_delivery(self):
+        payload=b'{"type":"message","id":"m","content":[{"type":"text","text":"hello"}]}'
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);recorder=CallRecorder(root/'capture/attempt-0001')
+            self.assertEqual(self.forward(root,recorder,payload),payload)
+            self.assertEqual(recorder.response_path(1).read_bytes(),payload)
+            events=read_jsonl(recorder.events)
+            self.assertTrue(events[-1]['complete'])
+            self.assertNotIn('private-credential',recorder.events.read_text())
+
+    def test_capture_storage_failure_does_not_interrupt_model_response(self):
+        payload=b'{"type":"message","id":"m","content":[]}'
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);recorder=CallRecorder(root/'capture/attempt-0001')
+            with patch.object(recorder,'open_response',side_effect=OSError('disk full')):
+                self.assertEqual(self.forward(root,recorder,payload),payload)
+            self.assertFalse(read_jsonl(recorder.events)[-1]['complete'])
+            self.assertEqual(recorder.error,'disk full')
+
+    def test_chat_session_is_recorded_locally_and_not_sent_to_provider(self):
+        payload=b'{"id":"m","choices":[]}'
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);recorder=CallRecorder(root/'capture/attempt-0001')
+            self.assertEqual(self.forward(root,recorder,payload,chat_session='child-session'),payload)
+            events=read_jsonl(recorder.events)
+            self.assertEqual(events[0]['native_identity'],{'session_id':'child-session'})
+            self.assertEqual(recorder.response_path(1).read_bytes(),payload)
+
+    def test_native_notification_run_is_local_and_not_sent_to_provider(self):
+        payload=b'{"id":"m","choices":[]}'
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);recorder=CallRecorder(root/'capture/attempt-0001')
+            self.assertEqual(self.forward(root,recorder,payload,chat_session='root',native_run='announce:child'),payload)
+            self.assertEqual(read_jsonl(recorder.events)[0]['native_identity'],{'session_id':'root','run_id':'announce:child'})
 
 
 class ForwardPathTests(unittest.TestCase):

@@ -4,6 +4,7 @@ import json
 import inspect
 import logging
 import queue
+import re
 import shutil
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -13,7 +14,9 @@ from pathlib import Path
 from typing import Any, Callable, Iterator
 
 from roller.harnesses.base import Harness
+from roller.capture import read_jsonl, recover_capture_retention, validate_capture
 from roller.integrity import (
+    has_legacy_claude_sidechain,
     trajectory_conversion_unavailable,
     validate_resumable_sample,
 )
@@ -45,16 +48,46 @@ def _sample_directory(run_dir: Path, request: RunRequest) -> Path:
 
 
 def check_retired_cot_samples(run_dir: Path, requests: list[RunRequest]) -> None:
-    """Reject retired projections before either CLI or Collector writes anything."""
+    """Recover capture publications and reject incompatible old samples before collection."""
 
     for request in requests:
         sample_dir = _sample_directory(run_dir, request)
         for base in (sample_dir, sample_dir / "user_simulator"):
             info_path = base / "info.json"
+            capture_root = base / "capture"
+            if capture_root.is_dir():
+                interrupted = {
+                    match.group(1)
+                    for entry in capture_root.iterdir()
+                    if (match := re.fullmatch(
+                        r"\.(attempt-\d+)\.retention-(?:stage|backup)", entry.name
+                    )) is not None
+                }
+                for attempt in interrupted:
+                    recover_capture_retention(
+                        capture_root / attempt, prefer_raw=not info_path.is_file()
+                    )
+                if interrupted and not info_path.is_file():
+                    raise ValueError(
+                        f"{base}: capture retention was interrupted; a valid capture attempt was recovered, "
+                        "but the sample has no finalized info.json. Resume stopped before rerunning the model."
+                    )
             try:
                 info = json.loads(info_path.read_text(encoding="utf-8"))
             except (OSError, ValueError):
                 continue
+            if isinstance(info, dict) and info.get("harness") == "claude-code" and info.get("status") == "ok":
+                actf_path = base / "trace_ACTF.json"
+                try:
+                    actf = json.loads(actf_path.read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    actf = None
+                if isinstance(actf, dict) and has_legacy_claude_sidechain(actf):
+                    raise ValueError(
+                        f"{actf_path}: legacy Claude Code sidechain steps are mixed into root ACTF/SFT; "
+                        "resume stopped before changing the run or calling the model. "
+                        "Reproject the existing raw trace offline or use a new run directory."
+                    )
             runtime = info.get("runtime") if isinstance(info, dict) else None
             if not isinstance(runtime, dict):
                 continue
@@ -192,6 +225,7 @@ class Collector:
             "results",
             "conversation.json",
             "user_simulator",
+            "capture",  # Formal per-attempt calls/native evidence, not diagnostics.
             # Written by bench grading, which runs before the container dies.
             "score.json",
         }
@@ -503,6 +537,26 @@ class Collector:
                 yield row
 
         write_jsonl(self.run_dir / "sft.jsonl", rows())
+        def calls() -> Iterator[dict[str, Any]]:
+            for result in results:
+                if result.get("status") not in {"ok", "skipped"}:
+                    continue
+                capture = result.get("runtime", {}).get("capture")
+                if not isinstance(capture, dict) or not capture.get("manifest"):
+                    continue
+                sample = self._sample_dir_from_result(result)
+                validate_capture(sample, capture)
+                manifest_path = sample / capture["manifest"]
+                for call in read_jsonl(manifest_path.parent / "calls.jsonl"):
+                    if call.get("export_status") == "available":
+                        yield {**call, "sample": sample.relative_to(self.run_dir).as_posix(),
+                               "capture_manifest": capture["manifest"],
+                               "task_id": result["task_id"], "model_label": result.get("model_label"),
+                               "sample_index": result.get("sample_index", 0)}
+        # Separate schema; historical assistant content is input, output is the
+        # current response. Never append these records to legacy sft.jsonl.
+        if any(isinstance(r.get("runtime", {}).get("capture"), dict) for r in results):
+            write_jsonl(self.run_dir / "calls.jsonl", calls())
 
     def collect(self, requests: list[RunRequest]) -> list[dict[str, Any]]:
         check_retired_cot_samples(self.run_dir, requests)

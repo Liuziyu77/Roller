@@ -18,6 +18,7 @@ from typing import Any, Mapping, Sequence
 from urllib.parse import urlsplit, urlunsplit
 
 from roller.actf import convert_openclaw_trace
+from roller.capture_runtime import CaptureRuntime
 from roller.artifacts import ArtifactCollectionResult, collect_output_directory
 from roller.harnesses.base import InteractiveHarness, InteractiveSession, TurnResult
 from roller.harnesses.docker import DockerRuntime, remove_container
@@ -209,6 +210,8 @@ class OpenClawConfig:
     search_provider: str | None = None
     thinking: str | None = None
     capture_cache_trace: bool = True
+    capture_calls: bool = False
+    capture_debug: str = "on-error"
     wire_trace_mode: str = "actf"
     keep_thinking: bool = True
     collect_paths: tuple[str, ...] = ()
@@ -242,6 +245,8 @@ class OpenClawConfig:
             if not path.startswith("/"):
                 raise ValueError(f"collected container path must be absolute: {path}")
         object.__setattr__(self, "thinking", normalize_thinking(self.thinking))
+        if self.capture_calls and (self.model_config is None or self.network != "host" or self.wire_trace_mode == "off" or not self.capture_cache_trace):
+            raise ValueError("OpenClaw call capture requires --model-config, host network, wire tracing and cache trace")
         if self.wire_trace_mode not in ("off", "actf", "full"):
             raise ValueError(f"wire_trace_mode must be off|actf|full: {self.wire_trace_mode}")
 
@@ -429,14 +434,16 @@ exec node --input-type=module -e "$1"
             raise ValueError(f"worker slot {worker_slot} produces invalid gateway port {self.gateway_port}")
         self.runtime = runtime or DockerRuntime(config.docker_binary)
         self._wire_proxy: WireTraceProxy | None = None
+        self.capture = None
 
-    def _start_wire_proxy(self, request: RunRequest, output_dir: Path) -> None:
+    def _start_wire_proxy(self, request: RunRequest, output_dir: Path, attempt: int = 1) -> None:
         """Start the wire-trace proxy for this rollout.
 
         The proxy runs when wire tracing is active, when thinking must be
         stripped from request history, when Chat Completions reasoning fields
         need normalization.
         """
+        self.capture = CaptureRuntime(output_dir, attempt, "openclaw", self.config.capture_debug) if self.config.capture_calls else None
         self._wire_proxy = None
         needs_proxy = (
             self.config.wire_trace_mode != "off"
@@ -446,7 +453,7 @@ exec node --input-type=module -e "$1"
         if not needs_proxy:
             return
         proxy_required = (
-            self.config.wire_trace_mode == "full" or not self.config.keep_thinking
+            self.config.wire_trace_mode == "full" or self.config.capture_calls or not self.config.keep_thinking
         )
         if self.config.model_config is None:
             if proxy_required:
@@ -474,7 +481,7 @@ exec node --input-type=module -e "$1"
                 provider_name,
             )
             return
-        if self.config.wire_trace_mode == "full":
+        if self.config.wire_trace_mode == "full" or self.config.capture_calls:
             log_path = output_dir / "wire_trace.jsonl"
             log_mode = "full"
         elif self.config.wire_trace_mode == "actf":
@@ -488,6 +495,9 @@ exec node --input-type=module -e "$1"
                 upstream,
                 log_path,
                 mode=log_mode,
+                capture_recorder=self.capture.recorder if self.capture else None,
+                capture_identity_header="x-roller-native-session-id" if self.capture else None,
+                capture_run_header="x-roller-native-run-id" if self.capture else None,
                 strip_thinking=not self.config.keep_thinking,
                 normalize_reasoning_replay=self.config.keep_thinking,
             )
@@ -1217,7 +1227,7 @@ class OpenClawSession(InteractiveSession):
             "rollout/wire_strip.jsonl",
         ):
             (self.output_dir / relative).unlink(missing_ok=True)
-        self.harness._start_wire_proxy(self.request, self.output_dir)
+        self.harness._start_wire_proxy(self.request, self.output_dir, self.attempt)
         self.environment = self.harness._start_container(self.container, self.request)
         self.container_started = True
         self.harness._prepare_workspace(self.container, self.request)
@@ -1226,6 +1236,9 @@ class OpenClawSession(InteractiveSession):
             self.container, self.request, self.environment
         )
         self.state_dir = self.harness._state_dir_for_version(self.version)
+        if self.harness.config.capture_calls:
+            patch = (Path(__file__).resolve().parents[1] / "assets/openclaw_capture.py").read_text()
+            self.harness._checked(["exec", self.container, "python3", "-c", patch], "OpenClaw native session capture hook")
         # The legacy 2026.3.11 image keeps its gateway config under
         # /root/.openclaw while the temporary OPENCLAW_STATE_DIR is used by
         # the CLI. Set both token locations explicitly so gateway and agent
@@ -1327,6 +1340,22 @@ class OpenClawSession(InteractiveSession):
             raise RuntimeError(
                 f"OpenClaw agent turn exited with code {return_code}{suffix}"
             )
+        if self.harness.config.capture_calls:
+            remaining = self.request.timeout_seconds - (time.monotonic() - self.started)
+            try:
+                if remaining <= 0:
+                    raise TimeoutError("OpenClaw capture deadline exhausted before subagent drain")
+                script = (Path(__file__).resolve().parents[1] / "assets/openclaw_drain.mjs").read_text()
+                self.harness._checked([
+                    "exec", "-e", f"OPENCLAW_STATE_DIR={self.state_dir}",
+                    "-e", f"ROLLER_CAPTURE_ROOT_SESSION={self.session_id}",
+                    "-e", f"ROLLER_CAPTURE_TIMEOUT_MS={max(1, int(remaining * 1000))}",
+                    self.container, "node", "--input-type=module", "-e", script,
+                ], "OpenClaw subagent completion drain", timeout=remaining)
+            except Exception as exc:
+                # The root turn already succeeded. Incomplete collection must
+                # remain a capture failure, not fabricate a failed root turn.
+                self.harness.capture.errors.append(f"OpenClaw subagent drain failed: {exc}")
         content, assistant_count = self.harness._latest_assistant_content(
             self.container,
             state_dir=self.state_dir,
@@ -1412,6 +1441,25 @@ class OpenClawSession(InteractiveSession):
                 self.harness.runtime.close_log(self.gateway_process)
         finally:
             self.harness._stop_wire_proxy()
+
+        capture_metadata = {}
+        if self.harness.capture is not None:
+            capture = self.harness.capture
+            cache = self.output_dir / "cache_trace.jsonl"
+            if cache.is_file():
+                capture.add_native(cache, "cache_trace.jsonl")
+            capture.copy_native(self.harness.runtime, self.container, self.state_dir + "/agents/main/sessions/.", "sessions")
+            capture.copy_native(self.harness.runtime, self.container, "/tmp/roller-subagent-runs.json", "subagent-runs.json")
+            capture.copy_native(self.harness.runtime, self.container, "/tmp/roller-capture-stream.jsonl", "stream-contexts.jsonl")
+            if self.harness.runtime.run(["exec", self.container, "test", "-f", "/tmp/roller-tool-id-aliases.jsonl"]).returncode == 0:
+                capture.copy_native(self.harness.runtime, self.container, "/tmp/roller-tool-id-aliases.jsonl", "tool-id-aliases.jsonl")
+            capture_metadata = capture.finish(status)
+            # Main ACTF consumes only root cache contexts. Full native evidence
+            # remains immutable in capture/native/cache_trace.jsonl.
+            if cache.is_file():
+                rows = [json.loads(line) for line in cache.read_text().split("\n") if line.strip()]
+                rows = [r for r in rows if ":subagent:" not in r.get("sessionKey", "")]
+                cache.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows))
 
         if trace_path is not None:
             try:
@@ -1565,6 +1613,7 @@ class OpenClawSession(InteractiveSession):
                 else None
             ),
             metadata={
+                **capture_metadata,
                 "raw_trace_schema": "openclaw-session-jsonl",
                 "openclaw_version": self.version,
                 "gateway_port": self.harness.gateway_port,

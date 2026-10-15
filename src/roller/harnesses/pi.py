@@ -15,6 +15,7 @@ from typing import Sequence
 from urllib.parse import urlsplit
 import uuid
 
+from roller.capture_runtime import CaptureRuntime
 from roller.artifacts import collect_output_directory
 from roller.harnesses.base import InteractiveHarness, InteractiveSession, TurnResult
 from roller.harnesses.docker import DockerRuntime, remove_container
@@ -58,6 +59,8 @@ class PiConfig:
     max_steps: int = 12
     context_length: int = 128000
     output_tokens: int = 8192
+    capture_calls: bool = False
+    capture_debug: str = "on-error"
     wire_trace_mode: str = "actf"
     keep_thinking: bool = True
     keep_container_on_error: bool = False
@@ -88,6 +91,8 @@ class PiConfig:
                 valid = False
             if not valid:
                 raise ValueError("Pi API base must be an absolute http(s) URL without credentials, query or fragment")
+        if self.capture_calls and (not self.api_base or self.network != "host" or self.wire_trace_mode == "off"):
+            raise ValueError("pi call capture requires --api-base, --network host and wire tracing")
         if self.wire_trace_mode not in {"off", "actf", "full"}:
             raise ValueError("Pi wire trace mode must be off|actf|full")
         if self.wire_trace_mode == "full" and (not self.api_base or self.network != "host"):
@@ -140,6 +145,8 @@ class PiSession(InteractiveSession):
         self.image_digest = None
         self.pi_version = None
         self.proxy = None
+        self.capture = CaptureRuntime(self.output_dir, attempt, "pi", harness.config.capture_debug) if harness.config.capture_calls else None
+        self.capture_metadata = {}
         self._result: HarnessResult | None = None
         self.turns = 0
 
@@ -177,8 +184,10 @@ class PiSession(InteractiveSession):
             raise ValueError(f"Pi requires a non-empty API key in {config.api_key_env}")
         environment["PI_API_KEY"] = os.environ[config.api_key_env]
         api_base = config.api_base or "https://api.openai.com/v1"
-        if config.wire_trace_mode == "full":
-            self.proxy = WireTraceProxy(api_base, self.output_dir / "wire_trace.jsonl", mode="full")
+        if config.wire_trace_mode == "full" or config.capture_calls:
+            self.proxy = WireTraceProxy(api_base, self.output_dir / "wire_trace.jsonl", mode="full",
+                capture_recorder=self.capture.recorder if self.capture else None,
+                capture_identity_header="x-roller-native-session-id" if self.capture else None)
             self.proxy.start()
             api_base = self.proxy.proxy_base_url
         environment.update(
@@ -238,7 +247,7 @@ class PiSession(InteractiveSession):
         # Pass explicit Context paths while keeping Pi resource discovery isolated.
         context = ", ".join(item.target for item in self.request.task.context_files)
         payload = {
-            "session_id": self.container, "turn": self.turns, "model": self.request.model, "message": message,
+            "capture_calls": config.capture_calls, "session_id": self.container, "turn": self.turns, "model": self.request.model, "message": message,
             "thinking": pi_effort(resolve_thinking(self.request.task.thinking, config.reasoning_effort)),
             "max_steps": config.max_steps, "timeout_seconds": timeout,
             "context_length": config.context_length, "output_tokens": config.output_tokens,
@@ -341,6 +350,10 @@ class PiSession(InteractiveSession):
                         redact_jsonl_file(self.proxy.log_path)
                 except Exception as exc:
                     problems.append(self.redact(str(exc)))
+            if self.capture is not None:
+                if trace is not None:
+                    self.capture.add_native(trace)
+                self.capture_metadata = self.capture.finish(status)
             if problems and status == "ok":
                 status, error = "error", "; ".join(problems)
             retained = self.container_started and config.keep_container_on_error and status != "ok"
@@ -369,7 +382,7 @@ class PiSession(InteractiveSession):
             status=status, error=self.redact(error) if error else None, elapsed_seconds=elapsed, usage=usage,
             trace_path=trace.relative_to(self.output_dir).as_posix() if trace else None,
             trajectory_path=trajectory.relative_to(self.output_dir).as_posix() if trajectory else None,
-            metadata={"raw_trace_schema": "roller.pi-events/v1", "pi_version": self.pi_version, "api_mode": "openai-completions",
+            metadata={**self.capture_metadata, "raw_trace_schema": "roller.pi-events/v1", "pi_version": self.pi_version, "api_mode": "openai-completions",
                 "provenance": provenance, "output_collection": output_metadata, "turn_count": self.turns,
                 "retained_container": self.container if retained else None,
                 "settings": {"reasoning_effort": resolve_thinking(self.request.task.thinking, config.reasoning_effort), "max_steps": config.max_steps, "context_length": config.context_length, "output_tokens": config.output_tokens, "tools": list(PI_TOOLS), "keep_thinking": config.keep_thinking}},
