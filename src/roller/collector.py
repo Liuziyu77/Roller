@@ -294,16 +294,19 @@ class Collector:
                 if not isinstance(trajectory, dict):
                     raise ValueError("canonical ACTF trajectory must be a JSON object")
                 if final.status == "ok":
-                    if has_main_compaction(trace_path, harness_name):
-                        capture = metadata.get("capture") or {}
-                        manifest = capture.get("manifest") if isinstance(capture, dict) else None
-                        if not isinstance(manifest, str):
-                            raise SFTConversionError("compaction SFT requires captured Calls")
+                    capture = metadata.get("capture") or {}
+                    manifest = capture.get("manifest") if isinstance(capture, dict) else None
+                    if isinstance(manifest, str):
                         sft_segments = export_compaction_segments(sample_dir, harness_name, manifest)
-                        sft_path.unlink(missing_ok=True)
-                        conversion = metadata.get("trajectory_conversion")
-                        if isinstance(conversion, dict) and conversion.get("target") == "sft":
-                            metadata.pop("trajectory_conversion")
+                        if sft_segments:
+                            sft_path.unlink(missing_ok=True)
+                            conversion = metadata.get("trajectory_conversion")
+                            if isinstance(conversion, dict) and conversion.get("target") == "sft":
+                                metadata.pop("trajectory_conversion")
+                        else:
+                            write_sft(sft_path, trajectory)
+                    elif has_main_compaction(trace_path, harness_name):
+                        raise SFTConversionError("context reset SFT requires captured Calls")
                     else:
                         write_sft(sft_path, trajectory)
             except SFTConversionError as exc:

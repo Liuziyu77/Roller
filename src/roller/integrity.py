@@ -197,8 +197,11 @@ def _validate_trajectory_files(
     capture = runtime.get("capture") if isinstance(runtime, Mapping) else None
     if isinstance(capture, dict):
         validate_capture(base, capture)
-    if not sft_unavailable and not segments and has_main_compaction(raw_path, info.get("harness")):
-        raise ValueError("compaction requires per-call context export, not linear SFT")
+    manifest = capture.get("manifest") if isinstance(capture, Mapping) else None
+    expected = (build_compaction_segments(base, info["harness"], manifest)
+                if not sft_unavailable and isinstance(manifest, str) else [])
+    if not sft_unavailable and not segments and (expected or has_main_compaction(raw_path, info.get("harness"))):
+        raise ValueError("context reset requires per-call export, not linear SFT")
 
     if raw_only:
         return
@@ -221,13 +224,8 @@ def _validate_trajectory_files(
             )
 
     if segments and not sft_unavailable:
-        if info.get("harness") not in {"claude-code", "codex"}:
-            raise ValueError("unsupported harness for SFT segments")
-        capture_info = capture if isinstance(capture, Mapping) else {}
-        manifest = capture_info.get("manifest")
         if not isinstance(manifest, str):
             raise ValueError("SFT segments lack their captured Calls")
-        expected = build_compaction_segments(base, info["harness"], manifest)
         if segments != [metadata for metadata, _ in expected]:
             raise ValueError("SFT segment metadata does not match captured boundaries and Calls")
         expected_paths = {item["path"] for item in segments}

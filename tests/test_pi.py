@@ -70,6 +70,23 @@ class PiTraceTests(unittest.TestCase):
         self.assertEqual(events, original)
         self.assertTrue(all(not step["assistant_content"]["reasoning_content"] for step in actf["steps"]))
 
+    def test_balanced_compaction_keeps_main_steps_for_call_based_sft(self):
+        events = sample_events()
+        events[5:5] = [
+            {"type": "event", "turn": 1, "event": {"type": "compaction_start"}},
+            {"type": "request", "turn": 1, "body": {"messages": [
+                {"role": "user", "content": "Summarize the task"}], "tools": []}},
+            native({"role": "assistant", "content": [{"type": "text", "text": "internal summary"}],
+                    "stopReason": "stop"}),
+            {"type": "event", "turn": 1, "event": {"type": "compaction_end"}},
+        ]
+        actf = pi_events_to_actf(events)
+        self.assertEqual(len(actf["steps"]), 2)
+        self.assertEqual(actf["steps"][-1]["assistant_content"]["content"], "TOKEN")
+        self.assertIn("compaction", actf["sft_unavailable_reason"])
+        with self.assertRaises(ValueError):
+            actf_to_sft(actf)
+
     def test_multiturn_identical_replies_and_unicode_framing(self):
         events = sample_events()
         request = deepcopy(events[2]); request["turn"] = 2

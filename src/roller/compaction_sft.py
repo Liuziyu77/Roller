@@ -1,7 +1,8 @@
-"""SFT windows reconstructed from captured main-agent requests after compaction.
+"""SFT windows reconstructed from captured main-agent requests.
 
-Native events establish *when* a window changed. The request body, rather than
-the harness's compaction policy, establishes what the model actually saw.
+Native events identify Claude/Codex compaction and its summary call. For other
+harnesses, a request that no longer extends the verified context starts a new
+window. The request body establishes what the model actually saw.
 """
 from __future__ import annotations
 
@@ -30,10 +31,28 @@ def _native_rows(path: Path, harness: str) -> list[dict[str, Any]]:
 
 
 def has_main_compaction(path: Path, harness: str | None) -> bool:
-    """Whether the root trace contains a supported compaction boundary."""
-    if harness not in {"claude-code", "codex"}:
-        return False
-    return any(_is_main_compaction(row, harness) for row in _native_rows(path, harness))
+    """Whether native evidence rules out a safe linear SFT export."""
+    rows = _native_rows(path, harness or "")
+    if harness in {"claude-code", "codex"}:
+        return any(_is_main_compaction(row, harness) for row in rows)
+    if harness == "openclaw":
+        return any(row.get("type") == "compaction" for row in rows)
+    if harness == "pi" and any(row.get("type") == "event"
+                               and (row.get("event") or {}).get("type") == "compaction_end"
+                               for row in rows):
+        return True
+    previous: list[Any] = []
+    for row in rows:
+        if row.get("type") != "request":
+            continue
+        body = row.get("body", row)
+        messages = body.get("messages") if isinstance(body, Mapping) else None
+        if not isinstance(messages, list):
+            continue
+        if previous and messages[:len(previous)] != previous:
+            return True
+        previous = messages
+    return False
 
 
 def _time(value: Any) -> datetime:
@@ -159,6 +178,36 @@ def _responses_item(item: Mapping[str, Any]) -> list[dict[str, Any]]:
     raise SFTConversionError(f"unsupported Responses input item: {kind}")
 
 
+def _chat_message(message: Mapping[str, Any]) -> dict[str, Any]:
+    role = message.get("role")
+    if role not in {"system", "developer", "user", "assistant", "tool"}:
+        raise SFTConversionError(f"unsupported Chat Completions role: {role}")
+    content = message.get("content")
+    if content is None and role == "assistant":
+        content = ""
+    value = _text_blocks(content, kinds={"text"})
+    if role == "tool":
+        identifier = message.get("tool_call_id")
+        if not isinstance(identifier, str) or not identifier:
+            raise SFTConversionError("Chat Completions tool result lacks a call ID")
+        return {"role": role, "tool_call_id": identifier, "content": value}
+    if role == "assistant":
+        reasoning = message.get("reasoning_content") or ""
+        if not isinstance(reasoning, str):
+            raise SFTConversionError("Chat Completions reasoning is not text")
+        raw_calls = message.get("tool_calls") or []
+        if not isinstance(raw_calls, list):
+            raise SFTConversionError("Chat Completions tool calls are invalid")
+        calls = []
+        for call in raw_calls:
+            if not isinstance(call, Mapping) or not isinstance(call.get("function"), Mapping):
+                raise SFTConversionError("Chat Completions tool call is invalid")
+            function = call["function"]
+            calls.append(_tool_call(call.get("id"), function.get("name"), function.get("arguments")))
+        return {"role": role, "reasoning_content": reasoning, "content": value, "tool_calls": calls}
+    return {"role": role, "content": value}
+
+
 def _request(call: Mapping[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     context = call.get("context")
     if not isinstance(context, Mapping):
@@ -189,6 +238,12 @@ def _request(call: Mapping[str, Any]) -> tuple[list[dict[str, Any]], list[dict[s
                 raise SFTConversionError("Responses request has an invalid item")
             messages.extend(_responses_item(item))
         tools = deepcopy(context.get("tools", []))
+    elif protocol == "openai-chat-completions":
+        for item in context.get("messages", []):
+            if not isinstance(item, Mapping):
+                raise SFTConversionError("Chat Completions request has an invalid message")
+            messages.append(_chat_message(item))
+        tools = deepcopy(context.get("tools", []))
     else:
         raise SFTConversionError(f"unsupported compaction Call protocol: {protocol}")
     if not isinstance(tools, list):
@@ -216,7 +271,108 @@ def _response(call: Mapping[str, Any]) -> list[dict[str, Any]]:
         if not result or any(message["role"] != "assistant" for message in result):
             raise SFTConversionError("Responses output has no representable assistant target")
         return result
+    if call.get("protocol") == "openai-chat-completions":
+        choices = output.get("choices")
+        if not isinstance(choices, list) or len(choices) != 1:
+            raise SFTConversionError("Chat Completions output lacks one choice")
+        message = choices[0].get("message") if isinstance(choices[0], Mapping) else None
+        if not isinstance(message, Mapping) or message.get("role") != "assistant":
+            raise SFTConversionError("Chat Completions output lacks an assistant target")
+        return [_chat_message(message)]
     raise SFTConversionError("unsupported compaction response protocol")
+
+
+def _call_windows(calls: list[dict[str, Any]], *, force: bool = False) -> list[list[dict[str, Any]]]:
+    """Group root Calls while their inputs extend the previously verified context."""
+    windows: list[list[dict[str, Any]]] = []
+    messages: list[dict[str, Any]] = []
+    tools: list[dict[str, Any]] = []
+    previous_input: list[dict[str, Any]] = []
+    previous_tools: list[dict[str, Any]] = []
+    context_changed = False
+    for call in calls:
+        if call.get("export_status") != "available":
+            continue  # A failed attempt has no supervised model output.
+        actual, actual_tools = _request(call)
+        if not actual:
+            raise SFTConversionError("captured Call lacks its actual input")
+        if previous_input and (actual[:len(previous_input)] != previous_input
+                               or actual_tools != previous_tools):
+            context_changed = True
+        if windows and (actual_tools != tools or actual[:len(messages)] != messages
+                        or any(item["role"] == "assistant" for item in actual[len(messages):])):
+            windows.append([])
+        elif not windows:
+            windows.append([])
+        windows[-1].append(call)
+        previous_input, previous_tools = actual, actual_tools
+        messages, tools = actual + _response(call), actual_tools
+    if not context_changed and not force:
+        return []
+    if len(windows) > 1 and any(call.get("export_status") != "available" for call in calls):
+        raise SFTConversionError("context changed while a main Call is incomplete")
+    return windows
+
+
+def _assistant_signature(message: Mapping[str, Any]) -> tuple[str, tuple[tuple[str, str], ...]]:
+    """Compare model outputs with ACTF main steps without harness-specific tool IDs."""
+    content = message.get("content")
+    calls = message.get("tool_calls") or []
+    if not isinstance(content, str) or not isinstance(calls, list):
+        raise SFTConversionError("ACTF assistant output cannot be matched to a Call")
+    tools = []
+    for call in calls:
+        if not isinstance(call, Mapping):
+            raise SFTConversionError("ACTF tool call cannot be matched to a Call")
+        function = call.get("function") if call.get("type") == "function" else call
+        if not isinstance(function, Mapping):
+            raise SFTConversionError("ACTF tool call cannot be matched to a Call")
+        name, arguments = function.get("name"), function.get("arguments")
+        if not isinstance(name, str) or not name:
+            raise SFTConversionError("ACTF tool call lacks a name")
+        try:
+            parsed = json.loads(arguments) if isinstance(arguments, str) else arguments
+            if not isinstance(parsed, dict):
+                raise ValueError("tool arguments are not an object")
+            tools.append((name, json.dumps(parsed, ensure_ascii=False, sort_keys=True)))
+        except (ValueError, TypeError) as exc:
+            raise SFTConversionError("ACTF tool arguments cannot be matched to a Call") from exc
+    return content, tuple(tools)
+
+
+def _main_chat_calls(sample_dir: Path, calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Exclude auxiliary model requests absent from the executed ACTF main trace."""
+    trajectory = json.loads((sample_dir / "trace_ACTF.json").read_text(encoding="utf-8"))
+    steps = trajectory.get("steps") if isinstance(trajectory, Mapping) else None
+    if not isinstance(steps, list) or not steps or any(not isinstance(step, Mapping) for step in steps):
+        raise SFTConversionError("main ACTF steps are required to bind captured Calls")
+    targets = [_assistant_signature(step.get("assistant_content", {})) for step in steps]
+    selected: list[dict[str, Any]] = []
+    for call in calls:
+        if call.get("export_status") != "available":
+            continue
+        if len(selected) < len(targets) and _assistant_signature(_response(call)[0]) == targets[len(selected)]:
+            selected.append(call)
+    if len(selected) != len(targets):
+        raise SFTConversionError("captured root Calls cannot be bound to every ACTF main step")
+    selected_ids = {call["call_id"] for call in selected}
+    for index, call in enumerate(calls):
+        if call.get("export_status") != "available" or call["call_id"] in selected_ids:
+            continue
+        auxiliary = _response(call)[0]
+        if _assistant_signature(auxiliary) in targets:
+            raise SFTConversionError("ambiguous root Call matches an ACTF main step")
+        summary = auxiliary["content"]
+        later_inputs = (_request(later)[0] for later in calls[index + 1:]
+                        if later["call_id"] in selected_ids)
+        summary_reused = any(
+            summary in message["content"]
+            for messages in later_inputs for message in messages
+            if isinstance(message.get("content"), str)
+        )
+        if auxiliary["tool_calls"] or not summary.strip() or not summary_reused:
+            raise SFTConversionError("unmatched root Call is not bound as a compaction summary")
+    return selected
 
 
 def _boundaries(harness: str, rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], set[str]]:
@@ -252,8 +408,6 @@ def build_compaction_segments(sample_dir: Path, harness: str,
     """Build verified main-agent windows without changing the sample directory."""
     rows = _native_rows(sample_dir / "trace.jsonl", harness)
     boundaries, summary_ids = _boundaries(harness, rows)
-    if not boundaries:
-        return []
     if harness == "codex" and len(summary_ids) != len(boundaries):
         raise SFTConversionError("Codex summary output cannot be bound to every compaction boundary")
     capture_dir = (sample_dir / manifest_relative).parent
@@ -275,7 +429,7 @@ def build_compaction_segments(sample_dir: Path, harness: str,
         raise SFTConversionError("compaction boundary lacks a native event ID")
     if any(later <= earlier for earlier, later in zip(boundary_times, boundary_times[1:])):
         raise SFTConversionError("compaction boundaries are not in chronological order")
-    windows: list[list[dict[str, Any]]] = [[] for _ in range(len(boundaries) + 1)]
+    root_calls: list[dict[str, Any]] = []
     for call in sorted(calls, key=lambda c: c.get("request_seq", 0)):
         if call.get("participant_id") != root:
             continue
@@ -285,6 +439,20 @@ def build_compaction_segments(sample_dir: Path, harness: str,
         if harness == "codex" and any(call.get("context") == context for context in summary_contexts):
             # Failed/retried summary requests use the same synthetic input.
             continue
+        root_calls.append(call)
+    if not boundaries:
+        if not root_calls or any(call.get("protocol") != "openai-chat-completions" for call in root_calls):
+            if has_main_compaction(sample_dir / "trace.jsonl", harness):
+                raise SFTConversionError("native context change lacks usable root Calls")
+            return []
+        observed_windows = _call_windows(root_calls)
+        if not observed_windows and not has_main_compaction(sample_dir / "trace.jsonl", harness):
+            return []
+        root_calls = _main_chat_calls(sample_dir, root_calls)
+        windows = _call_windows(root_calls, force=True)
+    else:
+        windows = [[] for _ in range(len(boundaries) + 1)]
+    for call in root_calls if boundaries else []:
         when = _time(call.get("started_at"))
         if when in boundary_times:
             raise SFTConversionError("main Call starts at an ambiguous compaction boundary")
@@ -318,10 +486,10 @@ def build_compaction_segments(sample_dir: Path, harness: str,
         validate_sft_record(record)
         filename = f"{SFT_SEGMENTS_DIR}/{len(exported)+1:04d}.json"
         metadata = {"path": filename, "window_index": window_index,
-                    "boundary_event_id": boundaries[window_index-1]["event_id"] if window_index else None,
+                    "boundary_event_id": boundaries[window_index-1]["event_id"] if window_index and boundaries else None,
                     "first_call_id": window_calls[0]["call_id"],
                     "last_call_id": window_calls[-1]["call_id"]}
-        if window_index:
+        if window_index and boundaries:
             summary_id = boundaries[window_index-1]["summary_response_id"]
             metadata["summary_call_id"] = (summary_calls[summary_id][0]["call_id"]
                                            if summary_id else None)

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from roller.compaction_sft import build_compaction_segments, export_compaction_segments
+from roller.compaction_sft import build_compaction_segments, export_compaction_segments, has_main_compaction
 from roller.collector import CollectionConfig, Collector
 from roller.integrity import validate_resumable_sample
 from roller.models import HarnessResult, RunRequest, Task
@@ -168,6 +168,169 @@ def test_unverified_assistant_in_later_request_is_not_trained(tmp_path: Path) ->
     ])
     with pytest.raises(SFTConversionError, match="unverified assistant"):
         build_compaction_segments(tmp_path, "claude-code", manifest)
+
+
+@pytest.mark.parametrize("harness", ["openclaw", "opencode", "hermes", "deepseek", "pi"])
+def test_chat_harness_context_rewrite_exports_actual_windows(tmp_path: Path, harness: str) -> None:
+    _write(tmp_path / "trace.jsonl", [{"type": "session"}])
+    (tmp_path / "trace_ACTF.json").write_text(json.dumps({"steps": [
+        {"assistant_content": {"content": "", "tool_calls": [
+            {"name": "read", "arguments": {"path": "a"}}]}},
+        {"assistant_content": {"content": "intermediate", "tool_calls": []}},
+        {"assistant_content": {"content": "final answer", "tool_calls": []}},
+    ]}), encoding="utf-8")
+    tool = {"type": "function", "function": {"name": "read", "parameters": {"type": "object"}}}
+    first = {"messages": [{"role": "system", "content": "instructions"},
+                          {"role": "user", "content": "read the file"}], "tools": [tool]}
+    second = {"messages": [*first["messages"],
+                           {"role": "assistant", "content": None, "tool_calls": [
+                               {"id": "tool-1", "type": "function", "function": {
+                                   "name": "read", "arguments": '{"path":"a"}'}}]},
+                           {"role": "tool", "tool_call_id": "tool-1", "content": "old file"}],
+              "tools": [tool]}
+    resumed = {"messages": [{"role": "system", "content": "instructions"},
+                            {"role": "user", "content": "compacted summary"},
+                            {"role": "user", "content": "finish the task"}], "tools": [tool]}
+    def answer(content: str, tool_calls: list[dict] | None = None) -> dict:
+        return {"choices": [{"message": {"role": "assistant", "content": content,
+                                        "tool_calls": tool_calls or []}}]}
+    calls = [
+        _call(1, "root", "openai-chat-completions", first, answer("", second["messages"][2]["tool_calls"])),
+        _call(2, "root", "openai-chat-completions", second, answer("intermediate")),
+        _call(3, "child", "openai-chat-completions", first, answer("child result")),
+        _call(4, "root", "openai-chat-completions", resumed, answer("final answer")),
+    ]
+    manifest = _capture(tmp_path, "root", calls)
+    segments = build_compaction_segments(tmp_path, harness, manifest)
+    assert len(segments) == 2
+    assert segments[0][1]["messages"][2]["tool_calls"][0]["id"] == "tool-1"
+    assert segments[1][1]["target_start_index"] == 3
+    assert [message["content"] for message in segments[1][1]["messages"]] == [
+        "instructions", "compacted summary", "finish the task", "final answer"]
+    assert segments[1][0]["boundary_event_id"] is None
+
+
+def test_chat_auxiliary_summary_call_is_not_a_training_target(tmp_path: Path) -> None:
+    _write(tmp_path / "trace.jsonl", [{"type": "compaction"}])
+    (tmp_path / "trace_ACTF.json").write_text(json.dumps({"steps": [
+        {"assistant_content": {"content": "ACK", "tool_calls": []}},
+        {"assistant_content": {"content": "final answer", "tool_calls": []}},
+    ]}), encoding="utf-8")
+    def call(index: int, prompt: str, output: str) -> dict:
+        return _call(index, "root", "openai-chat-completions", {
+            "messages": [{"role": "user", "content": prompt}], "tools": []},
+            {"choices": [{"message": {"role": "assistant", "content": output}}]})
+    calls = [
+        call(1, "original task", "ACK"),
+        call(2, "Summarize the original task", "internal summary"),
+        call(3, "internal summary and next question", "final answer"),
+    ]
+    manifest = _capture(tmp_path, "root", calls)
+    segments = build_compaction_segments(tmp_path, "openclaw", manifest)
+    assert len(segments) == 2
+    assert [item["first_call_id"] for item, _ in segments] == ["call-1", "call-3"]
+    assert "internal summary" not in [message["content"] for _, record in segments
+                                      for message in record["messages"] if message["role"] == "assistant"]
+    calls[1]["output"]["choices"][0]["message"]["content"] = "unrelated output"
+    _capture(tmp_path, "root", calls)
+    with pytest.raises(SFTConversionError, match="unmatched root Call"):
+        build_compaction_segments(tmp_path, "openclaw", manifest)
+
+
+def test_chat_harness_keeps_linear_export_when_requests_only_append(tmp_path: Path) -> None:
+    _write(tmp_path / "trace.jsonl", [{"type": "session"}])
+    first = {"messages": [{"role": "system", "content": "instructions"},
+                          {"role": "user", "content": "task"}], "tools": []}
+    second = {"messages": [*first["messages"],
+                           {"role": "assistant", "content": "answer"},
+                           {"role": "user", "content": "continue"}], "tools": []}
+    def answer(value: str) -> dict:
+        return {"choices": [{"message": {"role": "assistant", "content": value}}]}
+    manifest = _capture(tmp_path, "root", [
+        _call(1, "root", "openai-chat-completions", first, answer("answer")),
+        _call(2, "root", "openai-chat-completions", second, answer("done")),
+    ])
+    assert build_compaction_segments(tmp_path, "hermes", manifest) == []
+
+
+@pytest.mark.parametrize("harness", ["opencode", "hermes", "deepseek", "pi"])
+def test_native_request_rewrite_blocks_linear_sft_without_capture(tmp_path: Path, harness: str) -> None:
+    first = [{"role": "user", "content": "original task"}]
+    resumed = [{"role": "user", "content": "compacted summary"}]
+    _write(tmp_path / "trace.jsonl", [
+        {"type": "request", "body": {"messages": first}, "messages": first},
+        {"type": "request", "body": {"messages": resumed}, "messages": resumed},
+    ])
+    assert has_main_compaction(tmp_path / "trace.jsonl", harness)
+
+
+def test_openclaw_native_compaction_blocks_linear_sft_without_capture(tmp_path: Path) -> None:
+    _write(tmp_path / "trace.jsonl", [{"type": "compaction"}])
+    assert has_main_compaction(tmp_path / "trace.jsonl", "openclaw")
+    manifest = _capture(tmp_path, "root", [])
+    with pytest.raises(SFTConversionError, match="lacks usable root Calls"):
+        build_compaction_segments(tmp_path, "openclaw", manifest)
+
+
+def test_pi_native_compaction_boundary_blocks_linear_sft(tmp_path: Path) -> None:
+    _write(tmp_path / "trace.jsonl", [{"type": "event", "event": {"type": "compaction_end"}}])
+    assert has_main_compaction(tmp_path / "trace.jsonl", "pi")
+
+
+def test_collector_uses_chat_call_rewrite_instead_of_linear_actf(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = RunRequest(index=0, task=Task(id="chat-reset", prompts=("task",), source_index=0),
+                         model="model", timeout_seconds=30)
+    collector = Collector(CollectionConfig(run_dir=tmp_path), lambda slot: None)
+    sample = collector._sample_dir(request)
+    sample.mkdir(parents=True)
+    _write(sample / "trace.jsonl", [{"type": "session"}])
+    (sample / "trace_ACTF.json").write_text(json.dumps({
+        "schema_version": "ACTF_v1.0", "steps": [
+            {"step_id": 1, "assistant_content": {"content": "old answer", "tool_calls": []}},
+            {"step_id": 2, "assistant_content": {"content": "new answer", "tool_calls": []}},
+        ]}), encoding="utf-8")
+    def answer(value: str) -> dict:
+        return {"choices": [{"message": {"role": "assistant", "content": value}}]}
+    def context(value: str) -> dict:
+        return {"messages": [{"role": "system", "content": "system"},
+                             {"role": "user", "content": value}], "tools": []}
+    calls = [
+        _call(1, "root", "openai-chat-completions", context("task"), answer("old answer")),
+        _call(2, "root", "openai-chat-completions", context("summary"), answer("new answer")),
+    ]
+    manifest = _capture(sample, "root", calls)
+    result = collector._finalize_sample(
+        request, sample, "hermes",
+        HarnessResult(status="ok", elapsed_seconds=0.1,
+                      trace_path=str(sample / "trace.jsonl"),
+                      trajectory_path=str(sample / "trace_ACTF.json"),
+                      metadata={"capture": {"manifest": manifest}}),
+        [], "2026-10-15T00:00:00Z",
+    )
+    assert result["trajectory"]["sft"] is None
+    assert len(result["trajectory"]["sft_segments"]) == 2
+    assert not (sample / "trace_SFT.json").exists()
+    monkeypatch.setattr("roller.collector.validate_capture", lambda *_: None)
+    monkeypatch.setattr("roller.integrity.validate_capture", lambda *_: None)
+    validate_resumable_sample(sample, request, result)
+    collector._write_sft_dataset([result])
+    assert len((tmp_path / "sft.jsonl").read_text().splitlines()) == 2
+
+    calls[1]["output"] = answer("unmatched output")
+    _capture(sample, "root", calls)
+    unavailable = collector._finalize_sample(
+        request, sample, "hermes",
+        HarnessResult(status="ok", elapsed_seconds=0.1,
+                      trace_path=str(sample / "trace.jsonl"),
+                      trajectory_path=str(sample / "trace_ACTF.json"),
+                      metadata={"capture": {"manifest": manifest}}),
+        [], "2026-10-15T00:00:00Z",
+    )
+    assert unavailable["runtime"]["trajectory_conversion"]["target"] == "sft"
+    assert unavailable["trajectory"].get("sft_segments", []) == []
+    validate_resumable_sample(sample, request, unavailable)
 
 
 def test_collector_exports_aggregates_and_validates_compaction_segments(
