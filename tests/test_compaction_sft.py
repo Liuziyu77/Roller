@@ -103,6 +103,33 @@ def test_claude_compacts_during_one_user_tool_turn(tmp_path: Path) -> None:
     assert record["messages"][3]["tool_call_id"] == "tool-1"
 
 
+def test_claude_manual_compaction_preserves_injected_system_messages(tmp_path: Path) -> None:
+    _write(tmp_path / "trace.jsonl", [{"type": "system", "subtype": "compact_boundary",
+                                        "uuid": "manual-boundary", "timestamp": "2026-10-15T00:00:03Z"}])
+    before = {"system": [{"type": "text", "text": "base instructions"}], "tools": [],
+              "messages": [{"role": "user", "content": "task"},
+                           {"role": "system", "content": "injected instructions"}]}
+    after = {"system": before["system"], "tools": [], "messages": [
+        {"role": "user", "content": "summary"},
+        {"role": "assistant", "content": "recent answer"},
+        {"role": "user", "content": "continue"},
+        {"role": "system", "content": "post-compaction instructions"},
+    ]}
+    manifest = _capture(tmp_path, "root", [
+        _call(1, "root", "anthropic-messages", before,
+              {"content": [{"type": "text", "text": "recent answer"}]}),
+        _call(4, "root", "anthropic-messages", after,
+              {"content": [{"type": "text", "text": "done"}]}),
+    ])
+    segments = build_compaction_segments(tmp_path, "claude-code", manifest)
+    assert len(segments) == 2
+    record = segments[1][1]
+    assert [message["role"] for message in record["messages"]] == [
+        "system", "user", "assistant", "user", "system", "assistant"]
+    assert record["target_start_index"] == 5
+    assert record["messages"][4]["content"] == "post-compaction instructions"
+
+
 def test_codex_summary_call_is_not_a_training_target(tmp_path: Path) -> None:
     root = "thread:root"
     _write(tmp_path / "trace.jsonl", [
@@ -237,6 +264,48 @@ def test_chat_auxiliary_summary_call_is_not_a_training_target(tmp_path: Path) ->
         build_compaction_segments(tmp_path, "openclaw", manifest)
 
 
+def test_unmatched_main_reply_in_assistant_history_is_not_called_a_summary(tmp_path: Path) -> None:
+    _write(tmp_path / "trace.jsonl", [{"type": "compaction"}])
+    (tmp_path / "trace_ACTF.json").write_text(json.dumps({"steps": [
+        {"assistant_content": {"content": "ACK", "tool_calls": []}},
+        {"assistant_content": {"content": "DONE", "tool_calls": []}},
+    ]}), encoding="utf-8")
+    def call(index: int, messages: list[dict], answer: str) -> dict:
+        return _call(index, "root", "openai-chat-completions",
+                     {"messages": messages, "tools": []},
+                     {"choices": [{"message": {"role": "assistant", "content": answer}}]})
+    manifest = _capture(tmp_path, "root", [
+        call(1, [{"role": "user", "content": "task"}], "ACK"),
+        call(2, [{"role": "user", "content": "task"},
+                 {"role": "assistant", "content": "ACK"}], "omitted main reply"),
+        call(3, [{"role": "user", "content": "summary"},
+                 {"role": "assistant", "content": "omitted main reply"},
+                 {"role": "user", "content": "continue"}], "DONE"),
+    ])
+    with pytest.raises(SFTConversionError, match="unmatched root Call"):
+        build_compaction_segments(tmp_path, "openclaw", manifest)
+
+
+def test_auxiliary_call_alone_does_not_create_a_main_context_window(tmp_path: Path) -> None:
+    _write(tmp_path / "trace.jsonl", [{"type": "session"}])
+    (tmp_path / "trace_ACTF.json").write_text(json.dumps({"steps": [
+        {"assistant_content": {"content": "ACK", "tool_calls": []}},
+        {"assistant_content": {"content": "DONE", "tool_calls": []}},
+    ]}), encoding="utf-8")
+    def call(index: int, messages: list[dict], answer: str) -> dict:
+        return _call(index, "root", "openai-chat-completions",
+                     {"messages": messages, "tools": []},
+                     {"choices": [{"message": {"role": "assistant", "content": answer}}]})
+    manifest = _capture(tmp_path, "root", [
+        call(1, [{"role": "user", "content": "task"}], "ACK"),
+        call(2, [{"role": "user", "content": "summarize task"}], "summary"),
+        call(3, [{"role": "user", "content": "task"},
+                 {"role": "assistant", "content": "ACK"},
+                 {"role": "user", "content": "summary and continue"}], "DONE"),
+    ])
+    assert build_compaction_segments(tmp_path, "hermes", manifest) == []
+
+
 def test_chat_harness_keeps_linear_export_when_requests_only_append(tmp_path: Path) -> None:
     _write(tmp_path / "trace.jsonl", [{"type": "session"}])
     first = {"messages": [{"role": "system", "content": "instructions"},
@@ -262,6 +331,19 @@ def test_native_request_rewrite_blocks_linear_sft_without_capture(tmp_path: Path
         {"type": "request", "body": {"messages": resumed}, "messages": resumed},
     ])
     assert has_main_compaction(tmp_path / "trace.jsonl", harness)
+
+
+def test_opencode_subagent_requests_do_not_look_like_main_compaction(tmp_path: Path) -> None:
+    root = [{"role": "user", "content": "root task", "cache_control": {"type": "ephemeral"}}]
+    _write(tmp_path / "trace.jsonl", [
+        {"type": "request", "native_session_id": "root", "body": {"messages": root}},
+        {"type": "request", "native_session_id": "child", "body": {
+            "messages": [{"role": "user", "content": "child task"}]}},
+        {"type": "request", "native_session_id": "root", "body": {
+            "messages": [{"role": "user", "content": "root task"},
+                         {"role": "assistant", "content": "tool call"}]}},
+    ])
+    assert not has_main_compaction(tmp_path / "trace.jsonl", "opencode")
 
 
 def test_openclaw_native_compaction_blocks_linear_sft_without_capture(tmp_path: Path) -> None:

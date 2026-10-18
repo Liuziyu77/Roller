@@ -41,17 +41,27 @@ def has_main_compaction(path: Path, harness: str | None) -> bool:
                                and (row.get("event") or {}).get("type") == "compaction_end"
                                for row in rows):
         return True
+    requests = [row for row in rows if row.get("type") == "request"]
+    # OpenCode's native trace also contains subagent requests. The first
+    # request belongs to the root session; compare only its later requests.
+    root_session = requests[0].get("native_session_id") if requests else None
     previous: list[Any] = []
-    for row in rows:
-        if row.get("type") != "request":
+    for row in requests:
+        if root_session and row.get("native_session_id") not in {None, root_session}:
             continue
         body = row.get("body", row)
         messages = body.get("messages") if isinstance(body, Mapping) else None
         if not isinstance(messages, list):
             continue
-        if previous and messages[:len(previous)] != previous:
+        try:
+            # Native prompts may add/remove cache_control between requests;
+            # it affects caching, not the context the model reads.
+            comparable = [_chat_message(item) for item in messages]
+        except (AttributeError, SFTConversionError):
+            comparable = messages
+        if previous and comparable[:len(previous)] != previous:
             return True
-        previous = messages
+        previous = comparable
     return False
 
 
@@ -104,6 +114,8 @@ def _anthropic_message(message: Mapping[str, Any]) -> list[dict[str, Any]]:
         content = [{"type": "text", "text": content}]
     if not isinstance(content, list):
         raise SFTConversionError("Anthropic message content is invalid")
+    if role == "system":
+        return [{"role": "system", "content": _text_blocks(content, kinds={"text"})}]
     if role == "assistant":
         visible, reasoning, calls = [], [], []
         for block in content:
@@ -368,7 +380,8 @@ def _main_chat_calls(sample_dir: Path, calls: list[dict[str, Any]]) -> list[dict
         summary_reused = any(
             summary in message["content"]
             for messages in later_inputs for message in messages
-            if isinstance(message.get("content"), str)
+            if message["role"] in {"system", "developer", "user"}
+            and isinstance(message.get("content"), str)
         )
         if auxiliary["tool_calls"] or not summary.strip() or not summary_reused:
             raise SFTConversionError("unmatched root Call is not bound as a compaction summary")
@@ -446,10 +459,15 @@ def build_compaction_segments(sample_dir: Path, harness: str,
                 raise SFTConversionError("native context change lacks usable root Calls")
             return []
         observed_windows = _call_windows(root_calls)
-        if not observed_windows and not has_main_compaction(sample_dir / "trace.jsonl", harness):
+        native_reset = has_main_compaction(sample_dir / "trace.jsonl", harness)
+        if not observed_windows and not native_reset:
             return []
         root_calls = _main_chat_calls(sample_dir, root_calls)
-        windows = _call_windows(root_calls, force=True)
+        windows = _call_windows(root_calls)
+        if not windows and not native_reset:
+            return []
+        if not windows:
+            windows = _call_windows(root_calls, force=True)
     else:
         windows = [[] for _ in range(len(boundaries) + 1)]
     for call in root_calls if boundaries else []:
