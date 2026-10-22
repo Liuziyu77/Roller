@@ -200,7 +200,15 @@ class BridgeSession(InteractiveSession):
     def checked(
         self, args: Sequence[str], description: str, *, timeout: float = 60,
     ) -> subprocess.CompletedProcess[str]:
-        result = self.harness.runtime.run(args, timeout=min(timeout, self.remaining()))
+        limit = min(timeout, self.remaining())
+        try:
+            result = self.harness.runtime.run(args, timeout=limit)
+        except subprocess.TimeoutExpired:
+            # Only a limit cut down to the task budget is a task timeout; the
+            # exception's command text can carry container credentials.
+            if limit < timeout:
+                raise TimeoutError(f"{self.label} task timed out") from None
+            raise RuntimeError(f"{description} timed out after {limit:g}s") from None
         if result.returncode:
             detail = self.redact((result.stderr or result.stdout or "unknown error").strip())[-2000:]
             raise RuntimeError(f"{description} failed: {detail}")

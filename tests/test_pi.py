@@ -198,6 +198,22 @@ class PiHarnessTests(unittest.TestCase):
             self.assertTrue(any(a[0] == "kill" for a in runtime.calls))
             self.assertTrue((Path(tmp)/"results/answer.txt").is_file())
 
+    def test_setup_step_timeout_is_an_error_not_a_task_timeout(self):
+        class Runtime(FakeRuntime):
+            def run(self, args, timeout=None):
+                if args[0] == "run":
+                    raise subprocess.TimeoutExpired(["docker", *args], timeout)
+                return super().run(args, timeout)
+
+        for budget, status, error in (
+            (600, "error", "Pi container startup timed out after 60s"),
+            (30, "timeout", "task exceeded 30s"),
+        ):
+            harness = PiHarness(PiConfig(api_key_env="LOCAL_TEST_KEY", wire_trace_mode="off"), 0, Runtime())
+            with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {"LOCAL_TEST_KEY": "test-secret"}):
+                result = harness.run(RunRequest(0, Task("test", ("one",), 0), "model", budget), Path(tmp), 1)
+            self.assertEqual((result.status, result.error), (status, error))
+
     def test_conversion_failure_keeps_raw_and_recovers_outputs(self):
         runtime = FakeRuntime()
         harness = PiHarness(PiConfig(api_key_env="LOCAL_TEST_KEY", wire_trace_mode="off"), 0, runtime)
