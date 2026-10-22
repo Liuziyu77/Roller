@@ -1,13 +1,14 @@
 # SFT data format
 
-Roller generates a training file, `trace_SFT.json`, for each successful trajectory,
-alongside the raw trace and ACTF. Run-root `sft.jsonl` aggregates
-every successful sample in request-index order. Each line is identical to the
-corresponding `trace_SFT.json`.
+Roller writes `trace_SFT.json` for a linear trajectory. When the main agent
+compacts its context, it writes one record per verified context window under
+`sft_segments/` and lists them in `info.json` as `trajectory.sft_segments`.
+Run-root `sft.jsonl` contains one line per available record in request and
+window order. A compacted sample can contribute several lines.
 
 ## 1. Top-level structure
 
-A text-only SFT record has exactly `messages` and `tools` at the top level:
+A text-only linear SFT record has exactly `messages` and `tools` at the top level:
 
 ```json
 {
@@ -57,6 +58,22 @@ A text-only SFT record has exactly `messages` and `tools` at the top level:
 An SFT record does not include schema version, task/model, usage, timestamps,
 step ID, stop reason, run path, or other metadata. That information remains in
 the adjacent `info.json` and `trace_ACTF.json`.
+
+### Compaction segments
+
+Each segment has `messages`, `tools`, and `target_start_index`. The first
+`target_start_index` messages are the actual model prompt at the start of that
+window. Assistant messages at or after that index are training targets;
+intervening user and tool messages provide context and are excluded from loss.
+The next segment starts with the actual prompt observed after a context change,
+which can include a summary and recent history. `info.json` records each
+segment path, sequential `window_index`, `boundary_source` (`initial`,
+`native_boundary`, or `observed_context_change`), optional native
+`boundary_event_id`, and first/last Call IDs. `summary_call_id` is null when
+no summary Call can be attributed; `summary_call_binding` is `unattributed`
+for a native boundary without a bound Call, or null without such a boundary.
+Opaque prompt content, such as encrypted reasoning, makes a compacted SFT
+segment unavailable rather than silently changing the model input.
 
 ### 1.1 Multimodal records
 
@@ -198,7 +215,10 @@ networks. The sample therefore retains raw/ACTF and records SFT as unavailable.
 └── samples/<model>/<index>_<task>/
     ├── trace.jsonl
     ├── trace_ACTF.json
-    └── trace_SFT.json
+    ├── trace_SFT.json          # linear samples
+    └── sft_segments/          # compacted samples
+        ├── 0001.json
+        └── 0002.json
 ```
 
 For a User Simulator rollout, the Task Agent SFT is in the root sample. The

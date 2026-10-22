@@ -233,8 +233,10 @@ def validate_sft_record(record: Any) -> None:
     """Check the top-level shape and the multimodal alignment contract.
 
     Text-only records keep exactly ``messages`` + ``tools``. Compaction
-    segments additionally carry ``target_start_index`` so preserved assistant
-    history is context rather than a new training target. Records with
+    segments additionally carry ``target_start_index``. Assistant messages at
+    or after that index are supervised targets; intervening user/tool messages
+    are context, and earlier assistant messages are preserved prompt history.
+    Records with
     images add a non-empty ``images`` list of base64 data URIs whose length
     equals the number of ``<image>`` placeholders in ``messages``.
     """

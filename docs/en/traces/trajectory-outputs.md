@@ -9,7 +9,7 @@ to use them for training, analysis, and debugging.
 | Need | Preferred file | Why |
 | --- | --- | --- |
 | Train a Task Agent directly | Run-level `sft.jsonl` | One minimal SFT record per line, ready for streaming reads |
-| Inspect a single training sample | Sample-level `trace_SFT.json` | Identical to the matching record in `sft.jsonl` |
+| Inspect a training record | Sample-level `trace_SFT.json` or `sft_segments/*.json` | Identical to the matching record in `sft.jsonl` |
 | Trajectory analysis, scoring, token stats | `trace_ACTF.json` | Has step, reasoning, observation, metric, and timing |
 | Trace Harness session raw events | `trace.jsonl` | OpenClaw, Codex, Claude Code, Hermes, OpenCode, DeepSeek, or Pi native session; Roller does not clean it for training |
 | Inspect the first system prompt captured into ACTF | Top level of `trace_ACTF.json` | Taken from whichever native/cache/wire source each Harness can obtain, frozen once |
@@ -271,9 +271,12 @@ Harness already failed or timed out. A failed sample may therefore still have
 ACTF. Explicitly recorded conversion unavailability is stored in
 `runtime.trajectory_conversion`, separately from the Harness collection status.
 
-### 4.3 `trace_SFT.json`: one minimal training sample
+### 4.3 Sample-level SFT records
 
-SFT is generated from ACTF. Text-only records contain these top-level fields;
+Linear SFT is generated from ACTF as `trace_SFT.json`. For main-agent
+compaction, Roller reconstructs windows from captured Calls and writes
+`sft_segments/0001.json`, `0002.json`, etc. Text-only linear records contain
+these top-level fields;
 image records also contain `images`:
 
 ```json
@@ -289,6 +292,13 @@ SFT expresses the logical conversation reconstructed from session events. It is
 not a snapshot of each provider request. It is suitable for training, but not
 for per-request replay or for proving that an earlier tool result was still
 visible in a later model call.
+
+Compaction segments instead start with the actual captured request context.
+Their extra `target_start_index` marks the first supervised assistant message;
+subsequent assistant messages are targets, while intervening user/tool messages
+remain context. Segment metadata in `info.json` records paths, order, boundary
+source, and Call IDs. If captured input cannot be represented faithfully,
+Roller records SFT as unavailable and retains raw/ACTF evidence.
 
 
 Generation conditions:
@@ -318,8 +328,9 @@ See [SFT data format](sft-format.md) for the full field definition.
 
 ### 4.4 `sft.jsonl`: run-level training set
 
-After the Collector finishes every request, it reads sample-level
-`trace_SFT.json` in request-index order and writes the run root atomically and
+After the Collector finishes every request, it reads each sample's linear
+`trace_SFT.json` or ordered `trajectory.sft_segments` in request-index order
+and writes the run root atomically and
 as a stream:
 
 - Samples with `status=ok` are included;
@@ -330,7 +341,7 @@ as a stream:
 - An empty file is still created when there are no successful samples;
 - User Simulator sub-trajectories are not included.
 
-Each line is the same JSON object as the matching `trace_SFT.json`. No task ID
+Each line is the same JSON object as its matching sample-level SFT record. No task ID
 or other metadata is added. Sample provenance must be recovered from the
 adjacent run/sample `info.json` and from directory location.
 
@@ -766,9 +777,10 @@ Check at least the following:
 
 1. Run `info.json.summary.failed` is 0, or failed tasks have been explicitly
    excluded;
-2. The number of lines in `sft.jsonl` equals the expected `ok + skipped`
-   task/model request count;
-3. Each line has only `messages` and `tools` at the top level;
+2. The number of lines in `sft.jsonl` equals the sum of available linear
+   records and compaction segments across included samples;
+3. Each line has `messages` and `tools`; image records add `images`, and
+   compaction segments add `target_start_index`;
 4. Every assistant has `reasoning_content`, `content`, and `tool_calls`;
 5. Tool call IDs and tool messages correspond one to one;
 6. The tools schema is compatible with the tool format of the chat template used

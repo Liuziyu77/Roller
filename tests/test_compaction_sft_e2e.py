@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from copy import deepcopy
 from pathlib import Path
 
 import pytest
@@ -118,6 +119,13 @@ def test_three_context_windows_export_aggregate_and_resume(tmp_path: Path, harne
                       metadata={"capture": capture}), [], "2026-10-17T00:00:00Z")
     validate_capture(sample, capture)
     validate_resumable_sample(sample, request, result)
+    legacy = deepcopy(result)
+    for segment in legacy["trajectory"]["sft_segments"]:
+        segment.pop("boundary_source")
+        if segment["boundary_event_id"] is None:
+            segment.pop("summary_call_id")
+            segment.pop("summary_call_binding")
+    validate_resumable_sample(sample, request, legacy)
     collector._write_sft_dataset([result])
     records = [json.loads(row) for row in (tmp_path / "sft.jsonl").read_text().splitlines()]
     assert result["status"] == "ok"
@@ -222,3 +230,74 @@ def test_single_user_tool_round_trip_across_compaction(tmp_path: Path, harness: 
     assert rows[1]["messages"][2]["tool_calls"][0]["id"] == "tool-1"
     assert rows[1]["messages"][3]["tool_call_id"] == "tool-1"
     assert "read a" not in json.dumps(rows[1])
+
+
+def test_linear_multimodal_sample_keeps_original_sft_export(tmp_path: Path) -> None:
+    request = RunRequest(index=0, task=Task(id="image", prompts=("read",), source_index=0),
+                         model="model", timeout_seconds=30)
+    collector = Collector(CollectionConfig(run_dir=tmp_path), lambda slot: None)
+    sample = collector._sample_dir(request)
+    sample.mkdir(parents=True)
+    first = [{"role": "system", "content": "s"}, {"role": "user", "content": "read"}]
+    use = {"id": "tool-1", "type": "function", "function": {"name": "read", "arguments": "{}"}}
+    second = [*first, {"role": "assistant", "content": None, "tool_calls": [use]},
+              {"role": "tool", "tool_call_id": "tool-1", "content": [
+                  {"type": "image_url", "image_url": {"url": "data:image/png;base64,cG5n"}}]}]
+    (sample / "trace.jsonl").write_text("".join(json.dumps({"type": "request", "body": {
+        "messages": prompt}}) + "\n" for prompt in (first, second)), encoding="utf-8")
+    (sample / "trace_ACTF.json").write_text(json.dumps({"schema_version": "ACTF_v1.0",
+        "system_prompt": "s", "tools": [{"type": "function", "function": {"name": "read",
+                                                     "parameters": {"type": "object"}}}],
+        "steps": [{"step_id": 1, "user_content": "read", "assistant_content": {
+            "content": "", "tool_calls": [{"id": "tool-1", "name": "read", "arguments": {}}]},
+            "observation": [{"role": "toolResult", "toolCallId": "tool-1", "toolName": "read",
+                             "content": [{"type": "image", "mimeType": "image/png", "data": "cG5n"}]}]},
+            {"step_id": 2, "user_content": "", "assistant_content": {
+                "content": "done", "tool_calls": []}, "observation": []}]}), encoding="utf-8")
+    calls = [_call("hermes", 1, first[1:], "",), _call("hermes", 2, second[1:], "done")]
+    calls[0]["context"]["messages"] = first
+    calls[0]["output"] = {"choices": [{"message": {"role": "assistant", "content": None,
+                                               "tool_calls": [use]}}]}
+    calls[1]["context"]["messages"] = second
+    capture = _write_capture(sample, calls)
+    result = collector._finalize_sample(request, sample, "hermes", HarnessResult(
+        status="ok", elapsed_seconds=0.1, trace_path=str(sample / "trace.jsonl"),
+        trajectory_path=str(sample / "trace_ACTF.json"), metadata={"capture": capture}),
+        [], "2026-10-17T00:00:00Z")
+    validate_resumable_sample(sample, request, result)
+    collector._write_sft_dataset([result])
+    record = json.loads((sample / "trace_SFT.json").read_text())
+    assert result["status"] == "ok" and "sft_segments" not in result["trajectory"]
+    assert record["images"] == ["data:image/png;base64,cG5n"]
+    assert len((tmp_path / "sft.jsonl").read_text().splitlines()) == 1
+
+
+def test_raw_only_compaction_can_resume(tmp_path: Path) -> None:
+    request = RunRequest(index=0, task=Task(id="raw-only", prompts=("task",), source_index=0),
+                         model="model", timeout_seconds=30)
+    collector = Collector(CollectionConfig(run_dir=tmp_path), lambda slot: None)
+    sample = collector._sample_dir(request)
+    sample.mkdir(parents=True)
+    (sample / "trace.jsonl").write_text('{"type":"compaction"}\n', encoding="utf-8")
+    info = {"schema_version": "roller.sample/v1", "status": "ok", "harness": "openclaw",
+            "request_index": 0, "sample_index": 0, "sample_count": 1, "source_index": 0,
+            "task_id": "raw-only", "model": "model",
+            "trajectory": {"raw": "trace.jsonl", "actf": None, "sft": None},
+            "runtime": {"trajectory_conversion": {"status": "unavailable", "target": "actf",
+                                                   "error": "native trace incomplete"}}}
+    validate_resumable_sample(sample, request, info)
+
+
+@pytest.mark.parametrize("relative", ["../../../outside.json", "sft_segments/../../outside.json",
+                                           "sft_segments/missing.json", "sft_segments/link.json", None])
+def test_dataset_aggregation_rejects_unsafe_segment_path(tmp_path: Path, relative: str | None) -> None:
+    request = RunRequest(index=0, task=Task(id="path", prompts=("task",), source_index=0),
+                         model="model", timeout_seconds=30)
+    collector = Collector(CollectionConfig(run_dir=tmp_path), lambda slot: None)
+    sample = collector._sample_dir(request)
+    (sample / "sft_segments").mkdir(parents=True)
+    (tmp_path / "outside.json").write_text('{"messages":[],"tools":[]}', encoding="utf-8")
+    (sample / "sft_segments/link.json").symlink_to(tmp_path / "outside.json")
+    with pytest.raises(RuntimeError, match="SFT segment"):
+        collector._write_sft_dataset([{"status": "ok", "path": sample.relative_to(tmp_path).as_posix(),
+                                       "trajectory": {"sft_segments": [{"path": relative}]}}])

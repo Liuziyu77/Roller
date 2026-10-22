@@ -135,25 +135,29 @@ runs/quickstart/
         └── <index>_<task-id>/
 ```
 
-Each successful sample should at least have:
+Most successful samples have at least:
 
 ```text
 trace.jsonl
 trace_ACTF.json
-trace_SFT.json
 info.json
 ```
+
+Linear samples also have `trace_SFT.json`. If main-agent context was compacted,
+`info.json` lists `trajectory.sft_segments`, and the SFT records are stored as
+`sft_segments/0001.json`, `0002.json`, and so on. A successful sample can also
+record SFT as unavailable when its context cannot be represented safely.
 
 Check in this order:
 
 1. Whether `state` in the top-level `info.json` for the run is `finished`, `summary.failed` is `0`, and `summary.completed` matches the expected number of executions.
 2. Whether `status` in every sample `info.json` is `ok` and `usage.request_count` is greater than `0`.
 3. Whether `trace_ACTF.json` contains the complete user input and model output. If tools were called, verify that each call is paired with its result.
-4. Whether the top level of `trace_SFT.json` contains only `messages` and
-   `tools` (image-bearing samples additionally carry `images`, with one
-   `<image>` placeholder per entry).
+4. Whether each available SFT record has `messages` and `tools`; image records
+   also have `images`, and compaction segments have `target_start_index`.
 5. For tasks that must deliver files, whether the sample `results/` contains the expected files.
-6. Whether the number of lines in run `sft.jsonl` equals the number of samples that successfully produced `trace_SFT.json`.
+6. Whether run `sft.jsonl` has one line per available SFT record. A compacted
+   sample can contribute several lines; an SFT-unavailable sample contributes none.
 
 For when each file is written and what is retained on failure, see [Trajectory outputs](../traces/trajectory-outputs.md).
 

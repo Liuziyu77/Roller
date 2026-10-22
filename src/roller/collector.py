@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterator
 
 from roller.harnesses.base import Harness
-from roller.capture import read_jsonl, recover_capture_retention, validate_capture
+from roller.capture import _safe_file, read_jsonl, recover_capture_retention, validate_capture
 from roller.compaction_sft import SFT_SEGMENTS_DIR, export_compaction_segments, has_main_compaction
 from roller.integrity import (
     has_legacy_claude_sidechain,
@@ -294,15 +294,14 @@ class Collector:
                 if not isinstance(trajectory, dict):
                     raise ValueError("canonical ACTF trajectory must be a JSON object")
                 if final.status == "ok":
+                    if trajectory_conversion_unavailable(metadata) == "sft":
+                        raise SFTConversionError(metadata["trajectory_conversion"]["error"])
                     capture = metadata.get("capture") or {}
                     manifest = capture.get("manifest") if isinstance(capture, dict) else None
                     if isinstance(manifest, str):
                         sft_segments = export_compaction_segments(sample_dir, harness_name, manifest)
                         if sft_segments:
                             sft_path.unlink(missing_ok=True)
-                            conversion = metadata.get("trajectory_conversion")
-                            if isinstance(conversion, dict) and conversion.get("target") == "sft":
-                                metadata.pop("trajectory_conversion")
                         else:
                             write_sft(sft_path, trajectory)
                     elif has_main_compaction(trace_path, harness_name):
@@ -550,9 +549,19 @@ class Collector:
                     continue
                 trajectory = result.get("trajectory") or {}
                 segments = trajectory.get("sft_segments") or []
-                paths = [self._sample_dir_from_result(result) / item["path"] for item in segments]
+                sample_dir = self._sample_dir_from_result(result)
+                paths = []
+                for item in segments:
+                    relative = item.get("path") if isinstance(item, dict) else None
+                    parts = Path(relative).parts if isinstance(relative, str) else ()
+                    if len(parts) != 2 or parts[0] != SFT_SEGMENTS_DIR or not parts[1].endswith(".json"):
+                        raise RuntimeError(f"invalid SFT segment path: {relative!r}")
+                    try:
+                        paths.append(_safe_file(sample_dir, relative))
+                    except ValueError as exc:
+                        raise RuntimeError(f"cannot aggregate SFT segment {relative}: {exc}") from exc
                 if not paths:
-                    paths = [self._sample_dir_from_result(result) / "trace_SFT.json"]
+                    paths = [sample_dir / "trace_SFT.json"]
                 for path in paths:
                     try:
                         row = json.loads(path.read_text(encoding="utf-8"))

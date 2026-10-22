@@ -193,8 +193,10 @@ def test_unverified_assistant_in_later_request_is_not_trained(tmp_path: Path) ->
         _call(5, root, "anthropic-messages", next_request,
               {"content": [{"type": "text", "text": "two"}]}),
     ])
-    with pytest.raises(SFTConversionError, match="unverified assistant"):
-        build_compaction_segments(tmp_path, "claude-code", manifest)
+    segments = build_compaction_segments(tmp_path, "claude-code", manifest)
+    assert len(segments) == 2
+    assert segments[1][1]["target_start_index"] == 5
+    assert segments[1][1]["messages"][3]["content"] == "injected without Call"
 
 
 @pytest.mark.parametrize("harness", ["openclaw", "opencode", "hermes", "deepseek", "pi"])
@@ -322,6 +324,134 @@ def test_chat_harness_keeps_linear_export_when_requests_only_append(tmp_path: Pa
     assert build_compaction_segments(tmp_path, "hermes", manifest) == []
 
 
+def test_linear_image_and_mixed_native_shapes_do_not_trigger_compaction(tmp_path: Path) -> None:
+    first = [{"role": "system", "content": "s"}, {"role": "user", "content": "look"}]
+    second = [*first, {"role": "assistant", "content": "seen"},
+              {"role": "user", "content": [{"type": "text", "text": "again"},
+                                            {"type": "image_url", "image_url": {"url": "data:image/png;base64,cG5n"}}]}]
+    _write(tmp_path / "trace.jsonl", [
+        {"type": "request", "body": {"messages": first}},
+        {"type": "request", "body": {"messages": second}},
+    ])
+    manifest = _capture(tmp_path, "root", [
+        _call(1, "root", "openai-chat-completions", {"messages": first, "tools": []},
+              {"choices": [{"message": {"role": "assistant", "content": "seen"}}]}),
+        _call(2, "root", "openai-chat-completions", {"messages": second, "tools": []},
+              {"choices": [{"message": {"role": "assistant", "content": "done"}}]}),
+    ])
+    assert not has_main_compaction(tmp_path / "trace.jsonl", "hermes")
+    assert build_compaction_segments(tmp_path, "hermes", manifest) == []
+
+
+def test_anthropic_null_context_lists_raise_conversion_error() -> None:
+    from roller.compaction_sft import _prompt_from_call
+    for field in ("messages", "tools"):
+        context = {"messages": [], "tools": []}
+        context[field] = None
+        with pytest.raises(SFTConversionError, match=field):
+            _prompt_from_call({"protocol": "anthropic-messages", "context": context})
+
+
+def test_collector_respects_explicit_sft_unavailability(tmp_path: Path) -> None:
+    request = RunRequest(index=0, task=Task(id="unavailable", prompts=("task",), source_index=0),
+                         model="model", timeout_seconds=30)
+    collector = Collector(CollectionConfig(run_dir=tmp_path), lambda slot: None)
+    sample = collector._sample_dir(request)
+    sample.mkdir(parents=True)
+    _write(sample / "trace.jsonl", [{"type": "session"}])
+    (sample / "trace_ACTF.json").write_text(json.dumps({"schema_version": "ACTF_v1.0",
+        "steps": [{"step_id": 1, "user_content": "task",
+                   "assistant_content": {"content": "answer", "tool_calls": []}, "observation": []}]}),
+        encoding="utf-8")
+    result = collector._finalize_sample(request, sample, "hermes", HarnessResult(
+        status="ok", elapsed_seconds=0.1, trace_path=str(sample / "trace.jsonl"),
+        trajectory_path=str(sample / "trace_ACTF.json"), metadata={
+            "trajectory_conversion": {"status": "unavailable", "target": "sft",
+                                      "error": "source redacted"}}),
+        [], "2026-10-15T00:00:00Z")
+    assert result["runtime"]["trajectory_conversion"] == {
+        "status": "unavailable", "target": "sft", "error": "source redacted"}
+    assert result["trajectory"].get("sft_segments", []) == []
+    assert not (sample / "trace_SFT.json").exists()
+
+
+def test_missing_function_arguments_follow_linear_normalization() -> None:
+    from roller.compaction_sft import _chat_message
+    message = {"role": "assistant", "content": None, "tool_calls": [
+        {"id": "call", "function": {"name": "read"}}]}
+    assert _chat_message(message)["tool_calls"][0]["function"]["arguments"] == "{}"
+
+
+def test_codex_opaque_reasoning_is_rejected_only_after_a_boundary(tmp_path: Path) -> None:
+    first = _call(1, "root", "openai-responses", {"instructions": "s", "tools": [],
+        "input": [{"type": "message", "role": "user", "content": [
+            {"type": "input_text", "text": "task"}]}]}, {"output": [
+        {"type": "message", "role": "assistant", "content": [
+            {"type": "output_text", "text": "ACK"}]}]})
+    second = _call(4, "root", "openai-responses", {"instructions": "s", "tools": [],
+        "input": [{"type": "reasoning", "encrypted_content": "opaque"},
+                  {"type": "message", "role": "user", "content": [
+                      {"type": "input_text", "text": "continue"}]}]}, {"output": [
+        {"type": "message", "role": "assistant", "content": [
+            {"type": "output_text", "text": "DONE"}]}]})
+    summary = _call(2, "root", "openai-responses", {"instructions": "s", "tools": [],
+        "input": [{"type": "message", "role": "user", "content": [
+            {"type": "input_text", "text": "summarize"}]}]}, {"output": [
+        {"type": "message", "role": "assistant", "id": "summary-id", "content": [
+            {"type": "output_text", "text": "summary"}]}]})
+    manifest = _capture(tmp_path, "root", [first, summary, second])
+    _write(tmp_path / "trace.jsonl", [{"type": "session"}])
+    assert build_compaction_segments(tmp_path, "codex", manifest) == []
+    _write(tmp_path / "trace.jsonl", [
+        {"type": "response_item", "payload": {"type": "message", "role": "assistant",
+                                             "id": "summary-id", "content": [
+                                                 {"type": "output_text", "text": "summary"}]}},
+        {"type": "compacted", "timestamp": "2026-10-15T00:00:03Z",
+         "payload": {"window_id": "w", "message": "summary"}},
+    ])
+    with pytest.raises(SFTConversionError, match="reasoning item cannot be represented"):
+        build_compaction_segments(tmp_path, "codex", manifest)
+
+
+def test_claude_root_attributed_summary_is_excluded(tmp_path: Path) -> None:
+    _write(tmp_path / "trace.jsonl", [{"type": "system", "subtype": "compact_boundary",
+                                        "uuid": "b", "timestamp": "2026-10-15T00:00:03Z"}])
+    (tmp_path / "trace_ACTF.json").write_text(json.dumps({"steps": [
+        {"assistant_content": {"content": "ACK", "tool_calls": []}},
+        {"assistant_content": {"content": "DONE", "tool_calls": []}},
+    ]}), encoding="utf-8")
+    def call(index: int, prompt: str, answer: str) -> dict:
+        return _call(index, "root", "anthropic-messages",
+                     {"system": "s", "messages": [{"role": "user", "content": prompt}], "tools": []},
+                     {"content": [{"type": "text", "text": answer}]})
+    manifest = _capture(tmp_path, "root", [
+        call(1, "task", "ACK"), call(2, "summarize task", "summary"),
+        call(4, "summary then continue", "DONE")])
+    segments = build_compaction_segments(tmp_path, "claude-code", manifest)
+    assert len(segments) == 2
+    assert [item[0]["first_call_id"] for item in segments] == ["call-1", "call-4"]
+
+
+def test_native_window_splits_when_thinking_is_not_replayed(tmp_path: Path) -> None:
+    _write(tmp_path / "trace.jsonl", [{"type": "system", "subtype": "compact_boundary",
+                                        "uuid": "b", "timestamp": "2026-10-15T00:00:03Z"}])
+    def call(index: int, messages: list[dict], output: list[dict]) -> dict:
+        return _call(index, "root", "anthropic-messages",
+                     {"system": "s", "messages": messages, "tools": []}, {"content": output})
+    manifest = _capture(tmp_path, "root", [
+        call(1, [{"role": "user", "content": "task"}], [{"type": "text", "text": "ACK"}]),
+        call(4, [{"role": "user", "content": "summary"}],
+             [{"type": "thinking", "thinking": "private"}, {"type": "text", "text": "NEXT"}]),
+        call(5, [{"role": "user", "content": "summary"},
+                 {"role": "assistant", "content": "NEXT"},
+                 {"role": "user", "content": "finish"}], [{"type": "text", "text": "DONE"}]),
+    ])
+    segments = build_compaction_segments(tmp_path, "claude-code", manifest)
+    assert [item[0]["boundary_source"] for item in segments] == [
+        "initial", "native_boundary", "observed_context_change"]
+    assert segments[2][1]["messages"][-1]["content"] == "DONE"
+
+
 @pytest.mark.parametrize("harness", ["opencode", "hermes", "deepseek", "pi"])
 def test_native_request_rewrite_blocks_linear_sft_without_capture(tmp_path: Path, harness: str) -> None:
     first = [{"role": "user", "content": "original task"}]
@@ -336,6 +466,8 @@ def test_native_request_rewrite_blocks_linear_sft_without_capture(tmp_path: Path
 def test_opencode_subagent_requests_do_not_look_like_main_compaction(tmp_path: Path) -> None:
     root = [{"role": "user", "content": "root task", "cache_control": {"type": "ephemeral"}}]
     _write(tmp_path / "trace.jsonl", [
+        {"type": "session_export", "data": {"info": {"id": "root"}, "messages": []}},
+        {"type": "session_export", "data": {"info": {"id": "child", "parentID": "root"}, "messages": []}},
         {"type": "request", "native_session_id": "root", "body": {"messages": root}},
         {"type": "request", "native_session_id": "child", "body": {
             "messages": [{"role": "user", "content": "child task"}]}},
@@ -344,6 +476,20 @@ def test_opencode_subagent_requests_do_not_look_like_main_compaction(tmp_path: P
                          {"role": "assistant", "content": "tool call"}]}},
     ])
     assert not has_main_compaction(tmp_path / "trace.jsonl", "opencode")
+
+
+def test_opencode_child_request_can_precede_root_request(tmp_path: Path) -> None:
+    _write(tmp_path / "trace.jsonl", [
+        {"type": "session_export", "data": {"info": {"id": "root"}, "messages": []}},
+        {"type": "session_export", "data": {"info": {"id": "child", "parentID": "root"}, "messages": []}},
+        {"type": "request", "native_session_id": "child", "body": {"messages": [
+            {"role": "user", "content": "child task"}]}},
+        {"type": "request", "native_session_id": "root", "body": {"messages": [
+            {"role": "user", "content": "old task"}]}},
+        {"type": "request", "native_session_id": "root", "body": {"messages": [
+            {"role": "user", "content": "summary"}]}},
+    ])
+    assert has_main_compaction(tmp_path / "trace.jsonl", "opencode")
 
 
 def test_openclaw_native_compaction_blocks_linear_sft_without_capture(tmp_path: Path) -> None:
@@ -427,7 +573,8 @@ def test_collector_exports_aggregates_and_validates_compaction_segments(
                                     "uuid": "boundary-1", "timestamp": "2026-10-15T00:00:03Z"}])
     (sample / "trace_ACTF.json").write_text(json.dumps({
         "schema_version": "ACTF_v1.0", "steps": [
-            {"step_id": 1, "assistant_content": {"content": "ANSWER", "tool_calls": []}}
+            {"step_id": 1, "assistant_content": {"content": "ACK", "tool_calls": []}},
+            {"step_id": 2, "assistant_content": {"content": "ANSWER", "tool_calls": []}}
         ]}), encoding="utf-8")
     before = {"system": "system", "tools": [],
               "messages": [{"role": "user", "content": "task"}]}
@@ -445,9 +592,7 @@ def test_collector_exports_aggregates_and_validates_compaction_segments(
         HarnessResult(status="ok", elapsed_seconds=0.1,
                       trace_path=str(sample / "trace.jsonl"),
                       trajectory_path=str(sample / "trace_ACTF.json"),
-                      metadata={"capture": {"manifest": manifest},
-                                "trajectory_conversion": {"status": "unavailable", "target": "sft",
-                                                          "error": "linear ACTF cannot express compaction"}}),
+                      metadata={"capture": {"manifest": manifest}}),
         [], "2026-10-15T00:00:00Z",
     )
     assert result["status"] == "ok"

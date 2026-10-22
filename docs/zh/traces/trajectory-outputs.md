@@ -8,7 +8,7 @@
 | 需求 | 首选文件 | 原因 |
 | --- | --- | --- |
 | 直接训练 Task Agent | Run 级 `sft.jsonl` | 每行一个最小 SFT record，可直接流式读取 |
-| 查看单条训练样本 | Sample 级 `trace_SFT.json` | 与 `sft.jsonl` 中对应 record 完全相同 |
+| 查看单条训练记录 | Sample 级 `trace_SFT.json` 或 `sft_segments/*.json` | 与 `sft.jsonl` 中对应 record 完全相同 |
 | 轨迹分析、打分、统计 token | `trace_ACTF.json` | 有 step、reasoning、observation、metric 和时间信息 |
 | 追查 Harness session 原始事件 | `trace.jsonl` | OpenClaw、Codex、Claude Code、Hermes、OpenCode、DeepSeek 或 Pi native session，Roller 不做训练清洗 |
 | 查看 ACTF 捕获的首个 system prompt | `trace_ACTF.json` 顶层 | 来自各 Harness 可取得的 native/cache/wire 来源，只固化一次 |
@@ -228,9 +228,11 @@ native 推导。它们都没有逐 step 保存每次请求的完整 messages/inp
 sample 可能仍有 ACTF。已显式记录的转换不可用状态见
 `runtime.trajectory_conversion`；它与 Harness 的采集状态分开保存。
 
-### 4.3 `trace_SFT.json`：单条最小训练样本
+### 4.3 Sample 级 SFT 记录
 
-SFT 从 ACTF 生成，纯文本样本顶层只有以下字段，图片样本额外包含 `images`：
+线性 SFT 从 ACTF 生成，存入 `trace_SFT.json`。主 Agent 压缩上下文时，Roller
+根据捕获的 Calls 重建窗口，存入 `sft_segments/0001.json`、`0002.json` 等。
+纯文本线性样本顶层只有以下字段，图片样本额外包含 `images`：
 
 ```json
 {"messages": [], "tools": []}
@@ -243,6 +245,11 @@ SFT 从 ACTF 生成，纯文本样本顶层只有以下字段，图片样本额�
 
 SFT 表达的是从 session 事件重建的逻辑对话，不是每次 provider 请求的快照。它适合
 训练，但不能用于逐请求重放或证明某个较早 tool result 在后续模型调用中仍然可见。
+
+压缩分段则从真实捕获的请求上下文开始。额外字段 `target_start_index` 标记首个
+受监督的 assistant 消息；其后的 assistant 消息也参与训练，夹在中间的 user/tool
+消息仅提供上下文。`info.json` 的分段元数据记录路径、顺序、边界来源和 Call ID。
+无法无损表示捕获的输入时，Roller 标记 SFT 不可用并保留 raw/ACTF 证据。
 
 生成条件：
 
@@ -266,7 +273,8 @@ Codex 保留原始 Responses 工具定义、namespace 和 custom grammar。其�
 
 ### 4.4 `sft.jsonl`：Run 级训练集
 
-Collector 完成所有 request 后，按 request index 读取 sample 级 `trace_SFT.json` 并原子、
+Collector 完成所有 request 后，按 request index 读取 sample 级线性 `trace_SFT.json`
+或有序的 `trajectory.sft_segments`，并原子、
 流式写入 run 根目录：
 
 - `status=ok` 的 sample 会进入；
@@ -275,7 +283,7 @@ Collector 完成所有 request 后，按 request index 读取 sample 级 `trace_
 - 没有成功样本时仍生成空文件；
 - User Simulator 的子轨迹不会进入。
 
-每行与对应 `trace_SFT.json` 的 JSON object 相同，不增加 task ID 或其他 metadata。样本
+每行与对应的 sample 级 SFT record 相同，不增加 task ID 或其他 metadata。样本
 来源需要通过相邻 run/sample `info.json` 和目录位置追溯。
 
 ## 5. 诊断与辅助文件
@@ -630,8 +638,9 @@ roller collect \
 建议至少检查：
 
 1. Run `info.json.summary.failed` 为 0，或已明确排除失败任务；
-2. `sft.jsonl` 行数等于预期的 `ok + skipped` task/model request 数；
-3. 每行顶层只有 `messages` 和 `tools`；
+2. `sft.jsonl` 行数等于纳入样本中线性记录与压缩分段记录的总数；
+3. 每行有 `messages` 和 `tools`；图片记录增加 `images`，压缩分段增加
+   `target_start_index`；
 4. assistant 都有 `reasoning_content`、`content`、`tool_calls`；
 5. tool call ID 与 tool message 一一对应；
 6. tools schema 与训练时 chat template 的工具格式兼容；

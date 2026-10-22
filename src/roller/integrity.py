@@ -197,14 +197,17 @@ def _validate_trajectory_files(
     capture = runtime.get("capture") if isinstance(runtime, Mapping) else None
     if isinstance(capture, dict):
         validate_capture(base, capture)
-    manifest = capture.get("manifest") if isinstance(capture, Mapping) else None
-    expected = (build_compaction_segments(base, info["harness"], manifest)
-                if not sft_unavailable and isinstance(manifest, str) else [])
-    if not sft_unavailable and not segments and (expected or has_main_compaction(raw_path, info.get("harness"))):
-        raise ValueError("context reset requires per-call export, not linear SFT")
-
     if raw_only:
         return
+    manifest = capture.get("manifest") if isinstance(capture, Mapping) else None
+    try:
+        expected = (build_compaction_segments(base, info.get("harness"), manifest)
+                    if not sft_unavailable and isinstance(manifest, str) else [])
+        if not sft_unavailable and not segments and (
+                expected or has_main_compaction(raw_path, info.get("harness"))):
+            raise ValueError("context reset requires per-call export, not linear SFT")
+    except (OSError, UnicodeError, json.JSONDecodeError, KeyError, TypeError, AttributeError) as exc:
+        raise ValueError(f"compaction evidence cannot be validated: {exc}") from exc
 
     actf = _json_object(actf_path)
     if info.get("harness") == "claude-code" and has_legacy_claude_sidechain(actf):
@@ -226,7 +229,20 @@ def _validate_trajectory_files(
     if segments and not sft_unavailable:
         if not isinstance(manifest, str):
             raise ValueError("SFT segments lack their captured Calls")
-        if segments != [metadata for metadata, _ in expected]:
+        # Older exports predate these explanatory fields. Their paths, Call
+        # bindings, and record contents still have to match rebuilt evidence.
+        added_fields = {"boundary_source", "summary_call_id", "summary_call_binding"}
+        rebuilt = [metadata for metadata, _ in expected]
+        if len(segments) != len(rebuilt) or any(not isinstance(row, Mapping) for row in segments):
+            raise ValueError("SFT segment metadata does not match captured boundaries and Calls")
+        normalized = [
+            {**{key: value for key, value in current.items()
+                if key in added_fields and key not in saved
+                and (key == "boundary_source" or saved.get("boundary_event_id") is None)},
+             **saved}
+            for saved, current in zip(segments, rebuilt)
+        ]
+        if normalized != rebuilt:
             raise ValueError("SFT segment metadata does not match captured boundaries and Calls")
         expected_paths = {item["path"] for item in segments}
         if not segment_dir.is_dir() or segment_dir.is_symlink():
