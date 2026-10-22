@@ -168,7 +168,12 @@ class ContainerCommands:
         description: str,
         timeout: float | None = None,
     ) -> subprocess.CompletedProcess[str]:
-        result = self.runtime.run(args, timeout=timeout)
+        try:
+            result = self.runtime.run(args, timeout=timeout)
+        except subprocess.TimeoutExpired as exc:
+            # A setup step hitting its own limit is not a task timeout. Drop the
+            # exception too: its command text can carry container credentials.
+            raise RuntimeError(f"{description} timed out after {exc.timeout:g}s") from None
         if result.returncode != 0:
             raise RuntimeError(f"{description} failed: {self._error_text(result)}")
         return result

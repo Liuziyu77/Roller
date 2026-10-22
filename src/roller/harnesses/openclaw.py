@@ -199,7 +199,7 @@ class OpenClawConfig:
     container_user: str | None = "0"
     gateway_port_start: int = 18789
     gateway_port_step: int = 10
-    gateway_startup_timeout: float = 30.0
+    gateway_startup_timeout: float = 240.0
     network: str = "host"
     workspace_container_path: str = "/tmp_workspace"
     session_id: str = "roller"
@@ -825,7 +825,9 @@ exec node --input-type=module -e "$1"
             if result.returncode == 0:
                 return
             time.sleep(0.25)
-        raise TimeoutError(
+        # RuntimeError, not TimeoutError: callers report TimeoutError as the
+        # task budget running out, which this startup failure is not.
+        raise RuntimeError(
             f"OpenClaw gateway did not listen on port {self.gateway_port} within "
             f"{self.config.gateway_startup_timeout:g}s"
         )

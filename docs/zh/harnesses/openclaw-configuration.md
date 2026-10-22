@@ -155,7 +155,7 @@ http_proxy                https_proxy               no_proxy
 | `--network` | `host` | 容器网络模式 |
 | `--gateway-port` | `18789` | gateway 起始端口 |
 | `--gateway-port-step` | `10` | worker 之间的端口间隔 |
-| `--gateway-startup-timeout` | `30` | 等待 gateway 就绪的秒数 |
+| `--gateway-startup-timeout` | `240` | 等待 gateway 就绪的秒数 |
 | `--session-id` | `roller` | OpenClaw session ID 前缀 |
 | `--thinking` | 无 | 设置模型的 reasoning 强度，常用档位和保存规则见第 6 节 |
 | `--keep-thinking` / `--no-keep-thinking` | 开启 | 是否保留轨迹和请求历史中的 thinking |

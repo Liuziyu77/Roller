@@ -119,6 +119,7 @@ class CliTests(unittest.TestCase):
             ]
         )
         self.assertEqual((collect.samples, collect.grader_parallel), (3, 2))
+        self.assertEqual(collect.gateway_startup_timeout, 240.0)
         self.assertEqual(export.timeout_multiplier, 2.5)
 
     def test_contextual_skillsbench_defaults_are_applied(self) -> None:
