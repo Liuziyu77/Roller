@@ -256,24 +256,6 @@ class OpenClawHarness(ContainerCommands, InteractiveHarness):
 
     name = "openclaw"
 
-    def _checked(
-        self,
-        args: Sequence[str],
-        description: str,
-        timeout: float | None = None,
-    ) -> subprocess.CompletedProcess[str]:
-        try:
-            return super()._checked(args, description, timeout=timeout)
-        except subprocess.TimeoutExpired as exc:
-            # Container arguments can include credentials, so don't persist
-            # the command text carried by TimeoutExpired.
-            operation = (
-                "task setup command"
-                if description.startswith("task setup command ")
-                else description
-            )
-            raise RuntimeError(f"{operation} timed out after {exc.timeout}s") from None
-
     _MODEL_INJECT_SCRIPT = """
 import json
 import os
@@ -843,7 +825,9 @@ exec node --input-type=module -e "$1"
             if result.returncode == 0:
                 return
             time.sleep(0.25)
-        raise TimeoutError(
+        # RuntimeError, not TimeoutError: callers report TimeoutError as the
+        # task budget running out, which this startup failure is not.
+        raise RuntimeError(
             f"OpenClaw gateway did not listen on port {self.gateway_port} within "
             f"{self.config.gateway_startup_timeout:g}s"
         )
@@ -1092,10 +1076,8 @@ exec node --input-type=module -e "$1"
         status = "error"
         error: str | None = None
         started = time.monotonic()
-        session_started = False
         try:
             session.start()
-            session_started = True
             for index, prompt in enumerate(self._prompts(request)):
                 remaining = request.timeout_seconds - (time.monotonic() - started)
                 if remaining <= 0:
@@ -1107,24 +1089,12 @@ exec node --input-type=module -e "$1"
                     session.reset()
                 session.send(prompt, remaining)
             status = "ok"
-        except (TimeoutError, subprocess.TimeoutExpired) as exc:
-            cause = (
-                f"operation timed out after {exc.timeout}s"
-                if isinstance(exc, subprocess.TimeoutExpired)
-                else str(exc)
-            )
-            if session_started:
-                status = "timeout"
-                error = f"task exceeded {request.timeout_seconds}s"
-                cause = cause.strip()
-                if cause and cause != error:
-                    error += f" (cause: {cause})"
-            else:
-                status = "error"
-                error = f"OpenClaw startup failed: {cause}"
+        except (TimeoutError, subprocess.TimeoutExpired):
+            status = "timeout"
+            error = f"task exceeded {request.timeout_seconds}s"
         except Exception as exc:
             status = "error"
-            error = str(exc) if session_started else f"OpenClaw startup failed: {exc}"
+            error = str(exc)
         return session.finish(status, error)
 
 

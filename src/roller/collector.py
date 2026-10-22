@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import fnmatch
 import json
 import inspect
 import logging
@@ -37,6 +38,14 @@ RUN_CHECKPOINT_TIME_INTERVAL_SECONDS = 30.0
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _remove_path(path: Path) -> None:
+    # Never follow a symlink out of the sample directory.
+    if path.is_dir() and not path.is_symlink():
+        shutil.rmtree(path)
+    else:
+        path.unlink(missing_ok=True)
 
 
 def _sample_directory(run_dir: Path, request: RunRequest) -> Path:
@@ -237,31 +246,26 @@ class Collector:
             # Full mode: retain the diagnostic layers alongside the ACTF trajectory.
             keep |= {"cache_trace.jsonl", "wire_trace.jsonl"}
         for path in sample_dir.iterdir():
+            if path.name in keep:
+                continue
             if (
-                path.name == "rollout"
-                and keep_rollout_logs
+                keep_rollout_logs
+                and path.name == "rollout"
                 and path.is_dir()
                 and not path.is_symlink()
             ):
+                # Failed samples keep every attempt's process logs for diagnosis.
                 for item in path.iterdir():
-                    if (
+                    if not (
                         item.is_file()
                         and not item.is_symlink()
-                        and item.suffix == ".log"
-                        and item.name.startswith(("gateway.attempt-", "agent.attempt-"))
+                        and fnmatch.fnmatch(item.name, "*.attempt-*.log")
                     ):
-                        continue
-                    if item.is_dir() and not item.is_symlink():
-                        shutil.rmtree(item)
-                    else:
-                        item.unlink(missing_ok=True)
+                        _remove_path(item)
+                if not any(path.iterdir()):
+                    path.rmdir()
                 continue
-            if path.name in keep:
-                continue
-            if path.is_dir() and not path.is_symlink():
-                shutil.rmtree(path)
-            else:
-                path.unlink(missing_ok=True)
+            _remove_path(path)
 
     def _finalize_sample(
         self,
@@ -390,7 +394,7 @@ class Collector:
         self._prune_sample(
             sample_dir,
             keep_aux_traces=self.config.keep_aux_traces,
-            keep_rollout_logs=(harness_name == "openclaw" and final.status != "ok"),
+            keep_rollout_logs=final.status != "ok",
         )
         atomic_write_json(sample_dir / "info.json", result)
         return result

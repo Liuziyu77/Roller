@@ -567,7 +567,9 @@ run 级 `sft.jsonl`。
 
 `--retries N` 最多额外执行 N 次完整 rollout。每次 attempt 开始前会清理上一次的运行期
 raw/cache/wire 文件，避免混合不同 attempt。Sample `info.json.attempts` 保留每次状态和
-耗时，canonical raw/ACTF/SFT 对应最终 attempt。
+耗时，canonical raw/ACTF/SFT 对应最终 attempt。最终状态不是 `ok` 时，sample 还会保留每次
+attempt 的进程日志 `rollout/*.attempt-<N>.log`（例如 OpenClaw 的 `gateway.attempt-1.log`、
+`agent.attempt-1.log`），供排查使用。
 
 ### 7.4 Resume
 

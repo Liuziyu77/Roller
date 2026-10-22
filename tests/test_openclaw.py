@@ -25,64 +25,33 @@ from roller.usage import extract_openclaw_usage
 
 
 class GatewayReadinessTests(unittest.TestCase):
-    def test_startup_timeout_is_reported_as_error_with_original_reason(self):
-        harness = OpenClawHarness(OpenClawConfig(), 0)
+    def test_gateway_startup_timeout_is_an_error_not_a_task_timeout(self):
+        runtime = mock.Mock()
+        runtime.run.return_value = subprocess.CompletedProcess([], 1)
+        process = mock.Mock()
+        process.poll.return_value = None
+        harness = OpenClawHarness(
+            OpenClawConfig(gateway_startup_timeout=0.001), 0, runtime=runtime
+        )
         request = RunRequest(0, Task(id="hello", prompts=("hello",), source_index=0), "model", 300)
         session = mock.Mock()
-        session.start.side_effect = TimeoutError(
-            "OpenClaw gateway did not listen on port 18789 within 240s"
-        )
+        session.start.side_effect = lambda: harness._wait_for_gateway("container", process)
         session.finish.side_effect = lambda status, error: HarnessResult(
             status=status, elapsed_seconds=1, error=error
         )
-        with mock.patch.object(harness, "create_session", return_value=session):
+        with (
+            mock.patch.object(harness, "create_session", return_value=session),
+            mock.patch("roller.harnesses.openclaw.time.sleep"),
+        ):
             result = harness.run(request, Path("sample"), 1)
 
         self.assertEqual(result.status, "error")
         self.assertEqual(
             result.error,
-            "OpenClaw startup failed: OpenClaw gateway did not listen on port 18789 within 240s",
-        )
-        session.finish.assert_called_once_with("error", result.error)
-
-    def test_startup_subprocess_timeout_is_an_error_without_command_secrets(self):
-        harness = OpenClawHarness(OpenClawConfig(), 0)
-        request = RunRequest(0, Task(id="hello", prompts=("hello",), source_index=0), "model", 300)
-        session = mock.Mock()
-        session.start.side_effect = subprocess.TimeoutExpired(
-            ["docker", "run", "-e", "API_KEY=secret"], 60
-        )
-        session.finish.side_effect = lambda status, error: HarnessResult(
-            status=status, elapsed_seconds=1, error=error
-        )
-        with mock.patch.object(harness, "create_session", return_value=session):
-            result = harness.run(request, Path("sample"), 1)
-
-        self.assertEqual(result.status, "error")
-        self.assertEqual(
-            result.error,
-            "OpenClaw startup failed: operation timed out after 60s",
-        )
-        self.assertNotIn("secret", result.error)
-
-    def test_agent_timeout_keeps_task_timeout_status_and_cause(self):
-        harness = OpenClawHarness(OpenClawConfig(), 0)
-        request = RunRequest(0, Task(id="hello", prompts=("hello",), source_index=0), "model", 300)
-        session = mock.Mock()
-        session.send.side_effect = TimeoutError("OpenClaw interactive turn timed out")
-        session.finish.side_effect = lambda status, error: HarnessResult(
-            status=status, elapsed_seconds=1, error=error
-        )
-        with mock.patch.object(harness, "create_session", return_value=session):
-            result = harness.run(request, Path("sample"), 1)
-
-        self.assertEqual(result.status, "timeout")
-        self.assertEqual(
-            result.error,
-            "task exceeded 300s (cause: OpenClaw interactive turn timed out)",
+            "OpenClaw gateway did not listen on port 18789 within 0.001s",
         )
 
-    def test_checked_timeout_includes_operation_without_leaking_command(self):
+    def test_checked_timeout_names_the_step_without_leaking_command(self):
         runtime = mock.Mock()
         runtime.run.side_effect = subprocess.TimeoutExpired(
             ["docker", "run", "-e", "API_KEY=secret"], 60
@@ -90,13 +59,14 @@ class GatewayReadinessTests(unittest.TestCase):
         harness = OpenClawHarness(OpenClawConfig(), 0, runtime=runtime)
 
         with self.assertRaisesRegex(
-            RuntimeError, "container startup timed out after 60s"
+            RuntimeError, "^container startup timed out after 60s$"
         ) as raised:
             harness._checked(
                 ["run", "-e", "API_KEY=secret"], "container startup", timeout=60
             )
 
-        self.assertNotIn("secret", str(raised.exception))
+        # Tracebacks logged by the collector must not print the command either.
+        self.assertTrue(raised.exception.__suppress_context__)
 
     def test_slow_probe_retries_within_startup_budget(self):
         runtime = mock.Mock()
@@ -115,7 +85,7 @@ class GatewayReadinessTests(unittest.TestCase):
         process.poll.return_value = None
         harness = OpenClawHarness(OpenClawConfig(gateway_startup_timeout=3), 0, runtime=runtime)
         with mock.patch("roller.harnesses.openclaw.time.monotonic", side_effect=[0, 0, 2, 4]):
-            with self.assertRaisesRegex(TimeoutError, "gateway did not listen.*3s"):
+            with self.assertRaisesRegex(RuntimeError, "gateway did not listen.*3s"):
                 harness._wait_for_gateway("container", process)
         self.assertEqual(runtime.run.call_count, 2)
 

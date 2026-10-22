@@ -691,7 +691,10 @@ These cases turn an otherwise successful Harness result into `error`:
 `--retries N` runs at most N extra complete rollouts. Before each attempt
 starts, runtime raw/cache/wire files from the previous attempt are cleaned so
 attempts are not mixed. Sample `info.json.attempts` keeps each status and
-elapsed time. Canonical raw/ACTF/SFT correspond to the final attempt.
+elapsed time. Canonical raw/ACTF/SFT correspond to the final attempt. When the
+final status is not `ok`, the sample also keeps every attempt's process logs as
+`rollout/*.attempt-<N>.log` (for example OpenClaw's `gateway.attempt-1.log` and
+`agent.attempt-1.log`) for troubleshooting.
 
 ### 7.4 Resume
 

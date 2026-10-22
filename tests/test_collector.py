@@ -214,8 +214,11 @@ class FakeHarness(Harness):
                 self.state["active"] -= 1
 
 
-class FailedOpenClawHarness(Harness):
-    name = "openclaw"
+class FailingHarnessWithLogs(Harness):
+    name = "fake"
+
+    def __init__(self, crash: bool = False) -> None:
+        self.crash = crash
 
     def run(self, request: RunRequest, output_dir: Path, attempt: int) -> HarnessResult:
         rollout = output_dir / "rollout"
@@ -223,18 +226,9 @@ class FailedOpenClawHarness(Harness):
         (rollout / f"gateway.attempt-{attempt}.log").write_text("gateway startup detail")
         (rollout / f"agent.attempt-{attempt}.log").write_text("agent startup detail")
         (rollout / "trace_ACTF.json").write_text("partial trajectory")
+        if self.crash:
+            raise RuntimeError("gateway startup crashed")
         return HarnessResult.error_result("gateway startup timed out")
-
-
-class CrashingOpenClawHarness(Harness):
-    name = "openclaw"
-
-    def run(self, request: RunRequest, output_dir: Path, attempt: int) -> HarnessResult:
-        rollout = output_dir / "rollout"
-        rollout.mkdir(parents=True, exist_ok=True)
-        (rollout / f"gateway.attempt-{attempt}.log").write_text("gateway startup detail")
-        (rollout / f"agent.attempt-{attempt}.log").write_text("agent startup detail")
-        raise RuntimeError("gateway startup crashed")
 
 
 def make_requests() -> list[RunRequest]:
@@ -320,12 +314,12 @@ class CollectorTests(unittest.TestCase):
             self.assertEqual(len(dataset), 4)
             self.assertEqual(dataset[0], sft)
 
-    def test_failed_openclaw_sample_keeps_only_gateway_and_agent_rollout_logs(self) -> None:
+    def test_failed_sample_keeps_only_attempt_logs_in_rollout(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             run_dir = Path(temporary) / "run"
             result = Collector(
                 CollectionConfig(run_dir=run_dir),
-                lambda slot: FailedOpenClawHarness(),
+                lambda slot: FailingHarnessWithLogs(),
             ).collect(make_requests()[:1])[0]
 
             sample = next((run_dir / "samples").glob("*/00000000_task-0"))
@@ -340,12 +334,12 @@ class CollectorTests(unittest.TestCase):
                 "gateway startup detail",
             )
 
-    def test_crashed_openclaw_attempt_logs_survive_retries(self) -> None:
+    def test_crashed_attempt_logs_survive_retries(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             run_dir = Path(temporary) / "run"
             result = Collector(
                 CollectionConfig(run_dir=run_dir, retries=1),
-                lambda slot: CrashingOpenClawHarness(),
+                lambda slot: FailingHarnessWithLogs(crash=True),
             ).collect(make_requests()[:1])[0]
 
             sample = next((run_dir / "samples").glob("*/00000000_task-0"))
@@ -374,7 +368,7 @@ class CollectorTests(unittest.TestCase):
             (rollout / "linked-dir").symlink_to(external, target_is_directory=True)
             Collector._prune_sample(sample, keep_rollout_logs=True)
 
-            self.assertFalse((rollout / "linked-dir").exists())
+            self.assertFalse(rollout.exists())
             self.assertEqual(external_log.read_text(), "keep this file")
 
             linked_sample = root / "linked-sample"
