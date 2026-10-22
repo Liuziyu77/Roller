@@ -398,6 +398,36 @@ class ConversationManagerTests(unittest.TestCase):
             "revise it again",
         )
 
+    def test_simulator_is_finished_when_agent_finish_raises(self) -> None:
+        finished: list[str] = []
+
+        class Session(FakeInteractiveSession):
+            def finish(self, status: str, error: str | None = None) -> HarnessResult:
+                finished.append(self.request.task.id)
+                if not self.request.task.id.endswith("__user_simulator"):
+                    raise RuntimeError("agent cleanup failed")
+                return super().finish(status, error)
+
+        class Harness(FakeInteractiveHarness):
+            def create_session(self, request, output_dir, attempt, *, collect_outputs=True):
+                return Session(request, output_dir, self.responses, self.sent)
+
+        manager = ConversationManager(
+            Harness(["draft"], []),
+            Harness(['{"action":"message","content":"write"}',
+                     '{"action":"finish","reason":"done"}'], []),
+        )
+        task = Task(
+            id="cleanup", prompts=(), source_index=0,
+            user_simulator=UserSimulatorSpec("Review the draft"),
+        )
+
+        with tempfile.TemporaryDirectory() as temporary:
+            with self.assertRaisesRegex(RuntimeError, "agent cleanup failed"):
+                manager.run(RunRequest(0, task, "provider/model", 30), Path(temporary), 1)
+
+        self.assertEqual(finished, ["cleanup", "cleanup__user_simulator"])
+
 
 if __name__ == "__main__":
     unittest.main()
