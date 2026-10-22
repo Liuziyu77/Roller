@@ -214,7 +214,11 @@ class Collector:
         return path if path.is_file() else None
 
     @staticmethod
-    def _prune_sample(sample_dir: Path, keep_aux_traces: bool = False) -> None:
+    def _prune_sample(
+        sample_dir: Path,
+        keep_aux_traces: bool = False,
+        keep_rollout_logs: bool = False,
+    ) -> None:
         keep = {
             "trace.jsonl",
             "trace_ACTF.json",
@@ -233,6 +237,25 @@ class Collector:
             # Full mode: retain the diagnostic layers alongside the ACTF trajectory.
             keep |= {"cache_trace.jsonl", "wire_trace.jsonl"}
         for path in sample_dir.iterdir():
+            if (
+                path.name == "rollout"
+                and keep_rollout_logs
+                and path.is_dir()
+                and not path.is_symlink()
+            ):
+                for item in path.iterdir():
+                    if (
+                        item.is_file()
+                        and not item.is_symlink()
+                        and item.suffix == ".log"
+                        and item.name.startswith(("gateway.attempt-", "agent.attempt-"))
+                    ):
+                        continue
+                    if item.is_dir() and not item.is_symlink():
+                        shutil.rmtree(item)
+                    else:
+                        item.unlink(missing_ok=True)
+                continue
             if path.name in keep:
                 continue
             if path.is_dir() and not path.is_symlink():
@@ -364,7 +387,11 @@ class Collector:
             },
             "provenance": provenance,
         }
-        self._prune_sample(sample_dir, keep_aux_traces=self.config.keep_aux_traces)
+        self._prune_sample(
+            sample_dir,
+            keep_aux_traces=self.config.keep_aux_traces,
+            keep_rollout_logs=(harness_name == "openclaw" and final.status != "ok"),
+        )
         atomic_write_json(sample_dir / "info.json", result)
         return result
 
@@ -582,7 +609,11 @@ class Collector:
             )
             sample_dir = self._sample_dir(request)
             sample_dir.mkdir(parents=True, exist_ok=True)
-            self._prune_sample(sample_dir, keep_aux_traces=self.config.keep_aux_traces)
+            self._prune_sample(
+                sample_dir,
+                keep_aux_traces=self.config.keep_aux_traces,
+                keep_rollout_logs=True,
+            )
             result = {
                 "schema_version": "roller.sample/v1",
                 "request_index": request.index,

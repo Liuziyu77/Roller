@@ -345,7 +345,7 @@ def _build_parser() -> argparse.ArgumentParser:
     openclaw.add_argument("--model-config", help="OpenClaw models JSON; supports ${ENV_NAME}")
     openclaw.add_argument("--gateway-port", type=int, default=18789)
     openclaw.add_argument("--gateway-port-step", type=int, default=10)
-    openclaw.add_argument("--gateway-startup-timeout", type=float, default=30.0)
+    openclaw.add_argument("--gateway-startup-timeout", type=float, default=240.0)
     openclaw.add_argument(
         "--openclaw-model-request-timeout",
         type=int,

@@ -19,12 +19,85 @@ from roller.harnesses.openclaw import (
     prepare_model_config,
     validate_openclaw_thinking,
 )
-from roller.models import RunRequest, Task
+from roller.models import HarnessResult, RunRequest, Task
 from roller.tasks import load_tasks
 from roller.usage import extract_openclaw_usage
 
 
 class GatewayReadinessTests(unittest.TestCase):
+    def test_startup_timeout_is_reported_as_error_with_original_reason(self):
+        harness = OpenClawHarness(OpenClawConfig(), 0)
+        request = RunRequest(0, Task(id="hello", prompts=("hello",), source_index=0), "model", 300)
+        session = mock.Mock()
+        session.start.side_effect = TimeoutError(
+            "OpenClaw gateway did not listen on port 18789 within 240s"
+        )
+        session.finish.side_effect = lambda status, error: HarnessResult(
+            status=status, elapsed_seconds=1, error=error
+        )
+        with mock.patch.object(harness, "create_session", return_value=session):
+            result = harness.run(request, Path("sample"), 1)
+
+        self.assertEqual(result.status, "error")
+        self.assertEqual(
+            result.error,
+            "OpenClaw startup failed: OpenClaw gateway did not listen on port 18789 within 240s",
+        )
+        session.finish.assert_called_once_with("error", result.error)
+
+    def test_startup_subprocess_timeout_is_an_error_without_command_secrets(self):
+        harness = OpenClawHarness(OpenClawConfig(), 0)
+        request = RunRequest(0, Task(id="hello", prompts=("hello",), source_index=0), "model", 300)
+        session = mock.Mock()
+        session.start.side_effect = subprocess.TimeoutExpired(
+            ["docker", "run", "-e", "API_KEY=secret"], 60
+        )
+        session.finish.side_effect = lambda status, error: HarnessResult(
+            status=status, elapsed_seconds=1, error=error
+        )
+        with mock.patch.object(harness, "create_session", return_value=session):
+            result = harness.run(request, Path("sample"), 1)
+
+        self.assertEqual(result.status, "error")
+        self.assertEqual(
+            result.error,
+            "OpenClaw startup failed: operation timed out after 60s",
+        )
+        self.assertNotIn("secret", result.error)
+
+    def test_agent_timeout_keeps_task_timeout_status_and_cause(self):
+        harness = OpenClawHarness(OpenClawConfig(), 0)
+        request = RunRequest(0, Task(id="hello", prompts=("hello",), source_index=0), "model", 300)
+        session = mock.Mock()
+        session.send.side_effect = TimeoutError("OpenClaw interactive turn timed out")
+        session.finish.side_effect = lambda status, error: HarnessResult(
+            status=status, elapsed_seconds=1, error=error
+        )
+        with mock.patch.object(harness, "create_session", return_value=session):
+            result = harness.run(request, Path("sample"), 1)
+
+        self.assertEqual(result.status, "timeout")
+        self.assertEqual(
+            result.error,
+            "task exceeded 300s (cause: OpenClaw interactive turn timed out)",
+        )
+
+    def test_checked_timeout_includes_operation_without_leaking_command(self):
+        runtime = mock.Mock()
+        runtime.run.side_effect = subprocess.TimeoutExpired(
+            ["docker", "run", "-e", "API_KEY=secret"], 60
+        )
+        harness = OpenClawHarness(OpenClawConfig(), 0, runtime=runtime)
+
+        with self.assertRaisesRegex(
+            RuntimeError, "container startup timed out after 60s"
+        ) as raised:
+            harness._checked(
+                ["run", "-e", "API_KEY=secret"], "container startup", timeout=60
+            )
+
+        self.assertNotIn("secret", str(raised.exception))
+
     def test_slow_probe_retries_within_startup_budget(self):
         runtime = mock.Mock()
         runtime.run.side_effect = [subprocess.TimeoutExpired("docker exec", 2), subprocess.CompletedProcess([], 0)]
@@ -211,6 +284,7 @@ class OpenClawHelpersTests(unittest.TestCase):
 
     def test_defaults_to_stable_official_openclaw_image(self) -> None:
         self.assertEqual(OpenClawConfig().docker_image, DEFAULT_OPENCLAW_IMAGE)
+        self.assertEqual(OpenClawConfig().gateway_startup_timeout, 240.0)
 
     def test_session_scope_matches_explicit_session_id_key(self) -> None:
         harness = OpenClawHarness(OpenClawConfig(session_id="roller"), worker_slot=0)
