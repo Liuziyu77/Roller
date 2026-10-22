@@ -369,8 +369,10 @@ checkpoints on interrupt and during finalization. It stores:
 - Token, cache, cost, and request-count totals;
 - Per-sample status, error, path, and usage.
 
-A catchable interrupt writes `state=interrupted` and tries to build a partial
-`sft.jsonl` from already completed samples. `SIGKILL`, power loss, or host
+A catchable interrupt such as `Ctrl-C` immediately cancels samples that are
+still queued and only waits for running samples to finish normally (collecting
+traces and removing containers). It then writes `state=interrupted` and tries
+to build a partial `sft.jsonl` from already completed samples. `SIGKILL`, power loss, or host
 failure cannot perform that last write, but atomic writes and periodic
 checkpoints keep `info.json` as the previous complete snapshot. The Viewer also
 scans already finalized samples.

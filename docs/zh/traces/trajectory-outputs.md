@@ -307,7 +307,8 @@ CLI 在正式采集前写入初始 run 信息；Collector 在首条结果、之�
 - token、cache、cost、请求数汇总；
 - 每个 sample 的状态、错误、路径与 usage。
 
-可捕获的中断会写 `state=interrupted`，并尽力用已完成 sample 生成一份部分
+可捕获的中断（如 `Ctrl-C`）会立即取消还在排队的 sample，只等正在执行的 sample 正常收尾
+（回收 trace、清理容器），然后写 `state=interrupted`，并尽力用已完成 sample 生成一份部分
 `sft.jsonl`。`SIGKILL`、断电或宿主机故障无法执行最后一次写入，但原子写和周期 checkpoint
 可以保证 `info.json` 是上一个完整快照；Viewer 还会扫描已 finalize 的 sample。
 

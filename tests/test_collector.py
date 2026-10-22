@@ -29,7 +29,7 @@ class FakeHarness(Harness):
             self.state["active"] += 1
             self.state["max_active"] = max(self.state["max_active"], self.state["active"])
         try:
-            time.sleep(0.01)
+            time.sleep(self.state.get("delay", 0.01))
             if self.state.get("interrupt_task") == request.task.id:
                 raise KeyboardInterrupt("interrupted for test")
             if self.state.get("fail_first") and attempt == 1:
@@ -804,6 +804,31 @@ class CollectorTests(unittest.TestCase):
             self.assertEqual(info["summary"]["pending"], 1)
             rows = (run_dir / "sft.jsonl").read_text().splitlines()
             self.assertEqual(len(rows), 1)
+
+    def test_interruption_cancels_queued_requests(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            run_dir = Path(temporary) / "run"
+            state = self._state()
+            state.update(interrupt_task="task-1", delay=0.3)
+            requests = [
+                RunRequest(index, Task(id=f"task-{index}", prompts=("hello",), source_index=index),
+                           "provider/model", 30)
+                for index in range(8)
+            ]
+            collector = Collector(
+                CollectionConfig(run_dir=run_dir, parallel=2),
+                lambda slot: FakeHarness(state, slot),
+            )
+
+            with self.assertRaises(KeyboardInterrupt):
+                collector.collect(requests)
+
+            # Each worker may pick up one more request before the interrupt is
+            # seen; everything behind them stays queued and is cancelled.
+            self.assertLessEqual(len(state["calls"]), 4)
+            info = json.loads((run_dir / "info.json").read_text())
+            self.assertEqual(info["state"], "interrupted")
+            self.assertGreaterEqual(info["summary"]["pending"], 4)
 
     def test_resume_is_bound_to_bundle_digest_and_privacy_policy(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
