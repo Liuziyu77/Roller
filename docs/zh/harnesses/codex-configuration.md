@@ -258,7 +258,7 @@ Codex 在生成有效回复前退出。先查看 sample 的 `info.json` 和 `tra
 
 **(4) `invalid_encrypted_content` / `Encrypted content could not be decrypted or parsed`**
 
-Codex 发出的 Responses 请求固定为 `store: false`，并回传之前的 `reasoning.encrypted_content`，Codex 没有提供关闭这一行为的配置。部分中转端点会间歇性地无法校验自己签发的加密 reasoning。请求记录代理生效时（默认的 `--wire-trace actf` 加 `--no-codex-websockets`），Roller 遇到这个 400 会把同一请求原样重发，最多 3 次，每次重试都会作为 `upstream_retry` 条目写入 `--wire-trace full` 的请求记录。全部重试仍失败时，该错误照常结束本次 rollout；持续失败需要在端点侧解决。
+Codex 发出的 Responses 请求固定为 `store: false`，并回传之前的 `reasoning.encrypted_content`，Codex 没有提供关闭这一行为的配置。部分中转端点会间歇性地无法校验自己签发的加密 reasoning。请求记录代理生效时（默认的 `--wire-trace actf` 加 `--no-codex-websockets`），Roller 仅在 400 响应的 JSON `error.code` 等于 `invalid_encrypted_content` 时原样重发同一请求，最多 3 次，也支持 gzip/deflate 压缩响应。每次重试都会作为 `upstream_retry` 条目写入 `--wire-trace full` 的请求记录；停止代理会取消等待中的重试。全部重试仍失败时，该错误照常结束本次 rollout；持续失败需要在端点侧解决。
 
 **(5) `apply_patch: command not found`**
 

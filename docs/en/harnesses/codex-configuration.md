@@ -258,7 +258,7 @@ Codex exited before producing a valid reply. Inspect the sample `info.json` and 
 
 **(4) `invalid_encrypted_content` / `Encrypted content could not be decrypted or parsed`**
 
-Codex always sends Responses requests with `store: false` and replays earlier `reasoning.encrypted_content` items, and Codex does not expose a setting to turn this off. Some relayed endpoints intermittently fail to verify reasoning they issued themselves. When the request recording proxy is active (the default `--wire-trace actf` with `--no-codex-websockets`), Roller resends the identical request up to 3 times after this 400 and records each attempt as an `upstream_retry` entry in `--wire-trace full` records. If every attempt fails, the error still ends the rollout. Persistent failures need a fix on the endpoint side.
+Codex always sends Responses requests with `store: false` and replays earlier `reasoning.encrypted_content` items, and Codex does not expose a setting to turn this off. Some relayed endpoints intermittently fail to verify reasoning they issued themselves. When the request recording proxy is active (the default `--wire-trace actf` with `--no-codex-websockets`), Roller resends the identical request up to 3 times when a 400 response has JSON `error.code` equal to `invalid_encrypted_content`, including gzip/deflate responses. Each retry is recorded as an `upstream_retry` entry in `--wire-trace full` records. Stopping the proxy cancels pending retries. If every attempt fails, the error still ends the rollout. Persistent failures need a fix on the endpoint side.
 
 **(5) `apply_patch: command not found`**
 

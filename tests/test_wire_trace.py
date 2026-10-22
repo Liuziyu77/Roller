@@ -2,14 +2,20 @@ from __future__ import annotations
 
 import json
 import io
+import gzip
 import tempfile
+import threading
 import unittest
+import zlib
 from email.message import Message
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 from urllib.error import HTTPError
+from urllib.request import Request, build_opener, ProxyHandler
 
 from roller.wire_trace import (
+    ERROR_INSPECTION_LIMIT,
     REDACTED_VALUE,
     _ProxyHandler,
     WireTraceProxy,
@@ -149,17 +155,21 @@ class EncryptedContentRetryTests(unittest.TestCase):
         handler.command = "POST"
         handler._record.return_value = 1
         with patch("roller.wire_trace.urllib_request.urlopen", side_effect=upstream) as send, \
-                patch("roller.wire_trace.time.sleep") as sleep:
+                patch.object(handler.server.proxy._stopping, "wait", return_value=False) as wait:
             _ProxyHandler._handle(handler)
         for call in send.call_args_list:
             self.assertEqual(call.args[0].data, body)
         status = handler.send_response.call_args.args[0]
-        return status, handler.wfile.getvalue(), send.call_count, sleep.call_count
+        return status, handler.wfile.getvalue(), send.call_count, wait.call_count
 
     @staticmethod
-    def rejection(payload=ENCRYPTED_CONTENT_REJECTION):
+    def rejection(payload=ENCRYPTED_CONTENT_REJECTION, encoding=""):
+        headers = Message()
+        headers["Content-Type"] = "application/json"
+        if encoding:
+            headers["Content-Encoding"] = encoding
         return HTTPError("http://example.test/v1/responses", 400, "Bad Request",
-                         Message(), io.BytesIO(payload))
+                         headers, io.BytesIO(payload))
 
     @staticmethod
     def success(payload):
@@ -205,6 +215,144 @@ class EncryptedContentRetryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "non-negative"):
             WireTraceProxy("http://example.test", Path("/tmp/unused-wire.jsonl"),
                            encrypted_content_retries=-1)
+
+    def test_retries_compressed_error_codes(self):
+        for encoding, compress in (("gzip", gzip.compress), ("deflate", zlib.compress)):
+            with self.subTest(encoding=encoding), tempfile.TemporaryDirectory() as tmp:
+                result = self.forward(Path(tmp), [
+                    self.rejection(compress(ENCRYPTED_CONTENT_REJECTION), encoding),
+                    self.success(b"ok"),
+                ], retries=3)
+                self.assertEqual(result, (200, b"ok", 2, 1))
+
+    def test_non_target_or_uninspectable_errors_are_forwarded_unchanged(self):
+        other = json.dumps({"error": {"code": "context_length_exceeded",
+            "message": "input contains invalid_encrypted_content"}}).encode()
+        too_large = b" " * ERROR_INSPECTION_LIMIT + ENCRYPTED_CONTENT_REJECTION
+        cases = (
+            (other, ""), (gzip.compress(other), "gzip"),
+            (b'invalid_encrypted_content', ""),
+            (b'{"error":"invalid_encrypted_content"}', ""),
+            (b'["invalid_encrypted_content"]', ""),
+            (b'{"error":{"code":"invalid_encrypted_content_suffix"}}', ""),
+            (b"broken gzip invalid_encrypted_content", "gzip"),
+            (ENCRYPTED_CONTENT_REJECTION, "br"),
+            (too_large, ""), (gzip.compress(too_large), "gzip"),
+        )
+        for payload, encoding in cases:
+            with self.subTest(encoding=encoding, length=len(payload)), tempfile.TemporaryDirectory() as tmp:
+                result = self.forward(Path(tmp), [self.rejection(payload, encoding)], retries=3)
+                self.assertEqual(result, (400, payload, 1, 0))
+
+    def test_stop_during_rejection_does_not_start_a_retry(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            proxy = WireTraceProxy("http://example.test", Path(tmp) / "wire.jsonl",
+                                   encrypted_content_retries=3)
+
+            def reject(*args, **kwargs):
+                proxy.stop()
+                raise self.rejection()
+
+            with patch("roller.wire_trace.urllib_request.urlopen", side_effect=reject) as send:
+                with proxy.open_upstream(Request("http://example.test/responses", data=b"{}"), 1) as response:
+                    self.assertEqual(response.code, 400)
+                    self.assertEqual(response.read(), ENCRYPTED_CONTENT_REJECTION)
+            self.assertEqual(send.call_count, 1)
+
+
+class RetryHTTPTests(unittest.TestCase):
+    """Exercise real HTTPError bodies, headers, capture, and shutdown threads."""
+
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        self.requests = []
+        self.responses = []
+        owner = self
+
+        class Upstream(BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+            def do_POST(self):
+                owner.requests.append(self.rfile.read(int(self.headers["Content-Length"])))
+                status, payload, encoding = owner.responses.pop(0)
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(payload)))
+                if encoding:
+                    self.send_header("Content-Encoding", encoding)
+                self.end_headers()
+                self.wfile.write(payload)
+
+        upstream = ThreadingHTTPServer(("127.0.0.1", 0), Upstream)
+        upstream.daemon_threads = True
+        thread = threading.Thread(target=upstream.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(thread.join, 2)
+        self.addCleanup(upstream.server_close)
+        self.addCleanup(upstream.shutdown)
+        self.recorder = CallRecorder(self.root / "capture")
+        self.proxy = WireTraceProxy(f"http://127.0.0.1:{upstream.server_port}/v1",
+            self.root / "wire.jsonl", mode="full", encrypted_content_retries=3,
+            capture_recorder=self.recorder)
+        self.proxy.start()
+        self.addCleanup(self.proxy.stop)
+        self.target = self.proxy.proxy_base_url + "/responses"
+
+    def request(self):
+        request = Request(self.target, data=b'{"input":[],"model":"test"}',
+                          headers={"Content-Type": "application/json", "Accept-Encoding": "gzip"})
+        try:
+            response = build_opener(ProxyHandler({})).open(request, timeout=5)
+        except HTTPError as exc:
+            response = exc
+        with response:
+            return response.code, response.read(), response.headers.get("Content-Encoding", "")
+
+    def test_gzip_retry_captures_only_final_response(self):
+        success = b'{"id":"resp_test","status":"completed","output":[]}'
+        self.responses = [(400, gzip.compress(ENCRYPTED_CONTENT_REJECTION), "gzip"),
+                          (200, success, "")]
+        self.assertEqual(self.request(), (200, success, ""))
+        self.assertEqual(len(self.requests), 2)
+        self.assertEqual(self.requests[0], self.requests[1])
+        self.assertEqual(self.recorder.response_path(1).read_bytes(), success)
+        events = read_jsonl(self.recorder.events)
+        self.assertEqual(len(events), 2)
+        self.assertTrue(events[-1]["complete"])
+        self.assertEqual(events[-1]["http_status"], 200)
+
+    def test_compressed_other_error_preserves_body_and_headers(self):
+        payload = gzip.compress(b'{"error":{"code":"other","message":"invalid_encrypted_content"}}')
+        self.responses = [(400, payload, "gzip")]
+        self.assertEqual(self.request(), (400, payload, "gzip"))
+        self.assertEqual(len(self.requests), 1)
+        self.assertEqual(self.recorder.response_path(1).read_bytes(), payload)
+
+    def test_stop_interrupts_backoff_without_another_request(self):
+        self.responses = [(400, ENCRYPTED_CONTENT_REJECTION, "")] * 4
+        waiting = threading.Event()
+        wait = self.proxy._stopping.wait
+        result = []
+
+        def observe_wait(delay):
+            waiting.set()
+            return wait(delay)
+
+        with patch("roller.wire_trace.ENCRYPTED_CONTENT_RETRY_DELAY_SECONDS", 30), \
+                patch.object(self.proxy._stopping, "wait", side_effect=observe_wait):
+            client = threading.Thread(target=lambda: result.append(self.request()), daemon=True)
+            client.start()
+            self.assertTrue(waiting.wait(2))
+            self.proxy.stop()
+            client.join(2)
+            self.assertFalse(client.is_alive())
+        self.assertEqual(result, [(400, ENCRYPTED_CONTENT_REJECTION, "")])
+        self.assertEqual(len(self.requests), 1)
+        self.assertFalse(any(row.get("kind") == "upstream_retry"
+                             for row in read_jsonl(self.root / "wire.jsonl")))
 
 
 class StripThinkingTests(unittest.TestCase):

@@ -52,8 +52,9 @@ RUN apt-get update \
 # Codex puts its apply_patch alias on PATH at runtime, but Debian's /etc/profile
 # resets PATH in the login shells Codex runs commands in. Keep a stable alias.
 RUN set -eu; \
-    codex_bin="$(find "$(npm root --global)/@openai/codex" -path '*/vendor/*/bin/codex' -type f | head -n 1)"; \
-    test -n "$codex_bin"; \
+    codex_bin="$(find "$(npm root --global)/@openai/codex" -type f \
+        \( -path '*/vendor/*/bin/codex' -o -path '*/vendor/*/codex/codex' \) -print -quit)"; \
+    test -x "$codex_bin"; \
     ln -s "$codex_bin" /usr/local/bin/apply_patch
 
 ENV CODEX_CI=1 \

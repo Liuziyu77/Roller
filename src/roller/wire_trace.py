@@ -16,6 +16,7 @@ import io
 import json
 import threading
 import time
+import zlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -55,8 +56,29 @@ REDACTED_VALUE = "<redacted>"
 THINKING_MESSAGE_KEYS = ("reasoning_content", "reasoning", "reasoning_text")
 THINKING_BLOCK_TYPES = ("thinking", "reasoning")
 
-ENCRYPTED_CONTENT_ERROR = b"invalid_encrypted_content"
+ENCRYPTED_CONTENT_ERROR = "invalid_encrypted_content"
 ENCRYPTED_CONTENT_RETRY_DELAY_SECONDS = 0.5
+ERROR_INSPECTION_LIMIT = 64 * 1024
+
+
+def _is_encrypted_content_rejection(payload: bytes, content_encoding: str) -> bool:
+    """Inspect a bounded copy; keep the original response intact for forwarding."""
+    if len(payload) > ERROR_INSPECTION_LIMIT:
+        return False
+    encoding = content_encoding.strip().lower()
+    try:
+        if encoding in {"gzip", "deflate"}:
+            decoder = zlib.decompressobj(31 if encoding == "gzip" else 15)
+            payload = decoder.decompress(payload, ERROR_INSPECTION_LIMIT + 1)
+            if len(payload) > ERROR_INSPECTION_LIMIT or not decoder.eof or decoder.unused_data:
+                return False
+        elif encoding not in {"", "identity"}:
+            return False
+        body = json.loads(payload)
+    except (ValueError, UnicodeError, RecursionError, zlib.error):
+        return False
+    error = body.get("error") if isinstance(body, dict) else None
+    return isinstance(error, dict) and error.get("code") == ENCRYPTED_CONTENT_ERROR
 
 
 def normalize_chat_completion_reasoning_response(body: Any) -> Any:
@@ -492,6 +514,7 @@ class WireTraceProxy:
         self.timeout_seconds = timeout_seconds
         self.encrypted_content_retries = encrypted_content_retries
         self._lock = threading.Lock()
+        self._stopping = threading.Event()
         self._seq = 0
         self.responses_request_count = 0
         self.tool_schema_fingerprints: set[str] = set()
@@ -508,6 +531,9 @@ class WireTraceProxy:
         self._thread.start()
 
     def stop(self) -> None:
+        # Wake pending retries before closing the listener; daemon handlers can
+        # outlive the server and must not initiate another model request.
+        self._stopping.set()
         if self._server is not None:
             self._server.shutdown()
             self._server.server_close()
@@ -562,7 +588,7 @@ class WireTraceProxy:
             and urlsplit(outgoing.full_url).path.rstrip("/").endswith("/responses")
         )
         attempt = 0
-        while True:
+        while not self._stopping.is_set():
             try:
                 return urllib_request.urlopen(outgoing, timeout=self.timeout_seconds)
             except urllib_request.HTTPError as exc:  # 4xx/5xx still carry a body
@@ -570,18 +596,24 @@ class WireTraceProxy:
                     return exc
                 payload = exc.read()
                 exc.close()
-                if ENCRYPTED_CONTENT_ERROR not in payload:
-                    return urllib_request.HTTPError(
-                        exc.filename, exc.code, exc.msg, exc.headers, io.BytesIO(payload)
-                    )
+                buffered = urllib_request.HTTPError(
+                    exc.filename, exc.code, exc.msg, exc.headers, io.BytesIO(payload)
+                )
+                if not _is_encrypted_content_rejection(
+                    payload, exc.headers.get("Content-Encoding", "")
+                ):
+                    return buffered
+                if self._stopping.wait(ENCRYPTED_CONTENT_RETRY_DELAY_SECONDS * (attempt + 1)):
+                    return buffered
+                buffered.close()
             attempt += 1
             try:
                 self.write({"kind": "upstream_retry", "request_seq": request_seq,
                             "attempt": attempt, "http_status": 400,
-                            "reason": ENCRYPTED_CONTENT_ERROR.decode()})
+                            "reason": ENCRYPTED_CONTENT_ERROR})
             except Exception:
                 pass
-            time.sleep(ENCRYPTED_CONTENT_RETRY_DELAY_SECONDS * attempt)
+        raise OSError("wire proxy stopped")
 
     def next_seq(self, *, responses_request: bool = False) -> int:
         with self._lock:

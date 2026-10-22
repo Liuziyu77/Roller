@@ -213,5 +213,38 @@ class NpmRegistryTests(unittest.TestCase):
                     self.assertEqual(result.stdout.strip(), override or "https://base.example/npm/")
 
 
+class CodexApplyPatchTests(unittest.TestCase):
+    def test_alias_supports_current_and_legacy_native_layouts(self):
+        command = next(body for kind, body in instructions("codex")
+                       if kind == "RUN" and "/usr/local/bin/apply_patch" in body)
+        for layout in ("bin/codex", "codex/codex"):
+            for executable in (True, False):
+                with self.subTest(layout=layout, executable=executable), tempfile.TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    modules = root / "modules"
+                    native = modules / "@openai/codex/node_modules/@openai/codex-linux-x64/vendor/target" / layout
+                    native.parent.mkdir(parents=True)
+                    native.write_text("#!/bin/sh\nprintf '%s\\n' alias-ok\n")
+                    native.chmod(0o755 if executable else 0o644)
+                    binary_dir = root / "bin"
+                    binary_dir.mkdir()
+                    npm = binary_dir / "npm"
+                    npm.write_text("#!/bin/sh\nprintf '%s\\n' " + shlex.quote(str(modules)) + "\n")
+                    npm.chmod(0o755)
+                    alias = binary_dir / "apply_patch"
+                    result = subprocess.run(
+                        ["sh", "-c", command.replace("/usr/local/bin/apply_patch", str(alias))],
+                        env={"PATH": str(binary_dir) + os.pathsep + os.defpath},
+                        capture_output=True, text=True, timeout=5,
+                    )
+                    if executable:
+                        self.assertEqual(result.returncode, 0, result.stderr)
+                        self.assertEqual(alias.resolve(), native)
+                        self.assertEqual(subprocess.check_output([str(alias)], text=True, timeout=5), "alias-ok\n")
+                    else:
+                        self.assertNotEqual(result.returncode, 0)
+                        self.assertFalse(alias.is_symlink())
+
+
 if __name__ == "__main__":
     unittest.main()
