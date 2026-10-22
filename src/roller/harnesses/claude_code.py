@@ -536,7 +536,7 @@ class ClaudeCodeHarness(ContainerCommands, InteractiveHarness):
             primary_files = [
                 path
                 for path in staging_root.rglob("*.jsonl")
-                if "subagents" not in path.parts and path.is_file()
+                if "subagents" not in path.relative_to(staging_root).parts and path.is_file()
             ]
             if not primary_files:
                 return None

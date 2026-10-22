@@ -210,7 +210,8 @@ def run_job(root: Path, phase: str, harness: str, effort: str, models: tuple[str
     if (target / "info.json").is_file():
         command.append("--resume")
     if harness == "openclaw":
-        command.extend(["--model-config", str(root / "openclaw-models.json")])
+        command.extend(["--model-config", str(root / "openclaw-models.json"),
+                        "--gateway-port", str(18789 + 100 * EFFORTS.index(effort))])
     for model in models:
         command.extend(["--model", f"matrix/{model}" if harness == "openclaw" else model])
     env = os.environ.copy()

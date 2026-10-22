@@ -50,6 +50,33 @@ def _prefix_changed(inputs: list[list[Any]]) -> bool:
     return False
 
 
+def _single_opencode_session(rows: list[dict[str, Any]], roots: set[str]) -> bool:
+    """Allow untagged requests only when native evidence shows one root session."""
+    if len(roots) != 1:
+        return False
+    sessions = set()
+    for row in rows:
+        info = None
+        parts = []
+        if row.get("type") == "session_export":
+            data = row.get("data") or {}
+            info = data.get("info")
+            parts = [part for message in data.get("messages", [])
+                     for part in message.get("parts", [])]
+        elif row.get("type") == "event":
+            event = row.get("event") or {}
+            properties = event.get("properties") or {}
+            if event.get("type") in {"session.created", "session.updated"}:
+                info = properties.get("info")
+            elif event.get("type") == "message.part.updated":
+                parts = [properties.get("part") or {}]
+        if isinstance(info, Mapping) and isinstance(info.get("id"), str):
+            sessions.add(info["id"])
+        if any(part.get("type") == "tool" and part.get("tool") == "task" for part in parts):
+            return False
+    return sessions == roots
+
+
 def has_main_compaction(path: Path, harness: str | None,
                         rows: list[dict[str, Any]] | None = None) -> bool:
     """Whether native evidence rules out a safe linear SFT export."""
@@ -73,7 +100,9 @@ def has_main_compaction(path: Path, harness: str | None,
         return True  # Cannot establish which session supplied the main prompt.
     if harness == "opencode" and roots and any(
             row.get("native_session_id") is None for row in requests):
-        return True  # An unattributed request may belong to the root.
+        if not _single_opencode_session(rows, roots) or session_ids - roots:
+            return True  # An unattributed request may belong to a child.
+        roots = set()  # All requests belong to the one observed root.
     inputs = []
     for row in requests:
         if roots and row.get("native_session_id") not in roots:

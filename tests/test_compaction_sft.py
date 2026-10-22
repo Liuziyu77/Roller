@@ -478,6 +478,24 @@ def test_opencode_subagent_requests_do_not_look_like_main_compaction(tmp_path: P
     assert not has_main_compaction(tmp_path / "trace.jsonl", "opencode")
 
 
+def test_opencode_untagged_single_root_requests_keep_linear_sft(tmp_path: Path) -> None:
+    first = [{"role": "user", "content": "read a file"}]
+    rows = [
+        {"type": "session_export", "data": {"info": {"id": "root"}, "messages": []}},
+        {"type": "request", "body": {"messages": first}},
+        {"type": "request", "body": {"messages": first + [
+            {"role": "assistant", "content": "reading"},
+            {"role": "tool", "content": "file contents"}]}},
+    ]
+    _write(tmp_path / "trace.jsonl", rows)
+    assert not has_main_compaction(tmp_path / "trace.jsonl", "opencode")
+
+    rows.append({"type": "session_export", "data": {
+        "info": {"id": "child", "parentID": "root"}, "messages": []}})
+    _write(tmp_path / "trace.jsonl", rows)
+    assert has_main_compaction(tmp_path / "trace.jsonl", "opencode")
+
+
 def test_opencode_child_request_can_precede_root_request(tmp_path: Path) -> None:
     _write(tmp_path / "trace.jsonl", [
         {"type": "session_export", "data": {"info": {"id": "root"}, "messages": []}},

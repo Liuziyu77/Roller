@@ -79,6 +79,11 @@ def chat_response(payload: bytes, content_type: str) -> dict[str, Any]:
         chunk = json.loads(data)
         if chunk.get("error"):
             raise ValueError("Chat Completions stream returned an error")
+        # Some gateways prefix the stream with an empty metadata frame. It is
+        # not a model response and must not establish the response ID.
+        if (result is None and chunk.get("id") == "" and chunk.get("choices") == []
+                and not chunk.get("usage")):
+            continue
         if result is None:
             result = {k: deepcopy(v) for k, v in chunk.items() if k != "choices"}
         elif chunk.get("id") and chunk["id"] != result.get("id"):

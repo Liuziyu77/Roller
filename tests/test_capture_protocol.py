@@ -231,6 +231,11 @@ class ChatStreamTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "DONE"):
             chat_response(self.stream(False), "text/event-stream")
 
+    def test_empty_leading_metadata_does_not_replace_response_id(self):
+        prefix = b'data: {"id":"","choices":[],"created":0}\n\n'
+        output = chat_response(prefix + self.stream(), "text/event-stream")
+        self.assertEqual(output["id"], "r")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -194,6 +194,29 @@ class ClaudeCodeHarnessTests(unittest.TestCase):
             rows = [json.loads(line) for line in destination.read_text().splitlines()]
         self.assertEqual([row["uuid"] for row in rows], ["u1", "u2", "dupe"])
 
+    def test_collects_main_trace_under_subagents_output_directory(self) -> None:
+        runtime = MagicMock()
+
+        def copy_session(args, timeout):
+            staging = Path(args[-1]) / "-roller-workspace"
+            staging.mkdir(parents=True)
+            (staging / "session.jsonl").write_text(
+                json.dumps({"uuid": "root", "timestamp": "2026-01-01T00:00:01Z"}) + "\n")
+            child = staging / "session" / "subagents"
+            child.mkdir(parents=True)
+            (child / "agent.jsonl").write_text(
+                json.dumps({"uuid": "child", "timestamp": "2026-01-01T00:00:02Z"}) + "\n")
+            return MagicMock(returncode=0)
+
+        runtime.run.side_effect = copy_session
+        harness = ClaudeCodeHarness(ClaudeCodeConfig(wire_trace_mode="off"), 0, runtime)
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "subagents" / "case"
+            trace = harness._collect_trace("container", output, 1)
+            self.assertIsNotNone(trace)
+            rows = [json.loads(line) for line in trace.read_text().splitlines()]
+            self.assertEqual([row["uuid"] for row in rows], ["root", "child"])
+
     def test_wire_proxy_shutdown_redacts_body_credentials(self) -> None:
         harness = ClaudeCodeHarness(ClaudeCodeConfig(wire_trace_mode="off"), 0)
         with tempfile.TemporaryDirectory() as temporary:
