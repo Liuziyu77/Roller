@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -88,6 +89,56 @@ class GatewayReadinessTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "gateway did not listen.*3s"):
                 harness._wait_for_gateway("container", process)
         self.assertEqual(runtime.run.call_count, 2)
+
+
+class StartupBudgetTests(unittest.TestCase):
+    def test_startup_commands_are_clipped_to_the_task_budget(self):
+        calls = []
+
+        class Runtime(FakeDockerRuntime):
+            def run(self, args, timeout=None):
+                calls.append((args[0], timeout))
+                return super().run(args, timeout)
+
+        harness = OpenClawHarness(
+            OpenClawConfig(docker_image="test-image", set_image_model=False), 0, runtime=Runtime(),
+        )
+        task = Task("task", ("hi",), 0, setup_commands=("sleep 3",))
+        with tempfile.TemporaryDirectory() as tmp:
+            result = harness.run(RunRequest(0, task, "provider/model", 5), Path(tmp), attempt=1)
+
+        self.assertEqual(result.status, "ok")
+        # From ``docker run`` through setup/configuration to the first gateway probe.
+        start = calls.index(next(call for call in calls if call[0] == "run"))
+        startup = [timeout for _, timeout in calls[start:calls.index(("exec", 2))]]
+        self.assertGreater(len(startup), 5)
+        self.assertTrue(all(timeout is not None and timeout <= 5 for timeout in startup))
+
+    def test_step_cut_short_by_the_budget_is_a_task_timeout(self):
+        def expire(args, timeout=None):
+            time.sleep(timeout)
+            raise subprocess.TimeoutExpired(args, timeout)
+
+        runtime = mock.Mock()
+        runtime.run.side_effect = expire
+        harness = OpenClawHarness(OpenClawConfig(), 0, runtime=runtime)
+        harness.deadline = time.monotonic() + 0.05
+        with self.assertRaisesRegex(TimeoutError, "^task setup command: task time budget exhausted$"):
+            harness._checked(["exec", "c", "sleep", "3"], "task setup command", timeout=60)
+        # Once the budget is spent, no further command starts.
+        with self.assertRaisesRegex(TimeoutError, "task time budget exhausted"):
+            harness._checked(["exec", "c", "true"], "task setup command")
+        self.assertEqual(runtime.run.call_count, 1)
+
+    def test_gateway_wait_cut_short_by_the_budget_is_a_task_timeout(self):
+        runtime = mock.Mock()
+        runtime.run.return_value = subprocess.CompletedProcess([], 1)
+        process = mock.Mock()
+        process.poll.return_value = None
+        harness = OpenClawHarness(OpenClawConfig(gateway_startup_timeout=240), 0, runtime=runtime)
+        harness.deadline = time.monotonic() + 0.3
+        with self.assertRaisesRegex(TimeoutError, "gateway startup: task time budget exhausted"):
+            harness._wait_for_gateway("container", process)
 
 
 class FakeProcess:
