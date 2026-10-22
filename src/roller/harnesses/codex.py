@@ -41,6 +41,9 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_CODEX_IMAGE = "roller-codex:0.149.0"
 CODEX_HOME_CONTAINER_PATH = "/roller/codex-home"
+# Codex always replays reasoning.encrypted_content with store=false; give
+# relayed endpoints a few chances before one rejected replay ends the rollout.
+CODEX_ENCRYPTED_CONTENT_RETRIES = 3
 
 
 def codex_effort(value: str | None) -> str | None:
@@ -195,6 +198,7 @@ class CodexHarness(ContainerCommands, InteractiveHarness):
             capture_recorder=self.capture.recorder if self.capture else None,
             capture_identity_header="thread-id" if self.capture else None,
             responses_tools_path=tools_path,
+            encrypted_content_retries=CODEX_ENCRYPTED_CONTENT_RETRIES,
         )
         self._wire_proxy.start()
 
