@@ -266,6 +266,49 @@ def test_chat_auxiliary_summary_call_is_not_a_training_target(tmp_path: Path) ->
         build_compaction_segments(tmp_path, "openclaw", manifest)
 
 
+def test_openclaw_native_compaction_keeps_synthetic_reply_only_as_context(tmp_path: Path) -> None:
+    _write(tmp_path / "trace.jsonl", [
+        {"type": "compaction", "id": "boundary", "timestamp": "2026-10-15T00:00:03Z",
+         "summary": "saved summary"},
+        {"type": "message", "parentId": "boundary", "message": {
+            "role": "assistant", "content": [{"type": "text", "text": "Context overflow"}]}},
+    ])
+    (tmp_path / "trace_ACTF.json").write_text(json.dumps({"steps": [
+        {"assistant_content": {"content": "ACK", "tool_calls": []}},
+        {"assistant_content": {"content": "Context overflow", "tool_calls": []}},
+        {"assistant_content": {"content": "DONE", "tool_calls": []}},
+    ]}), encoding="utf-8")
+    def answer(identifier: str, content: str) -> dict:
+        return {"id": identifier, "choices": [{"message": {
+            "role": "assistant", "content": content}}]}
+    calls = [
+        _call(1, "root", "openai-chat-completions", {"messages": [
+            {"role": "user", "content": "task"}], "tools": []}, answer("first", "ACK")),
+        _call(2, None, "openai-chat-completions", {"messages": [
+            {"role": "user", "content": "summarize"}], "tools": []},
+              answer("summary", "saved summary"), status="unavailable"),
+        _call(4, "root", "openai-chat-completions", {"messages": [
+            {"role": "user", "content": "saved summary"},
+            {"role": "assistant", "content": "ACKContext overflow"},
+            {"role": "user", "content": "continue"}], "tools": []}, answer("last", "DONE")),
+    ]
+    calls[1].update(response_capture_status="complete", execution_status="completed")
+    manifest = _capture(tmp_path, "root", calls)
+    segments = build_compaction_segments(tmp_path, "openclaw", manifest)
+    assert len(segments) == 2
+    assert segments[1][0]["boundary_event_id"] == "boundary"
+    assert segments[1][0]["summary_call_id"] == "call-2"
+    assert segments[1][0]["summary_call_binding"] == "native_summary_text"
+    assert segments[1][1]["messages"][1]["content"] == "ACKContext overflow"
+    assert segments[1][1]["target_start_index"] == 3
+    assert segments[1][1]["messages"][3]["content"] == "DONE"
+
+    calls[1]["output"]["choices"][0]["message"]["content"] = "different summary"
+    _capture(tmp_path, "root", calls)
+    with pytest.raises(SFTConversionError, match="summary cannot be bound"):
+        build_compaction_segments(tmp_path, "openclaw", manifest)
+
+
 def test_unmatched_main_reply_in_assistant_history_is_not_called_a_summary(tmp_path: Path) -> None:
     _write(tmp_path / "trace.jsonl", [{"type": "compaction"}])
     (tmp_path / "trace_ACTF.json").write_text(json.dumps({"steps": [
