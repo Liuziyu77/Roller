@@ -481,7 +481,9 @@ def _openclaw_summaries(boundaries: list[dict[str, Any]],
             if (call.get("protocol") != "openai-chat-completions"
                     or call.get("response_capture_status") != "complete"
                     or call.get("execution_status") != "completed"
-                    or not isinstance(message, Mapping) or message.get("content") != summary
+                    or call.get("output_source", "model") != "model"
+                    or not isinstance(message, Mapping) or message.get("role") != "assistant"
+                    or message.get("content") != summary
                     or not isinstance(output.get("id"), str) or not output["id"]):
                 continue
             started = _time(call.get("started_at"))
@@ -618,6 +620,8 @@ def build_compaction_segments(sample_dir: Path, harness: str,
     native_reset = has_main_compaction(sample_dir / "trace.jsonl", harness, rows)
     if harness in {"claude-code", "codex"} and not boundaries:
         return []
+    if harness == "openclaw" and boundaries and not (sample_dir / "trace_ACTF.json").is_file():
+        raise SFTConversionError("OpenClaw compaction requires ACTF main-step evidence")
     summary_ids = {boundary["summary_response_id"] for boundary in boundaries
                    if boundary["summary_response_id"]}
     if harness == "codex" and len(summary_ids) != len(boundaries):
