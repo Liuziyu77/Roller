@@ -290,6 +290,8 @@ The default `--cache-trace` writes the system prompt assembled by OpenClaw into 
 | `full` | Also writes complete requests to `wire_trace.jsonl` and creates a redacted `cache_trace.jsonl` | Troubleshooting or auditing what the model received |
 | `off` | Keeps no wire data and sets ACTF `tools` to `null` | Runs that do not need request information |
 
+By default OpenClaw abbreviates credential-shaped text when it writes the session record (for example `RV_9fc89bb7400a1812` becomes `RV_9fc…1812`), and later turns rebuild their context from that record, so neither the model nor the final outputs see the original text. Roller therefore sets `logging.redactSensitive=off` at startup so `trace.jsonl`, ACTF, and SFT keep the task text verbatim; treat these files as sensitive data. OpenClaw releases that removed this setting reject it; Roller logs a warning and continues.
+
 `trace.jsonl` contains OpenClaw session events and may not match the complete request sent to the model. Use `--wire-trace full` to inspect the actual messages, tools, and parameters received by the model.
 
 `full` creates larger files that may contain sensitive prompts, reasoning, tool arguments, and results. Do not leave it enabled for large collection runs unless needed. When using `actf` or `full`, keep the default `--network host` and provide an accessible absolute `baseUrl` in the model configuration. See [Trajectory outputs](../traces/trajectory-outputs.md#32-session-history-is-not-the-model-request-context) for details.
