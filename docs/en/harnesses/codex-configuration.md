@@ -255,3 +255,11 @@ Responses-capable service. The OpenClaw Harness can still be used for model serv
 **(3) `Codex native trace produced no assistant steps`**
 
 Codex exited before producing a valid reply. Inspect the sample `info.json` and `trace.jsonl` first. For further troubleshooting, use `--keep-container-on-error` to retain the failed container and check the `codex_version` recorded in `info.json`.
+
+**(4) `invalid_encrypted_content` / `Encrypted content could not be decrypted or parsed`**
+
+Codex always sends Responses requests with `store: false` and replays earlier `reasoning.encrypted_content` items, and Codex does not expose a setting to turn this off. Some relayed endpoints intermittently fail to verify reasoning they issued themselves. When the request recording proxy is active (the default `--wire-trace actf` with `--no-codex-websockets`), Roller resends the identical request up to 3 times after this 400 and records each attempt as an `upstream_retry` entry in `--wire-trace full` records. If every attempt fails, the error still ends the rollout. Persistent failures need a fix on the endpoint side.
+
+**(5) `apply_patch: command not found`**
+
+Codex adds its `apply_patch` alias to `PATH` at runtime, but Debian's `/etc/profile` resets `PATH` in the login shells Codex uses to run commands. The current `docker/codex/Dockerfile` installs a fixed `/usr/local/bin/apply_patch` alias, so rebuild images made before this change.

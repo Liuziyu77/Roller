@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from roller.harnesses.codex import (
+    CODEX_ENCRYPTED_CONTENT_RETRIES,
     CodexConfig,
     CodexHarness,
     redact_api_base,
@@ -106,6 +107,19 @@ class CodexHarnessTests(unittest.TestCase):
                 wire_trace_mode="full",
                 network=None,
             )
+
+    def test_wire_proxy_retries_encrypted_content_rejections(self) -> None:
+        harness = CodexHarness(CodexConfig(api_base="http://example.test/v1"), 0)
+        with tempfile.TemporaryDirectory() as temporary, patch(
+            "roller.harnesses.codex.WireTraceProxy"
+        ) as proxy:
+            harness._start_wire_proxy(Path(temporary))
+        self.assertEqual(
+            proxy.call_args.kwargs["encrypted_content_retries"],
+            CODEX_ENCRYPTED_CONTENT_RETRIES,
+        )
+        self.assertGreater(CODEX_ENCRYPTED_CONTENT_RETRIES, 0)
+        proxy.return_value.start.assert_called_once_with()
 
 
     def test_wire_proxy_shutdown_redacts_sensitive_body_fields(self) -> None:

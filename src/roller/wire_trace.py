@@ -12,6 +12,7 @@ OpenAI-compatible HTTP layer, it works for harness versions that honour
 
 from __future__ import annotations
 
+import io
 import json
 import threading
 import time
@@ -53,6 +54,9 @@ REDACTED_VALUE = "<redacted>"
 
 THINKING_MESSAGE_KEYS = ("reasoning_content", "reasoning", "reasoning_text")
 THINKING_BLOCK_TYPES = ("thinking", "reasoning")
+
+ENCRYPTED_CONTENT_ERROR = b"invalid_encrypted_content"
+ENCRYPTED_CONTENT_RETRY_DELAY_SECONDS = 0.5
 
 
 def normalize_chat_completion_reasoning_response(body: Any) -> Any:
@@ -310,9 +314,7 @@ class _ProxyHandler(BaseHTTPRequestHandler):
             ):
                 outgoing.add_header(key, value)
         try:
-            response = urllib_request.urlopen(outgoing, timeout=proxy.timeout_seconds)
-        except urllib_request.HTTPError as exc:  # 4xx/5xx still carry a body
-            response = exc
+            response = proxy.open_upstream(outgoing, request_seq)
         except Exception as exc:
             if proxy.capture_recorder is not None and request_seq in proxy.capture_recorder.request_seqs:
                 proxy.capture_recorder.finish(request_seq, status=None, content_type="",
@@ -459,9 +461,12 @@ class WireTraceProxy:
         capture_recorder: CallRecorder | None = None,
         capture_identity_header: str | None = None,
         capture_run_header: str | None = None,
+        encrypted_content_retries: int = 0,
     ) -> None:
         if mode not in ("tools", "full"):
             raise ValueError(f"unknown wire trace mode: {mode}")
+        if encrypted_content_retries < 0:
+            raise ValueError("encrypted content retries must be non-negative")
         parts = urlsplit(upstream_base_url)
         if not parts.scheme or not parts.netloc:
             raise ValueError(f"upstream base URL must be absolute: {upstream_base_url}")
@@ -485,6 +490,7 @@ class WireTraceProxy:
         if capture_run_header and capture_run_header.lower().startswith("x-roller-"):
             self.drop_request_headers |= {capture_run_header.lower()}
         self.timeout_seconds = timeout_seconds
+        self.encrypted_content_retries = encrypted_content_retries
         self._lock = threading.Lock()
         self._seq = 0
         self.responses_request_count = 0
@@ -541,6 +547,41 @@ class WireTraceProxy:
             ]
         )
         return urlunsplit(("", "", parts.path, query, ""))
+
+    def open_upstream(
+        self, outgoing: urllib_request.Request, request_seq: int | None
+    ) -> Any:
+        """Open the upstream response, resending transient replay rejections.
+
+        Relayed Responses endpoints can intermittently fail to verify their own
+        ``reasoning.encrypted_content`` when Codex replays it. The 400 arrives
+        before generation starts, so the identical request is safe to resend.
+        """
+        retryable = (
+            outgoing.get_method() == "POST"
+            and urlsplit(outgoing.full_url).path.rstrip("/").endswith("/responses")
+        )
+        attempt = 0
+        while True:
+            try:
+                return urllib_request.urlopen(outgoing, timeout=self.timeout_seconds)
+            except urllib_request.HTTPError as exc:  # 4xx/5xx still carry a body
+                if not retryable or exc.code != 400 or attempt >= self.encrypted_content_retries:
+                    return exc
+                payload = exc.read()
+                exc.close()
+                if ENCRYPTED_CONTENT_ERROR not in payload:
+                    return urllib_request.HTTPError(
+                        exc.filename, exc.code, exc.msg, exc.headers, io.BytesIO(payload)
+                    )
+            attempt += 1
+            try:
+                self.write({"kind": "upstream_retry", "request_seq": request_seq,
+                            "attempt": attempt, "http_status": 400,
+                            "reason": ENCRYPTED_CONTENT_ERROR.decode()})
+            except Exception:
+                pass
+            time.sleep(ENCRYPTED_CONTENT_RETRY_DELAY_SECONDS * attempt)
 
     def next_seq(self, *, responses_request: bool = False) -> int:
         with self._lock:

@@ -4,8 +4,10 @@ import json
 import io
 import tempfile
 import unittest
+from email.message import Message
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+from urllib.error import HTTPError
 
 from roller.wire_trace import (
     REDACTED_VALUE,
@@ -122,6 +124,87 @@ class ForwardPathTests(unittest.TestCase):
         )
         self.assertEqual(proxy.forward_path("/v1/models"), "/v1/models")
         self.assertEqual(proxy.drop_request_headers, {"anthropic-beta"})
+
+
+ENCRYPTED_CONTENT_REJECTION = json.dumps({"error": {
+    "message": "The encrypted content for item rs_1 could not be verified.",
+    "type": "invalid_request_error", "code": "invalid_encrypted_content",
+}}).encode()
+
+
+class EncryptedContentRetryTests(unittest.TestCase):
+    def forward(self, root, upstream, *, retries, path="/v1/responses"):
+        body = json.dumps({"model": "model", "input": [
+            {"type": "reasoning", "id": "rs_1", "encrypted_content": "opaque", "summary": []},
+        ]}).encode()
+        handler = MagicMock()
+        handler.server.proxy = WireTraceProxy(
+            "http://example.test/v1", root / "wire.jsonl",
+            encrypted_content_retries=retries,
+        )
+        handler.headers = {"Content-Length": str(len(body)), "Content-Type": "application/json"}
+        handler.rfile = io.BytesIO(body)
+        handler.wfile = io.BytesIO()
+        handler.path = path
+        handler.command = "POST"
+        handler._record.return_value = 1
+        with patch("roller.wire_trace.urllib_request.urlopen", side_effect=upstream) as send, \
+                patch("roller.wire_trace.time.sleep") as sleep:
+            _ProxyHandler._handle(handler)
+        for call in send.call_args_list:
+            self.assertEqual(call.args[0].data, body)
+        status = handler.send_response.call_args.args[0]
+        return status, handler.wfile.getvalue(), send.call_count, sleep.call_count
+
+    @staticmethod
+    def rejection(payload=ENCRYPTED_CONTENT_REJECTION):
+        return HTTPError("http://example.test/v1/responses", 400, "Bad Request",
+                         Message(), io.BytesIO(payload))
+
+    @staticmethod
+    def success(payload):
+        response = MagicMock(status=200, headers={"Content-Type": "text/event-stream"})
+        response.read.side_effect = io.BytesIO(payload).read
+        return response
+
+    def test_resends_identical_request_after_encrypted_content_rejection(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            status, delivered, sent, slept = self.forward(
+                root, [self.rejection(), self.rejection(), self.success(b"data: ok\n\n")], retries=3,
+            )
+            retries = [entry for entry in read_jsonl(root / "wire.jsonl")
+                       if entry.get("kind") == "upstream_retry"]
+        self.assertEqual((status, delivered, sent, slept), (200, b"data: ok\n\n", 3, 2))
+        self.assertEqual([entry["attempt"] for entry in retries], [1, 2])
+        self.assertEqual(retries[0]["request_seq"], 1)
+        self.assertEqual(retries[0]["reason"], "invalid_encrypted_content")
+
+    def test_forwards_final_rejection_once_retries_are_exhausted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            status, delivered, sent, _ = self.forward(
+                Path(tmp), [self.rejection() for _ in range(3)], retries=2,
+            )
+        self.assertEqual((status, delivered, sent), (400, ENCRYPTED_CONTENT_REJECTION, 3))
+
+    def test_other_errors_and_unconfigured_proxies_are_not_retried(self):
+        other = b'{"error":{"code":"context_length_exceeded"}}'
+        cases = (
+            ("other 400", [self.rejection(other)], 3, "/v1/responses", other),
+            ("disabled", [self.rejection()], 0, "/v1/responses", ENCRYPTED_CONTENT_REJECTION),
+            ("chat path", [self.rejection()], 3, "/v1/chat/completions", ENCRYPTED_CONTENT_REJECTION),
+        )
+        for name, upstream, retries, path, payload in cases:
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                status, delivered, sent, slept = self.forward(
+                    Path(tmp), upstream, retries=retries, path=path,
+                )
+                self.assertEqual((status, delivered, sent, slept), (400, payload, 1, 0))
+
+    def test_rejects_negative_retry_count(self):
+        with self.assertRaisesRegex(ValueError, "non-negative"):
+            WireTraceProxy("http://example.test", Path("/tmp/unused-wire.jsonl"),
+                           encrypted_content_retries=-1)
 
 
 class StripThinkingTests(unittest.TestCase):
