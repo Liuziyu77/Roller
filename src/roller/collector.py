@@ -629,20 +629,15 @@ class Collector:
             return ordered
 
         try:
-            if self.config.parallel == 1:
-                for request in requests:
-                    try:
-                        results.append(with_slot(request))
-                    except Exception as exc:
-                        results.append(collector_error(request, exc))
-                    checkpoint("running")
-            else:
-                with ThreadPoolExecutor(
-                    max_workers=self.config.parallel, thread_name_prefix="roller"
-                ) as pool:
-                    futures = {
-                        pool.submit(with_slot, request): request for request in requests
-                    }
+            # Workers run even at parallel=1 so an interrupt lands here, never
+            # inside a Harness that would then skip its container cleanup.
+            with ThreadPoolExecutor(
+                max_workers=self.config.parallel, thread_name_prefix="roller"
+            ) as pool:
+                futures = {
+                    pool.submit(with_slot, request): request for request in requests
+                }
+                try:
                     for future in as_completed(futures):
                         request = futures[future]
                         try:
@@ -650,6 +645,15 @@ class Collector:
                         except Exception as exc:
                             results.append(collector_error(request, exc))
                         checkpoint("running")
+                except BaseException:
+                    # Queued requests never start; running ones still finalize.
+                    cancelled = sum(future.cancel() for future in futures)
+                    logger.warning(
+                        "interrupted: cancelled %d queued request(s); "
+                        "waiting for running samples to finish",
+                        cancelled,
+                    )
+                    raise
         except BaseException:
             ordered = checkpoint("interrupted", force=True)
             try:
