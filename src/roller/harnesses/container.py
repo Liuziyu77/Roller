@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
+import time
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -157,10 +158,21 @@ class ContainerCommands:
     """Docker helpers for a Harness exposing ``config`` and ``runtime``."""
 
     error_limit = 2000
+    # Monotonic end of the running session's task budget, set by its start().
+    deadline: float | None = None
 
     @classmethod
     def _error_text(cls, result: subprocess.CompletedProcess[str]) -> str:
         return error_text(result, cls.error_limit)
+
+    def _bounded(self, timeout: float | None, description: str) -> float | None:
+        """Clip a step's own timeout to what is left of the task budget."""
+        if self.deadline is None:
+            return timeout
+        remaining = self.deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError(f"{description}: task time budget exhausted")
+        return remaining if timeout is None else min(timeout, remaining)
 
     def _checked(
         self,
@@ -168,7 +180,13 @@ class ContainerCommands:
         description: str,
         timeout: float | None = None,
     ) -> subprocess.CompletedProcess[str]:
-        result = self.runtime.run(args, timeout=timeout)
+        try:
+            result = self.runtime.run(args, timeout=self._bounded(timeout, description))
+        except subprocess.TimeoutExpired as exc:
+            # A setup step hitting its own limit is not a task timeout. Drop the
+            # exception too: its command text can carry container credentials.
+            self._bounded(None, description)  # unless the budget was the limit
+            raise RuntimeError(f"{description} timed out after {exc.timeout:g}s") from None
         if result.returncode != 0:
             raise RuntimeError(f"{description} failed: {self._error_text(result)}")
         return result

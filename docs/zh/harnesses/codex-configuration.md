@@ -255,3 +255,11 @@ Responses 的服务。OpenClaw Harness 可继续用于只支持 Chat Completions
 **(3) `Codex native trace produced no assistant steps`**
 
 Codex 在生成有效回复前退出。先查看 sample 的 `info.json` 和 `trace.jsonl`。需要进一步排查时，可以使用 `--keep-container-on-error` 保留出错容器，并核对 `info.json` 中记录的 `codex_version`。
+
+**(4) `invalid_encrypted_content` / `Encrypted content could not be decrypted or parsed`**
+
+Codex 发出的 Responses 请求固定为 `store: false`，并回传之前的 `reasoning.encrypted_content`，Codex 没有提供关闭这一行为的配置。部分中转端点会间歇性地无法校验自己签发的加密 reasoning。请求记录代理生效时（默认的 `--wire-trace actf` 加 `--no-codex-websockets`），Roller 仅在 400 响应的 JSON `error.code` 等于 `invalid_encrypted_content` 时原样重发同一请求，最多 3 次，也支持 gzip/deflate 压缩响应。每次重试都会作为 `upstream_retry` 条目写入 `--wire-trace full` 的请求记录；停止代理会取消等待中的重试。全部重试仍失败时，该错误照常结束本次 rollout；持续失败需要在端点侧解决。
+
+**(5) `apply_patch: command not found`**
+
+Codex 运行时会把 `apply_patch` 别名加入 `PATH`，但 Debian 的 `/etc/profile` 会在 Codex 执行命令所用的登录 shell 中重置 `PATH`。当前的 `docker/codex/Dockerfile` 会安装固定的 `/usr/local/bin/apply_patch` 别名，此前构建的镜像需要重新构建。

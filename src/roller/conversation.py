@@ -293,8 +293,11 @@ class ConversationManager(Harness):
             error = str(exc)
             termination_detail = error
 
-        agent_result = agent_session.finish(status, error)
-        simulator_result = simulator_session.finish(status, error)
+        # Each participant owns a container; one failing cleanup must not leak the other.
+        try:
+            agent_result = agent_session.finish(status, error)
+        finally:
+            simulator_result = simulator_session.finish(status, error)
         if status == "ok" and agent_result.status != "ok":
             status, error = agent_result.status, agent_result.error
             termination_reason = "agent_error"

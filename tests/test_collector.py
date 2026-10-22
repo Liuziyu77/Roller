@@ -29,7 +29,7 @@ class FakeHarness(Harness):
             self.state["active"] += 1
             self.state["max_active"] = max(self.state["max_active"], self.state["active"])
         try:
-            time.sleep(0.01)
+            time.sleep(self.state.get("delay", 0.01))
             if self.state.get("interrupt_task") == request.task.id:
                 raise KeyboardInterrupt("interrupted for test")
             if self.state.get("fail_first") and attempt == 1:
@@ -214,6 +214,23 @@ class FakeHarness(Harness):
                 self.state["active"] -= 1
 
 
+class FailingHarnessWithLogs(Harness):
+    name = "fake"
+
+    def __init__(self, crash: bool = False) -> None:
+        self.crash = crash
+
+    def run(self, request: RunRequest, output_dir: Path, attempt: int) -> HarnessResult:
+        rollout = output_dir / "rollout"
+        rollout.mkdir(parents=True, exist_ok=True)
+        (rollout / f"gateway.attempt-{attempt}.log").write_text("gateway startup detail")
+        (rollout / f"agent.attempt-{attempt}.log").write_text("agent startup detail")
+        (rollout / "trace_ACTF.json").write_text("partial trajectory")
+        if self.crash:
+            raise RuntimeError("gateway startup crashed")
+        return HarnessResult.error_result("gateway startup timed out")
+
+
 def make_requests() -> list[RunRequest]:
     requests: list[RunRequest] = []
     for index in range(4):
@@ -296,6 +313,71 @@ class CollectorTests(unittest.TestCase):
             ]
             self.assertEqual(len(dataset), 4)
             self.assertEqual(dataset[0], sft)
+
+    def test_failed_sample_keeps_only_attempt_logs_in_rollout(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            run_dir = Path(temporary) / "run"
+            result = Collector(
+                CollectionConfig(run_dir=run_dir),
+                lambda slot: FailingHarnessWithLogs(),
+            ).collect(make_requests()[:1])[0]
+
+            sample = next((run_dir / "samples").glob("*/00000000_task-0"))
+            rollout = sample / "rollout"
+            self.assertEqual(result["status"], "error")
+            self.assertEqual(
+                {path.name for path in rollout.iterdir()},
+                {"gateway.attempt-1.log", "agent.attempt-1.log"},
+            )
+            self.assertEqual(
+                (rollout / "gateway.attempt-1.log").read_text(),
+                "gateway startup detail",
+            )
+
+    def test_crashed_attempt_logs_survive_retries(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            run_dir = Path(temporary) / "run"
+            result = Collector(
+                CollectionConfig(run_dir=run_dir, retries=1),
+                lambda slot: FailingHarnessWithLogs(crash=True),
+            ).collect(make_requests()[:1])[0]
+
+            sample = next((run_dir / "samples").glob("*/00000000_task-0"))
+            self.assertEqual(result["status"], "error")
+            self.assertEqual(
+                {path.name for path in (sample / "rollout").iterdir()},
+                {
+                    "gateway.attempt-1.log",
+                    "agent.attempt-1.log",
+                    "gateway.attempt-2.log",
+                    "agent.attempt-2.log",
+                },
+            )
+
+    def test_rollout_log_pruning_unlinks_symlinks_without_following_them(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            external = root / "external"
+            external.mkdir()
+            external_log = external / "external.log"
+            external_log.write_text("keep this file")
+
+            sample = root / "sample"
+            rollout = sample / "rollout"
+            rollout.mkdir(parents=True)
+            (rollout / "linked-dir").symlink_to(external, target_is_directory=True)
+            Collector._prune_sample(sample, keep_rollout_logs=True)
+
+            self.assertFalse(rollout.exists())
+            self.assertEqual(external_log.read_text(), "keep this file")
+
+            linked_sample = root / "linked-sample"
+            linked_sample.mkdir()
+            (linked_sample / "rollout").symlink_to(external, target_is_directory=True)
+            Collector._prune_sample(linked_sample, keep_rollout_logs=True)
+
+            self.assertFalse((linked_sample / "rollout").exists())
+            self.assertEqual(external_log.read_text(), "keep this file")
 
     def test_audits_visible_reasoning_without_rewriting_it(self) -> None:
         cases = (
@@ -804,6 +886,31 @@ class CollectorTests(unittest.TestCase):
             self.assertEqual(info["summary"]["pending"], 1)
             rows = (run_dir / "sft.jsonl").read_text().splitlines()
             self.assertEqual(len(rows), 1)
+
+    def test_interruption_cancels_queued_requests(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            run_dir = Path(temporary) / "run"
+            state = self._state()
+            state.update(interrupt_task="task-1", delay=0.3)
+            requests = [
+                RunRequest(index, Task(id=f"task-{index}", prompts=("hello",), source_index=index),
+                           "provider/model", 30)
+                for index in range(8)
+            ]
+            collector = Collector(
+                CollectionConfig(run_dir=run_dir, parallel=2),
+                lambda slot: FakeHarness(state, slot),
+            )
+
+            with self.assertRaises(KeyboardInterrupt):
+                collector.collect(requests)
+
+            # Each worker may pick up one more request before the interrupt is
+            # seen; everything behind them stays queued and is cancelled.
+            self.assertLessEqual(len(state["calls"]), 4)
+            info = json.loads((run_dir / "info.json").read_text())
+            self.assertEqual(info["state"], "interrupted")
+            self.assertGreaterEqual(info["summary"]["pending"], 4)
 
     def test_resume_is_bound_to_bundle_digest_and_privacy_policy(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

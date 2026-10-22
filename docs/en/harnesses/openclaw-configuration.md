@@ -153,7 +153,7 @@ This section lists the flags that need special attention when running OpenClaw. 
 | `--network` | `host` | Container network mode |
 | `--gateway-port` | `18789` | Gateway start port |
 | `--gateway-port-step` | `10` | Port interval between workers |
-| `--gateway-startup-timeout` | `30` | Seconds to wait for the gateway to become ready |
+| `--gateway-startup-timeout` | `240` | Seconds to wait for the gateway to become ready |
 | `--session-id` | `roller` | OpenClaw session ID prefix |
 | `--thinking` | none | Sets model reasoning effort. See section 6 for common levels and retention behavior |
 | `--keep-thinking` / `--no-keep-thinking` | on | Whether to keep thinking in the trajectory and request history |

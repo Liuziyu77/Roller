@@ -199,7 +199,7 @@ class OpenClawConfig:
     container_user: str | None = "0"
     gateway_port_start: int = 18789
     gateway_port_step: int = 10
-    gateway_startup_timeout: float = 30.0
+    gateway_startup_timeout: float = 240.0
     network: str = "host"
     workspace_container_path: str = "/tmp_workspace"
     session_id: str = "roller"
@@ -739,7 +739,8 @@ exec node --input-type=module -e "$1"
                     "set",
                     "agents.defaults.imageModel.primary",
                     request.model,
-                ]
+                ],
+                timeout=self._bounded(None, "image model setup"),
             )
             if image_result.returncode != 0:
                 logger.warning("[%s] image model setup was not supported", request.task.id)
@@ -808,7 +809,9 @@ exec node --input-type=module -e "$1"
             )
 
     def _wait_for_gateway(self, container: str, process: subprocess.Popen[str]) -> None:
-        deadline = time.monotonic() + self.config.gateway_startup_timeout
+        deadline = time.monotonic() + self._bounded(
+            self.config.gateway_startup_timeout, "OpenClaw gateway startup"
+        )
         probe = (
             "import socket,sys; s=socket.socket(); s.settimeout(.2); "
             f"sys.exit(s.connect_ex(('127.0.0.1',{self.gateway_port})))"
@@ -825,7 +828,10 @@ exec node --input-type=module -e "$1"
             if result.returncode == 0:
                 return
             time.sleep(0.25)
-        raise TimeoutError(
+        self._bounded(None, "OpenClaw gateway startup")  # the budget was the limit
+        # RuntimeError, not TimeoutError: callers report TimeoutError as the
+        # task budget running out, which this startup failure is not.
+        raise RuntimeError(
             f"OpenClaw gateway did not listen on port {self.gateway_port} within "
             f"{self.config.gateway_startup_timeout:g}s"
         )
@@ -1145,9 +1151,11 @@ class OpenClawSession(InteractiveSession):
             "rollout/wire_strip.jsonl",
         ):
             (self.output_dir / relative).unlink(missing_ok=True)
+        self.harness.deadline = self.started + self.request.timeout_seconds
         self.harness._start_wire_proxy(self.request, self.output_dir, self.attempt)
-        self.environment = self.harness._start_container(self.container, self.request)
+        # Mark before run: a timed-out Docker client may already have created it.
         self.container_started = True
+        self.environment = self.harness._start_container(self.container, self.request)
         self.harness._prepare_workspace(self.container, self.request)
         self.harness._prepare_context_and_setup(self.container, self.request)
         self.version = self.harness._configure(

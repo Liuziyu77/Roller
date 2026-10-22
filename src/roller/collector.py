@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import fnmatch
 import json
 import inspect
 import logging
@@ -46,6 +47,14 @@ def _clear_sft_segments(sample_dir: Path) -> None:
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _remove_path(path: Path) -> None:
+    # Never follow a symlink out of the sample directory.
+    if path.is_dir() and not path.is_symlink():
+        shutil.rmtree(path)
+    else:
+        path.unlink(missing_ok=True)
 
 
 def _sample_directory(run_dir: Path, request: RunRequest) -> Path:
@@ -223,7 +232,11 @@ class Collector:
         return path if path.is_file() else None
 
     @staticmethod
-    def _prune_sample(sample_dir: Path, keep_aux_traces: bool = False) -> None:
+    def _prune_sample(
+        sample_dir: Path,
+        keep_aux_traces: bool = False,
+        keep_rollout_logs: bool = False,
+    ) -> None:
         keep = {
             "trace.jsonl",
             "trace_ACTF.json",
@@ -245,10 +258,24 @@ class Collector:
         for path in sample_dir.iterdir():
             if path.name in keep:
                 continue
-            if path.is_dir() and not path.is_symlink():
-                shutil.rmtree(path)
-            else:
-                path.unlink(missing_ok=True)
+            if (
+                keep_rollout_logs
+                and path.name == "rollout"
+                and path.is_dir()
+                and not path.is_symlink()
+            ):
+                # Failed samples keep every attempt's process logs for diagnosis.
+                for item in path.iterdir():
+                    if not (
+                        item.is_file()
+                        and not item.is_symlink()
+                        and fnmatch.fnmatch(item.name, "*.attempt-*.log")
+                    ):
+                        _remove_path(item)
+                if not any(path.iterdir()):
+                    path.rmdir()
+                continue
+            _remove_path(path)
 
     def _finalize_sample(
         self,
@@ -392,7 +419,11 @@ class Collector:
             },
             "provenance": provenance,
         }
-        self._prune_sample(sample_dir, keep_aux_traces=self.config.keep_aux_traces)
+        self._prune_sample(
+            sample_dir,
+            keep_aux_traces=self.config.keep_aux_traces,
+            keep_rollout_logs=final.status != "ok",
+        )
         atomic_write_json(sample_dir / "info.json", result)
         return result
 
@@ -625,7 +656,11 @@ class Collector:
             )
             sample_dir = self._sample_dir(request)
             sample_dir.mkdir(parents=True, exist_ok=True)
-            self._prune_sample(sample_dir, keep_aux_traces=self.config.keep_aux_traces)
+            self._prune_sample(
+                sample_dir,
+                keep_aux_traces=self.config.keep_aux_traces,
+                keep_rollout_logs=True,
+            )
             result = {
                 "schema_version": "roller.sample/v1",
                 "request_index": request.index,
@@ -672,20 +707,15 @@ class Collector:
             return ordered
 
         try:
-            if self.config.parallel == 1:
-                for request in requests:
-                    try:
-                        results.append(with_slot(request))
-                    except Exception as exc:
-                        results.append(collector_error(request, exc))
-                    checkpoint("running")
-            else:
-                with ThreadPoolExecutor(
-                    max_workers=self.config.parallel, thread_name_prefix="roller"
-                ) as pool:
-                    futures = {
-                        pool.submit(with_slot, request): request for request in requests
-                    }
+            # Workers run even at parallel=1 so an interrupt lands here, never
+            # inside a Harness that would then skip its container cleanup.
+            with ThreadPoolExecutor(
+                max_workers=self.config.parallel, thread_name_prefix="roller"
+            ) as pool:
+                futures = {
+                    pool.submit(with_slot, request): request for request in requests
+                }
+                try:
                     for future in as_completed(futures):
                         request = futures[future]
                         try:
@@ -693,6 +723,15 @@ class Collector:
                         except Exception as exc:
                             results.append(collector_error(request, exc))
                         checkpoint("running")
+                except BaseException:
+                    # Queued requests never start; running ones still finalize.
+                    cancelled = sum(future.cancel() for future in futures)
+                    logger.warning(
+                        "interrupted: cancelled %d queued request(s); "
+                        "waiting for running samples to finish",
+                        cancelled,
+                    )
+                    raise
         except BaseException:
             ordered = checkpoint("interrupted", force=True)
             try:
