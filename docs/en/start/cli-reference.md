@@ -238,7 +238,7 @@ roller view RUN_DIR [--host HOST] [--port PORT]
 | --- | --- | --- |
 | `RUN_DIR` | Required | Selects a Roller run containing `info.json` and `samples/` |
 | `--host` | `127.0.0.1` | Sets the listen address |
-| `--port` | `8765` | Sets the listen port |
+| `--port` | `17865` | Sets the listen port; when omitted and the default is busy, a free port is used |
 
 Listening on `0.0.0.0` exposes trajectory contents to the network. For remote access, keep the default address and use SSH port forwarding.
 

@@ -162,7 +162,7 @@ info.json
 roller view runs/quickstart
 ```
 
-默认监听 `127.0.0.1:8765`。命令启动后，在浏览器中打开 <http://127.0.0.1:8765>。
+默认监听 `127.0.0.1:17865`，被占用时自动改用空闲端口。命令启动后，在浏览器中打开终端打印的 URL。
 
 Viewer 会展示 ACTF 时间线。Inspector 用于查看 system prompt、tools schema、运行信息和原始内容。详见 [Viewer 指南](../traces/viewer.md)。
 

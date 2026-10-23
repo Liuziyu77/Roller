@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 import json
+import socket
 import tempfile
 import threading
 import unittest
 from pathlib import Path
+from unittest import mock
 from urllib.error import HTTPError
 from urllib.request import urlopen
 
 from roller.cli import _build_parser
 from roller.viewer import RollerRun, make_server
+from roller.viewer import app as viewer_app
 
 
 def write_json(path: Path, payload: object) -> None:
@@ -256,7 +259,28 @@ class ViewerTests(unittest.TestCase):
         args = _build_parser().parse_args(["view", str(self.root)])
         self.assertEqual(args.command, "view")
         self.assertEqual(args.host, "127.0.0.1")
-        self.assertEqual(args.port, 8765)
+        self.assertIsNone(args.port)
+
+    def test_busy_default_port_falls_back_to_a_free_port(self) -> None:
+        with socket.socket() as blocker:
+            blocker.bind(("127.0.0.1", 0))
+            blocker.listen()
+            busy = blocker.getsockname()[1]
+            with mock.patch.object(viewer_app, "DEFAULT_PORT", busy):
+                server = make_server(self.root)
+            try:
+                self.assertNotEqual(server.server_address[1], busy)
+                self.assertGreater(server.server_address[1], 0)
+            finally:
+                server.server_close()
+
+    def test_busy_explicit_port_is_an_error(self) -> None:
+        with socket.socket() as blocker:
+            blocker.bind(("127.0.0.1", 0))
+            blocker.listen()
+            busy = blocker.getsockname()[1]
+            with self.assertRaisesRegex(RuntimeError, "another --port"):
+                make_server(self.root, port=busy)
 
 
 if __name__ == "__main__":

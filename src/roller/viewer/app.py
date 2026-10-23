@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import errno
 import json
 import logging
 import mimetypes
@@ -16,6 +17,10 @@ from urllib.parse import parse_qs, urlparse
 
 logger = logging.getLogger(__name__)
 
+# Kept clear of ports agents tend to pick for their own servers (8000, 8080,
+# 8765, ...) and below both the OpenClaw gateway range (18789+) and the
+# kernel's ephemeral range: agent containers share the host network.
+DEFAULT_PORT = 17865
 DEFAULT_PAGE_SIZE = 80
 MAX_PAGE_SIZE = 200
 DEFAULT_TEXT_LIMIT = 40_000
@@ -666,23 +671,41 @@ def _handler(source: RollerRun) -> type[BaseHTTPRequestHandler]:
 
 
 def make_server(
-    run_dir: Path | str, host: str = "127.0.0.1", port: int = 8765
+    run_dir: Path | str, host: str = "127.0.0.1", port: int | None = None
 ) -> ViewerHTTPServer:
+    """Bind the viewer; ``port=None`` means DEFAULT_PORT, or a free port if it is busy."""
     if not host:
         raise ValueError("viewer host cannot be empty")
-    if port < 0 or port > 65_535:
+    if port is not None and (port < 0 or port > 65_535):
         raise ValueError("viewer port must be between 0 and 65535")
     source = RollerRun(run_dir)
+    handler = _handler(source)
+    requested = DEFAULT_PORT if port is None else port
     try:
-        return ViewerHTTPServer((host, port), _handler(source))
+        return ViewerHTTPServer((host, requested), handler)
     except OSError as exc:
-        raise RuntimeError(f"cannot start viewer on {host}:{port}: {exc}") from exc
+        if port is not None or exc.errno != errno.EADDRINUSE:
+            hint = (
+                "; pick another --port, or omit it to use a free one"
+                if exc.errno == errno.EADDRINUSE
+                else ""
+            )
+            raise RuntimeError(
+                f"cannot start viewer on {host}:{requested}: {exc}{hint}"
+            ) from exc
+    # The default is taken and no port was asked for explicitly: any free one will do.
+    try:
+        return ViewerHTTPServer((host, 0), handler)
+    except OSError as exc:
+        raise RuntimeError(f"cannot start viewer on {host}: {exc}") from exc
 
 
-def serve(run_dir: Path | str, host: str = "127.0.0.1", port: int = 8765) -> int:
+def serve(run_dir: Path | str, host: str = "127.0.0.1", port: int | None = None) -> int:
     server = make_server(run_dir, host, port)
     bound_host, bound_port = server.server_address[:2]
     display_host = "127.0.0.1" if bound_host in {"0.0.0.0", "::"} else bound_host
+    if port is None and bound_port != DEFAULT_PORT:
+        print(f"Port {DEFAULT_PORT} is in use; using free port {bound_port} instead.")
     print(f"Roller Viewer: http://{display_host}:{bound_port}")
     print(f"Run directory: {Path(run_dir).expanduser().resolve()}")
     if host not in {"127.0.0.1", "localhost", "::1"}:
