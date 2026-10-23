@@ -258,9 +258,9 @@ If the Harness finishes successfully but no usable raw trace is available, the s
 
 ### 7.3 `trace_SFT.json` and `sft.jsonl`
 
-`trace_SFT.json` is projected from ACTF. Its top level is strictly `messages` and `tools` only; it does not include
-task/model, usage, timestamps, or other run metadata. The run-root `sft.jsonl` aggregates every successful Task Agent with a lossless SFT projection in request
-order, one record of the same shape per line. Samples with an explicit `runtime.trajectory_conversion` downgrade are omitted. Full fields and validation rules are in
+For linear samples, `trace_SFT.json` is projected from ACTF. Its text-only top level is `messages` and `tools`; it does not include
+task/model, usage, timestamps, or other run metadata. The run-root `sft.jsonl` aggregates eligible linear Task Agent records in request
+order, one record of the same shape per line. Compacted samples instead export `sft_segments/` files listed in `info.json` and stay out of the legacy run dataset. Samples with an explicit `runtime.trajectory_conversion` downgrade are also omitted. Full fields and validation rules are in
 [SFT data format](../traces/sft-format.md).
 
 Conditions for every trace layer, auxiliary file, parameter combination, and failure/Resume output are in the

@@ -162,17 +162,18 @@ Task 清单支持 `.jsonl`、JSON 数组或 `{"tasks": [...]}`。每条 task 还
 
 完整字段见 [Task 格式参考](docs/zh/tasks/task-format.md)。
 
-每个成功 sample 至少包含：
+成功 sample 的轨迹产出如下；压缩或无法无损转换时，SFT 文件可能不同或缺失：
 
 | 文件 | 用途 |
 | --- | --- |
 | `trace.jsonl` | 保留 Harness-native session，便于追溯与重新转换 |
 | `trace_ACTF.json` | 使用 `ACTF_v1.0` 统一 reasoning、工具调用和工具结果 |
-| `trace_SFT.json` | 单条最小训练样本，顶层为 `messages` 与 `tools`，含图片时追加 `images` |
+| `trace_SFT.json` | 未压缩且可导出 SFT 时的单条记录，顶层为 `messages` 与 `tools`，含图片时追加 `images` |
+| `sft_segments/` | 主 Agent 压缩上下文时的分段记录；路径列在 sample 的 `info.json` 中 |
 | `info.json` | 状态、耗时、usage、版本和输入来源 |
 | `results/` | task `output_dir` 中生成了文件时存在 |
 
-Run 根目录的 `sft.jsonl` 按 request 顺序汇总全部成功样本。需要审计 Harness 是否压缩、裁剪或改写了模型请求 context 时，使用 `--wire-trace full`；native session 不等同于模型实际收到的请求。详见 [轨迹产出文件指南](docs/zh/traces/trajectory-outputs.md)。
+Run 根目录的 `sft.jsonl` 按 request 顺序汇总符合条件的线性 SFT；压缩分段独立保存在各 sample 的 `sft_segments/`。需要审计 Harness 是否压缩、裁剪或改写了模型请求 context 时，使用 `--wire-trace full`；native session 不等同于模型实际收到的请求。详见 [轨迹产出文件指南](docs/zh/traces/trajectory-outputs.md)。
 
 ## 文档导航
 
