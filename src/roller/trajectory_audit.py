@@ -9,6 +9,8 @@ from typing import Any
 from roller.integrity import trajectory_conversion_unavailable
 from roller.thinking import THINKING_LEVELS
 
+SEGMENTED_SFT_REASON = "segmented_sft_requires_target_mask"
+
 
 def sft_exclusion_reason(result: dict[str, Any]) -> str | None:
     """Single policy shared by dataset export and reporting, including resume."""
@@ -26,6 +28,11 @@ def sft_exclusion_reason(result: dict[str, Any]) -> str | None:
         return "thinking_effort_mismatch"
     if trajectory_conversion_unavailable(runtime) in {"actf", "sft"}:
         return "conversion_unavailable"
+    trajectory = result.get("trajectory")
+    if isinstance(trajectory, dict) and trajectory.get("sft_segments"):
+        # Segments need an explicit target mask. Legacy sft.jsonl consumers
+        # train every assistant message and must not receive these records.
+        return SEGMENTED_SFT_REASON
     return None
 
 

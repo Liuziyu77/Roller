@@ -12,6 +12,7 @@ from roller.capture import validate_capture
 from roller.collector import CollectionConfig, Collector
 from roller.integrity import validate_resumable_sample
 from roller.models import HarnessResult, RunRequest, Task
+from roller.trajectory_audit import SEGMENTED_SFT_REASON, sft_exclusion_reason
 
 HARNESSES = ("claude-code", "codex", "openclaw", "opencode", "hermes", "deepseek", "pi")
 
@@ -127,9 +128,22 @@ def test_three_context_windows_export_aggregate_and_resume(tmp_path: Path, harne
             segment.pop("summary_call_binding")
     validate_resumable_sample(sample, request, legacy)
     collector._write_sft_dataset([result])
-    records = [json.loads(row) for row in (tmp_path / "sft.jsonl").read_text().splitlines()]
+    assert (tmp_path / "sft.jsonl").read_text() == ""
+    linear_dir = tmp_path / "samples/linear/00000001_linear"
+    linear_dir.mkdir(parents=True)
+    linear_record = {"messages": [{"role": "user", "content": "next task"},
+                                  {"role": "assistant", "content": "linear answer"}],
+                     "tools": []}
+    (linear_dir / "trace_SFT.json").write_text(json.dumps(linear_record), encoding="utf-8")
+    collector._write_sft_dataset([result, {"status": "ok", "model": "linear",
+                                           "source_index": 1, "task_id": "linear",
+                                           "trajectory": {"sft": "trace_SFT.json"}}])
+    assert [json.loads(row) for row in (tmp_path / "sft.jsonl").read_text().splitlines()] == [linear_record]
+    records = [json.loads((sample / item["path"]).read_text())
+               for item in result["trajectory"]["sft_segments"]]
     assert result["status"] == "ok"
     assert result["trajectory"]["sft"] is None
+    assert sft_exclusion_reason(result) == SEGMENTED_SFT_REASON
     assert len(result["trajectory"]["sft_segments"]) == len(records) == 3
     assert [record["messages"][-1]["content"] for record in records] == ["ACK", "NEXT", "DONE"]
     assert [record["target_start_index"] for record in records] == [2, 4, 4]
@@ -221,7 +235,9 @@ def test_single_user_tool_round_trip_across_compaction(tmp_path: Path, harness: 
     validate_capture(sample, capture)
     validate_resumable_sample(sample, request, result)
     collector._write_sft_dataset([result])
-    rows = [json.loads(row) for row in (tmp_path / "sft.jsonl").read_text().splitlines()]
+    assert (tmp_path / "sft.jsonl").read_text() == ""
+    rows = [json.loads((sample / item["path"]).read_text())
+            for item in result["trajectory"]["sft_segments"]]
     assert result["status"] == "ok"
     assert len(rows) == 2
     assert [message["role"] for message in rows[1]["messages"]] == [

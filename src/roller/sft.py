@@ -232,8 +232,9 @@ def _placeholder_count(message: Mapping[str, Any]) -> int:
 def validate_sft_record(record: Any) -> None:
     """Check the top-level shape and the multimodal alignment contract.
 
-    Text-only records keep exactly ``messages`` + ``tools``. Compaction
-    segments additionally carry ``target_start_index``. Assistant messages at
+    Legacy text-only records keep exactly ``messages`` + ``tools`` and remain
+    the only records in run-level ``sft.jsonl``. Separate compaction segments
+    carry ``target_start_index``. Assistant messages at
     or after that index are supervised targets; intervening user/tool messages
     are context, and earlier assistant messages are preserved prompt history.
     Records with

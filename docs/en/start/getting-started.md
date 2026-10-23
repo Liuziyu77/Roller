@@ -156,8 +156,9 @@ Check in this order:
 4. Whether each available SFT record has `messages` and `tools`; image records
    also have `images`, and compaction segments have `target_start_index`.
 5. For tasks that must deliver files, whether the sample `results/` contains the expected files.
-6. Whether run `sft.jsonl` has one line per available SFT record. A compacted
-   sample can contribute several lines; an SFT-unavailable sample contributes none.
+6. Whether run `sft.jsonl` has one line per eligible **linear** SFT sample.
+   Compacted samples stay in `sft_segments/` and require a training reader that
+   honors `target_start_index`; they never enter the legacy run dataset.
 
 For when each file is written and what is retained on failure, see [Trajectory outputs](../traces/trajectory-outputs.md).
 

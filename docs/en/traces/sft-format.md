@@ -3,8 +3,9 @@
 Roller writes `trace_SFT.json` for a linear trajectory. When the main agent
 compacts its context, it writes one record per verified context window under
 `sft_segments/` and lists them in `info.json` as `trajectory.sft_segments`.
-Run-root `sft.jsonl` contains one line per available record in request and
-window order. A compacted sample can contribute several lines.
+Run-root `sft.jsonl` keeps the original linear-record format and contains one
+line per eligible linear sample. Compaction segments are separate, opt-in
+records; they are never mixed into the legacy run dataset.
 
 ## 1. Top-level structure
 
@@ -65,6 +66,8 @@ Each segment has `messages`, `tools`, and `target_start_index`. The first
 `target_start_index` messages are the actual model prompt at the start of that
 window. Assistant messages at or after that index are training targets;
 intervening user and tool messages provide context and are excluded from loss.
+Do not train these files with a reader that treats every assistant message as
+a target. The legacy `sft.jsonl` deliberately excludes them.
 The next segment starts with the actual prompt observed after a context change,
 which can include a summary and recent history. `info.json` records each
 segment path, sequential `window_index`, `boundary_source` (`initial`,

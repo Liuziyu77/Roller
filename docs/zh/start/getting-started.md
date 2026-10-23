@@ -155,8 +155,9 @@ info.json
 4. 每条可用 SFT 是否包含 `messages` 和 `tools`；图片记录还包含 `images`，
    压缩分段还包含 `target_start_index`。
 5. 需要文件交付的 task，其 sample `results/` 中是否包含预期文件。
-6. run `sft.jsonl` 是否每条可用 SFT 记录占一行：压缩样本可贡献多行，
-   SFT 不可用的样本不贡献行。
+6. run `sft.jsonl` 是否每条符合条件的**线性**样本占一行。压缩样本保留在
+   `sft_segments/`，只供理解 `target_start_index` 的训练读取器显式使用，
+   不进入原有的 run 级训练集。
 
 各文件何时生成、失败时会保留哪些内容，见 [轨迹产出文件指南](../traces/trajectory-outputs.md)。
 

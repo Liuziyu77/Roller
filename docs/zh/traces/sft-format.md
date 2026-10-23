@@ -2,8 +2,8 @@
 
 线性轨迹生成 `trace_SFT.json`。主 Agent 压缩上下文时，Roller 按已验证的上下文窗口
 在 `sft_segments/` 下保存多条记录，并在 `info.json` 的 `trajectory.sft_segments`
-列出路径。Run 根目录的 `sft.jsonl` 按 request 和窗口顺序，每条可用记录占一行；
-一个压缩样本可以贡献多行。
+列出路径。Run 根目录的 `sft.jsonl` 保持原有线性 record 格式，每条符合条件的线性
+样本占一行；压缩分段独立保存，须由显式支持目标范围的读取器使用。
 
 ## 1. 顶层结构
 
@@ -68,6 +68,7 @@ SFT record 不包含 schema version、task/model、usage、时间戳、step ID�
 无法归属摘要 Call 时，`summary_call_id` 为 null；原生边界的
 `summary_call_binding` 为 `unattributed`，没有原生边界时为 null。
 加密 reasoning 等无法表示的 prompt 内容会使压缩分段不可用，不会静默改写模型输入。
+原有 `sft.jsonl` 不收录这些分段，避免旧读取器把 prompt 中的 assistant 历史误训为目标。
 
 ### 1.1 多模态 record
 

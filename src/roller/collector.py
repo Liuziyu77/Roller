@@ -26,7 +26,7 @@ from roller.models import HarnessResult, RunRequest
 from roller.sft import SFTConversionError, validate_sft_record, write_sft
 from roller.storage import atomic_write_json, safe_component, write_jsonl
 from roller.trajectory_audit import (
-    record_training_audits, sft_exclusion_reason, training_summary,
+    SEGMENTED_SFT_REASON, record_training_audits, sft_exclusion_reason, training_summary,
 )
 
 logger = logging.getLogger(__name__)
@@ -576,7 +576,8 @@ class Collector:
     def _write_sft_dataset(self, results: list[dict[str, Any]]) -> None:
         def rows() -> Iterator[dict[str, Any]]:
             for result in results:
-                if sft_exclusion_reason(result) is not None:
+                reason = sft_exclusion_reason(result)
+                if reason is not None and reason != SEGMENTED_SFT_REASON:
                     continue
                 trajectory = result.get("trajectory") or {}
                 segments = trajectory.get("sft_segments") or []
@@ -608,7 +609,13 @@ class Collector:
                         raise RuntimeError(
                             f"invalid SFT sample shape ({exc}): {path}"
                         ) from exc
-                    yield row
+                    # Segments are retained and checked here, but their prompt
+                    # can contain assistant history. Legacy readers would train
+                    # those messages as targets, so keep sft.jsonl linear-only.
+                    if not segments:
+                        if "target_start_index" in row:
+                            raise RuntimeError(f"legacy SFT record has a target mask: {path}")
+                        yield row
 
         write_jsonl(self.run_dir / "sft.jsonl", rows())
         def calls() -> Iterator[dict[str, Any]]:

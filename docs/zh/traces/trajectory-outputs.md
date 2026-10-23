@@ -8,7 +8,8 @@
 | 需求 | 首选文件 | 原因 |
 | --- | --- | --- |
 | 直接训练 Task Agent | Run 级 `sft.jsonl` | 每行一个最小 SFT record，可直接流式读取 |
-| 查看单条训练记录 | Sample 级 `trace_SFT.json` 或 `sft_segments/*.json` | 与 `sft.jsonl` 中对应 record 完全相同 |
+| 查看原有训练记录 | Sample 级 `trace_SFT.json` | 与 `sft.jsonl` 中对应 record 完全相同 |
+| 查看压缩后的上下文 | Sample 级 `sft_segments/*.json` | 独立记录，训练时须显式处理目标范围 |
 | 轨迹分析、打分、统计 token | `trace_ACTF.json` | 有 step、reasoning、observation、metric 和时间信息 |
 | 追查 Harness session 原始事件 | `trace.jsonl` | OpenClaw、Codex、Claude Code、Hermes、OpenCode、DeepSeek 或 Pi native session，Roller 不做训练清洗 |
 | 查看 ACTF 捕获的首个 system prompt | `trace_ACTF.json` 顶层 | 来自各 Harness 可取得的 native/cache/wire 来源，只固化一次 |
@@ -103,8 +104,8 @@ Harness session store ────────────────> trace.js
                                                 │
                                                 v
 trace.jsonl + Harness 可取得的 system/tools ──> trace_ACTF.json
-trace_ACTF.json ────────────────────────────────> trace_SFT.json
-全部成功/Resume sample 的 trace_SFT.json ───────> run/sft.jsonl
+trace_ACTF.json ── 线性 ─────────────────────────> trace_SFT.json ──> run/sft.jsonl
+捕获的 Calls ──── 压缩 ─────────────────────────> sft_segments/（显式使用）
 ```
 
 `trace.jsonl` 记录当前 Harness session 的事件。ACTF 将这些事件转换为分析格式，
@@ -250,6 +251,7 @@ SFT 表达的是从 session 事件重建的逻辑对话，不是每次 provider 
 受监督的 assistant 消息；其后的 assistant 消息也参与训练，夹在中间的 user/tool
 消息仅提供上下文。`info.json` 的分段元数据记录路径、顺序、边界来源和 Call ID。
 无法无损表示捕获的输入时，Roller 标记 SFT 不可用并保留 raw/ACTF 证据。
+压缩分段须由理解目标范围的读取器显式使用；原有 run 级 `sft.jsonl` 只含线性记录。
 
 生成条件：
 
@@ -273,9 +275,11 @@ Codex 保留原始 Responses 工具定义、namespace 和 custom grammar。其�
 
 ### 4.4 `sft.jsonl`：Run 级训练集
 
-Collector 完成所有 request 后，按 request index 读取 sample 级线性 `trace_SFT.json`
-或有序的 `trajectory.sft_segments`，并原子、
-流式写入 run 根目录：
+Collector 完成所有 request 后，按 request index 读取符合条件的线性
+`trace_SFT.json`，并原子、流式写入 run 根目录。压缩分段仍会校验，
+但不混入这个原有训练集：
+
+即使独立分段文件有效，run 汇总仍会把该样本计入原有训练集的 `sft_excluded`。
 
 - `status=ok` 的 sample 会进入；
 - `--resume` 复用的 `status=skipped` sample 原先必须是 `ok`，也会进入；
@@ -641,9 +645,9 @@ roller collect \
 建议至少检查：
 
 1. Run `info.json.summary.failed` 为 0，或已明确排除失败任务；
-2. `sft.jsonl` 行数等于纳入样本中线性记录与压缩分段记录的总数；
-3. 每行有 `messages` 和 `tools`；图片记录增加 `images`，压缩分段增加
-   `target_start_index`；
+2. `sft.jsonl` 行数等于符合条件的线性记录数；压缩分段单独核对；
+3. 每行有 `messages` 和 `tools`；图片记录增加 `images`。
+   只有独立的压缩分段增加 `target_start_index`；
 4. assistant 都有 `reasoning_content`、`content`、`tool_calls`；
 5. tool call ID 与 tool message 一一对应；
 6. tools schema 与训练时 chat template 的工具格式兼容；

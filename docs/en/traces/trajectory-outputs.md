@@ -9,7 +9,8 @@ to use them for training, analysis, and debugging.
 | Need | Preferred file | Why |
 | --- | --- | --- |
 | Train a Task Agent directly | Run-level `sft.jsonl` | One minimal SFT record per line, ready for streaming reads |
-| Inspect a training record | Sample-level `trace_SFT.json` or `sft_segments/*.json` | Identical to the matching record in `sft.jsonl` |
+| Inspect a legacy training record | Sample-level `trace_SFT.json` | Identical to the matching record in `sft.jsonl` |
+| Inspect compacted context | Sample-level `sft_segments/*.json` | Separate opt-in records with an explicit target mask |
 | Trajectory analysis, scoring, token stats | `trace_ACTF.json` | Has step, reasoning, observation, metric, and timing |
 | Trace Harness session raw events | `trace.jsonl` | OpenClaw, Codex, Claude Code, Hermes, OpenCode, DeepSeek, or Pi native session; Roller does not clean it for training |
 | Inspect the first system prompt captured into ACTF | Top level of `trace_ACTF.json` | Taken from whichever native/cache/wire source each Harness can obtain, frozen once |
@@ -110,8 +111,8 @@ Harness session store ────────────────> trace.js
                                                 │
                                                 v
 trace.jsonl + Harness 可取得的 system/tools ──> trace_ACTF.json
-trace_ACTF.json ────────────────────────────────> trace_SFT.json
-全部成功/Resume sample 的 trace_SFT.json ───────> run/sft.jsonl
+trace_ACTF.json ── linear ───────────────────────> trace_SFT.json ──> run/sft.jsonl
+captured Calls ──── compaction ──────────────────> sft_segments/ (opt-in)
 ```
 
 `trace.jsonl` records events from the current Harness session. ACTF converts
@@ -299,6 +300,8 @@ subsequent assistant messages are targets, while intervening user/tool messages
 remain context. Segment metadata in `info.json` records paths, order, boundary
 source, and Call IDs. If captured input cannot be represented faithfully,
 Roller records SFT as unavailable and retains raw/ACTF evidence.
+These segments require an opt-in reader that honors the target mask. The
+legacy run-level `sft.jsonl` remains linear-only.
 
 
 Generation conditions:
@@ -328,10 +331,13 @@ See [SFT data format](sft-format.md) for the full field definition.
 
 ### 4.4 `sft.jsonl`: run-level training set
 
-After the Collector finishes every request, it reads each sample's linear
-`trace_SFT.json` or ordered `trajectory.sft_segments` in request-index order
-and writes the run root atomically and
-as a stream:
+After the Collector finishes every request, it reads eligible linear
+`trace_SFT.json` records in request-index order and writes the run root
+atomically as a stream. It validates compaction segments but keeps them out of
+this legacy dataset:
+
+The run summary counts a segmented sample as `sft_excluded` from the legacy
+dataset even when its separate segment files are valid.
 
 - Samples with `status=ok` are included;
 - `--resume` reused samples with `status=skipped` were originally `ok`, and are
@@ -782,10 +788,10 @@ Check at least the following:
 
 1. Run `info.json.summary.failed` is 0, or failed tasks have been explicitly
    excluded;
-2. The number of lines in `sft.jsonl` equals the sum of available linear
-   records and compaction segments across included samples;
-3. Each line has `messages` and `tools`; image records add `images`, and
-   compaction segments add `target_start_index`;
+2. The number of lines in `sft.jsonl` equals the number of eligible linear
+   records; compaction segments are checked separately;
+3. Each line has `messages` and `tools`; image records add `images`.
+   Only separate compaction segments add `target_start_index`;
 4. Every assistant has `reasoning_content`, `content`, and `tool_calls`;
 5. Tool call IDs and tool messages correspond one to one;
 6. The tools schema is compatible with the tool format of the chat template used

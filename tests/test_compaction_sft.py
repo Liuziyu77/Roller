@@ -605,7 +605,7 @@ def test_collector_uses_chat_call_rewrite_instead_of_linear_actf(
     monkeypatch.setattr("roller.integrity.validate_capture", lambda *_: None)
     validate_resumable_sample(sample, request, result)
     collector._write_sft_dataset([result])
-    assert len((tmp_path / "sft.jsonl").read_text().splitlines()) == 2
+    assert (tmp_path / "sft.jsonl").read_text() == ""
 
     calls[1]["output"] = answer("unmatched output")
     _capture(sample, "root", calls)
@@ -666,7 +666,7 @@ def test_collector_exports_aggregates_and_validates_compaction_segments(
     monkeypatch.setattr("roller.collector.validate_capture", lambda *_: None)
     monkeypatch.setattr("roller.integrity.validate_capture", lambda *_: None)
     collector._write_sft_dataset([result])
-    assert len((tmp_path / "sft.jsonl").read_text().splitlines()) == 2
+    assert (tmp_path / "sft.jsonl").read_text() == ""
 
     validate_resumable_sample(sample, request, result)
     segment = sample / result["trajectory"]["sft_segments"][1]["path"]
