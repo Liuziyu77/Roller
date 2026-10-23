@@ -12,14 +12,17 @@ Roller 内置只读 Web Viewer，无需安装额外依赖。它按 task 展示�
 roller view /path/to/runs/my-run
 ```
 
-默认监听 `127.0.0.1:8765`。终端会打印实际 URL 和被锁定的 run 路径：
+默认监听 `127.0.0.1:17865`。终端会打印实际 URL 和被锁定的 run 路径：
 
 ```text
-Roller Viewer: http://127.0.0.1:8765
+Roller Viewer: http://127.0.0.1:17865
 Run directory: /path/to/runs/my-run
 ```
 
-可以修改端口：
+未指定 `--port` 时，如果 17865 已被占用（例如采集中的 agent 在共享的宿主机网络上起了服务），
+Viewer 会先打印一行提示，再改用一个空闲端口，访问时以终端打印的 URL 为准。
+
+可以指定端口；显式指定的端口被占用时直接报错，不会自动换端口：
 
 ```bash
 roller view /path/to/runs/my-run --port 9000
@@ -33,13 +36,15 @@ Viewer 进程只负责读取文件并提供页面，不会启动 Docker、OpenCl
 远程访问时，让 Viewer 监听本地回环地址，再从本机建立 SSH 隧道：
 
 ```bash
-ssh -L 8765:127.0.0.1:8765 user@remote-host
+ssh -L 17865:127.0.0.1:17865 user@remote-host
 ```
+
+如果 Viewer 改用了其他端口，把两处 17865 换成终端打印的端口。
 
 必须直接暴露服务时可以运行：
 
 ```bash
-roller view /path/to/run --host 0.0.0.0 --port 8765
+roller view /path/to/run --host 0.0.0.0 --port 17865
 ```
 
 Viewer 当前不提供认证。对外监听会暴露 system prompt、用户输入、reasoning、工具
@@ -128,10 +133,11 @@ ID，不接受浏览器提交任意宿主机目录；run `info.json` 中逃逸�
 
 **(2) 端口已占用**
 
-选择另一个端口：
+只有显式指定的 `--port` 被占用时才会报这个错；不指定 `--port` 时 Viewer 会自动改用空闲端口。
+换一个端口，或者去掉 `--port`：
 
 ```bash
-roller view /path/to/run --port 8766
+roller view /path/to/run --port 17866
 ```
 
 **(3) Viewer 报告不是 Roller run**
