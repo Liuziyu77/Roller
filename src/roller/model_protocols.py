@@ -104,9 +104,17 @@ def chat_response(payload: bytes, content_type: str) -> dict[str, Any]:
                             raise ValueError("unsupported Chat Completions tool delta")
                         index = delta["index"]
                         tool = tools.setdefault(index, {"type": "function", "function": {"name": "", "arguments": ""}})
-                        for field in ("id", "type"):
-                            if field in delta:
-                                tool[field] = delta[field]
+                        if "id" in delta:
+                            identifier = delta["id"]
+                            previous_id = tool.get("id")
+                            if (not isinstance(identifier, str) or
+                                    previous_id and identifier and previous_id != identifier):
+                                raise ValueError("Chat Completions tool call changed ID")
+                            # Some streams send an empty ID on continuation chunks.
+                            if identifier or previous_id is None:
+                                tool["id"] = identifier
+                        if "type" in delta:
+                            tool["type"] = delta["type"]
                         for field, text in delta.get("function", {}).items():
                             tool["function"][field] = tool["function"].get(field, "") + text
                 elif key == "role":
