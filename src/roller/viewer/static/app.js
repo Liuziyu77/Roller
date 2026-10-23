@@ -28,6 +28,8 @@
     taskCount: document.querySelector("#task-count"),
     taskList: document.querySelector("#task-list"),
     pagination: document.querySelector("#pagination"),
+    workspace: document.querySelector(".workspace"),
+    taskPanel: document.querySelector(".task-panel"),
     timelinePanel: document.querySelector("#timeline-panel"),
     timelineEmpty: document.querySelector("#timeline-empty"),
     timeline: document.querySelector("#timeline-content"),
@@ -532,6 +534,126 @@
     void loadTasks();
   });
   elements.refresh.addEventListener("click", () => void loadRun(true));
+
+  // Side panels keep the stylesheet's proportional widths until the user drags
+  // a resizer; from then on both are pinned in px and remembered per browser.
+  const COLUMNS_KEY = "roller-viewer:columns";
+  const MIN_TIMELINE = 360;
+  const columns = {
+    task: { panel: elements.taskPanel, variable: "--task-width", min: 200, fallback: 300 },
+    inspector: { panel: elements.inspectorPanel, variable: "--inspector-width", min: 240, fallback: 340 },
+  };
+  let columnWidths = null;
+
+  const resizer = (side) => elements.workspace.querySelector(`[data-resize="${side}"]`);
+  // A panel is a grid column only while its resizer is displayed (see the media queries).
+  const inGrid = (side) => resizer(side).offsetParent !== null;
+
+  const applyColumns = () => {
+    const style = elements.workspace.style;
+    if (!columnWidths) {
+      for (const column of Object.values(columns)) style.removeProperty(column.variable);
+      return;
+    }
+    // Shrink the saved widths together when the window cannot fit them.
+    const sides = Object.keys(columns).filter(inGrid);
+    const handles = sides.reduce((sum, side) => sum + resizer(side).offsetWidth, 0);
+    const wanted = sides.reduce((sum, side) => sum + columnWidths[side], 0);
+    const room = elements.workspace.clientWidth - handles - MIN_TIMELINE;
+    const scale = wanted > room ? Math.max(room, 0) / wanted : 1;
+    for (const side of sides) {
+      const width = Math.max(columns[side].min, Math.floor(columnWidths[side] * scale));
+      style.setProperty(columns[side].variable, `${width}px`);
+    }
+  };
+
+  const saveColumns = () => {
+    try {
+      if (columnWidths) localStorage.setItem(COLUMNS_KEY, JSON.stringify(columnWidths));
+      else localStorage.removeItem(COLUMNS_KEY);
+    } catch { /* Storage can be unavailable; the layout still applies to this page. */ }
+  };
+
+  const restoreColumns = () => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(COLUMNS_KEY) || "null");
+      if (Number.isFinite(saved?.task) && Number.isFinite(saved?.inspector)) {
+        columnWidths = { task: saved.task, inspector: saved.inspector };
+      }
+    } catch { /* Fall back to the stylesheet layout. */ }
+    applyColumns();
+  };
+
+  // Pin both panels at their rendered widths so a drag moves only one edge.
+  const pinColumns = () => {
+    const width = (side) => inGrid(side)
+      ? Math.round(columns[side].panel.getBoundingClientRect().width)
+      : columnWidths?.[side] ?? columns[side].fallback;
+    columnWidths = { task: width("task"), inspector: width("inspector") };
+  };
+
+  // Widest the panel may get while the timeline keeps MIN_TIMELINE.
+  const columnLimit = (side) => columnWidths[side] + elements.timelinePanel.getBoundingClientRect().width - MIN_TIMELINE;
+
+  const resizeColumn = (side, width, limit) => {
+    const { min } = columns[side];
+    columnWidths[side] = Math.round(Math.min(Math.max(width, min), Math.max(limit, min)));
+    applyColumns();
+  };
+
+  // Dragging right widens the task panel but narrows the inspector.
+  const towards = (side) => (side === "task" ? 1 : -1);
+
+  elements.workspace.addEventListener("pointerdown", (event) => {
+    const handle = event.target.closest("[data-resize]");
+    if (!handle || event.button !== 0) return;
+    event.preventDefault();
+    const side = handle.dataset.resize;
+    const startX = event.clientX;
+    let start = null;
+    const move = (moveEvent) => {
+      if (!start) {
+        pinColumns();
+        start = { width: columnWidths[side], limit: columnLimit(side) };
+      }
+      resizeColumn(side, start.width + towards(side) * (moveEvent.clientX - startX), start.limit);
+    };
+    const end = () => {
+      handle.removeEventListener("pointermove", move);
+      handle.removeEventListener("pointerup", end);
+      handle.removeEventListener("pointercancel", end);
+      handle.classList.remove("dragging");
+      document.body.classList.remove("resizing");
+      if (start) saveColumns();
+    };
+    handle.setPointerCapture(event.pointerId);
+    handle.classList.add("dragging");
+    document.body.classList.add("resizing");
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", end);
+    handle.addEventListener("pointercancel", end);
+  });
+
+  elements.workspace.addEventListener("dblclick", (event) => {
+    if (!event.target.closest("[data-resize]")) return;
+    columnWidths = null;
+    applyColumns();
+    saveColumns();
+  });
+
+  elements.workspace.addEventListener("keydown", (event) => {
+    const handle = event.target.closest("[data-resize]");
+    if (!handle || (event.key !== "ArrowLeft" && event.key !== "ArrowRight")) return;
+    event.preventDefault();
+    const side = handle.dataset.resize;
+    const step = (event.key === "ArrowRight" ? 1 : -1) * (event.shiftKey ? 64 : 16);
+    pinColumns();
+    resizeColumn(side, columnWidths[side] + towards(side) * step, columnLimit(side));
+    saveColumns();
+  });
+
+  window.addEventListener("resize", applyColumns);
+  restoreColumns();
 
   const routeRollout = () => {
     const match = location.hash.match(/^#\/rollout\/([^/?]+)/);

@@ -61,6 +61,10 @@ Viewer 当前不提供认证。对外监听会暴露 system prompt、用户输�
 3. 右侧 Inspector 显示 sample 信息、ACTF 顶层保存的首个 system prompt、完整 tools schema、原始
    `info.json`；User Simulator task 还会显示 `conversation.json`。
 
+拖动栏目之间的分隔条可以调整左右两栏的宽度，中间时间线至少保留 360px；聚焦分隔条后也可以用
+←/→ 调整（按住 Shift 步长更大）。双击分隔条恢复默认比例。调整后的宽度保存在当前浏览器中，
+窗口变窄放不下时会按比例收缩。窗口宽度不超过 1180px 时 Inspector 改为浮层，只能调整左栏。
+
 Reasoning 使用独立区域并默认折叠。工具调用按 `tool_call_id` 和对应结果配对，
 `isError=true` 的结果会显示错误样式。页面内容全部作为文本渲染，不执行轨迹中的
 HTML 或脚本。
