@@ -67,6 +67,8 @@ SFT record 不包含 schema version、task/model、usage、时间戳、step ID�
 `observed_context_change`）、可选的原生 `boundary_event_id` 及首尾 Call ID。
 无法归属摘要 Call 时，`summary_call_id` 为 null；原生边界的
 `summary_call_binding` 为 `unattributed`，没有原生边界时为 null。
+Roller 不根据文本或时间猜测摘要 Call 的归属。如果额外的 root Call 或合成的
+assistant step 无法与 ACTF 主干步骤一一对应，就不导出 SFT，但保留 raw 和 Calls。
 加密 reasoning 等无法表示的 prompt 内容会使压缩分段不可用，不会静默改写模型输入。
 原有 `sft.jsonl` 不收录这些分段，避免旧读取器把 prompt 中的 assistant 历史误训为目标。
 

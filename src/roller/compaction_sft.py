@@ -386,150 +386,42 @@ def _assistant_signature(message: Mapping[str, Any]) -> tuple[str, tuple[tuple[s
     return content, tuple(tools)
 
 
-def _main_chat_calls(sample_dir: Path, calls: list[dict[str, Any]],
-                     synthetic: set[tuple[str, tuple[tuple[str, str], ...]]] | None = None
-                     ) -> list[dict[str, Any]]:
-    """Exclude auxiliary model requests absent from the executed ACTF main trace."""
+def _main_chat_calls(sample_dir: Path, calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Require every root Call to match one ACTF main step in order."""
     trajectory = json.loads((sample_dir / "trace_ACTF.json").read_text(encoding="utf-8"))
     steps = trajectory.get("steps") if isinstance(trajectory, Mapping) else None
     if not isinstance(steps, list) or not steps or any(not isinstance(step, Mapping) for step in steps):
         raise SFTConversionError("main ACTF steps are required to bind captured Calls")
     targets = [_assistant_signature(step.get("assistant_content", {})) for step in steps]
-    if synthetic:
-        for signature in synthetic:
-            if targets.count(signature) != 1 or any(
-                    call.get("export_status") == "available"
-                    and _assistant_signature(_target_messages_from_call(call)[0]) == signature
-                    for call in calls):
-                raise SFTConversionError("synthetic OpenClaw step is ambiguous")
-        targets = [target for target in targets if target not in synthetic]
-    selected: list[dict[str, Any]] = []
-    for call in calls:
+    if len(calls) != len(targets):
+        raise SFTConversionError("root Calls do not correspond one-to-one with ACTF main steps")
+    for call, target in zip(calls, targets):
         if call.get("export_status") != "available":
-            continue
-        if len(selected) < len(targets) and _assistant_signature(_target_messages_from_call(call)[0]) == targets[len(selected)]:
-            selected.append(call)
-    if len(selected) != len(targets):
-        raise SFTConversionError("captured root Calls cannot be bound to every ACTF main step")
-    selected_ids = {call["call_id"] for call in selected}
-    for index, call in enumerate(calls):
-        if call.get("export_status") != "available" or call["call_id"] in selected_ids:
-            continue
-        auxiliary = _target_messages_from_call(call)[0]
-        if _assistant_signature(auxiliary) in targets:
-            raise SFTConversionError("ambiguous root Call matches an ACTF main step")
-        summary = auxiliary["content"]
-        later_inputs = (_prompt_from_call(later)[0] for later in calls[index + 1:]
-                        if later["call_id"] in selected_ids)
-        summary_reused = any(
-            summary in message["content"]
-            for messages in later_inputs for message in messages
-            if message["role"] in {"system", "developer", "user"}
-            and isinstance(message.get("content"), str)
-        )
-        if auxiliary["tool_calls"] or not summary.strip() or not summary_reused:
-            raise SFTConversionError("unmatched root Call is not bound as a compaction summary")
-    return selected
+            raise SFTConversionError(f"main Call {call.get('call_id')} is incomplete")
+        messages = _target_messages_from_call(call)
+        if len(messages) != 1 or _assistant_signature(messages[0]) != target:
+            raise SFTConversionError("root Call output does not match its ACTF main step")
+    return calls
 
 
 def _compaction_boundaries(harness: str, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     boundaries = []
-    for index, row in enumerate(rows):
+    for row in rows:
         if not (_is_main_compaction(row, harness) or
                 harness == "openclaw" and row.get("type") == "compaction"
                 and isinstance(row.get("id"), str) and isinstance(row.get("summary"), str)):
             continue
-        summary_id = None
         if harness == "claude-code":
             event_id = row.get("uuid")
         elif harness == "openclaw":
             event_id = row["id"]
         else:
             event_id = (row.get("payload") or {}).get("window_id")
-            # The immediately preceding native assistant output is the summary,
-            # even when previous HTTP attempts failed and were retried.
-            for previous in reversed(rows[:index]):
-                payload = previous.get("payload") or {}
-                if previous.get("type") == "response_item" and payload.get("role") == "assistant":
-                    summary = "\n".join(part.get("text", "") for part in payload.get("content", [])
-                                        if isinstance(part, Mapping) and isinstance(part.get("text"), str))
-                    compact_text = (row.get("payload") or {}).get("message")
-                    if (isinstance(payload.get("id"), str) and summary
-                            and isinstance(compact_text, str) and summary in compact_text):
-                        summary_id = payload["id"]
-                    break
-        boundaries.append({"event_id": event_id, "timestamp": row.get("timestamp"),
-                           "summary_response_id": summary_id,
-                           "summary_text": row.get("summary") if harness == "openclaw" else None})
+        boundaries.append({"event_id": event_id, "timestamp": row.get("timestamp")})
     return boundaries
 
 
-def _openclaw_summaries(boundaries: list[dict[str, Any]],
-                        calls: list[dict[str, Any]]) -> None:
-    """Bind an otherwise unattributed summary only by exact native output."""
-    previous = None
-    for boundary in boundaries:
-        when = _time(boundary["timestamp"])
-        summary = boundary["summary_text"]
-        if not summary:
-            raise SFTConversionError("OpenClaw compaction lacks a summary")
-        matches = []
-        for call in calls:
-            output = call.get("output") or {}
-            choices = output.get("choices") if isinstance(output, Mapping) else None
-            message = choices[0].get("message") if isinstance(choices, list) and len(choices) == 1 else None
-            if (call.get("protocol") != "openai-chat-completions"
-                    or call.get("response_capture_status") != "complete"
-                    or call.get("execution_status") != "completed"
-                    or call.get("output_source", "model") != "model"
-                    or not isinstance(message, Mapping) or message.get("role") != "assistant"
-                    or message.get("content") != summary
-                    or not isinstance(output.get("id"), str) or not output["id"]):
-                continue
-            started = _time(call.get("started_at"))
-            if (previous is None or started > previous) and started < when:
-                matches.append(call)
-        if len(matches) != 1:
-            raise SFTConversionError("OpenClaw summary cannot be bound to one captured Call")
-        boundary["summary_response_id"] = matches[0]["output"]["id"]
-        boundary["summary_call_binding"] = "native_summary_text"
-        previous = when
-
-
-def _openclaw_synthetic(rows: list[dict[str, Any]], boundaries: list[dict[str, Any]],
-                        calls: list[dict[str, Any]]) -> set[tuple[str, tuple[tuple[str, str], ...]]]:
-    """Identify harness-generated replies directly under a compaction event."""
-    times = {boundary["event_id"]: _time(boundary["timestamp"]) for boundary in boundaries}
-    synthetic = set()
-    for row in rows:
-        message = row.get("message")
-        if (row.get("type") != "message" or row.get("parentId") not in times
-                or not isinstance(message, Mapping) or message.get("role") != "assistant"
-                or message.get("responseId") is not None):
-            continue
-        blocks = message.get("content")
-        if (not isinstance(blocks, list) or not blocks or any(
-                not isinstance(block, Mapping) or block.get("type") != "text"
-                or not isinstance(block.get("text"), str) for block in blocks)):
-            raise SFTConversionError("OpenClaw synthetic reply is not plain text")
-        content = "".join(block["text"] for block in blocks)
-        if not content or not any(
-                call.get("export_status") == "available"
-                and _time(call.get("started_at")) > times[row["parentId"]] and any(
-                    item.get("role") == "assistant" and content in item.get("content", "")
-                    for item in (call.get("context") or {}).get("messages", [])
-                    if isinstance(item, Mapping) and isinstance(item.get("content"), str))
-                for call in calls):
-            raise SFTConversionError("OpenClaw synthetic reply is absent from later model input")
-        signature = (content, ())
-        if signature in synthetic:
-            raise SFTConversionError("duplicate OpenClaw synthetic reply")
-        synthetic.add(signature)
-    return synthetic
-
-
-def _root_calls(calls: list[dict[str, Any]], manifest: Mapping[str, Any],
-                summary_ids: set[str], harness: str) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
+def _root_calls(calls: list[dict[str, Any]], manifest: Mapping[str, Any]) -> list[dict[str, Any]]:
     participants = manifest.get("participants")
     if not isinstance(participants, list):
         raise SFTConversionError("capture manifest lacks participants")
@@ -537,28 +429,12 @@ def _root_calls(calls: list[dict[str, Any]], manifest: Mapping[str, Any],
              if isinstance(p, Mapping) and p.get("role") == "root"}
     if len(roots) != 1 or not all(isinstance(root, str) and root for root in roots):
         raise SFTConversionError("compaction requires one observed root participant")
-    summary_calls = {}
-    for summary_id in summary_ids:
-        matches = [call for call in calls if
-                   (call.get("output") or {}).get("id") == summary_id or any(
-                       isinstance(item, Mapping) and item.get("id") == summary_id
-                       for item in (call.get("output") or {}).get("output", []))]
-        if len(matches) != 1:
-            raise SFTConversionError("Codex summary output does not identify one captured Call")
-        summary_calls[summary_id] = matches[0]
-    summary_contexts = [call.get("context") for call in summary_calls.values()]
-    main = []
-    for call in sorted(calls, key=lambda c: c.get("request_seq", 0)):
-        if call.get("participant_id") not in roots or call in summary_calls.values():
-            continue
-        if harness == "codex" and call.get("context") in summary_contexts:
-            continue  # Failed/retried summary attempts have the same input.
-        main.append(call)
-    return main, summary_calls
+    return [call for call in sorted(calls, key=lambda c: c.get("request_seq", 0))
+            if call.get("participant_id") in roots]
 
 
-def _segment_records(calls: list[dict[str, Any]], boundaries: list[dict[str, Any]],
-                     summary_calls: Mapping[str, dict[str, Any]]) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+def _segment_records(calls: list[dict[str, Any]], boundaries: list[dict[str, Any]]
+                     ) -> list[tuple[dict[str, Any], dict[str, Any]]]:
     """Use one continuation rule; window_index counts emitted SFT records."""
     times = [_time(boundary["timestamp"]) for boundary in boundaries]
     if any(not isinstance(boundary["event_id"], str) or not boundary["event_id"]
@@ -589,15 +465,13 @@ def _segment_records(calls: list[dict[str, Any]], boundaries: list[dict[str, Any
             exported[-1][0]["last_call_id"] = call["call_id"]
         else:
             boundary = boundaries[current_native - 1] if current_native > native_index and current_native else None
-            summary_id = boundary["summary_response_id"] if boundary else None
             metadata = {"path": f"{SFT_SEGMENTS_DIR}/{len(exported)+1:04d}.json",
                         "window_index": len(exported),
                         "boundary_source": ("native_boundary" if boundary else
                                             "observed_context_change" if exported else "initial"),
                         "boundary_event_id": boundary["event_id"] if boundary else None,
-                        "summary_call_id": summary_calls[summary_id]["call_id"] if summary_id else None,
-                        "summary_call_binding": boundary.get("summary_call_binding", "native_response_id") if summary_id else
-                                                "unattributed" if boundary else None,
+                        "summary_call_id": None,
+                        "summary_call_binding": "unattributed" if boundary else None,
                         "first_call_id": call["call_id"], "last_call_id": call["call_id"]}
             record = {"messages": prompt + target, "tools": tools,
                       "target_start_index": len(prompt)}
@@ -622,17 +496,11 @@ def build_compaction_segments(sample_dir: Path, harness: str,
         return []
     if harness == "openclaw" and boundaries and not (sample_dir / "trace_ACTF.json").is_file():
         raise SFTConversionError("OpenClaw compaction requires ACTF main-step evidence")
-    summary_ids = {boundary["summary_response_id"] for boundary in boundaries
-                   if boundary["summary_response_id"]}
-    if harness == "codex" and len(summary_ids) != len(boundaries):
-        raise SFTConversionError("Codex summary output cannot be bound to every compaction boundary")
-    capture_dir = _safe_file(sample_dir, manifest_relative).parent
+    manifest_path = _safe_file(sample_dir, manifest_relative)
+    capture_dir = manifest_path.parent
     calls = read_jsonl(capture_dir / "calls.jsonl")
-    manifest = json.loads((capture_dir / "manifest.json").read_text(encoding="utf-8"))
-    if harness == "openclaw" and boundaries:
-        _openclaw_summaries(boundaries, calls)
-        summary_ids = {boundary["summary_response_id"] for boundary in boundaries}
-    main, summary_calls = _root_calls(calls, manifest, summary_ids, harness)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    main = _root_calls(calls, manifest)
     if not boundaries:
         if not main or any(call.get("protocol") != "openai-chat-completions" for call in main):
             if native_reset:
@@ -640,23 +508,8 @@ def build_compaction_segments(sample_dir: Path, harness: str,
             return []
         if not native_reset and not _raw_context_changed(main):
             return []  # Preserve the existing linear SFT path, including images.
-        main = _main_chat_calls(sample_dir, main)
-        if not native_reset and not _raw_context_changed(main):
-            return []  # Only an auxiliary request changed its context.
-    elif harness == "claude-code" and (sample_dir / "trace_ACTF.json").is_file():
-        # Claude may attribute the summary request to root. ACTF identifies
-        # the main outputs; unmatched root output must be reused as a summary.
-        main = _main_chat_calls(sample_dir, main)
-    elif harness == "openclaw" and (sample_dir / "trace_ACTF.json").is_file():
-        main = _main_chat_calls(sample_dir, main, _openclaw_synthetic(rows, boundaries, main))
-        for boundary in boundaries:
-            if not any(_time(call.get("started_at")) > _time(boundary["timestamp"])
-                       and any(boundary["summary_text"] in message["content"]
-                               for message in _prompt_from_call(call)[0]
-                               if message["role"] in {"system", "developer", "user"}
-                               and isinstance(message.get("content"), str)) for call in main):
-                raise SFTConversionError("OpenClaw summary is absent from resumed model input")
-    return _segment_records(main, boundaries, summary_calls)
+    main = _main_chat_calls(sample_dir, main)
+    return _segment_records(main, boundaries)
 
 
 def export_compaction_segments(sample_dir: Path, harness: str,

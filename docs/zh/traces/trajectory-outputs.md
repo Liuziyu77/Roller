@@ -232,7 +232,8 @@ sample 可能仍有 ACTF。已显式记录的转换不可用状态见
 ### 4.3 Sample 级 SFT 记录
 
 线性 SFT 从 ACTF 生成，存入 `trace_SFT.json`。主 Agent 压缩上下文时，Roller
-根据捕获的 Calls 重建窗口，存入 `sft_segments/0001.json`、`0002.json` 等。
+仅在 root Calls 与 ACTF 主干步骤一一对应时根据捕获的 Calls 重建窗口，存入
+`sft_segments/0001.json`、`0002.json` 等；否则标记 SFT 不可用，保留 raw 和 capture。
 纯文本线性样本顶层只有以下字段，图片样本额外包含 `images`：
 
 ```json

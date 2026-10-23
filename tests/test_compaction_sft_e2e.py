@@ -120,6 +120,13 @@ def test_three_context_windows_export_aggregate_and_resume(tmp_path: Path, harne
                       metadata={"capture": capture}), [], "2026-10-17T00:00:00Z")
     validate_capture(sample, capture)
     validate_resumable_sample(sample, request, result)
+    if harness == "codex":
+        assert result["status"] == "ok"
+        assert result["runtime"]["trajectory_conversion"]["target"] == "sft"
+        assert "sft_segments" not in result["trajectory"]
+        collector._write_sft_dataset([result])
+        assert (tmp_path / "sft.jsonl").read_text() == ""
+        return
     legacy = deepcopy(result)
     for segment in legacy["trajectory"]["sft_segments"]:
         segment.pop("boundary_source")
@@ -236,6 +243,11 @@ def test_single_user_tool_round_trip_across_compaction(tmp_path: Path, harness: 
     validate_resumable_sample(sample, request, result)
     collector._write_sft_dataset([result])
     assert (tmp_path / "sft.jsonl").read_text() == ""
+    if harness == "codex":
+        assert result["status"] == "ok"
+        assert result["runtime"]["trajectory_conversion"]["target"] == "sft"
+        assert "sft_segments" not in result["trajectory"]
+        return
     rows = [json.loads((sample / item["path"]).read_text())
             for item in result["trajectory"]["sft_segments"]]
     assert result["status"] == "ok"

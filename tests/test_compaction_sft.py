@@ -36,8 +36,17 @@ def _call(index: int, root: str | None, protocol: str, context: dict,
             "started_at": f"2026-10-15T00:00:{index:02d}Z"}
 
 
+def _actf(path: Path, *assistants: str | dict) -> None:
+    (path / "trace_ACTF.json").write_text(json.dumps({"steps": [
+        {"assistant_content": {"content": answer, "tool_calls": []}
+         if isinstance(answer, str) else answer}
+        for answer in assistants
+    ]}), encoding="utf-8")
+
+
 def test_claude_preserved_assistant_is_prompt_not_target(tmp_path: Path) -> None:
     root = "root:session"
+    _actf(tmp_path, "EARLIER_ACK", "ANSWER")
     _write(tmp_path / "trace.jsonl", [
         {"type": "system", "subtype": "compact_boundary", "uuid": "boundary-1",
          "timestamp": "2026-10-15T00:00:03Z", "isSidechain": False},
@@ -73,6 +82,8 @@ def test_claude_preserved_assistant_is_prompt_not_target(tmp_path: Path) -> None
 
 def test_claude_compacts_during_one_user_tool_turn(tmp_path: Path) -> None:
     root = "root:session"
+    _actf(tmp_path, {"content": "", "tool_calls": [
+        {"name": "Read", "arguments": {"path": "a"}}]}, "done")
     _write(tmp_path / "trace.jsonl", [
         {"type": "system", "subtype": "compact_boundary", "uuid": "boundary-1",
          "timestamp": "2026-10-15T00:00:02Z", "isSidechain": False,
@@ -104,6 +115,7 @@ def test_claude_compacts_during_one_user_tool_turn(tmp_path: Path) -> None:
 
 
 def test_claude_manual_compaction_preserves_injected_system_messages(tmp_path: Path) -> None:
+    _actf(tmp_path, "recent answer", "done")
     _write(tmp_path / "trace.jsonl", [{"type": "system", "subtype": "compact_boundary",
                                         "uuid": "manual-boundary", "timestamp": "2026-10-15T00:00:03Z"}])
     before = {"system": [{"type": "text", "text": "base instructions"}], "tools": [],
@@ -132,6 +144,7 @@ def test_claude_manual_compaction_preserves_injected_system_messages(tmp_path: P
 
 def test_codex_summary_call_is_not_a_training_target(tmp_path: Path) -> None:
     root = "thread:root"
+    _actf(tmp_path, "ack", "done")
     _write(tmp_path / "trace.jsonl", [
         {"type": "response_item", "payload": {"type": "message", "role": "assistant",
                                              "id": "summary-msg", "content": [
@@ -157,17 +170,33 @@ def test_codex_summary_call_is_not_a_training_target(tmp_path: Path) -> None:
         _call(3, root, "openai-responses", compact_request, response("summary-msg", "summary")),
         _call(4, root, "openai-responses", after, response("answer-2", "done")),
     ])
+    with pytest.raises(SFTConversionError, match="one-to-one"):
+        build_compaction_segments(tmp_path, "codex", manifest)
+
+
+def test_codex_unattributed_summary_does_not_require_text_matching(tmp_path: Path) -> None:
+    _actf(tmp_path, "ACK", "DONE")
+    _write(tmp_path / "trace.jsonl", [{"type": "compacted",
+        "timestamp": "2026-10-15T00:00:03Z",
+        "payload": {"window_id": "window-2", "message": "summary"}}])
+    def call(index: int, owner: str | None, answer: str, status: str = "available") -> dict:
+        return _call(index, owner, "openai-responses", {"instructions": "s", "tools": [],
+            "input": [{"type": "message", "role": "user", "content": [
+                {"type": "input_text", "text": "summary" if index > 1 else "task"}]}]},
+            {"output": [{"type": "message", "role": "assistant", "content": [
+                {"type": "output_text", "text": answer}]}]}, status=status)
+    manifest = _capture(tmp_path, "root", [
+        call(1, "root", "ACK"), call(2, None, "summary", "unavailable"),
+        call(4, "root", "DONE")])
     segments = build_compaction_segments(tmp_path, "codex", manifest)
     assert len(segments) == 2
-    assert segments[1][0]["boundary_event_id"] == "window-2"
-    assert segments[1][0]["first_call_id"] == "call-4"
-    assert segments[1][0]["summary_call_id"] == "call-3"
-    assert segments[1][0]["summary_call_binding"] == "native_response_id"
-    assert [m.get("content") for m in segments[1][1]["messages"] if m["role"] == "assistant"] == ["done"]
+    assert segments[1][0]["summary_call_id"] is None
+    assert segments[1][1]["messages"][-1]["content"] == "DONE"
 
 
 def test_incomplete_main_call_blocks_export(tmp_path: Path) -> None:
     root = "root:session"
+    _actf(tmp_path, "answer")
     _write(tmp_path / "trace.jsonl", [{"type": "system", "subtype": "compact_boundary",
                                         "uuid": "b", "timestamp": "2026-10-15T00:00:02Z"}])
     manifest = _capture(tmp_path, root, [_call(3, root, "anthropic-messages",
@@ -179,6 +208,7 @@ def test_incomplete_main_call_blocks_export(tmp_path: Path) -> None:
 
 def test_unverified_assistant_in_later_request_is_not_trained(tmp_path: Path) -> None:
     root = "root:session"
+    _actf(tmp_path, "one", "two")
     _write(tmp_path / "trace.jsonl", [{"type": "system", "subtype": "compact_boundary",
                                         "uuid": "b", "timestamp": "2026-10-15T00:00:03Z"}])
     first = {"system": "s", "tools": [],
@@ -239,7 +269,13 @@ def test_chat_harness_context_rewrite_exports_actual_windows(tmp_path: Path, har
     assert segments[1][0]["boundary_event_id"] is None
 
 
-def test_chat_auxiliary_summary_call_is_not_a_training_target(tmp_path: Path) -> None:
+@pytest.mark.parametrize("extra,following", [
+    ("internal summary", "internal summary and next question"),
+    ("a", "take next action"),
+])
+def test_chat_unbound_root_call_is_rejected_even_if_text_reappears(
+    tmp_path: Path, extra: str, following: str,
+) -> None:
     _write(tmp_path / "trace.jsonl", [{"type": "compaction"}])
     (tmp_path / "trace_ACTF.json").write_text(json.dumps({"steps": [
         {"assistant_content": {"content": "ACK", "tool_calls": []}},
@@ -251,22 +287,15 @@ def test_chat_auxiliary_summary_call_is_not_a_training_target(tmp_path: Path) ->
             {"choices": [{"message": {"role": "assistant", "content": output}}]})
     calls = [
         call(1, "original task", "ACK"),
-        call(2, "Summarize the original task", "internal summary"),
-        call(3, "internal summary and next question", "final answer"),
+        call(2, "Summarize the original task", extra),
+        call(3, following, "final answer"),
     ]
     manifest = _capture(tmp_path, "root", calls)
-    segments = build_compaction_segments(tmp_path, "openclaw", manifest)
-    assert len(segments) == 2
-    assert [item["first_call_id"] for item, _ in segments] == ["call-1", "call-3"]
-    assert "internal summary" not in [message["content"] for _, record in segments
-                                      for message in record["messages"] if message["role"] == "assistant"]
-    calls[1]["output"]["choices"][0]["message"]["content"] = "unrelated output"
-    _capture(tmp_path, "root", calls)
-    with pytest.raises(SFTConversionError, match="unmatched root Call"):
+    with pytest.raises(SFTConversionError, match="one-to-one"):
         build_compaction_segments(tmp_path, "openclaw", manifest)
 
 
-def test_openclaw_native_compaction_keeps_synthetic_reply_only_as_context(tmp_path: Path) -> None:
+def test_openclaw_unbound_synthetic_reply_is_rejected(tmp_path: Path) -> None:
     _write(tmp_path / "trace.jsonl", [
         {"type": "compaction", "id": "boundary", "timestamp": "2026-10-15T00:00:03Z",
          "summary": "saved summary"},
@@ -294,19 +323,28 @@ def test_openclaw_native_compaction_keeps_synthetic_reply_only_as_context(tmp_pa
     ]
     calls[1].update(response_capture_status="complete", execution_status="completed")
     manifest = _capture(tmp_path, "root", calls)
+    with pytest.raises(SFTConversionError, match="one-to-one"):
+        build_compaction_segments(tmp_path, "openclaw", manifest)
+
+
+def test_openclaw_unattributed_summary_without_synthetic_reply_exports(tmp_path: Path) -> None:
+    _actf(tmp_path, "ACK", "DONE")
+    _write(tmp_path / "trace.jsonl", [{"type": "compaction", "id": "boundary",
+        "timestamp": "2026-10-15T00:00:03Z", "summary": "saved summary"}])
+    def call(index: int, owner: str | None, prompt: str, answer: str,
+             status: str = "available") -> dict:
+        return _call(index, owner, "openai-chat-completions",
+            {"messages": [{"role": "user", "content": prompt}], "tools": []},
+            {"choices": [{"message": {"role": "assistant", "content": answer}}]},
+            status=status)
+    manifest = _capture(tmp_path, "root", [
+        call(1, "root", "task", "ACK"),
+        call(2, None, "summarize", "saved summary", "unavailable"),
+        call(4, "root", "saved summary then continue", "DONE")])
     segments = build_compaction_segments(tmp_path, "openclaw", manifest)
     assert len(segments) == 2
-    assert segments[1][0]["boundary_event_id"] == "boundary"
-    assert segments[1][0]["summary_call_id"] == "call-2"
-    assert segments[1][0]["summary_call_binding"] == "native_summary_text"
-    assert segments[1][1]["messages"][1]["content"] == "ACKContext overflow"
-    assert segments[1][1]["target_start_index"] == 3
-    assert segments[1][1]["messages"][3]["content"] == "DONE"
-
-    calls[1]["output"]["choices"][0]["message"]["content"] = "different summary"
-    _capture(tmp_path, "root", calls)
-    with pytest.raises(SFTConversionError, match="summary cannot be bound"):
-        build_compaction_segments(tmp_path, "openclaw", manifest)
+    assert segments[1][0]["summary_call_id"] is None
+    assert segments[1][0]["summary_call_binding"] == "unattributed"
 
 
 def test_unmatched_main_reply_in_assistant_history_is_not_called_a_summary(tmp_path: Path) -> None:
@@ -327,11 +365,11 @@ def test_unmatched_main_reply_in_assistant_history_is_not_called_a_summary(tmp_p
                  {"role": "assistant", "content": "omitted main reply"},
                  {"role": "user", "content": "continue"}], "DONE"),
     ])
-    with pytest.raises(SFTConversionError, match="unmatched root Call"):
+    with pytest.raises(SFTConversionError, match="one-to-one"):
         build_compaction_segments(tmp_path, "openclaw", manifest)
 
 
-def test_auxiliary_call_alone_does_not_create_a_main_context_window(tmp_path: Path) -> None:
+def test_unbound_auxiliary_call_cannot_be_ignored_without_a_native_boundary(tmp_path: Path) -> None:
     _write(tmp_path / "trace.jsonl", [{"type": "session"}])
     (tmp_path / "trace_ACTF.json").write_text(json.dumps({"steps": [
         {"assistant_content": {"content": "ACK", "tool_calls": []}},
@@ -348,7 +386,8 @@ def test_auxiliary_call_alone_does_not_create_a_main_context_window(tmp_path: Pa
                  {"role": "assistant", "content": "ACK"},
                  {"role": "user", "content": "summary and continue"}], "DONE"),
     ])
-    assert build_compaction_segments(tmp_path, "hermes", manifest) == []
+    with pytest.raises(SFTConversionError, match="one-to-one"):
+        build_compaction_segments(tmp_path, "hermes", manifest)
 
 
 def test_chat_harness_keeps_linear_export_when_requests_only_append(tmp_path: Path) -> None:
@@ -426,6 +465,7 @@ def test_missing_function_arguments_follow_linear_normalization() -> None:
 
 
 def test_codex_opaque_reasoning_is_rejected_only_after_a_boundary(tmp_path: Path) -> None:
+    _actf(tmp_path, "ACK", "DONE")
     first = _call(1, "root", "openai-responses", {"instructions": "s", "tools": [],
         "input": [{"type": "message", "role": "user", "content": [
             {"type": "input_text", "text": "task"}]}]}, {"output": [
@@ -437,11 +477,11 @@ def test_codex_opaque_reasoning_is_rejected_only_after_a_boundary(tmp_path: Path
                       {"type": "input_text", "text": "continue"}]}]}, {"output": [
         {"type": "message", "role": "assistant", "content": [
             {"type": "output_text", "text": "DONE"}]}]})
-    summary = _call(2, "root", "openai-responses", {"instructions": "s", "tools": [],
+    summary = _call(2, None, "openai-responses", {"instructions": "s", "tools": [],
         "input": [{"type": "message", "role": "user", "content": [
             {"type": "input_text", "text": "summarize"}]}]}, {"output": [
         {"type": "message", "role": "assistant", "id": "summary-id", "content": [
-            {"type": "output_text", "text": "summary"}]}]})
+            {"type": "output_text", "text": "summary"}]}]}, status="unavailable")
     manifest = _capture(tmp_path, "root", [first, summary, second])
     _write(tmp_path / "trace.jsonl", [{"type": "session"}])
     assert build_compaction_segments(tmp_path, "codex", manifest) == []
@@ -456,7 +496,7 @@ def test_codex_opaque_reasoning_is_rejected_only_after_a_boundary(tmp_path: Path
         build_compaction_segments(tmp_path, "codex", manifest)
 
 
-def test_claude_root_attributed_summary_is_excluded(tmp_path: Path) -> None:
+def test_claude_root_attributed_summary_is_rejected_without_a_native_link(tmp_path: Path) -> None:
     _write(tmp_path / "trace.jsonl", [{"type": "system", "subtype": "compact_boundary",
                                         "uuid": "b", "timestamp": "2026-10-15T00:00:03Z"}])
     (tmp_path / "trace_ACTF.json").write_text(json.dumps({"steps": [
@@ -470,12 +510,12 @@ def test_claude_root_attributed_summary_is_excluded(tmp_path: Path) -> None:
     manifest = _capture(tmp_path, "root", [
         call(1, "task", "ACK"), call(2, "summarize task", "summary"),
         call(4, "summary then continue", "DONE")])
-    segments = build_compaction_segments(tmp_path, "claude-code", manifest)
-    assert len(segments) == 2
-    assert [item[0]["first_call_id"] for item in segments] == ["call-1", "call-4"]
+    with pytest.raises(SFTConversionError, match="one-to-one"):
+        build_compaction_segments(tmp_path, "claude-code", manifest)
 
 
 def test_native_window_splits_when_thinking_is_not_replayed(tmp_path: Path) -> None:
+    _actf(tmp_path, "ACK", "NEXT", "DONE")
     _write(tmp_path / "trace.jsonl", [{"type": "system", "subtype": "compact_boundary",
                                         "uuid": "b", "timestamp": "2026-10-15T00:00:03Z"}])
     def call(index: int, messages: list[dict], output: list[dict]) -> dict:

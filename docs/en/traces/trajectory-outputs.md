@@ -276,7 +276,9 @@ ACTF. Explicitly recorded conversion unavailability is stored in
 
 Linear SFT is generated from ACTF as `trace_SFT.json`. For main-agent
 compaction, Roller reconstructs windows from captured Calls and writes
-`sft_segments/0001.json`, `0002.json`, etc. Text-only linear records contain
+`sft_segments/0001.json`, `0002.json`, etc., only when root Calls correspond
+one-to-one with ACTF main steps. Otherwise SFT is marked unavailable while
+the raw trace and capture remain. Text-only linear records contain
 these top-level fields;
 image records also contain `images`:
 

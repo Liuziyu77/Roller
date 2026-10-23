@@ -75,6 +75,9 @@ segment path, sequential `window_index`, `boundary_source` (`initial`,
 `boundary_event_id`, and first/last Call IDs. `summary_call_id` is null when
 no summary Call can be attributed; `summary_call_binding` is `unattributed`
 for a native boundary without a bound Call, or null without such a boundary.
+Roller does not infer summary Call ownership from matching text or timestamps.
+If an extra root Call or a synthetic assistant step prevents a one-to-one
+match with ACTF main steps, SFT export is unavailable; raw trace and Calls remain.
 Opaque prompt content, such as encrypted reasoning, makes a compacted SFT
 segment unavailable rather than silently changing the model input.
 
