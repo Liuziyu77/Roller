@@ -71,6 +71,18 @@ The page has three columns:
    at the ACTF top level, the full tools schema, and the original `info.json`.
    A User Simulator task also shows `conversation.json`.
 
+Drag the dividers between the columns to resize the side columns; the timeline
+keeps at least 360px. A focused divider also responds to ←/→ (larger steps with
+Shift), and double-clicking it restores the default proportions. The widths are
+saved in the current browser and shrink proportionally when the window gets too
+narrow for them. At 1180px or narrower the Inspector becomes an overlay and only
+the left column can be resized.
+
+The Run summary cards at the top have a divider below them too. Drag it up to
+make the summary shorter and the three columns taller, all the way up to hide
+it; drag it back down or double-click it to restore the full height. A focused
+divider also responds to ↑/↓, and the height is saved in the browser as well.
+
 Reasoning uses its own region and is collapsed by default. Tool calls are paired
 with their results by `tool_call_id`. Results with `isError=true` use an error
 style. Everything on the page is rendered as text. HTML or scripts inside the
