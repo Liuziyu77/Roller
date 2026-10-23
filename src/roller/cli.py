@@ -80,6 +80,7 @@ from roller.thinking_capabilities import (
     load_thinking_capabilities,
 )
 from roller.version import __version__
+from roller.viewer import DEFAULT_PORT as VIEWER_DEFAULT_PORT
 from roller.viewer import serve as serve_viewer
 
 logger = logging.getLogger(__name__)
@@ -107,7 +108,12 @@ def _build_parser() -> argparse.ArgumentParser:
     view = subparsers.add_parser("view", help="browse a Roller run in a local web UI")
     view.add_argument("run_dir", help="Roller run directory containing info.json/samples")
     view.add_argument("--host", default="127.0.0.1", help="listen host (default: loopback)")
-    view.add_argument("--port", type=int, default=8765, help="listen port (default: 8765)")
+    view.add_argument(
+        "--port",
+        type=int,
+        default=None,
+        help=f"listen port (default: {VIEWER_DEFAULT_PORT}, or a free port when it is busy)",
+    )
 
     bench = subparsers.add_parser("bench", help="work with benchmark adapters")
     bench_sub = bench.add_subparsers(dest="bench_command", required=True)

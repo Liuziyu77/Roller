@@ -140,7 +140,7 @@ roller collect \
 roller view runs/quickstart
 ```
 
-打开终端打印的 `http://127.0.0.1:8765`，按 task 查看 user、reasoning、工具调用、工具结果和最终回复。
+打开终端打印的 URL（默认 `http://127.0.0.1:17865`），按 task 查看 user、reasoning、工具调用、工具结果和最终回复。
 
 ## 输入与输出
 

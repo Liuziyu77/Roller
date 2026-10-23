@@ -168,7 +168,7 @@ For when each file is written and what is retained on failure, see [Trajectory o
 roller view runs/quickstart
 ```
 
-It listens on `127.0.0.1:8765` by default. After the command starts, open <http://127.0.0.1:8765> in a browser.
+It listens on `127.0.0.1:17865` by default and switches to a free port if that one is busy. After the command starts, open the URL it prints in a browser.
 
 The Viewer shows the ACTF timeline. Inspector is for the system prompt, tools schema, run info, and raw content. See the [Viewer guide](../traces/viewer.md).
 

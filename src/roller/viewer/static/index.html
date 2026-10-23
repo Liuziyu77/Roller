@@ -32,7 +32,10 @@
         </button>
       </header>
 
-      <section class="metrics" id="metrics" aria-label="Run summary"></section>
+      <div class="metrics-frame">
+        <section class="metrics" id="metrics" aria-label="Run summary"></section>
+        <div class="row-resizer" data-resize="metrics" role="separator" aria-orientation="horizontal" aria-label="调整运行概览高度" title="拖动调整高度，双击恢复默认" tabindex="0"></div>
+      </div>
 
       <section class="toolbar">
         <label class="search-box">
@@ -67,6 +70,8 @@
           <div class="pagination" id="pagination"></div>
         </aside>
 
+        <div class="column-resizer" data-resize="task" role="separator" aria-orientation="vertical" aria-label="调整任务导航宽度" title="拖动调整宽度，双击恢复默认" tabindex="0"></div>
+
         <section class="timeline-panel panel" id="timeline-panel">
           <div class="empty-state" id="timeline-empty">
             <div class="empty-orbit"><span></span></div>
@@ -76,6 +81,8 @@
           </div>
           <div id="timeline-content" hidden></div>
         </section>
+
+        <div class="column-resizer" data-resize="inspector" role="separator" aria-orientation="vertical" aria-label="调整 Inspector 宽度" title="拖动调整宽度，双击恢复默认" tabindex="0"></div>
 
         <aside class="inspector-panel panel" id="inspector-panel">
           <div class="panel-heading">

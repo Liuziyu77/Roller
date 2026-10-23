@@ -14,15 +14,20 @@ Point the command at a Roller run root that contains `info.json` or `samples/`:
 roller view /path/to/runs/my-run
 ```
 
-It listens on `127.0.0.1:8765` by default. The terminal prints the actual URL
+It listens on `127.0.0.1:17865` by default. The terminal prints the actual URL
 and the locked run path:
 
 ```text
-Roller Viewer: http://127.0.0.1:8765
+Roller Viewer: http://127.0.0.1:17865
 Run directory: /path/to/runs/my-run
 ```
 
-You can change the port:
+Without `--port`, if 17865 is already in use (for example by a server an agent
+started on the shared host network during collection), the Viewer prints a
+notice and switches to a free port; use the URL printed in the terminal.
+
+You can set the port explicitly. An explicit port that is in use is an error;
+the Viewer does not switch away from it:
 
 ```bash
 roller view /path/to/runs/my-run --port 9000
@@ -37,13 +42,15 @@ For remote access, keep the Viewer on the loopback address and open an SSH tunne
 from your local machine:
 
 ```bash
-ssh -L 8765:127.0.0.1:8765 user@remote-host
+ssh -L 17865:127.0.0.1:17865 user@remote-host
 ```
+
+If the Viewer switched to another port, use the printed port in both places.
 
 If you must expose the service directly:
 
 ```bash
-roller view /path/to/run --host 0.0.0.0 --port 8765
+roller view /path/to/run --host 0.0.0.0 --port 17865
 ```
 
 The Viewer currently has no authentication. Listening on a public interface
@@ -63,6 +70,18 @@ The page has three columns:
 3. The right Inspector shows sample information, the first system prompt saved
    at the ACTF top level, the full tools schema, and the original `info.json`.
    A User Simulator task also shows `conversation.json`.
+
+Drag the dividers between the columns to resize the side columns; the timeline
+keeps at least 360px. A focused divider also responds to ←/→ (larger steps with
+Shift), and double-clicking it restores the default proportions. The widths are
+saved in the current browser and shrink proportionally when the window gets too
+narrow for them. At 1180px or narrower the Inspector becomes an overlay and only
+the left column can be resized.
+
+The Run summary cards at the top have a divider below them too. Drag it up to
+make the summary shorter and the three columns taller, all the way up to hide
+it; drag it back down or double-click it to restore the full height. A focused
+divider also responds to ↑/↓, and the height is saved in the browser as well.
 
 Reasoning uses its own region and is collapsed by default. Tool calls are paired
 with their results by `tool_call_id`. Results with `isError=true` use an error
@@ -157,10 +176,11 @@ disk, so a large run does not generate extra I/O.
 
 **(2) Port already in use**
 
-Choose another port:
+This only happens when the port was given with `--port`; without it the Viewer
+switches to a free port on its own. Choose another port, or drop `--port`:
 
 ```bash
-roller view /path/to/run --port 8766
+roller view /path/to/run --port 17866
 ```
 
 **(3) The Viewer reports this is not a Roller run**
