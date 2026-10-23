@@ -457,6 +457,8 @@
     try {
       state.run = await api(`/api/v1/run${refresh ? "?refresh=1" : ""}`);
       renderRun();
+      // The summary's full height is known only once its cards are rendered.
+      applyMetrics();
       await loadTasks();
       if (refresh) toast("Run 索引已刷新");
     } catch (error) {
@@ -535,8 +537,55 @@
   });
   elements.refresh.addEventListener("click", () => void loadRun(true));
 
+  // Layout the user dragged to is remembered per browser; storage can be
+  // unavailable, in which case it only lasts for this page.
+  const loadLayout = (key) => {
+    try { return JSON.parse(localStorage.getItem(key) || "null"); }
+    catch { return null; }
+  };
+  const saveLayout = (key, value) => {
+    try {
+      if (value == null) localStorage.removeItem(key);
+      else localStorage.setItem(key, JSON.stringify(value));
+    } catch { /* Keep the layout for this page only. */ }
+  };
+
+  // Track a pointer drag that started on a resizer; onMove gets the offset from
+  // where it started, onEnd runs only if the pointer actually moved.
+  const followDrag = (handle, event, axis, onMove, onEnd) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startY = event.clientY;
+    let moved = false;
+    const move = (moveEvent) => {
+      moved = true;
+      onMove(moveEvent.clientX - startX, moveEvent.clientY - startY);
+    };
+    const end = () => {
+      handle.removeEventListener("pointermove", move);
+      handle.removeEventListener("pointerup", end);
+      handle.removeEventListener("pointercancel", end);
+      handle.classList.remove("dragging");
+      delete document.body.dataset.resizing;
+      if (moved) onEnd();
+    };
+    handle.setPointerCapture(event.pointerId);
+    handle.classList.add("dragging");
+    document.body.dataset.resizing = axis;
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", end);
+    handle.addEventListener("pointercancel", end);
+  };
+
+  // Arrow keys move a focused resizer: 16px a press, 64px with Shift.
+  const arrowStep = (event, decrease, increase) => {
+    if (event.key !== decrease && event.key !== increase) return 0;
+    event.preventDefault();
+    return (event.key === increase ? 1 : -1) * (event.shiftKey ? 64 : 16);
+  };
+
   // Side panels keep the stylesheet's proportional widths until the user drags
-  // a resizer; from then on both are pinned in px and remembered per browser.
+  // a resizer; from then on both are pinned in px.
   const COLUMNS_KEY = "roller-viewer:columns";
   const MIN_TIMELINE = 360;
   const columns = {
@@ -567,23 +616,6 @@
     }
   };
 
-  const saveColumns = () => {
-    try {
-      if (columnWidths) localStorage.setItem(COLUMNS_KEY, JSON.stringify(columnWidths));
-      else localStorage.removeItem(COLUMNS_KEY);
-    } catch { /* Storage can be unavailable; the layout still applies to this page. */ }
-  };
-
-  const restoreColumns = () => {
-    try {
-      const saved = JSON.parse(localStorage.getItem(COLUMNS_KEY) || "null");
-      if (Number.isFinite(saved?.task) && Number.isFinite(saved?.inspector)) {
-        columnWidths = { task: saved.task, inspector: saved.inspector };
-      }
-    } catch { /* Fall back to the stylesheet layout. */ }
-    applyColumns();
-  };
-
   // Pin both panels at their rendered widths so a drag moves only one edge.
   const pinColumns = () => {
     const width = (side) => inGrid(side)
@@ -607,53 +639,100 @@
   elements.workspace.addEventListener("pointerdown", (event) => {
     const handle = event.target.closest("[data-resize]");
     if (!handle || event.button !== 0) return;
-    event.preventDefault();
     const side = handle.dataset.resize;
-    const startX = event.clientX;
     let start = null;
-    const move = (moveEvent) => {
+    followDrag(handle, event, "column", (dx) => {
       if (!start) {
         pinColumns();
         start = { width: columnWidths[side], limit: columnLimit(side) };
       }
-      resizeColumn(side, start.width + towards(side) * (moveEvent.clientX - startX), start.limit);
-    };
-    const end = () => {
-      handle.removeEventListener("pointermove", move);
-      handle.removeEventListener("pointerup", end);
-      handle.removeEventListener("pointercancel", end);
-      handle.classList.remove("dragging");
-      document.body.classList.remove("resizing");
-      if (start) saveColumns();
-    };
-    handle.setPointerCapture(event.pointerId);
-    handle.classList.add("dragging");
-    document.body.classList.add("resizing");
-    handle.addEventListener("pointermove", move);
-    handle.addEventListener("pointerup", end);
-    handle.addEventListener("pointercancel", end);
+      resizeColumn(side, start.width + towards(side) * dx, start.limit);
+    }, () => saveLayout(COLUMNS_KEY, columnWidths));
   });
 
   elements.workspace.addEventListener("dblclick", (event) => {
     if (!event.target.closest("[data-resize]")) return;
     columnWidths = null;
     applyColumns();
-    saveColumns();
+    saveLayout(COLUMNS_KEY, null);
   });
 
   elements.workspace.addEventListener("keydown", (event) => {
     const handle = event.target.closest("[data-resize]");
-    if (!handle || (event.key !== "ArrowLeft" && event.key !== "ArrowRight")) return;
-    event.preventDefault();
+    const step = handle ? arrowStep(event, "ArrowLeft", "ArrowRight") : 0;
+    if (!step) return;
     const side = handle.dataset.resize;
-    const step = (event.key === "ArrowRight" ? 1 : -1) * (event.shiftKey ? 64 : 16);
     pinColumns();
     resizeColumn(side, columnWidths[side] + towards(side) * step, columnLimit(side));
-    saveColumns();
+    saveLayout(COLUMNS_KEY, columnWidths);
   });
 
-  window.addEventListener("resize", applyColumns);
-  restoreColumns();
+  const savedColumns = loadLayout(COLUMNS_KEY);
+  if (Number.isFinite(savedColumns?.task) && Number.isFinite(savedColumns?.inspector)) {
+    columnWidths = { task: savedColumns.task, inspector: savedColumns.inspector };
+  }
+
+  // The run summary shrinks from the bottom (down to nothing) by dragging the
+  // resizer under it; at its full height it is left to size itself again.
+  const METRICS_KEY = "roller-viewer:metrics-height";
+  const metricsResizer = document.querySelector('[data-resize="metrics"]');
+  let metricsHeight = null;
+
+  // Full height of the run summary, measured with any pinned height lifted.
+  const naturalMetricsHeight = () => {
+    const { metrics } = elements;
+    const pinned = metrics.style.getPropertyValue("height");
+    const collapsed = metrics.classList.contains("collapsed");
+    metrics.style.removeProperty("height");
+    metrics.classList.remove("collapsed");
+    const height = metrics.offsetHeight;
+    if (pinned) metrics.style.setProperty("height", pinned);
+    metrics.classList.toggle("collapsed", collapsed);
+    return height;
+  };
+
+  const applyMetrics = () => {
+    const pinned = metricsHeight != null && metricsHeight < naturalMetricsHeight();
+    elements.metrics.classList.toggle("collapsed", pinned && metricsHeight === 0);
+    if (pinned) elements.metrics.style.setProperty("height", `${metricsHeight}px`);
+    else elements.metrics.style.removeProperty("height");
+  };
+
+  const resizeMetrics = (height) => {
+    const full = naturalMetricsHeight();
+    const clamped = Math.round(Math.min(Math.max(height, 0), full));
+    metricsHeight = clamped < full ? clamped : null;
+    applyMetrics();
+  };
+
+  metricsResizer.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return;
+    const startHeight = elements.metrics.offsetHeight;
+    followDrag(metricsResizer, event, "row", (dx, dy) => resizeMetrics(startHeight + dy),
+      () => saveLayout(METRICS_KEY, metricsHeight));
+  });
+
+  metricsResizer.addEventListener("dblclick", () => {
+    metricsHeight = null;
+    applyMetrics();
+    saveLayout(METRICS_KEY, null);
+  });
+
+  metricsResizer.addEventListener("keydown", (event) => {
+    const step = arrowStep(event, "ArrowUp", "ArrowDown");
+    if (!step) return;
+    resizeMetrics(elements.metrics.offsetHeight + step);
+    saveLayout(METRICS_KEY, metricsHeight);
+  });
+
+  const savedMetrics = loadLayout(METRICS_KEY);
+  if (Number.isFinite(savedMetrics)) metricsHeight = savedMetrics;
+
+  window.addEventListener("resize", () => {
+    applyColumns();
+    applyMetrics();
+  });
+  applyColumns();
 
   const routeRollout = () => {
     const match = location.hash.match(/^#\/rollout\/([^/?]+)/);
