@@ -153,7 +153,7 @@ This section lists the flags that need special attention when running OpenClaw. 
 | `--openclaw-model-request-timeout` | OpenClaw default | Model request timeout in seconds, also used as the streaming idle timeout. Requires `--model-config` |
 | `--openclaw-config-set KEY=VALUE` | none | Run `openclaw config set KEY VALUE` in every OpenClaw container. Repeatable |
 | `--network` | `host` | Container network mode |
-| `--gateway-port` | `18789` | Gateway start port |
+| `--gateway-port` | Automatic | Gateway start port. When omitted, the first free range from `18789` up is used; see section 10 (4) |
 | `--gateway-port-step` | `10` | Port interval between workers |
 | `--gateway-startup-timeout` | `240` | Seconds to wait for the gateway to become ready |
 | `--session-id` | `roller` | OpenClaw session ID prefix |
@@ -363,7 +363,14 @@ Usually the trailing path on `baseUrl` or the selected `api` protocol does not m
 
 **(4) Gateway port conflict**
 
-If the gateway port is already in use, choose a different OpenClaw gateway start port:
+With the default `--network host`, each rollout's OpenClaw gateway listens on the host at `start port + slot × --gateway-port-step` (with an OpenClaw user simulator there are twice `--parallel` slots). Runs sharing a machine must not share a range.
+
+- Without `--gateway-port`, Roller picks the first range from `18789` up that no other Roller run has reserved and nothing listens on, and holds that reservation for the whole run. Reservations are lock files under `$TMPDIR/roller-gateway-ports/`, released when the process exits, crashes included. The start port used is recorded in `info.json`.
+- An explicit `--gateway-port` whose range overlaps another run's reservation or a port in use fails before the run writes anything.
+- If something takes a rollout's port during the run, that rollout fails with `OpenClaw gateway port ... is already in use` before starting its gateway, instead of connecting to someone else's gateway.
+- The start port is not compared by `lock.json`, so `--resume` may get a different range.
+
+Programs that take no lock, including older Roller versions, are only noticed through ports they are listening on. When running next to one, keep the ranges apart explicitly:
 
 ```bash
 roller collect ... --gateway-port 22000

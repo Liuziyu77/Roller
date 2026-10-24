@@ -63,6 +63,11 @@ from roller.harnesses.codex import (
     codex_effort,
     redact_api_base,
 )
+from roller.harnesses.gateway_ports import (
+    DEFAULT_GATEWAY_PORT,
+    GatewayPortReservation,
+    reserve_gateway_ports,
+)
 from roller.harnesses.openclaw import (
     COMMON_ENV_NAMES as OPENCLAW_COMMON_ENV_NAMES,
     DEFAULT_OPENCLAW_IMAGE,
@@ -364,7 +369,14 @@ def _build_parser() -> argparse.ArgumentParser:
 
     openclaw = collect.add_argument_group("OpenClaw")
     openclaw.add_argument("--model-config", help="OpenClaw models JSON; supports ${ENV_NAME}")
-    openclaw.add_argument("--gateway-port", type=int, default=18789)
+    openclaw.add_argument(
+        "--gateway-port",
+        type=int,
+        help=(
+            "first OpenClaw gateway port (default: the first range from "
+            f"{DEFAULT_GATEWAY_PORT} that no other run on this host holds)"
+        ),
+    )
     openclaw.add_argument("--gateway-port-step", type=int, default=10)
     openclaw.add_argument("--gateway-startup-timeout", type=float, default=240.0)
     openclaw.add_argument(
@@ -956,7 +968,10 @@ def _collect(args: argparse.Namespace) -> int:
             container_user=(
                 None if args.container_user == "image" else args.container_user
             ),
-            gateway_port_start=args.gateway_port,
+            # Placeholder until the run reserves its range (host network only).
+            gateway_port_start=(
+                DEFAULT_GATEWAY_PORT if args.gateway_port is None else args.gateway_port
+            ),
             gateway_port_step=args.gateway_port_step,
             gateway_startup_timeout=args.gateway_startup_timeout,
             network=args.network,
@@ -1174,7 +1189,7 @@ def _collect(args: argparse.Namespace) -> int:
             ),
             "model_request_timeout_seconds": args.openclaw_model_request_timeout,
             "model_max_tokens": args.openclaw_max_tokens,
-            "gateway_port_start": args.gateway_port,
+            "gateway_port_start": openclaw_config.gateway_port_start,
             "gateway_port_step": args.gateway_port_step,
             "network": args.network,
             "session_id": args.session_id,
@@ -1356,9 +1371,25 @@ def _collect(args: argparse.Namespace) -> int:
         )
 
     results: list[dict] | None = None
+    gateway_ports: GatewayPortReservation | None = None
     with tempfile.TemporaryDirectory(prefix=".roller-bundle-", dir=output_root) as temporary:
         bundle_store = TaskBundleStore(Path(temporary), bundle_policy)
         try:
+            if openclaw_config is not None and args.network == "host":
+                # Host-network gateways share the host's ports with any other
+                # run here; hold this run's range until collection ends.
+                slots = args.parallel * (2 if "openclaw" in simulator_harnesses else 1)
+                gateway_ports = reserve_gateway_ports(
+                    args.gateway_port, args.gateway_port_step, slots
+                )
+                openclaw_config = dataclasses.replace(
+                    openclaw_config, gateway_port_start=gateway_ports.start
+                )
+                harness_configurations["openclaw"]["gateway_port_start"] = gateway_ports.start
+                logger.info(
+                    "OpenClaw gateway ports %d-%d (every %d)",
+                    gateway_ports.ports[0], gateway_ports.ports[-1], gateway_ports.step,
+                )
             bundles = bundle_store.prepare_all(tasks)
             requests = bundle_store.attach(requests, bundles)
             run_dir.mkdir(parents=True, exist_ok=True)
@@ -1507,6 +1538,8 @@ def _collect(args: argparse.Namespace) -> int:
                 complete_legacy_adoption(run_dir / "lock.json")
         finally:
             bundle_store.cleanup_runtime()
+            if gateway_ports is not None:
+                gateway_ports.release()
     assert results is not None
     failed = sum(result.get("status") in {"error", "timeout"} for result in results)
     print(f"Collected {len(results)} trajectories ({failed} failed).")
