@@ -242,3 +242,25 @@ SFT 使用统一的 `messages` 和 `tools` 结构。Claude 原生工具调用会
 **(6) ACTF 有 thinking token 但 `reasoning_content` 为空**
 
 服务没有返回明文，不是转换器丢失。
+
+**(7) 生成长工具参数时请求被中断或反复重试**
+
+有些服务不流式返回工具调用参数，模型写出大段参数时连接上可能连续几分钟没有数据。Claude Code 的流空闲超时由 `CLAUDE_STREAM_IDLE_TIMEOUT_MS` 控制（默认 300000 毫秒，小于默认值的设置不生效），请求超时由 `API_TIMEOUT_MS` 控制（默认 600000 毫秒）。两者都是 Claude Code 自己读取的环境变量，可以写进 `--claude-settings` 文件的 `env`：
+
+```json
+{
+  "env": {
+    "CLAUDE_STREAM_IDLE_TIMEOUT_MS": "1800000",
+    "API_TIMEOUT_MS": "3000000"
+  }
+}
+```
+
+也可以在宿主机设置后用 `--pass-env` 传入：
+
+```bash
+export CLAUDE_STREAM_IDLE_TIMEOUT_MS=1800000 API_TIMEOUT_MS=3000000
+roller collect ... \
+  --pass-env CLAUDE_STREAM_IDLE_TIMEOUT_MS \
+  --pass-env API_TIMEOUT_MS
+```

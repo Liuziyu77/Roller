@@ -35,6 +35,10 @@ from roller.harnesses.claude_code import (
     redact_anthropic_base_url,
 )
 from roller.harness_registry import HARNESSES, HARNESS_NAMES
+from roller.harnesses.config_overrides import (
+    parse_config_assignment,
+    recorded_config_assignments,
+)
 from roller.harnesses.container import PROXY_ENV_NAMES
 from roller.harnesses.deepseek import (
     DEFAULT_DEEPSEEK_IMAGE, DEEPSEEK_VERSION, DEEPSEEK_TOOLS,
@@ -367,6 +371,17 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="TOKENS",
         help="override maxTokens for the selected OpenClaw model",
     )
+    openclaw.add_argument(
+        "--openclaw-config-set",
+        action="append",
+        default=[],
+        type=_config_assignment,
+        metavar="KEY=VALUE",
+        help=(
+            "run `openclaw config set KEY VALUE` in every OpenClaw container after "
+            "Roller's own settings; repeatable. Paths Roller manages are rejected"
+        ),
+    )
     openclaw.add_argument("--session-id", default="roller")
     openclaw.add_argument("--search-provider")
     openclaw.add_argument(
@@ -468,6 +483,17 @@ def _build_parser() -> argparse.ArgumentParser:
         help="optional Codex config.toml copied into the disposable container",
     )
     codex.add_argument(
+        "--codex-config-set",
+        action="append",
+        default=[],
+        type=_config_assignment,
+        metavar="KEY=VALUE",
+        help=(
+            "pass `-c KEY=VALUE` to every codex exec after Roller's own overrides; "
+            "repeatable. Paths Roller manages are rejected"
+        ),
+    )
+    codex.add_argument(
         "--reasoning-summary",
         choices=("auto", "concise", "detailed", "none"),
         help="Codex model_reasoning_summary override",
@@ -516,6 +542,13 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def _deduplicate(values: Sequence[str]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(value for value in values if value))
+
+
+def _config_assignment(text: str) -> tuple[str, str]:
+    try:
+        return parse_config_assignment(text)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from None
 
 
 def _docker_preflight(binary: str, image: str) -> str:
@@ -844,6 +877,14 @@ def _collect(args: argparse.Namespace) -> int:
         raise ValueError("--openclaw-model-request-timeout requires --model-config")
     if args.openclaw_max_tokens is not None and model_config is None:
         raise ValueError("--openclaw-max-tokens requires --model-config")
+    if args.openclaw_config_set and "openclaw" not in selected_harnesses:
+        raise ValueError(
+            "--openclaw-config-set is only valid when an OpenClaw participant is selected"
+        )
+    if args.codex_config_set and "codex" not in selected_harnesses:
+        raise ValueError(
+            "--codex-config-set is only valid when a Codex participant is selected"
+        )
 
     thinking_capabilities: ThinkingCapabilities | None = None
     thinking_capabilities_path: Path | None = None
@@ -920,6 +961,7 @@ def _collect(args: argparse.Namespace) -> int:
             keep_container_on_error=args.keep_container_on_error,
             set_image_model=args.set_image_model,
             docker_binary=args.docker_binary,
+            config_set=tuple(args.openclaw_config_set),
         )
         def openclaw_endpoint(model: str) -> str | None:
             providers = (model_config or {}).get("providers", {})
@@ -954,6 +996,7 @@ def _collect(args: argparse.Namespace) -> int:
             keep_thinking=args.keep_thinking,
             keep_container_on_error=args.keep_container_on_error,
             docker_binary=args.docker_binary,
+            config_set=tuple(args.codex_config_set),
         )
         _validate_thinking_requests(
             requests, cli_harness=cli_harness, harness="codex",
@@ -1129,6 +1172,8 @@ def _collect(args: argparse.Namespace) -> int:
             "pass_env_names": list(openclaw_config.pass_env),
             "collect_paths": args.collect_path,
             **({"capture_calls": True, "capture_debug": args.capture_debug} if openclaw_config.capture_calls else {}),
+            # Absent when unused so locks written before the option still match.
+            **({"config_set": recorded_config_assignments(openclaw_config.config_set)} if openclaw_config.config_set else {}),
         }
     if codex_config is not None:
         harness_configurations["codex"] = {
@@ -1147,6 +1192,7 @@ def _collect(args: argparse.Namespace) -> int:
             "supports_websockets": args.codex_websockets,
             "pass_env_names": list(codex_config.pass_env),
             **({"capture_calls": True, "capture_debug": args.capture_debug} if codex_config.capture_calls else {}),
+            **({"config_set": recorded_config_assignments(codex_config.config_set)} if codex_config.config_set else {}),
         }
     if claude_code_config is not None:
         harness_configurations["claude-code"] = {

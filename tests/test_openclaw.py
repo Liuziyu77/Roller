@@ -779,6 +779,107 @@ class OpenClawHelpersTests(unittest.TestCase):
             self.assertEqual(command[command.index("--thinking") + 1], "high")
             self.assertIn(gateway_token, command)
 
+    def test_config_set_runs_after_roller_settings_and_before_gateway(self) -> None:
+        runtime = FakeDockerRuntime()
+        harness = OpenClawHarness(
+            OpenClawConfig(
+                docker_image="test-image",
+                wire_trace_mode="off",
+                config_set=(
+                    ("diagnostics.stuckSessionAbortMs", "2700000"),
+                    ("agents.defaults.timeoutSeconds", "-1"),
+                ),
+            ),
+            worker_slot=0,
+            runtime=runtime,
+        )
+        request = RunRequest(0, Task("task", ("solve",), 0), "provider/model", 30)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            result = harness.run(request, Path(temporary), attempt=1)
+
+        self.assertEqual(result.status, "ok", result.error)
+        commands = runtime.commands
+        overrides = [
+            index
+            for index, command in enumerate(commands)
+            if command[2:6] == ["openclaw", "config", "set", "--"]
+        ]
+        self.assertEqual(
+            [commands[index][6:] for index in overrides],
+            [
+                ["diagnostics.stuckSessionAbortMs", "2700000"],
+                ["agents.defaults.timeoutSeconds", "-1"],
+            ],
+        )
+        image_model = next(
+            index
+            for index, command in enumerate(commands)
+            if "agents.defaults.imageModel.primary" in command
+        )
+        gateway = next(
+            index
+            for index, command in enumerate(commands)
+            if any("exec openclaw gateway" in argument for argument in command)
+        )
+        self.assertLess(image_model, overrides[0])
+        self.assertLess(overrides[-1], gateway)
+
+    def test_config_set_rejects_paths_roller_manages(self) -> None:
+        for key, hint in (
+            ("gateway.port", "--gateway-port"),
+            ("gateway", "--gateway-port"),
+            ("gateway.auth.mode", "token per rollout"),
+            ("models.providers.local.baseUrl", "--model-config"),
+            ("agents.defaults", "--model"),
+            ("agents.defaults.thinkingDefault", "--thinking"),
+            ('diagnostics["cacheTrace"].enabled', "--cache-trace"),
+        ):
+            with self.subTest(key=key):
+                with self.assertRaisesRegex(ValueError, hint):
+                    OpenClawConfig(config_set=((key, "1"),))
+        # Siblings of managed paths stay open.
+        config = OpenClawConfig(
+            config_set=(
+                ("diagnostics.stuckSessionAbortMs", "2700000"),
+                ("agents.defaults.timeoutSeconds", "900"),
+            )
+        )
+        self.assertEqual(len(config.config_set), 2)
+
+    def test_every_path_roller_sets_is_managed(self) -> None:
+        runtime = FakeDockerRuntime()
+        harness = OpenClawHarness(
+            OpenClawConfig(
+                docker_image="test-image",
+                wire_trace_mode="off",
+                thinking="high",
+                search_provider="brave",
+                capture_cache_trace=True,
+                set_image_model=True,
+            ),
+            worker_slot=0,
+            runtime=runtime,
+        )
+        request = RunRequest(0, Task("task", ("solve",), 0), "provider/model", 30)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            result = harness.run(request, Path(temporary), attempt=1)
+
+        self.assertEqual(result.status, "ok", result.error)
+        keys = [
+            command[5]
+            for command in runtime.commands
+            if command[2:5] == ["openclaw", "config", "set"]
+        ]
+        self.assertLessEqual(
+            {"gateway.auth.token", "tools.web.search.provider"}, set(keys)
+        )
+        for key in keys:
+            with self.subTest(key=key):
+                with self.assertRaisesRegex(ValueError, "Roller sets itself"):
+                    OpenClawConfig(config_set=((key, "1"),))
+
     def test_harness_passes_task_max_override_without_downgrading(self) -> None:
         task = Task(
             id="task",

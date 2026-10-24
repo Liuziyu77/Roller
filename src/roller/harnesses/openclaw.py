@@ -21,6 +21,10 @@ from roller.actf import convert_openclaw_trace
 from roller.capture_runtime import CaptureRuntime
 from roller.artifacts import ArtifactCollectionResult
 from roller.harnesses.base import InteractiveHarness, InteractiveSession, TurnResult
+from roller.harnesses.config_overrides import (
+    ConfigAssignment,
+    validate_config_assignments,
+)
 from roller.harnesses.container import (
     CONTEXT_CONTAINER_PATH,
     ENV_NAME as ENV_NAME_RE,
@@ -193,6 +197,25 @@ def _model_base_urls(value: Any) -> list[str]:
     return list(dict.fromkeys(urls))
 
 
+# Config paths Roller writes into every OpenClaw container, with the option that
+# controls each. ``--openclaw-config-set`` may not touch them.
+ROLLER_MANAGED_OPENCLAW_CONFIG: dict[str, str] = {
+    "gateway.port": "use --gateway-port",
+    "gateway.mode": "Roller runs a local gateway",
+    "gateway.bind": "Roller binds the gateway to loopback",
+    "gateway.auth": "Roller issues a token per rollout",
+    "gateway.remote": "Roller issues a token per rollout",
+    "models": "use --model-config",
+    "agents.defaults.model": "use --model",
+    "agents.defaults.models": "use --model",
+    "agents.defaults.workspace": "Roller owns the task workspace",
+    "agents.defaults.thinkingDefault": "use --thinking",
+    "agents.defaults.imageModel": "use --set-image-model / --no-set-image-model",
+    "tools.web.search.provider": "use --search-provider",
+    "diagnostics.cacheTrace": "use --cache-trace / --no-cache-trace",
+}
+
+
 @dataclass(frozen=True)
 class OpenClawConfig:
     docker_image: str = DEFAULT_OPENCLAW_IMAGE
@@ -218,8 +241,19 @@ class OpenClawConfig:
     keep_container_on_error: bool = False
     set_image_model: bool = True
     docker_binary: str = "docker"
+    # Extra ``openclaw config set`` calls, applied after Roller's own settings.
+    config_set: tuple[ConfigAssignment, ...] = ()
 
     def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "config_set",
+            validate_config_assignments(
+                self.config_set,
+                ROLLER_MANAGED_OPENCLAW_CONFIG,
+                flag="--openclaw-config-set",
+            ),
+        )
         if not self.docker_image.strip():
             raise ValueError("docker_image cannot be empty")
         if self.container_user is not None and not self.container_user.strip():
@@ -758,6 +792,12 @@ exec node --input-type=module -e "$1"
                     self._AUTH_INJECT_SCRIPT,
                 ],
                 "OpenRouter auth setup",
+            )
+        for key, value in self.config.config_set:
+            # ``--`` keeps a value such as ``-1`` from being read as an option.
+            self._checked(
+                ["exec", container, "openclaw", "config", "set", "--", key, value],
+                f"OpenClaw config setting {key!r}",
             )
         return version
 
