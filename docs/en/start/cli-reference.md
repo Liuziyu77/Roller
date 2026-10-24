@@ -69,6 +69,7 @@ These flags control concurrency, repetitions, retries, and which part of the tas
 | Flag | Default | Purpose |
 | --- | --- | --- |
 | `--parallel N` | `1` | Sets the maximum number of concurrent rollouts |
+| `--launch-interval SECONDS` | `0` | Sets the minimum gap between two rollout launches, see below |
 | `--grader-parallel N` | `--parallel` | Limits concurrent graders separately to avoid overloading a judge service |
 | `--samples N` | `3` for SkillsBench, otherwise `1` | Creates N independent samples for each task/model pair |
 | `--retries N` | `0` | Sets additional attempts after the first failure |
@@ -76,6 +77,17 @@ These flags control concurrency, repetitions, retries, and which part of the tas
 | `--task-timeouts` | Off | Prefers each task's `timeout_seconds` and falls back to `--timeout` |
 | `--start-index N` | `0` | Starts at task N in the normalized task list |
 | `--limit N` | Unlimited | Selects at most N tasks |
+
+By default a run starts `--parallel` rollouts at once. Start-up needs much more memory than steady running (roughly twice for an OpenClaw container), so rollouts that start together stack their peaks. `--launch-interval` spaces every launch, retries included, at least that many seconds apart:
+
+```bash
+roller collect ... --parallel 24 --launch-interval 8
+```
+
+- This holds for the whole run, not only the first wave: N launches take at least (N − 1) × `--launch-interval` seconds, and when rollouts are shorter than about `--parallel × --launch-interval`, fewer than `--parallel` run at once.
+- Samples skipped by `--resume` take no launch turn.
+- On interrupt, rollouts still waiting for their turn are cancelled and leave no sample directory. Pending retries stop too, at any interval: the sample keeps its last failure and `--resume` reruns it.
+- The value is recorded in `info.json`, not `lock.json`, so it can change on `--resume`.
 
 ### 3.3 Output, validation, and continuation
 

@@ -69,6 +69,7 @@ roller collect --tasks tasks.jsonl --model provider/model
 | 参数 | 默认值 | 用途 |
 | --- | --- | --- |
 | `--parallel N` | `1` | 设置同时运行的最大 rollout 数 |
+| `--launch-interval SECONDS` | `0` | 两次 rollout 启动之间的最小间隔，见下文 |
 | `--grader-parallel N` | `--parallel` | 单独限制同时运行的 grader 数，避免 judge 服务过载 |
 | `--samples N` | SkillsBench 为 `3`，其他为 `1` | 为每个 task/model 组合创建 N 个独立 sample |
 | `--retries N` | `0` | 设置首次失败后的额外尝试次数 |
@@ -76,6 +77,17 @@ roller collect --tasks tasks.jsonl --model provider/model
 | `--task-timeouts` | 关闭 | 优先使用每条 task 的 `timeout_seconds`，缺失时使用 `--timeout` |
 | `--start-index N` | `0` | 从规范化 task 列表的第 N 条开始 |
 | `--limit N` | 不限制 | 最多选择 N 条 task |
+
+默认情况下，run 一开始会同时启动 `--parallel` 个 rollout。启动阶段的内存远高于稳定运行（OpenClaw 容器约两倍），一起启动会叠加峰值。`--launch-interval` 让每次启动（包括重试）与上一次至少间隔指定秒数：
+
+```bash
+roller collect ... --parallel 24 --launch-interval 8
+```
+
+- 对整个 run 生效，不只是第一批：N 次启动至少需要 (N − 1) × `--launch-interval` 秒；rollout 短于约 `--parallel × --launch-interval` 时，并发达不到 `--parallel`。
+- `--resume` 跳过的 sample 不占用启动间隔。
+- 中断时，仍在等待的 rollout 直接取消，不留下 sample 目录；无论间隔多少，待进行的重试也会取消，sample 保留上次失败的结果，由 `--resume` 重跑。
+- 该值记录在 `info.json`，不写入 `lock.json`，`--resume` 时可以换值。
 
 ### 3.3 输出、检查与续跑
 

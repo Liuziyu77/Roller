@@ -5,6 +5,7 @@ import dataclasses
 import hashlib
 import json
 import logging
+import math
 import os
 import shutil
 import subprocess
@@ -225,6 +226,16 @@ def _build_parser() -> argparse.ArgumentParser:
     collect.add_argument("--workspace", help="default host workspace copied into each container")
     collect.add_argument("--timeout", type=int, default=600, help="per-trajectory timeout in seconds")
     collect.add_argument("--parallel", type=int, default=1)
+    collect.add_argument(
+        "--launch-interval",
+        type=float,
+        default=0.0,
+        metavar="SECONDS",
+        help=(
+            "minimum seconds between two rollout launches, so --parallel workers "
+            "do not all start at once (default: 0)"
+        ),
+    )
     collect.add_argument(
         "--grader-parallel",
         type=int,
@@ -607,6 +618,7 @@ def _dry_run_payload(args: argparse.Namespace, requests: list) -> dict:
         "model_labels": list(dict.fromkeys(request.display_model for request in requests)),
         "trajectories": len(requests),
         "parallel": args.parallel,
+        "launch_interval": args.launch_interval,
         "grader_parallel": args.grader_parallel or args.parallel,
         "samples": args.samples,
         "opencode_max_steps": args.opencode_max_steps,
@@ -710,6 +722,8 @@ def _collect(args: argparse.Namespace) -> int:
         args.opencode_output_tokens = 32768 if args.bench == "skillsbench" else 8192
     if args.parallel < 1:
         raise ValueError("--parallel must be at least 1")
+    if not math.isfinite(args.launch_interval) or args.launch_interval < 0:
+        raise ValueError("--launch-interval must be a finite number of seconds >= 0")
     if args.grader_parallel is not None and args.grader_parallel < 1:
         raise ValueError("--grader-parallel must be at least 1")
     if args.samples < 1:
@@ -1293,6 +1307,7 @@ def _collect(args: argparse.Namespace) -> int:
             "workspace": str(workspace) if workspace else None,
             "timeout_seconds": args.timeout,
             "parallel": args.parallel,
+            "launch_interval": args.launch_interval,
             "grader_parallel": args.grader_parallel or args.parallel,
             "samples": args.samples,
             "retries": args.retries,
@@ -1476,6 +1491,7 @@ def _collect(args: argparse.Namespace) -> int:
                 CollectionConfig(
                     run_dir=run_dir,
                     parallel=args.parallel,
+                    launch_interval=args.launch_interval,
                     retries=args.retries,
                     resume=lock_decision.reuse_existing_samples,
                     keep_aux_traces=keep_aux_traces,
