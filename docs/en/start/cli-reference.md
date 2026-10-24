@@ -78,15 +78,16 @@ These flags control concurrency, repetitions, retries, and which part of the tas
 | `--start-index N` | `0` | Starts at task N in the normalized task list |
 | `--limit N` | Unlimited | Selects at most N tasks |
 
-By default a run starts `--parallel` rollouts at once. Start-up needs clearly more memory than steady running: an OpenClaw container uses about 1.4 GB for its first 1–3 minutes and about 0.6 GB afterwards. The more containers start together, the higher those peaks stack, which makes memory the limit on concurrency. `--launch-interval` makes every rollout launch, retries included, wait at least that many seconds after the previous one, spreading the peaks out:
+By default a run starts `--parallel` rollouts at once. Start-up needs much more memory than steady running (roughly twice for an OpenClaw container), so rollouts that start together stack their peaks. `--launch-interval` spaces every launch, retries included, at least that many seconds apart:
 
 ```bash
 roller collect ... --parallel 24 --launch-interval 8
 ```
 
-- It delays launches without capping concurrency: all workers still end up running together. The cost is about `--parallel × --launch-interval` seconds until the first wave is fully started.
-- Samples skipped by `--resume` do not take a launch turn. On interruption, rollouts still waiting for their turn are cancelled without starting or leaving a sample directory.
-- The value is recorded in `info.json` but not in `lock.json`, so `--resume` may use a different one.
+- This holds for the whole run, not only the first wave: N launches take about N × `--launch-interval` seconds, and when rollouts are shorter than about `--parallel × --launch-interval`, fewer than `--parallel` run at once.
+- Samples skipped by `--resume` take no launch turn.
+- On interrupt, rollouts still waiting for their turn are cancelled and leave no sample directory. Pending retries stop too, at any interval: the sample keeps its last failure and `--resume` reruns it.
+- The value is recorded in `info.json`, not `lock.json`, so it can change on `--resume`.
 
 ### 3.3 Output, validation, and continuation
 

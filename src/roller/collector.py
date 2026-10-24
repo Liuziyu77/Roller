@@ -153,15 +153,10 @@ class _LaunchGate:
     def wait_turn(self) -> bool:
         """Block until this launch may start; False once the run is interrupted."""
 
-        if self._interval > 0:
-            with self._lock:
-                now = time.monotonic()
-                launch = max(now, self._next_launch)
-                self._next_launch = launch + self._interval
-            delay = launch - time.monotonic()
-            if delay > 0:
-                return not self._cancelled.wait(delay)
-        return not self._cancelled.is_set()
+        with self._lock:
+            launch = max(time.monotonic(), self._next_launch)
+            self._next_launch = launch + self._interval
+        return not self._cancelled.wait(max(0.0, launch - time.monotonic()))
 
     def cancel(self) -> None:
         self._cancelled.set()
@@ -172,7 +167,6 @@ class Collector:
         self.config = config
         self.harness_factory = harness_factory
         self.run_dir = config.run_dir.expanduser().resolve()
-        self._launch_gate = _LaunchGate(config.launch_interval)
         try:
             parameters = list(inspect.signature(harness_factory).parameters.values())
             positional = [
@@ -470,8 +464,22 @@ class Collector:
         final = HarnessResult.error_result("harness did not run")
         harness_name = "unknown"
         for attempt in range(1, self.config.retries + 2):
-            if attempt > 1 and not self._launch_gate.wait_turn():
-                break  # interrupted between attempts: keep the last failure
+            if attempt > 1:
+                if not self._launch_gate.wait_turn():
+                    # Interrupted between attempts: keep the last failure.
+                    logger.warning(
+                        "[%s | %s] interrupted; not retrying after attempt %d",
+                        request.task.id,
+                        request.model,
+                        attempt - 1,
+                    )
+                    break
+                logger.warning(
+                    "[%s | %s] attempt %d failed; retrying",
+                    request.task.id,
+                    request.model,
+                    attempt - 1,
+                )
             harness = self._make_harness(worker_slot, request)
             harness_name = getattr(harness, "name", "unknown")
             attempt_start = time.perf_counter()
@@ -490,13 +498,6 @@ class Collector:
             )
             if final.status == "ok":
                 break
-            if attempt <= self.config.retries:
-                logger.warning(
-                    "[%s | %s] attempt %d failed; retrying",
-                    request.task.id,
-                    request.model,
-                    attempt,
-                )
 
         return self._finalize_sample(
             request, sample_dir, harness_name, final, attempt_rows, started_at
@@ -643,6 +644,7 @@ class Collector:
         self._write_run_info(
             [], total_requests=total_requests, state="running"
         )
+        # Rebuilt per collect(): an interrupt cancels the gate for good.
         self._launch_gate = _LaunchGate(self.config.launch_interval)
         slots: queue.Queue[int] = queue.Queue()
         for slot in range(self.config.parallel):
@@ -734,7 +736,8 @@ class Collector:
                     self._launch_gate.cancel()
                     cancelled = sum(future.cancel() for future in futures)
                     logger.warning(
-                        "interrupted: cancelled %d queued request(s); "
+                        "interrupted: cancelled %d queued request(s) and any "
+                        "rollouts waiting for a launch turn; "
                         "waiting for running samples to finish",
                         cancelled,
                     )

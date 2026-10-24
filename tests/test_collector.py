@@ -961,11 +961,11 @@ class CollectorTests(unittest.TestCase):
             self.assertEqual(state["calls"][("task", "provider/model")], 3)
 
 
-
 class TimedHarness(FakeHarness):
     def run(self, request: RunRequest, output_dir: Path, attempt: int) -> HarnessResult:
         with self.state["lock"]:
             self.state.setdefault("starts", []).append((time.monotonic(), attempt))
+        time.sleep(self.state.get("extra_delay", {}).get(request.task.id, 0))
         return super().run(request, output_dir, attempt)
 
 
@@ -1051,6 +1051,47 @@ class LaunchIntervalTests(unittest.TestCase):
             self.assertEqual(sample_dirs, ["00000000_task-0"])
             info = json.loads((run_dir / "info.json").read_text())
             self.assertEqual(info["state"], "interrupted")
+
+    def test_interrupt_between_attempts_keeps_the_last_failure(self) -> None:
+        for interval in (0.0, 0.1):
+            with self.subTest(interval=interval), tempfile.TemporaryDirectory() as temporary:
+                run_dir = Path(temporary) / "run"
+                # task-0 interrupts at 0.2 s while task-1 (launched by 0.1 s) is
+                # still in its failing first attempt; its retry must not start.
+                state = self._state(
+                    interrupt_task="task-0", delay=0.2, fail_first=True,
+                    extra_delay={"task-1": 0.3},
+                )
+                with self.assertLogs("roller.collector", "WARNING") as logs:
+                    with self.assertRaises(KeyboardInterrupt):
+                        self._collect(
+                            run_dir, state, make_requests()[:2], parallel=2, retries=2,
+                            launch_interval=interval,
+                        )
+
+                self.assertEqual(state["calls"][("task-1", "provider/model")], 1)
+                info = json.loads(next(run_dir.glob("samples/*/00000001_task-1/info.json")).read_text())
+                self.assertEqual([row["attempt"] for row in info["attempts"]], [1])
+                self.assertEqual(info["status"], "error")
+                output = "\n".join(logs.output)
+                self.assertIn("not retrying after attempt 1", output)
+                self.assertNotIn("failed; retrying", output)
+
+    def test_collect_launches_again_after_an_interrupted_collect(self) -> None:
+        # An interrupt cancels the launch gate for good, so each collect() needs its own.
+        with tempfile.TemporaryDirectory() as temporary:
+            state = self._state(interrupt_task="task-0")
+            collector = Collector(
+                CollectionConfig(run_dir=Path(temporary) / "run"),
+                lambda slot: TimedHarness(state, slot),
+            )
+            with self.assertRaises(KeyboardInterrupt):
+                collector.collect(make_requests()[:1])
+            del state["interrupt_task"]
+            results = collector.collect(make_requests()[:1])
+
+        self.assertEqual(results[0]["status"], "ok")
+        self.assertEqual(state["calls"][("task-0", "provider/model")], 2)
 
     def test_rejects_negative_or_non_finite_intervals(self) -> None:
         for interval in (-1.0, float("inf"), float("nan")):

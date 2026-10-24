@@ -501,7 +501,6 @@ def grade(transcript, workspace_path):
             _docker_preflight("docker", "missing:test")
 
 
-
 class LaunchIntervalCliTests(unittest.TestCase):
     def setUp(self) -> None:
         temporary = tempfile.TemporaryDirectory()

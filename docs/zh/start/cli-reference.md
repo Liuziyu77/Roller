@@ -78,15 +78,16 @@ roller collect --tasks tasks.jsonl --model provider/model
 | `--start-index N` | `0` | 从规范化 task 列表的第 N 条开始 |
 | `--limit N` | 不限制 | 最多选择 N 条 task |
 
-默认情况下，run 一开始会同时启动 `--parallel` 个 rollout。启动阶段的内存占用明显高于稳定运行：OpenClaw 容器在启动后约 1–3 分钟内要占用约 1.4 GB，稳定后约 0.6 GB。同时启动的容器越多，这个峰值叠加得越高，内存因此成为并发的上限。`--launch-interval` 让每次 rollout 启动（包括重试）与上一次至少间隔指定秒数，把峰值错开：
+默认情况下，run 一开始会同时启动 `--parallel` 个 rollout。启动阶段的内存远高于稳定运行（OpenClaw 容器约两倍），一起启动会叠加峰值。`--launch-interval` 让每次启动（包括重试）与上一次至少间隔指定秒数：
 
 ```bash
 roller collect ... --parallel 24 --launch-interval 8
 ```
 
-- 只推迟启动，不限制并发：所有 worker 最终仍会同时运行。代价是第一批 rollout 全部启动需要大约 `--parallel × --launch-interval` 秒。
-- `--resume` 跳过的 sample 不占用启动间隔。中断时，仍在等待的 rollout 会直接取消，不会启动，也不会留下 sample 目录。
-- 该值记录在 `info.json` 中，不写入 `lock.json`，`--resume` 时可以改用其他值。
+- 对整个 run 生效，不只是第一批：N 次启动约需 N × `--launch-interval` 秒；rollout 短于约 `--parallel × --launch-interval` 时，并发达不到 `--parallel`。
+- `--resume` 跳过的 sample 不占用启动间隔。
+- 中断时，仍在等待的 rollout 直接取消，不留下 sample 目录；无论间隔多少，待进行的重试也会取消，sample 保留上次失败的结果，由 `--resume` 重跑。
+- 该值记录在 `info.json`，不写入 `lock.json`，`--resume` 时可以换值。
 
 ### 3.3 输出、检查与续跑
 
