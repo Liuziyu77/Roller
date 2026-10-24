@@ -194,6 +194,42 @@ def test_codex_unattributed_summary_does_not_require_text_matching(tmp_path: Pat
     assert segments[1][1]["messages"][-1]["content"] == "DONE"
 
 
+def test_codex_text_and_tool_items_are_one_assistant_target(tmp_path: Path) -> None:
+    _actf(tmp_path, "ACK", {"content": "Reading now", "tool_calls": [
+        {"name": "read", "arguments": {"path": "a"}}]})
+    _write(tmp_path / "trace.jsonl", [{"type": "compacted",
+        "timestamp": "2026-10-15T00:00:03Z", "payload": {"window_id": "w"}}])
+    def response(text: str, *, tool: bool = False) -> dict:
+        blocks = ([{"type": "output_text", "text": "Reading "},
+                   {"type": "output_text", "text": "now"}] if tool else
+                  [{"type": "output_text", "text": text}])
+        output = [{"type": "message", "role": "assistant", "content": blocks}]
+        if tool:
+            output.append({"type": "function_call", "call_id": "tool-1",
+                           "name": "read", "arguments": '{"path":"a"}'})
+        return {"output": output}
+    def prompt(text: str) -> dict:
+        return {"instructions": "s", "input": [{"type": "message", "role": "user",
+            "content": [{"type": "input_text", "text": text}]}], "tools": []}
+    manifest = _capture(tmp_path, "root", [
+        _call(1, "root", "openai-responses", prompt("task"), response("ACK")),
+        _call(4, "root", "openai-responses", prompt("summary"),
+              response("Reading now", tool=True)),
+    ])
+    segments = build_compaction_segments(tmp_path, "codex", manifest)
+    assert len(segments) == 2
+    target = segments[1][1]["messages"][-1]
+    assert target["role"] == "assistant"
+    assert target["content"] == "Reading now"
+    assert len(target["tool_calls"]) == 1
+    assert target["tool_calls"][0]["id"] == "tool-1"
+
+    _actf(tmp_path, "ACK", {"content": "Reading now", "tool_calls": [
+        {"name": "read", "arguments": {"path": "wrong"}}]})
+    with pytest.raises(SFTConversionError, match="does not match"):
+        build_compaction_segments(tmp_path, "codex", manifest)
+
+
 def test_incomplete_main_call_blocks_export(tmp_path: Path) -> None:
     root = "root:session"
     _actf(tmp_path, "answer")

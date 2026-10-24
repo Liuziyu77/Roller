@@ -127,7 +127,7 @@ def _time(value: Any) -> datetime:
     return timestamp
 
 
-def _text_blocks(content: Any, *, kinds: set[str]) -> str:
+def _text_blocks(content: Any, *, kinds: set[str], separator: str = "\n") -> str:
     if isinstance(content, str):
         return content
     if not isinstance(content, list):
@@ -137,7 +137,7 @@ def _text_blocks(content: Any, *, kinds: set[str]) -> str:
         if not isinstance(block, Mapping) or block.get("type") not in kinds or not isinstance(block.get("text"), str):
             raise SFTConversionError("model input contains non-text content")
         texts.append(block["text"])
-    return "\n".join(texts)
+    return separator.join(texts)
 
 
 def _tool_call(identifier: Any, name: Any, arguments: Any, kind: str = "function") -> dict[str, Any]:
@@ -210,7 +210,8 @@ def _responses_item(item: Mapping[str, Any]) -> list[dict[str, Any]]:
         role = item.get("role")
         if role not in {"system", "developer", "user", "assistant"}:
             raise SFTConversionError(f"unsupported Responses role: {role}")
-        value = _text_blocks(item.get("content", []), kinds={"input_text", "output_text"})
+        value = _text_blocks(item.get("content", []), kinds={"input_text", "output_text"},
+                             separator="")
         if role == "assistant":
             return [{"role": role, "reasoning_content": "", "content": value, "tool_calls": []}]
         return [{"role": role, "content": value}]
@@ -340,7 +341,13 @@ def _target_messages_from_call(call: Mapping[str, Any]) -> list[dict[str, Any]]:
             result.extend(_responses_item(item))
         if not result or any(message["role"] != "assistant" for message in result):
             raise SFTConversionError("Responses output has no representable assistant target")
-        return result
+        # Codex can emit text and tool calls as separate items in one response.
+        # ACTF represents that response as one assistant step.
+        return [{"role": "assistant", "reasoning_content": "",
+                 "content": "\n\n".join(message["content"] for message in result
+                                        if message["content"]),
+                 "tool_calls": [tool for message in result
+                                for tool in message["tool_calls"]]}]
     if call.get("protocol") == "openai-chat-completions":
         choices = output.get("choices")
         if not isinstance(choices, list) or len(choices) != 1:

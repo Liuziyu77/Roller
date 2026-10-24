@@ -260,6 +260,39 @@ def test_single_user_tool_round_trip_across_compaction(tmp_path: Path, harness: 
     assert "read a" not in json.dumps(rows[1])
 
 
+def test_codex_text_and_tool_items_export_through_collector(tmp_path: Path) -> None:
+    request = RunRequest(index=0, task=Task(id="mixed-output", prompts=("task",),
+                                           source_index=0), model="model", timeout_seconds=30)
+    collector = Collector(CollectionConfig(run_dir=tmp_path), lambda slot: None)
+    sample = collector._sample_dir(request)
+    sample.mkdir(parents=True)
+    (sample / "trace.jsonl").write_text(json.dumps({
+        "type": "compacted", "timestamp": "2026-10-17T00:00:03Z",
+        "payload": {"window_id": "window-1"}}) + "\n", encoding="utf-8")
+    (sample / "trace_ACTF.json").write_text(json.dumps({
+        "schema_version": "ACTF_v1.0", "steps": [
+            {"step_id": 1, "assistant_content": {"content": "ACK", "tool_calls": []}},
+            {"step_id": 2, "assistant_content": {"content": "Reading now", "tool_calls": [
+                {"name": "read", "arguments": {"path": "a"}}]}},
+        ]}), encoding="utf-8")
+    calls = [_call("codex", 1, [_message("codex", "user", "task")], "ACK"),
+             _call("codex", 4, [_message("codex", "user", "summary")], "Reading now")]
+    calls[1]["output"]["output"].append({"type": "function_call", "call_id": "tool-1",
+        "name": "read", "arguments": '{"path":"a"}'})
+    capture = _write_capture(sample, calls)
+    result = collector._finalize_sample(request, sample, "codex", HarnessResult(
+        status="ok", elapsed_seconds=0.1, trace_path=str(sample / "trace.jsonl"),
+        trajectory_path=str(sample / "trace_ACTF.json"), metadata={"capture": capture}),
+        [], "2026-10-17T00:00:00Z")
+    validate_capture(sample, capture)
+    validate_resumable_sample(sample, request, result)
+    records = [json.loads((sample / part["path"]).read_text())
+               for part in result["trajectory"]["sft_segments"]]
+    assert len(records) == 2
+    assert records[1]["messages"][-1]["content"] == "Reading now"
+    assert records[1]["messages"][-1]["tool_calls"][0]["id"] == "tool-1"
+
+
 def test_linear_multimodal_sample_keeps_original_sft_export(tmp_path: Path) -> None:
     request = RunRequest(index=0, task=Task(id="image", prompts=("read",), source_index=0),
                          model="model", timeout_seconds=30)
