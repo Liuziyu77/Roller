@@ -84,7 +84,7 @@ By default a run starts `--parallel` rollouts at once. Start-up needs much more 
 roller collect ... --parallel 24 --launch-interval 8
 ```
 
-- This holds for the whole run, not only the first wave: N launches take about N × `--launch-interval` seconds, and when rollouts are shorter than about `--parallel × --launch-interval`, fewer than `--parallel` run at once.
+- This holds for the whole run, not only the first wave: N launches take at least (N − 1) × `--launch-interval` seconds, and when rollouts are shorter than about `--parallel × --launch-interval`, fewer than `--parallel` run at once.
 - Samples skipped by `--resume` take no launch turn.
 - On interrupt, rollouts still waiting for their turn are cancelled and leave no sample directory. Pending retries stop too, at any interval: the sample keeps its last failure and `--resume` reruns it.
 - The value is recorded in `info.json`, not `lock.json`, so it can change on `--resume`.

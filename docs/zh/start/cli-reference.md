@@ -84,7 +84,7 @@ roller collect --tasks tasks.jsonl --model provider/model
 roller collect ... --parallel 24 --launch-interval 8
 ```
 
-- 对整个 run 生效，不只是第一批：N 次启动约需 N × `--launch-interval` 秒；rollout 短于约 `--parallel × --launch-interval` 时，并发达不到 `--parallel`。
+- 对整个 run 生效，不只是第一批：N 次启动至少需要 (N − 1) × `--launch-interval` 秒；rollout 短于约 `--parallel × --launch-interval` 时，并发达不到 `--parallel`。
 - `--resume` 跳过的 sample 不占用启动间隔。
 - 中断时，仍在等待的 rollout 直接取消，不留下 sample 目录；无论间隔多少，待进行的重试也会取消，sample 保留上次失败的结果，由 `--resume` 重跑。
 - 该值记录在 `info.json`，不写入 `lock.json`，`--resume` 时可以换值。
