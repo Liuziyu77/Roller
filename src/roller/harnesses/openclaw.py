@@ -848,14 +848,42 @@ exec node --input-type=module -e "$1"
                 f"task setup command {command!r}",
             )
 
+    def _gateway_port_probe(self) -> str:
+        """Python snippet exiting 0 when something accepts on the gateway port."""
+        return (
+            "import socket,sys; s=socket.socket(); s.settimeout(.2); "
+            f"sys.exit(s.connect_ex(('127.0.0.1',{self.gateway_port})))"
+        )
+
+    def _ensure_gateway_port_free(self, container: str) -> None:
+        """Refuse to start a gateway on a port something already listens on.
+
+        Under host networking the readiness probe cannot tell this rollout's
+        gateway from another one on the same port: the agent would connect to
+        that gateway, be refused, and quietly run without its own.
+        """
+        if self.config.network != "host":
+            return  # the gateway does not share the host's ports
+        try:
+            result = self.runtime.run(
+                ["exec", container, "python3", "-c", self._gateway_port_probe()],
+                timeout=self._bounded(10, "OpenClaw gateway port check"),
+            )
+        except subprocess.TimeoutExpired:
+            return  # inconclusive; the readiness wait still bounds startup
+        if result.returncode == 0:
+            raise RuntimeError(
+                f"OpenClaw gateway port {self.gateway_port} is already in use on this "
+                "host by another server, a run of an older Roller version, or a "
+                "container left over from an earlier rollout of this run (check "
+                "`docker ps`)"
+            )
+
     def _wait_for_gateway(self, container: str, process: subprocess.Popen[str]) -> None:
         deadline = time.monotonic() + self._bounded(
             self.config.gateway_startup_timeout, "OpenClaw gateway startup"
         )
-        probe = (
-            "import socket,sys; s=socket.socket(); s.settimeout(.2); "
-            f"sys.exit(s.connect_ex(('127.0.0.1',{self.gateway_port})))"
-        )
+        probe = self._gateway_port_probe()
         while time.monotonic() < deadline:
             if process.poll() is not None:
                 raise RuntimeError(f"OpenClaw gateway exited early with code {process.returncode}")
@@ -1222,6 +1250,7 @@ class OpenClawSession(InteractiveSession):
                 ],
                 f"gateway token setup ({setting})",
             )
+        self.harness._ensure_gateway_port_free(self.container)
         self.gateway_process = self.harness.runtime.popen(
             [
                 "exec",

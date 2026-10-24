@@ -155,7 +155,7 @@ http_proxy                https_proxy               no_proxy
 | `--openclaw-model-request-timeout` | OpenClaw 默认值 | 模型请求超时（秒），同时作为流式响应的空闲超时，需要 `--model-config` |
 | `--openclaw-config-set KEY=VALUE` | 无 | 在每个 OpenClaw 容器中执行 `openclaw config set KEY VALUE`，可重复 |
 | `--network` | `host` | 容器网络模式 |
-| `--gateway-port` | `18789` | gateway 起始端口 |
+| `--gateway-port` | 自动 | gateway 起始端口。省略时从 `18789` 起选第一段空闲范围；显式指定时范围最好低于 `32768`，见第 10 节 (4) |
 | `--gateway-port-step` | `10` | worker 之间的端口间隔 |
 | `--gateway-startup-timeout` | `240` | 等待 gateway 就绪的秒数 |
 | `--session-id` | `roller` | OpenClaw session ID 前缀 |
@@ -365,7 +365,14 @@ roller collect \
 
 **(4) gateway 端口冲突**
 
-如果出现端口已被占用的错误，可以更换 OpenClaw gateway 的起始端口：
+使用默认的 `--network host` 时，每个 rollout 的 OpenClaw gateway 都监听在宿主机的 `起始端口 + slot × --gateway-port-step` 上（启用 OpenClaw 用户模拟器时，slot 数是 `--parallel` 的两倍）。同一台机器上同时跑多个 run 时，端口范围不能重叠。
+
+- 省略 `--gateway-port` 时，Roller 从 `18789` 起，选第一段既没被其他 Roller run 预留、也没被占用的范围，并在整个 run 期间持有预留。预留通过 `/tmp/roller-gateway-ports/` 下的锁文件实现，进程退出（包括崩溃）时自动释放。这个路径是固定的，不随 `$TMPDIR` 变化，这样同一台机器上的所有 run 都能看到彼此的预留。实际使用的起始端口记录在 `info.json` 中。
+- 显式指定的 `--gateway-port` 如果和其他 run 的预留重叠，或者有端口已被占用，run 会在写任何文件之前报错。显式指定的范围最好低于内核的临时端口范围（Linux 默认从 `32768` 起）：Roller 的本地代理监听在临时端口上，可能在 run 中途占用范围内的某个端口。
+- run 中途如果有其他程序占用了某个 rollout 的端口，该 rollout 会在启动 gateway 之前报 `OpenClaw gateway port ... is already in use`，不会连到别人的 gateway 上。
+- 起始端口和 `--gateway-port-step` 都不参与 `lock.json` 比对，`--resume` 时可以得到不同的范围。
+
+不使用锁文件的程序（包括更早版本的 Roller），只有正在监听的端口能被发现。和这类 run 同时运行时，最好显式分开端口范围：
 
 ```bash
 roller collect ... --gateway-port 22000

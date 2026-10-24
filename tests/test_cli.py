@@ -14,6 +14,8 @@ from roller.models import RunRequest, Task, UserSimulatorSpec
 from roller.thinking_capabilities import ThinkingCapabilities, ThinkingCapability
 from roller.harnesses.codex import codex_effort
 
+from test_gateway_ports import isolate_gateway_ports
+
 
 class CliTests(unittest.TestCase):
     def test_review_preflight_matrix_uses_runtime_endpoint_and_codex_rules(self):
@@ -506,6 +508,7 @@ class LaunchIntervalCliTests(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
+        isolate_gateway_ports(self)
         self.tasks = self.root / "tasks.jsonl"
         self.tasks.write_text(json.dumps({"id": "task", "prompt": "hi"}) + "\n")
         self.intervals = []
