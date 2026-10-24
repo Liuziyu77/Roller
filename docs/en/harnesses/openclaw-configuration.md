@@ -150,6 +150,8 @@ This section lists the flags that need special attention when running OpenClaw. 
 | `--container-user` | `0` | User inside the one-shot task container. `image` uses the image default user |
 | `--docker-binary` | `docker` | Docker CLI name or path |
 | `--model-config` | none | Custom provider/model JSON |
+| `--openclaw-model-request-timeout` | OpenClaw default | Model request timeout in seconds, also used as the streaming idle timeout. Requires `--model-config` |
+| `--openclaw-config-set KEY=VALUE` | none | Run `openclaw config set KEY VALUE` in every OpenClaw container. Repeatable |
 | `--network` | `host` | Container network mode |
 | `--gateway-port` | `18789` | Gateway start port |
 | `--gateway-port-step` | `10` | Port interval between workers |
@@ -164,6 +166,20 @@ This section lists the flags that need special attention when running OpenClaw. 
 | `--set-image-model` / `--no-set-image-model` | on | Whether to set the OpenClaw image model |
 | `--keep-container-on-error` | off | Keep the container after an error for debugging |
 | `--collect-path` | none | Legacy: also collect an absolute path from the container |
+
+To change an OpenClaw setting that Roller has no dedicated flag for, use `--openclaw-config-set`:
+
+```bash
+roller collect ... \
+  --openclaw-config-set diagnostics.stuckSessionAbortMs=2700000 \
+  --openclaw-config-set agents.defaults.timeoutSeconds=3600
+```
+
+- Settings are applied after Roller's own settings and before the gateway starts, in every OpenClaw container of the run, including an OpenClaw user simulator.
+- Values follow OpenClaw's parsing: anything that parses as JSON/JSON5 is written with that type, everything else as a string. A path OpenClaw does not recognize makes the rollout fail during startup.
+- Paths Roller manages are rejected with a pointer to the Roller flag to use instead, for example `gateway.port` (`--gateway-port`), `models` (`--model-config`), and `agents.defaults.thinkingDefault` (`--thinking`).
+- Settings are recorded in `lock.json` and `info.json`, with credential-like values redacted. Use a new `--run-name` after changing them; `--resume` refuses a run whose settings differ.
+- Do not pass API keys this way: values appear on the `docker exec` command line.
 
 Check the flags available in the installed version:
 
@@ -356,3 +372,21 @@ roller collect ... --gateway-port 22000
 **(5) The task replied successfully but the sample failed**
 
 Inspect the sample `info.json` and `trace.jsonl` first. Common causes are a trajectory-conversion failure or symlinks and special files that cannot be collected safely from the output directory. See [Trajectory output file guide](../traces/trajectory-outputs.md) and [Result storage](../tasks/task-bundle-and-storage.md#5-output-collection) for the detailed rules.
+
+**(6) Interrupted while writing long tool arguments: `LLM idle timeout (120s)` or `OPENCLAW_DIRECT_ABORT`**
+
+Some OpenAI-compatible services do not stream tool-call arguments and send them in one piece once they are complete. When the agent writes a large file in one call, the connection can stay silent for minutes and trip two OpenClaw watchdogs:
+
+- the model idle timeout, 120 seconds by default, reported as `LLM idle timeout (120s): no response from model`;
+- stuck-session recovery, which aborts the run after 6 minutes without stream progress, reported as `AbortError: agent run aborted: code=OPENCLAW_DIRECT_ABORT`, with `stalled session ... reason=active_work_without_progress` in the gateway log.
+
+Raise both:
+
+```bash
+roller collect ... \
+  --timeout 3600 \
+  --openclaw-model-request-timeout 3000 \
+  --openclaw-config-set diagnostics.stuckSessionAbortMs=2700000
+```
+
+`--openclaw-model-request-timeout` also caps the total duration of one model request, so it must cover the model's longest single call, reasoning plus the tool arguments it writes.

@@ -126,6 +126,7 @@ This table lists Codex-specific runtime flags only. See section 3 for API addres
 | --- | --- | --- |
 | `--docker-image` / `--codex-image` | `ROLLER_CODEX_IMAGE` or `roller-codex:0.149.0` | Override the Codex image |
 | `--codex-config` | None | Inject a native `config.toml` into the isolated container |
+| `--codex-config-set KEY=VALUE` | None | Append `-c KEY=VALUE` to every `codex exec`. Repeatable |
 | `--reasoning-summary` | Codex default | `auto`, `concise`, `detailed`, or `none` |
 | `--codex-web-search` | `disabled` | `disabled`, `cached`, or `live` |
 | `--codex-websockets` / `--no-codex-websockets` | Off | Whether a custom provider uses Responses WebSocket |
@@ -140,6 +141,18 @@ roller collect ... \
 ```
 
 Roller copies this file into the task container. Command-line values for the API address, model, thinking effort, reasoning summary, and Web Search take priority over matching file settings. The example also contains `model_verbosity` and a disabled MCP server template. Use a new `--run-name` after changing the file, and do not store API keys in it.
+
+To change a few settings without a file, use `--codex-config-set`:
+
+```bash
+roller collect ... \
+  --codex-config-set 'model_verbosity="low"' \
+  --codex-config-set model_providers.roller_api.stream_idle_timeout_ms=1800000
+```
+
+- Each setting is appended as `-c KEY=VALUE` after Roller's own overrides, on every turn. Values are parsed as TOML and fall back to a plain string, so quote string values.
+- With `--api-base`, the model provider Roller defines is named `roller_api`. Its `stream_idle_timeout_ms` (300000 ms by default), `stream_max_retries` (5 by default), `request_max_retries` (4 by default), and similar keys can be changed. Keys Roller manages, such as `base_url`, `wire_api`, and `env_key`, are rejected with a pointer to the Roller flag to use instead.
+- Settings are recorded in `lock.json` and `info.json`, with credential-like values redacted. Use a new `--run-name` after changing them, and do not pass API keys this way.
 
 ## 5. Multimodal capabilities
 
@@ -263,3 +276,12 @@ Codex always sends Responses requests with `store: false` and replays earlier `r
 **(5) `apply_patch: command not found`**
 
 Codex adds its `apply_patch` alias to `PATH` at runtime, but Debian's `/etc/profile` resets `PATH` in the login shells Codex uses to run commands. The current `docker/codex/Dockerfile` installs a fixed `/usr/local/bin/apply_patch` alias, so rebuild images made before this change.
+
+**(6) `idle timeout waiting for SSE` or `stream disconnected before completion`**
+
+Codex drops a streaming response after 5 minutes without data (`stream_idle_timeout_ms`, 300000 ms by default) and retries up to 5 times, each retry making the model generate again. Services that do not stream tool-call arguments trip this when the model writes long arguments. With `--api-base`, raise the idle timeout of Roller's provider:
+
+```bash
+roller collect ... \
+  --codex-config-set model_providers.roller_api.stream_idle_timeout_ms=1800000
+```

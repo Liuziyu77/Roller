@@ -19,6 +19,10 @@ from roller.artifacts import ArtifactCollectionResult
 from roller.codex_actf import convert_codex_trace
 from roller.codex_capture import retain_root_tools
 from roller.harnesses.base import InteractiveHarness, InteractiveSession, TurnResult
+from roller.harnesses.config_overrides import (
+    ConfigAssignment,
+    validate_config_assignments,
+)
 from roller.harnesses.container import (
     CONTEXT_CONTAINER_PATH,
     ENV_NAME as ENV_NAME_RE,
@@ -44,6 +48,30 @@ CODEX_HOME_CONTAINER_PATH = "/roller/codex-home"
 # Codex always replays reasoning.encrypted_content with store=false; give
 # relayed endpoints a few chances before one rejected replay ends the rollout.
 CODEX_ENCRYPTED_CONTENT_RETRIES = 3
+# Provider Roller defines for --api-base. Its other keys (stream_idle_timeout_ms,
+# request_max_retries, ...) stay open to --codex-config-set.
+CODEX_PROVIDER_ID = "roller_api"
+# Config paths Roller passes on every ``codex exec``, with the option that
+# controls each. ``--codex-config-set`` may not touch them.
+ROLLER_MANAGED_CODEX_CONFIG: dict[str, str] = {
+    "model": "use --model",
+    "model_provider": "use --codex-api-base",
+    f"model_providers.{CODEX_PROVIDER_ID}.name": "use --codex-api-base",
+    f"model_providers.{CODEX_PROVIDER_ID}.base_url": "use --codex-api-base",
+    f"model_providers.{CODEX_PROVIDER_ID}.env_key": "use --codex-api-key-env",
+    f"model_providers.{CODEX_PROVIDER_ID}.wire_api": "Roller uses the Responses API",
+    f"model_providers.{CODEX_PROVIDER_ID}.supports_websockets": (
+        "use --codex-websockets / --no-codex-websockets"
+    ),
+    "disable_response_storage": "Roller disables response storage",
+    "model_reasoning_effort": "use --thinking",
+    "model_reasoning_summary": "use --reasoning-summary",
+    "web_search": "use --codex-web-search",
+    "features.unified_exec": "Roller enables it for every rollout",
+    "features.multi_agent": "use --capture-calls",
+    "sandbox_mode": "Roller bypasses the sandbox inside the disposable container",
+    "approval_policy": "Roller bypasses approvals inside the disposable container",
+}
 
 
 def codex_effort(value: str | None) -> str | None:
@@ -96,8 +124,19 @@ class CodexConfig:
     keep_thinking: bool = True
     keep_container_on_error: bool = False
     docker_binary: str = "docker"
+    # Extra ``codex exec -c KEY=VALUE`` overrides, after Roller's own.
+    config_set: tuple[ConfigAssignment, ...] = ()
 
     def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "config_set",
+            validate_config_assignments(
+                self.config_set,
+                ROLLER_MANAGED_CODEX_CONFIG,
+                flag="--codex-config-set",
+            ),
+        )
         object.__setattr__(
             self,
             "reasoning_effort",
@@ -399,23 +438,25 @@ class CodexHarness(ContainerCommands, InteractiveHarness):
             command.extend(
                 [
                     "-c",
-                    'model_provider="roller_api"',
+                    f'model_provider="{CODEX_PROVIDER_ID}"',
                     "-c",
-                    'model_providers.roller_api.name="Roller API"',
+                    f'model_providers.{CODEX_PROVIDER_ID}.name="Roller API"',
                     "-c",
-                    "model_providers.roller_api.base_url="
+                    f"model_providers.{CODEX_PROVIDER_ID}.base_url="
                     f"{json.dumps(api_base)}",
                     "-c",
-                    'model_providers.roller_api.env_key="OPENAI_API_KEY"',
+                    f'model_providers.{CODEX_PROVIDER_ID}.env_key="OPENAI_API_KEY"',
                     "-c",
-                    'model_providers.roller_api.wire_api="responses"',
+                    f'model_providers.{CODEX_PROVIDER_ID}.wire_api="responses"',
                     "-c",
-                    "model_providers.roller_api.supports_websockets="
+                    f"model_providers.{CODEX_PROVIDER_ID}.supports_websockets="
                     f"{str(self.config.supports_websockets).lower()}",
                     "-c",
                     "disable_response_storage=true",
                 ]
             )
+        for key, value in self.config.config_set:
+            command.extend(["-c", f"{key}={value}"])
         command.extend(["--", prompt])
         return command
 

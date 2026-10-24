@@ -152,6 +152,8 @@ http_proxy                https_proxy               no_proxy
 | `--container-user` | `0` | 一次性 task 容器用户。`image` 使用镜像默认用户 |
 | `--docker-binary` | `docker` | Docker CLI 名称或路径 |
 | `--model-config` | 无 | 自定义模型服务和模型 JSON |
+| `--openclaw-model-request-timeout` | OpenClaw 默认值 | 模型请求超时（秒），同时作为流式响应的空闲超时，需要 `--model-config` |
+| `--openclaw-config-set KEY=VALUE` | 无 | 在每个 OpenClaw 容器中执行 `openclaw config set KEY VALUE`，可重复 |
 | `--network` | `host` | 容器网络模式 |
 | `--gateway-port` | `18789` | gateway 起始端口 |
 | `--gateway-port-step` | `10` | worker 之间的端口间隔 |
@@ -166,6 +168,20 @@ http_proxy                https_proxy               no_proxy
 | `--set-image-model` / `--no-set-image-model` | 开启 | 是否设置 OpenClaw image model |
 | `--keep-container-on-error` | 关闭 | 出错后保留容器以便排查 |
 | `--collect-path` | 无 | Legacy：额外回收容器绝对路径 |
+
+需要调整 Roller 没有单独参数的 OpenClaw 设置时，使用 `--openclaw-config-set`：
+
+```bash
+roller collect ... \
+  --openclaw-config-set diagnostics.stuckSessionAbortMs=2700000 \
+  --openclaw-config-set agents.defaults.timeoutSeconds=3600
+```
+
+- 在 Roller 写完自己的设置之后、gateway 启动之前执行，作用于本次 run 的每个 OpenClaw 容器，包括 OpenClaw 用户模拟器。
+- 值按 OpenClaw 的规则解析：能解析为 JSON/JSON5 的按对应类型写入，否则作为字符串。OpenClaw 不认识的路径会让 rollout 在启动阶段报错。
+- Roller 自己管理的路径会被拒绝，并提示应使用的 Roller 参数，例如 `gateway.port`（`--gateway-port`）、`models`（`--model-config`）、`agents.defaults.thinkingDefault`（`--thinking`）。
+- 设置会写入 `lock.json` 和 `info.json`，键名像凭证的值会被脱敏。修改设置后请使用新的 `--run-name`，`--resume` 会拒绝设置不一致的 run。
+- 不要用它传 API Key：值会出现在 `docker exec` 的命令行中。
 
 全部参数以当前安装版本为准：
 
@@ -358,3 +374,21 @@ roller collect ... --gateway-port 22000
 **(5) 任务成功回复但 sample 失败**
 
 先查看 sample 的 `info.json` 和 `trace.jsonl`。常见原因包括轨迹转换失败，或者输出目录中包含不能安全回收的符号链接和特殊文件。详细规则见 [轨迹产出文件指南](../traces/trajectory-outputs.md)和[结果存储](../tasks/task-bundle-and-storage.md#5-输出回收)。
+
+**(6) 生成长工具参数时被中断：`LLM idle timeout (120s)` 或 `OPENCLAW_DIRECT_ABORT`**
+
+有些 OpenAI 兼容服务不流式返回工具调用参数，要等参数全部生成完才一次性下发。Agent 一次写入一个大文件时，连接上可能连续几分钟没有数据，触发 OpenClaw 的两个看门狗：
+
+- 模型空闲超时，默认 120 秒，报 `LLM idle timeout (120s): no response from model`；
+- 卡死会话恢复，流连续 6 分钟没有进展就中止 run，报 `AbortError: agent run aborted: code=OPENCLAW_DIRECT_ABORT`，gateway 日志中有 `stalled session ... reason=active_work_without_progress`。
+
+两者需要同时放宽：
+
+```bash
+roller collect ... \
+  --timeout 3600 \
+  --openclaw-model-request-timeout 3000 \
+  --openclaw-config-set diagnostics.stuckSessionAbortMs=2700000
+```
+
+`--openclaw-model-request-timeout` 同时也是单次模型请求的总时长上限，不能小于模型最长一次调用（推理加写出工具参数）所需的时间。
