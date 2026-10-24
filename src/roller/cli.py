@@ -1173,11 +1173,7 @@ def _collect(args: argparse.Namespace) -> int:
             "collect_paths": args.collect_path,
             **({"capture_calls": True, "capture_debug": args.capture_debug} if openclaw_config.capture_calls else {}),
             # Absent when unused so locks written before the option still match.
-            **(
-                {"config_set": recorded_config_assignments(openclaw_config.config_set)}
-                if openclaw_config.config_set
-                else {}
-            ),
+            **({"config_set": recorded_config_assignments(openclaw_config.config_set)} if openclaw_config.config_set else {}),
         }
     if codex_config is not None:
         harness_configurations["codex"] = {
@@ -1196,12 +1192,7 @@ def _collect(args: argparse.Namespace) -> int:
             "supports_websockets": args.codex_websockets,
             "pass_env_names": list(codex_config.pass_env),
             **({"capture_calls": True, "capture_debug": args.capture_debug} if codex_config.capture_calls else {}),
-            # Absent when unused so locks written before the option still match.
-            **(
-                {"config_set": recorded_config_assignments(codex_config.config_set)}
-                if codex_config.config_set
-                else {}
-            ),
+            **({"config_set": recorded_config_assignments(codex_config.config_set)} if codex_config.config_set else {}),
         }
     if claude_code_config is not None:
         harness_configurations["claude-code"] = {

@@ -15,7 +15,7 @@ from roller.wire_trace import redact_sensitive_values
 ConfigAssignment = tuple[str, str]
 
 # ``a.b``, ``a["b"]`` and ``a[b]`` all name the same segments.
-_PATH_SEGMENT = re.compile(r"""\[\s*(?:"([^"]*)"|'([^']*)'|([^\]]*))\s*\]|([^.\[\]]+)""")
+_PATH_SEGMENT = re.compile(r"""\[(?:"([^"]*)"|'([^']*)'|([^\]]*))\]|([^.\[\]]+)""")
 
 
 def parse_config_assignment(text: str) -> ConfigAssignment:
@@ -25,20 +25,35 @@ def parse_config_assignment(text: str) -> ConfigAssignment:
     key = key.strip()
     if not separator or not key:
         raise ValueError(f"expected KEY=VALUE, got {text!r}")
-    if key.startswith("-") or any(character.isspace() for character in key):
-        raise ValueError(f"invalid configuration key: {key!r}")
-    if not config_path(key):
-        raise ValueError(f"invalid configuration key: {key!r}")
+    config_path(key)
     return key, value
 
 
 def config_path(key: str) -> tuple[str, ...]:
-    """Return the segments of a dotted or bracketed configuration path."""
+    """Return the segments of a dotted or bracketed configuration path.
 
-    return tuple(
+    Rejects keys that are empty, start with ``-``, or contain whitespace or a
+    backslash. OpenClaw unescapes backslashes, so ``g\\ateway.port`` would reach
+    a managed path without matching it here.
+    """
+
+    path = tuple(
         next(group for group in match.groups() if group is not None)
         for match in _PATH_SEGMENT.finditer(key)
     )
+    if (
+        not path
+        or key.startswith("-")
+        or "\\" in key
+        or any(character.isspace() for character in key)
+    ):
+        raise ValueError(f"invalid configuration key: {key!r}")
+    return path
+
+
+def _overlaps(path: tuple[str, ...], other: tuple[str, ...]) -> bool:
+    shared = min(len(path), len(other))
+    return path[:shared] == other[:shared]
 
 
 def validate_config_assignments(
@@ -47,31 +62,28 @@ def validate_config_assignments(
     *,
     flag: str,
 ) -> tuple[ConfigAssignment, ...]:
-    """Reject duplicate keys and keys that overlap a Roller-managed path.
+    """Reject keys that overlap each other or a Roller-managed path.
 
     ``managed`` maps each path Roller writes to a hint naming the Roller option
-    that controls it.
+    that controls it. Keys may not overlap each other either: the Harness
+    applies them in order, which the recorded ``{key: value}`` does not keep.
     """
 
-    validated: list[ConfigAssignment] = []
-    seen: dict[tuple[str, ...], str] = {}
-    for key, value in assignments:
+    validated = tuple(assignments)
+    for index, (key, _) in enumerate(validated):
         path = config_path(key)
-        if not path:
-            raise ValueError(f"{flag}: invalid configuration key: {key!r}")
-        if path in seen:
-            raise ValueError(f"{flag} sets {key!r} more than once")
-        seen[path] = key
+        for earlier, _ in validated[:index]:
+            if _overlaps(path, config_path(earlier)):
+                raise ValueError(
+                    f"{flag} cannot set {key!r}: it overlaps {earlier!r}, set before it"
+                )
         for managed_key, hint in managed.items():
-            managed_path = config_path(managed_key)
-            shared = min(len(path), len(managed_path))
-            if path[:shared] == managed_path[:shared]:
+            if _overlaps(path, config_path(managed_key)):
                 raise ValueError(
                     f"{flag} cannot set {key!r}: it overlaps {managed_key!r}, "
                     f"which Roller sets itself ({hint})"
                 )
-        validated.append((key, value))
-    return tuple(validated)
+    return validated
 
 
 def recorded_config_assignments(

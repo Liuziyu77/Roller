@@ -151,8 +151,9 @@ roller collect ... \
 ```
 
 - Each setting is appended as `-c KEY=VALUE` after Roller's own overrides, on every turn. Values are parsed as TOML and fall back to a plain string, so quote string values.
-- With `--api-base`, the model provider Roller defines is named `roller_api`. Its `stream_idle_timeout_ms` (300000 ms by default), `stream_max_retries` (5 by default), `request_max_retries` (4 by default), and similar keys can be changed. Keys Roller manages, such as `base_url`, `wire_api`, and `env_key`, are rejected with a pointer to the Roller flag to use instead.
-- Settings are recorded in `lock.json` and `info.json`, with credential-like values redacted. Use a new `--run-name` after changing them, and do not pass API keys this way.
+- Codex silently ignores keys it does not recognize, so check the spelling: a misspelled key has no effect, and only a value of the wrong type is an error.
+- With `--api-base` or `--codex-api-base`, the model provider Roller defines is named `roller_api`. Its `stream_idle_timeout_ms` (300000 ms by default), `stream_max_retries` (5 by default), `request_max_retries` (4 by default), and similar keys can be changed; without either flag, `model_providers.roller_api.*` keys are rejected. Keys Roller manages, such as `base_url`, `wire_api`, and `env_key`, are rejected with a pointer to the Roller flag to use instead, and settings may not overlap each other.
+- Settings are recorded in `lock.json` and `info.json`. A value is redacted only when its own key name looks like a credential (`token`, `api_key`, `password`, `secret`, ...); inline TOML table values are recorded verbatim. Use a new `--run-name` after changing them, and do not pass secrets this way.
 
 ## 5. Multimodal capabilities
 
@@ -279,7 +280,7 @@ Codex adds its `apply_patch` alias to `PATH` at runtime, but Debian's `/etc/prof
 
 **(6) `idle timeout waiting for SSE` or `stream disconnected before completion`**
 
-Codex drops a streaming response after 5 minutes without data (`stream_idle_timeout_ms`, 300000 ms by default) and retries up to 5 times, each retry making the model generate again. Services that do not stream tool-call arguments trip this when the model writes long arguments. With `--api-base`, raise the idle timeout of Roller's provider:
+Codex drops a streaming response after 5 minutes without data (`stream_idle_timeout_ms`, 300000 ms by default) and retries up to 5 times, each retry making the model generate again. Services that do not stream tool-call arguments trip this when the model writes long arguments. With `--api-base` or `--codex-api-base`, raise the idle timeout of Roller's provider:
 
 ```bash
 roller collect ... \

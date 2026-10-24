@@ -171,15 +171,15 @@ To change an OpenClaw setting that Roller has no dedicated flag for, use `--open
 
 ```bash
 roller collect ... \
-  --openclaw-config-set diagnostics.stuckSessionAbortMs=2700000 \
-  --openclaw-config-set agents.defaults.timeoutSeconds=3600
+  --openclaw-config-set diagnostics.stuckSessionAbortMs=2700000
 ```
 
-- Settings are applied after Roller's own settings and before the gateway starts, in every OpenClaw container of the run, including an OpenClaw user simulator.
+- Settings are applied after Roller's configuration step, in every OpenClaw container of the run, including an OpenClaw user simulator. Roller then writes the per-rollout gateway token and starts the gateway.
 - Values follow OpenClaw's parsing: anything that parses as JSON/JSON5 is written with that type, everything else as a string. A path OpenClaw does not recognize makes the rollout fail during startup.
-- Paths Roller manages are rejected with a pointer to the Roller flag to use instead, for example `gateway.port` (`--gateway-port`), `models` (`--model-config`), and `agents.defaults.thinkingDefault` (`--thinking`).
-- Settings are recorded in `lock.json` and `info.json`, with credential-like values redacted. Use a new `--run-name` after changing them; `--resume` refuses a run whose settings differ.
-- Do not pass API keys this way: values appear on the `docker exec` command line.
+- Paths Roller manages are rejected with a pointer to the Roller flag to use instead, for example `gateway.port` (`--gateway-port`), `models` (`--model-config`), and `agents.defaults.thinkingDefault` (`--thinking`). Settings may not overlap each other either, such as `agents.defaults.compaction` together with `agents.defaults.compaction.reserveTokens`.
+- Roller's `--timeout` governs the agent turn: Roller passes the remaining budget to `openclaw agent --timeout`, which overrides `agents.defaults.timeoutSeconds`.
+- Settings are recorded in `lock.json` and `info.json`. A value is redacted only when its own key name looks like a credential (`token`, `apiKey`, `password`, `secret`, ...); JSON object values are recorded verbatim. Use a new `--run-name` after changing them; `--resume` refuses a run whose settings differ.
+- Do not pass secrets this way: values also appear on the `docker exec` command line.
 
 Check the flags available in the installed version:
 

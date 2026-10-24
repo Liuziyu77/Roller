@@ -799,43 +799,37 @@ class OpenClawHelpersTests(unittest.TestCase):
             result = harness.run(request, Path(temporary), attempt=1)
 
         self.assertEqual(result.status, "ok", result.error)
-        config_sets = [
-            index
-            for index, command in enumerate(runtime.commands)
-            if command[2:5] == ["openclaw", "config", "set"]
-        ]
+        commands = runtime.commands
         overrides = [
-            runtime.commands[index][5:]
-            for index in config_sets
-            if runtime.commands[index][5] == "--"
+            index
+            for index, command in enumerate(commands)
+            if command[2:6] == ["openclaw", "config", "set", "--"]
         ]
         self.assertEqual(
-            overrides,
+            [commands[index][6:] for index in overrides],
             [
-                ["--", "diagnostics.stuckSessionAbortMs", "2700000"],
-                ["--", "agents.defaults.timeoutSeconds", "-1"],
+                ["diagnostics.stuckSessionAbortMs", "2700000"],
+                ["agents.defaults.timeoutSeconds", "-1"],
             ],
-        )
-        first_override = next(
-            index for index in config_sets if runtime.commands[index][5] == "--"
         )
         image_model = next(
             index
-            for index in config_sets
-            if "agents.defaults.imageModel.primary" in runtime.commands[index]
+            for index, command in enumerate(commands)
+            if "agents.defaults.imageModel.primary" in command
         )
         gateway = next(
             index
-            for index, command in enumerate(runtime.commands)
+            for index, command in enumerate(commands)
             if any("exec openclaw gateway" in argument for argument in command)
         )
-        self.assertLess(image_model, first_override)
-        self.assertLess(first_override, gateway)
+        self.assertLess(image_model, overrides[0])
+        self.assertLess(overrides[-1], gateway)
 
     def test_config_set_rejects_paths_roller_manages(self) -> None:
         for key, hint in (
             ("gateway.port", "--gateway-port"),
             ("gateway", "--gateway-port"),
+            ("gateway.auth.mode", "token per rollout"),
             ("models.providers.local.baseUrl", "--model-config"),
             ("agents.defaults", "--model"),
             ("agents.defaults.thinkingDefault", "--thinking"),
@@ -852,6 +846,39 @@ class OpenClawHelpersTests(unittest.TestCase):
             )
         )
         self.assertEqual(len(config.config_set), 2)
+
+    def test_every_path_roller_sets_is_managed(self) -> None:
+        runtime = FakeDockerRuntime()
+        harness = OpenClawHarness(
+            OpenClawConfig(
+                docker_image="test-image",
+                wire_trace_mode="off",
+                thinking="high",
+                search_provider="brave",
+                capture_cache_trace=True,
+                set_image_model=True,
+            ),
+            worker_slot=0,
+            runtime=runtime,
+        )
+        request = RunRequest(0, Task("task", ("solve",), 0), "provider/model", 30)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            result = harness.run(request, Path(temporary), attempt=1)
+
+        self.assertEqual(result.status, "ok", result.error)
+        keys = [
+            command[5]
+            for command in runtime.commands
+            if command[2:5] == ["openclaw", "config", "set"]
+        ]
+        self.assertLessEqual(
+            {"gateway.auth.token", "tools.web.search.provider"}, set(keys)
+        )
+        for key in keys:
+            with self.subTest(key=key):
+                with self.assertRaisesRegex(ValueError, "Roller sets itself"):
+                    OpenClawConfig(config_set=((key, "1"),))
 
     def test_harness_passes_task_max_override_without_downgrading(self) -> None:
         task = Task(

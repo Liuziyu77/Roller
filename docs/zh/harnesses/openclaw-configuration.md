@@ -173,15 +173,15 @@ http_proxy                https_proxy               no_proxy
 
 ```bash
 roller collect ... \
-  --openclaw-config-set diagnostics.stuckSessionAbortMs=2700000 \
-  --openclaw-config-set agents.defaults.timeoutSeconds=3600
+  --openclaw-config-set diagnostics.stuckSessionAbortMs=2700000
 ```
 
-- 在 Roller 写完自己的设置之后、gateway 启动之前执行，作用于本次 run 的每个 OpenClaw 容器，包括 OpenClaw 用户模拟器。
+- 在 Roller 的配置步骤之后执行，作用于本次 run 的每个 OpenClaw 容器，包括 OpenClaw 用户模拟器。随后 Roller 再写入本次 rollout 的 gateway token 并启动 gateway。
 - 值按 OpenClaw 的规则解析：能解析为 JSON/JSON5 的按对应类型写入，否则作为字符串。OpenClaw 不认识的路径会让 rollout 在启动阶段报错。
-- Roller 自己管理的路径会被拒绝，并提示应使用的 Roller 参数，例如 `gateway.port`（`--gateway-port`）、`models`（`--model-config`）、`agents.defaults.thinkingDefault`（`--thinking`）。
-- 设置会写入 `lock.json` 和 `info.json`，键名像凭证的值会被脱敏。修改设置后请使用新的 `--run-name`，`--resume` 会拒绝设置不一致的 run。
-- 不要用它传 API Key：值会出现在 `docker exec` 的命令行中。
+- Roller 自己管理的路径会被拒绝，并提示应使用的 Roller 参数，例如 `gateway.port`（`--gateway-port`）、`models`（`--model-config`）、`agents.defaults.thinkingDefault`（`--thinking`）。各项设置之间也不能重叠，例如不能同时设置 `agents.defaults.compaction` 和 `agents.defaults.compaction.reserveTokens`。
+- Agent 每轮的时限由 Roller 的 `--timeout` 决定：Roller 会把剩余时间传给 `openclaw agent --timeout`，它会覆盖 `agents.defaults.timeoutSeconds`。
+- 设置会写入 `lock.json` 和 `info.json`。只有键名本身像凭证（`token`、`apiKey`、`password`、`secret` 等）的值会被脱敏，JSON 对象形式的值按原样记录。修改设置后请使用新的 `--run-name`，`--resume` 会拒绝设置不一致的 run。
+- 不要用它传密钥：值还会出现在 `docker exec` 的命令行中。
 
 全部参数以当前安装版本为准：
 

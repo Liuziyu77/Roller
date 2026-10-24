@@ -151,8 +151,9 @@ roller collect ... \
 ```
 
 - 每项以 `-c KEY=VALUE` 追加在 Roller 自己的覆盖之后，每个 turn 都会传入。值按 TOML 解析，解析失败时作为字符串，所以字符串值建议带引号。
-- 使用 `--api-base` 时，Roller 定义的 model provider 名为 `roller_api`。它的 `stream_idle_timeout_ms`（默认 300000 毫秒）、`stream_max_retries`（默认 5）、`request_max_retries`（默认 4）等键可以调整；`base_url`、`wire_api`、`env_key` 等由 Roller 管理的键会被拒绝，并提示应使用的 Roller 参数。
-- 设置会写入 `lock.json` 和 `info.json`，键名像凭证的值会被脱敏。修改设置后请使用新的 `--run-name`。不要用它传 API Key。
+- Codex 会静默忽略不认识的键，拼错的键不会生效，只有值的类型不对才会报错，请仔细核对键名。
+- 使用 `--api-base` 或 `--codex-api-base` 时，Roller 定义的 model provider 名为 `roller_api`。它的 `stream_idle_timeout_ms`（默认 300000 毫秒）、`stream_max_retries`（默认 5）、`request_max_retries`（默认 4）等键可以调整；两个参数都没给时，`model_providers.roller_api.*` 会被拒绝。`base_url`、`wire_api`、`env_key` 等由 Roller 管理的键会被拒绝，并提示应使用的 Roller 参数；各项设置之间也不能重叠。
+- 设置会写入 `lock.json` 和 `info.json`。只有键名本身像凭证（`token`、`api_key`、`password`、`secret` 等）的值会被脱敏，TOML 内联表形式的值按原样记录。修改设置后请使用新的 `--run-name`。不要用它传密钥。
 
 ## 5. 多模态能力
 
@@ -279,7 +280,7 @@ Codex 运行时会把 `apply_patch` 别名加入 `PATH`，但 Debian 的 `/etc/p
 
 **(6) `idle timeout waiting for SSE` 或 `stream disconnected before completion`**
 
-Codex 在流式响应中连续 5 分钟（`stream_idle_timeout_ms` 默认 300000 毫秒）收不到数据就断开，然后最多重试 5 次，每次重试都会让模型重新生成。不流式返回工具调用参数的服务在模型写出大段参数时容易触发这个超时。使用 `--api-base` 时可以放宽 Roller provider 的空闲超时：
+Codex 在流式响应中连续 5 分钟（`stream_idle_timeout_ms` 默认 300000 毫秒）收不到数据就断开，然后最多重试 5 次，每次重试都会让模型重新生成。不流式返回工具调用参数的服务在模型写出大段参数时容易触发这个超时。使用 `--api-base` 或 `--codex-api-base` 时可以放宽 Roller provider 的空闲超时：
 
 ```bash
 roller collect ... \

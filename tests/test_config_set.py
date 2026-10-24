@@ -30,6 +30,15 @@ class ConfigAssignmentTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     parse_config_assignment(text)
 
+    def test_rejects_backslashes_openclaw_would_unescape(self) -> None:
+        # OpenClaw reads both keys as gateway.port.
+        for key in (r"g\ateway.port", r'gateway["\u0070ort"]'):
+            with self.subTest(key=key):
+                with self.assertRaisesRegex(ValueError, "invalid configuration key"):
+                    parse_config_assignment(f"{key}=1")
+                with self.assertRaisesRegex(ValueError, "invalid configuration key"):
+                    validate_config_assignments(((key, "1"),), {}, flag="--x")
+
     def test_dotted_and_bracketed_paths_name_the_same_segments(self) -> None:
         expected = ("a", "b.c", "d")
         for key in ('a["b.c"].d', "a['b.c'].d", "a[b.c][d]"):
@@ -47,6 +56,18 @@ class ConfigAssignmentTests(unittest.TestCase):
         )
         self.assertEqual(len(allowed), 2)
 
+    def test_rejects_keys_overlapping_each_other_in_either_order(self) -> None:
+        for keys in (("a.b", "a.b.c"), ("a.b.c", "a.b"), ("a.b", "a.b")):
+            with self.subTest(keys=keys):
+                with self.assertRaisesRegex(
+                    ValueError, f"cannot set '{keys[1]}': it overlaps '{keys[0]}'"
+                ):
+                    validate_config_assignments(
+                        [(key, "1") for key in keys], {}, flag="--x"
+                    )
+        allowed = validate_config_assignments((("a.b", "1"), ("a.c", "2")), {}, flag="--x")
+        self.assertEqual(len(allowed), 2)
+
     def test_records_values_with_credential_leaves_redacted(self) -> None:
         self.assertEqual(
             recorded_config_assignments(
@@ -60,7 +81,7 @@ class ConfigAssignmentTests(unittest.TestCase):
         )
 
 
-class _OkHarness:
+class _StubHarness:
     name = "openclaw"
 
     def __init__(self, config, slot) -> None:
@@ -93,7 +114,7 @@ class CliConfigSetTests(unittest.TestCase):
 
     def _harness(self, config, slot):
         self.configs.append(config)
-        return _OkHarness(config, slot)
+        return _StubHarness(config, slot)
 
     def invoke(self, *extra: str, harness: str = "openclaw", resume: bool = False) -> int:
         args = [

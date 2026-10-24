@@ -21,6 +21,7 @@ from roller.codex_capture import retain_root_tools
 from roller.harnesses.base import InteractiveHarness, InteractiveSession, TurnResult
 from roller.harnesses.config_overrides import (
     ConfigAssignment,
+    config_path,
     validate_config_assignments,
 )
 from roller.harnesses.container import (
@@ -55,10 +56,10 @@ CODEX_PROVIDER_ID = "roller_api"
 # controls each. ``--codex-config-set`` may not touch them.
 ROLLER_MANAGED_CODEX_CONFIG: dict[str, str] = {
     "model": "use --model",
-    "model_provider": "use --codex-api-base",
-    f"model_providers.{CODEX_PROVIDER_ID}.name": "use --codex-api-base",
-    f"model_providers.{CODEX_PROVIDER_ID}.base_url": "use --codex-api-base",
-    f"model_providers.{CODEX_PROVIDER_ID}.env_key": "use --codex-api-key-env",
+    "model_provider": "use --api-base / --codex-api-base",
+    f"model_providers.{CODEX_PROVIDER_ID}.name": "use --api-base / --codex-api-base",
+    f"model_providers.{CODEX_PROVIDER_ID}.base_url": "use --api-base / --codex-api-base",
+    f"model_providers.{CODEX_PROVIDER_ID}.env_key": "use --api-key-env / --codex-api-key-env",
     f"model_providers.{CODEX_PROVIDER_ID}.wire_api": "Roller uses the Responses API",
     f"model_providers.{CODEX_PROVIDER_ID}.supports_websockets": (
         "use --codex-websockets / --no-codex-websockets"
@@ -68,7 +69,6 @@ ROLLER_MANAGED_CODEX_CONFIG: dict[str, str] = {
     "model_reasoning_summary": "use --reasoning-summary",
     "web_search": "use --codex-web-search",
     "features.unified_exec": "Roller enables it for every rollout",
-    "features.multi_agent": "use --capture-calls",
     "sandbox_mode": "Roller bypasses the sandbox inside the disposable container",
     "approval_policy": "Roller bypasses approvals inside the disposable container",
 }
@@ -128,15 +128,25 @@ class CodexConfig:
     config_set: tuple[ConfigAssignment, ...] = ()
 
     def __post_init__(self) -> None:
+        managed = ROLLER_MANAGED_CODEX_CONFIG
+        if self.capture_calls:
+            managed = {**managed, "features.multi_agent": "Roller enables it for --capture-calls"}
         object.__setattr__(
             self,
             "config_set",
             validate_config_assignments(
                 self.config_set,
-                ROLLER_MANAGED_CODEX_CONFIG,
+                managed,
                 flag="--codex-config-set",
             ),
         )
+        if not self.api_base:
+            for key, _ in self.config_set:
+                if config_path(key)[:2] == ("model_providers", CODEX_PROVIDER_ID):
+                    raise ValueError(
+                        f"--codex-config-set cannot set {key!r}: Roller defines the "
+                        f"{CODEX_PROVIDER_ID} provider only with --api-base / --codex-api-base"
+                    )
         object.__setattr__(
             self,
             "reasoning_effort",

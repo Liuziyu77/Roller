@@ -117,8 +117,48 @@ class CodexHarnessTests(unittest.TestCase):
             with self.subTest(key=key):
                 with self.assertRaisesRegex(ValueError, hint):
                     CodexConfig(config_set=((key, "1"),))
-        with self.assertRaisesRegex(ValueError, "more than once"):
+        with self.assertRaisesRegex(ValueError, "overlaps 'model_verbosity'"):
             CodexConfig(config_set=(("model_verbosity", "1"), ("model_verbosity", "2")))
+
+    def test_config_set_may_disable_multi_agent_only_without_capture(self) -> None:
+        setting = (("features.multi_agent", "false"),)
+        self.assertEqual(CodexConfig(config_set=setting).config_set, setting)
+        with self.assertRaisesRegex(ValueError, "--capture-calls"):
+            CodexConfig(
+                api_base="http://example.test/v1", capture_calls=True, config_set=setting
+            )
+
+    def test_config_set_roller_provider_requires_api_base(self) -> None:
+        setting = (("model_providers.roller_api.stream_idle_timeout_ms", "1800000"),)
+        with self.assertRaisesRegex(ValueError, "--api-base / --codex-api-base"):
+            CodexConfig(config_set=setting)
+        config = CodexConfig(api_base="http://example.test/v1", config_set=setting)
+        self.assertEqual(config.config_set, setting)
+
+    def test_every_path_roller_passes_is_managed(self) -> None:
+        options = {"api_base": "http://example.test/v1", "capture_calls": True}
+        harness = CodexHarness(
+            CodexConfig(**options, reasoning_effort="high", reasoning_summary="auto"), 0
+        )
+        command = harness._codex_command(
+            "container", self._request(), "hello", resume=False
+        )
+        keys = [
+            command[index + 1].split("=", 1)[0]
+            for index, argument in enumerate(command)
+            if argument == "-c"
+        ] + [
+            f"features.{command[index + 1]}"
+            for index, argument in enumerate(command)
+            if argument == "--enable"
+        ]
+        self.assertLessEqual(
+            {"model_providers.roller_api.base_url", "features.multi_agent"}, set(keys)
+        )
+        for key in keys:
+            with self.subTest(key=key):
+                with self.assertRaisesRegex(ValueError, "Roller sets itself"):
+                    CodexConfig(**options, config_set=((key, "1"),))
 
     def test_task_effort_overrides_cli_and_rejects_openclaw_profiles(self) -> None:
         harness = CodexHarness(CodexConfig(reasoning_effort="low"), 0)
