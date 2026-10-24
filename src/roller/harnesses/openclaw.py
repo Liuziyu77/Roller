@@ -862,6 +862,8 @@ exec node --input-type=module -e "$1"
         gateway from another one on the same port: the agent would connect to
         that gateway, be refused, and quietly run without its own.
         """
+        if self.config.network != "host":
+            return  # the gateway does not share the host's ports
         try:
             result = self.runtime.run(
                 ["exec", container, "python3", "-c", self._gateway_port_probe()],
@@ -872,9 +874,9 @@ exec node --input-type=module -e "$1"
         if result.returncode == 0:
             raise RuntimeError(
                 f"OpenClaw gateway port {self.gateway_port} is already in use on this "
-                "host (another Roller run or another server); give concurrent runs "
-                "separate ranges: omit --gateway-port to pick a free one, or set a "
-                "different --gateway-port"
+                "host by another server, a run of an older Roller version, or a "
+                "container left over from an earlier rollout of this run (check "
+                "`docker ps`)"
             )
 
     def _wait_for_gateway(self, container: str, process: subprocess.Popen[str]) -> None:

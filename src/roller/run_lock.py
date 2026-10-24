@@ -201,8 +201,8 @@ def _differences(recorded: Any, current: Any, path: str = "$", limit: int = 8) -
     ]
 
 
-def _without_disabled_cot_options(lock: Any) -> Any:
-    """Ignore retired no-ops for comparison only; never rewrite the saved lock."""
+def _comparable_lock(lock: Any) -> Any:
+    """Ignore retired no-ops and host-specific placement; never rewrite the saved lock."""
 
     if not isinstance(lock, dict) or not isinstance(lock.get("execution"), dict):
         return lock
@@ -221,28 +221,14 @@ def _without_disabled_cot_options(lock: Any) -> Any:
                 "signature_recovery_max_tokens",
             ):
                 settings.pop(key, None)
+        if name == "openclaw":
+            # Host-specific placement, not run semantics: the gateway range is
+            # picked per host when the run starts, and which worker slot (so
+            # which port) serves a sample is already decided by whichever
+            # worker frees up first.
+            settings.pop("gateway_port_start", None)
+            settings.pop("gateway_port_step", None)
         execution[name] = settings
-    return {**lock, "execution": execution}
-
-
-# Host-specific placement, not run semantics: the gateway range is picked per
-# host when the run starts, and which worker slot (so which port) serves a
-# sample is already decided by whichever worker frees up first.
-HOST_SPECIFIC_SETTINGS = {"openclaw": ("gateway_port_start", "gateway_port_step")}
-
-
-def _without_host_specific_settings(lock: Any) -> Any:
-    """Ignore host-specific placement for comparison only; never rewrite the saved lock."""
-
-    if not isinstance(lock, dict) or not isinstance(lock.get("execution"), dict):
-        return lock
-    execution = dict(lock["execution"])
-    for name, keys in HOST_SPECIFIC_SETTINGS.items():
-        settings = execution.get(name)
-        if isinstance(settings, dict):
-            execution[name] = {
-                key: value for key, value in settings.items() if key not in keys
-            }
     return {**lock, "execution": execution}
 
 
@@ -269,12 +255,8 @@ def ensure_run_lock(
             raise ValueError(
                 f"existing run lock cannot be parsed; refusing to overwrite {path}: {exc}"
             ) from exc
-        recorded_comparison = _without_host_specific_settings(
-            _without_disabled_cot_options(recorded)
-        )
-        expected_comparison = _without_host_specific_settings(
-            _without_disabled_cot_options(expected_row)
-        )
+        recorded_comparison = _comparable_lock(recorded)
+        expected_comparison = _comparable_lock(expected_row)
         if recorded_comparison != expected_comparison:
             details = "\n".join(
                 f"- {row}"

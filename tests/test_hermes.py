@@ -19,6 +19,8 @@ from roller.models import HarnessResult, RunRequest, Task
 from roller.sft import actf_to_sft
 from roller.trajectory_audit import sft_exclusion_reason
 
+from test_gateway_ports import isolate_gateway_ports
+
 
 TOOL = {"type": "function", "function": {"name": "terminal", "description": "Run a command", "parameters": {"type": "object", "properties": {"command": {"type": "string"}}, "required": ["command"]}}}
 
@@ -425,6 +427,9 @@ class HermesSessionTests(unittest.TestCase):
 
 
 class HermesCliTests(unittest.TestCase):
+    def setUp(self):
+        isolate_gateway_ports(self)
+
     def test_openclaw_simulator_model_config_changes_invalidate_hermes_run_lock(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

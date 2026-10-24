@@ -1304,6 +1304,11 @@ def _collect(args: argparse.Namespace) -> int:
             **({"capture_calls": True, "capture_debug": args.capture_debug} if pi_config.capture_calls else {}),
         }
 
+    # OpenClaw user simulators run in the worker slots after the agents', so
+    # their gateways get ports of their own.
+    simulator_gateway_slot_offset = (
+        args.parallel if "openclaw" in simulator_harnesses else None
+    )
     run_info = {
         "schema_version": "roller.run/v1",
         "roller_version": __version__,
@@ -1340,9 +1345,7 @@ def _collect(args: argparse.Namespace) -> int:
                 "user_simulator_tasks": sum(
                     task.user_simulator is not None for task in tasks
                 ),
-                "simulator_gateway_slot_offset": (
-                    args.parallel if "openclaw" in simulator_harnesses else None
-                ),
+                "simulator_gateway_slot_offset": simulator_gateway_slot_offset,
             },
             "bundle_policy": {
                 "max_input_file_bytes": args.max_input_file_bytes,
@@ -1378,17 +1381,20 @@ def _collect(args: argparse.Namespace) -> int:
             if openclaw_config is not None and args.network == "host":
                 # Host-network gateways share the host's ports with any other
                 # run here; hold this run's range until collection ends.
-                slots = args.parallel * (2 if "openclaw" in simulator_harnesses else 1)
                 gateway_ports = reserve_gateway_ports(
-                    args.gateway_port, args.gateway_port_step, slots
+                    args.gateway_port,
+                    args.gateway_port_step,
+                    args.parallel + (simulator_gateway_slot_offset or 0),
                 )
+                ports = gateway_ports.ports
                 openclaw_config = dataclasses.replace(
-                    openclaw_config, gateway_port_start=gateway_ports.start
+                    openclaw_config, gateway_port_start=ports.start
                 )
-                harness_configurations["openclaw"]["gateway_port_start"] = gateway_ports.start
+                # The same dict is in run_info, so info.json records it too.
+                harness_configurations["openclaw"]["gateway_port_start"] = ports.start
                 logger.info(
                     "OpenClaw gateway ports %d-%d (every %d)",
-                    gateway_ports.ports[0], gateway_ports.ports[-1], gateway_ports.step,
+                    ports.start, ports[-1], ports.step,
                 )
             bundles = bundle_store.prepare_all(tasks)
             requests = bundle_store.attach(requests, bundles)
@@ -1510,7 +1516,9 @@ def _collect(args: argparse.Namespace) -> int:
                 if spec is None:
                     return agent
                 simulator_slot = (
-                    slot + args.parallel if spec.harness == "openclaw" else slot
+                    slot + simulator_gateway_slot_offset
+                    if spec.harness == "openclaw"
+                    else slot
                 )
                 simulator = make_harness(spec.harness, simulator_slot)
                 return ConversationManager(

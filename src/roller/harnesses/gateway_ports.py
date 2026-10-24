@@ -17,12 +17,13 @@ import errno
 import fcntl
 import os
 import socket
-import tempfile
 from pathlib import Path
 from typing import BinaryIO
 
 DEFAULT_GATEWAY_PORT = 18789
-LOCK_DIRECTORY = Path(tempfile.gettempdir()) / "roller-gateway-ports"
+# A fixed path rather than $TMPDIR: ports are host-wide, so every run on the
+# host, whatever its environment, has to see the same locks.
+LOCK_DIRECTORY = Path("/tmp/roller-gateway-ports")
 MAX_PORT = 65535
 
 
@@ -31,37 +32,19 @@ class GatewayPortsUnavailable(RuntimeError):
 
 
 class GatewayPortReservation:
-    """Ports ``start, start + step, ...`` held until :meth:`release`."""
+    """Gateway ``ports`` held until :meth:`release`."""
 
-    def __init__(self, start: int, step: int, slots: int, locks: list[BinaryIO]) -> None:
-        self.start = start
-        self.step = step
-        self.slots = slots
+    def __init__(self, ports: range, locks: list[BinaryIO]) -> None:
+        self.ports = ports
         self._locks = locks
-
-    @property
-    def ports(self) -> range:
-        return range(self.start, self.start + self.slots * self.step, self.step)
 
     def release(self) -> None:
         for lock in self._locks:
             lock.close()
         self._locks = []
 
-    def __enter__(self) -> "GatewayPortReservation":
-        return self
 
-    def __exit__(self, *_exc: object) -> None:
-        self.release()
-
-
-def reserve_gateway_ports(
-    start: int | None,
-    step: int,
-    slots: int,
-    *,
-    lock_directory: Path | None = None,
-) -> GatewayPortReservation:
+def reserve_gateway_ports(start: int | None, step: int, slots: int) -> GatewayPortReservation:
     """Reserve ``slots`` gateway ports ``step`` apart.
 
     ``start=None`` picks the first free range from :data:`DEFAULT_GATEWAY_PORT`
@@ -70,23 +53,23 @@ def reserve_gateway_ports(
 
     if step < 1 or slots < 1:
         raise ValueError("gateway port step and slot count must be positive")
-    directory = lock_directory or LOCK_DIRECTORY
-    _prepare_directory(directory)
+    _prepare_directory(LOCK_DIRECTORY)
+    width = slots * step
     if start is not None:
         _check_range(start, step, slots)
-        reservation, reason = _try_reserve(start, step, slots, directory)
-        if reservation is None:
+        try:
+            return _reserve(range(start, start + width, step), LOCK_DIRECTORY)
+        except GatewayPortsUnavailable as exc:
             raise GatewayPortsUnavailable(
-                f"OpenClaw gateway port {reason}; choose another --gateway-port, "
+                f"{exc}; choose another --gateway-port, "
                 "or omit it to pick a free range automatically"
-            )
-        return reservation
-    candidate = DEFAULT_GATEWAY_PORT
-    while candidate + (slots - 1) * step <= MAX_PORT:
-        reservation, _reason = _try_reserve(candidate, step, slots, directory)
-        if reservation is not None:
-            return reservation
-        candidate += slots * step
+            ) from None
+    last_start = MAX_PORT - (slots - 1) * step
+    for candidate in range(DEFAULT_GATEWAY_PORT, last_start + 1, width):
+        try:
+            return _reserve(range(candidate, candidate + width, step), LOCK_DIRECTORY)
+        except GatewayPortsUnavailable:
+            continue
     raise GatewayPortsUnavailable(
         f"no free range of {slots} OpenClaw gateway ports {step} apart "
         f"from {DEFAULT_GATEWAY_PORT} upward"
@@ -111,36 +94,52 @@ def _prepare_directory(directory: Path) -> None:
         pass  # created by another user, who already set the mode
 
 
-def _try_reserve(
-    start: int, step: int, slots: int, directory: Path
-) -> tuple[GatewayPortReservation | None, str]:
+def _reserve(ports: range, directory: Path) -> GatewayPortReservation:
     locks: list[BinaryIO] = []
-    for port in range(start, start + slots * step, step):
-        reason = _lock_port(port, directory, locks)
-        if reason is not None:
-            for lock in locks:
-                lock.close()
-            return None, f"{port} {reason}"
-    return GatewayPortReservation(start, step, slots, locks), ""
+    try:
+        for port in ports:
+            locks.append(_lock_port(port, directory))
+    except BaseException:
+        for lock in locks:
+            lock.close()
+        raise
+    return GatewayPortReservation(ports, locks)
 
 
-def _lock_port(port: int, directory: Path, locks: list[BinaryIO]) -> str | None:
+def _lock_port(port: int, directory: Path) -> BinaryIO:
+    """Lock ``port`` for this process, or raise if another run or server has it."""
+
     path = directory / f"{port}.lock"
     try:
         descriptor = os.open(path, os.O_RDONLY | os.O_CREAT, 0o666)
     except PermissionError:
-        descriptor = os.open(path, os.O_RDONLY)
+        # Another user's lock file in the sticky directory refuses O_CREAT.
+        try:
+            descriptor = os.open(path, os.O_RDONLY)
+        except PermissionError:
+            raise GatewayPortsUnavailable(
+                f"OpenClaw gateway port {port} has a lock file this user cannot open"
+            ) from None
+    else:
+        try:
+            # Leave the file usable by other users' runs whatever our umask.
+            os.fchmod(descriptor, 0o666)
+        except OSError:
+            pass  # another user's file; being able to open it is enough
     lock = os.fdopen(descriptor, "rb")
     try:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
         lock.close()
-        return "is reserved by another Roller run on this host"
+        raise GatewayPortsUnavailable(
+            f"OpenClaw gateway port {port} is reserved by another Roller run on this host"
+        ) from None
     if _in_use(port):
         lock.close()
-        return "is already in use on this host"
-    locks.append(lock)
-    return None
+        raise GatewayPortsUnavailable(
+            f"OpenClaw gateway port {port} is already in use on this host"
+        )
+    return lock
 
 
 def _in_use(port: int) -> bool:

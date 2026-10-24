@@ -18,6 +18,8 @@ from roller.harnesses.config_overrides import (
 from roller.models import HarnessResult
 from roller.wire_trace import REDACTED_VALUE
 
+from test_gateway_ports import isolate_gateway_ports
+
 
 class ConfigAssignmentTests(unittest.TestCase):
     def test_parses_key_value_at_the_first_equals_sign(self) -> None:
@@ -96,6 +98,7 @@ class CliConfigSetTests(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
+        isolate_gateway_ports(self)
         self.tasks = self.root / "tasks.jsonl"
         self.tasks.write_text(json.dumps({"id": "task", "prompt": "hi"}) + "\n")
         self.configs = []

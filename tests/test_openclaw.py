@@ -176,6 +176,8 @@ class FakeDockerRuntime:
     def run(self, args, timeout=None):
         args = list(args)
         self.commands.append(args)
+        if args and args[0] in ("rm", "stop"):
+            self.gateway_started = False  # the gateway went with its container
         if args and "connect_ex" in args[-1]:
             # Nothing listens on the gateway port until the gateway starts.
             return subprocess.CompletedProcess(args, 0 if self.gateway_started else 111)
@@ -913,6 +915,16 @@ class OpenClawHelpersTests(unittest.TestCase):
                 for command in runtime.commands
             )
         )
+
+    def test_gateway_port_is_checked_only_on_the_host_network(self) -> None:
+        runtime = FakeDockerRuntime()
+        harness = OpenClawHarness(
+            OpenClawConfig(docker_image="test-image", network="bridge"),
+            worker_slot=0,
+            runtime=runtime,
+        )
+        harness._ensure_gateway_port_free("container")
+        self.assertEqual(runtime.commands, [])
 
     def test_harness_passes_task_max_override_without_downgrading(self) -> None:
         task = Task(
