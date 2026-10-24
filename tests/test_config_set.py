@@ -30,9 +30,9 @@ class ConfigAssignmentTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     parse_config_assignment(text)
 
-    def test_rejects_backslashes_openclaw_would_unescape(self) -> None:
-        # OpenClaw reads both keys as gateway.port.
-        for key in (r"g\ateway.port", r'gateway["\u0070ort"]'):
+    def test_rejects_keys_openclaw_would_unescape_or_trim(self) -> None:
+        # OpenClaw reads each key as gateway.port.
+        for key in (r"g\ateway.port", r'gateway["\u0070ort"]', "gateway.port\ufeff"):
             with self.subTest(key=key):
                 with self.assertRaisesRegex(ValueError, "invalid configuration key"):
                     parse_config_assignment(f"{key}=1")

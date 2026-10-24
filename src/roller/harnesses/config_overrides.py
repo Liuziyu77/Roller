@@ -32,9 +32,10 @@ def parse_config_assignment(text: str) -> ConfigAssignment:
 def config_path(key: str) -> tuple[str, ...]:
     """Return the segments of a dotted or bracketed configuration path.
 
-    Rejects keys that are empty, start with ``-``, or contain whitespace or a
-    backslash. OpenClaw unescapes backslashes, so ``g\\ateway.port`` would reach
-    a managed path without matching it here.
+    Rejects keys that are empty, start with ``-``, or contain whitespace,
+    invisible characters or a backslash. OpenClaw unescapes backslashes and
+    trims segments (U+FEFF included), so ``g\\ateway.port`` or
+    ``gateway.port\\ufeff`` would reach a managed path without matching it here.
     """
 
     path = tuple(
@@ -45,7 +46,8 @@ def config_path(key: str) -> tuple[str, ...]:
         not path
         or key.startswith("-")
         or "\\" in key
-        or any(character.isspace() for character in key)
+        or " " in key
+        or not key.isprintable()
     ):
         raise ValueError(f"invalid configuration key: {key!r}")
     return path
