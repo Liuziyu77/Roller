@@ -7,7 +7,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from roller.cli import _build_parser, _collect, _docker_preflight, _jsonl_equivalent, _validate_thinking_requests
 from roller.models import RunRequest, Task, UserSimulatorSpec
@@ -499,6 +499,64 @@ def grade(transcript, workspace_path):
 
         with self.assertRaisesRegex(RuntimeError, "pull or load it first"):
             _docker_preflight("docker", "missing:test")
+
+
+
+class LaunchIntervalCliTests(unittest.TestCase):
+    def setUp(self) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.tasks = self.root / "tasks.jsonl"
+        self.tasks.write_text(json.dumps({"id": "task", "prompt": "hi"}) + "\n")
+        self.intervals = []
+        patches = contextlib.ExitStack()
+        self.addCleanup(patches.close)
+        patches.enter_context(patch("roller.cli._docker_preflight", return_value="image-id"))
+        patches.enter_context(patch("roller.cli.Collector", side_effect=self._collector))
+
+    def _collector(self, config, harness_factory):
+        self.intervals.append(config.launch_interval)
+        collector = MagicMock()
+        collector.collect.return_value = []
+        return collector
+
+    def invoke(self, *extra: str) -> int:
+        args = [
+            "collect", "--tasks", str(self.tasks), "--model", "provider/model",
+            "--output", str(self.root / "runs"), "--run-name", "run", *extra,
+        ]
+        with contextlib.redirect_stdout(io.StringIO()):
+            return _collect(_build_parser().parse_args(args))
+
+    def test_defaults_to_no_spacing(self) -> None:
+        args = _build_parser().parse_args(["collect", "--tasks", "t.jsonl"])
+        self.assertEqual(args.launch_interval, 0.0)
+
+    def test_rejects_negative_or_non_finite_values(self) -> None:
+        for value in ("-1", "inf", "nan"):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(ValueError, "--launch-interval"):
+                    self.invoke("--launch-interval", value)
+
+    def test_dry_run_reports_the_interval(self) -> None:
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            _collect(_build_parser().parse_args(
+                ["collect", "--tasks", str(self.tasks), "--model", "provider/model",
+                 "--dry-run", "--launch-interval", "5"]
+            ))
+        self.assertEqual(json.loads(output.getvalue())["launch_interval"], 5.0)
+
+    def test_recorded_in_info_but_not_locked_so_resume_may_change_it(self) -> None:
+        self.invoke("--launch-interval", "5")
+        run = self.root / "runs" / "run"
+        info = json.loads((run / "info.json").read_text())
+        self.assertEqual(info["configuration"]["launch_interval"], 5.0)
+        self.assertNotIn("launch_interval", (run / "lock.json").read_text())
+
+        self.invoke("--launch-interval", "12", "--resume")
+        self.assertEqual(self.intervals, [5.0, 12.0])
 
 
 if __name__ == "__main__":

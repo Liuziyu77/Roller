@@ -4,9 +4,11 @@ import fnmatch
 import json
 import inspect
 import logging
+import math
 import queue
 import re
 import shutil
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -119,12 +121,50 @@ class CollectionConfig:
     keep_aux_traces: bool = False
     capture_cache_trace: bool = True
     keep_thinking: bool = True
+    # Minimum seconds between two rollout launches across all workers.
+    launch_interval: float = 0.0
 
     def __post_init__(self) -> None:
         if self.parallel < 1:
             raise ValueError("parallel must be at least 1")
         if self.retries < 0:
             raise ValueError("retries cannot be negative")
+        if not math.isfinite(self.launch_interval) or self.launch_interval < 0:
+            raise ValueError("launch_interval must be a finite number of seconds >= 0")
+
+
+class LaunchCancelled(Exception):
+    """A rollout was waiting for its launch turn when the run was interrupted."""
+
+
+class _LaunchGate:
+    """Space rollout launches ``interval`` seconds apart, first come first served.
+
+    Starting every worker at once stacks their start-up peaks: an OpenClaw
+    gateway needs about twice its steady memory while it boots.
+    """
+
+    def __init__(self, interval: float) -> None:
+        self._interval = interval
+        self._lock = threading.Lock()
+        self._next_launch = 0.0
+        self._cancelled = threading.Event()
+
+    def wait_turn(self) -> bool:
+        """Block until this launch may start; False once the run is interrupted."""
+
+        if self._interval > 0:
+            with self._lock:
+                now = time.monotonic()
+                launch = max(now, self._next_launch)
+                self._next_launch = launch + self._interval
+            delay = launch - time.monotonic()
+            if delay > 0:
+                return not self._cancelled.wait(delay)
+        return not self._cancelled.is_set()
+
+    def cancel(self) -> None:
+        self._cancelled.set()
 
 
 class Collector:
@@ -132,6 +172,7 @@ class Collector:
         self.config = config
         self.harness_factory = harness_factory
         self.run_dir = config.run_dir.expanduser().resolve()
+        self._launch_gate = _LaunchGate(config.launch_interval)
         try:
             parameters = list(inspect.signature(harness_factory).parameters.values())
             positional = [
@@ -417,6 +458,10 @@ class Collector:
             logger.info("[%s | %s] already complete; skipping", request.task.id, request.model)
             return resumed
 
+        # Wait before touching the sample directory, so a rollout cancelled
+        # here leaves nothing behind, like a request that never left the queue.
+        if not self._launch_gate.wait_turn():
+            raise LaunchCancelled(f"{request.task.id}: run interrupted before launch")
         if sample_dir.exists():
             shutil.rmtree(sample_dir)
         sample_dir.mkdir(parents=True, exist_ok=True)
@@ -425,6 +470,8 @@ class Collector:
         final = HarnessResult.error_result("harness did not run")
         harness_name = "unknown"
         for attempt in range(1, self.config.retries + 2):
+            if attempt > 1 and not self._launch_gate.wait_turn():
+                break  # interrupted between attempts: keep the last failure
             harness = self._make_harness(worker_slot, request)
             harness_name = getattr(harness, "name", "unknown")
             attempt_start = time.perf_counter()
@@ -596,6 +643,7 @@ class Collector:
         self._write_run_info(
             [], total_requests=total_requests, state="running"
         )
+        self._launch_gate = _LaunchGate(self.config.launch_interval)
         slots: queue.Queue[int] = queue.Queue()
         for slot in range(self.config.parallel):
             slots.put(slot)
@@ -682,6 +730,8 @@ class Collector:
                         checkpoint("running")
                 except BaseException:
                     # Queued requests never start; running ones still finalize.
+                    # Workers still waiting for a launch turn give it up.
+                    self._launch_gate.cancel()
                     cancelled = sum(future.cancel() for future in futures)
                     logger.warning(
                         "interrupted: cancelled %d queued request(s); "

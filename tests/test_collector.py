@@ -961,5 +961,103 @@ class CollectorTests(unittest.TestCase):
             self.assertEqual(state["calls"][("task", "provider/model")], 3)
 
 
+
+class TimedHarness(FakeHarness):
+    def run(self, request: RunRequest, output_dir: Path, attempt: int) -> HarnessResult:
+        with self.state["lock"]:
+            self.state.setdefault("starts", []).append((time.monotonic(), attempt))
+        return super().run(request, output_dir, attempt)
+
+
+class LaunchIntervalTests(unittest.TestCase):
+    def _state(self, **extra) -> dict:
+        return {
+            "lock": threading.Lock(), "calls": {}, "active": 0, "max_active": 0,
+            "fail_first": False, **extra,
+        }
+
+    def _collect(self, run_dir: Path, state: dict, requests, **config) -> list[dict]:
+        return Collector(
+            CollectionConfig(run_dir=run_dir, **config),
+            lambda slot: TimedHarness(state, slot),
+        ).collect(requests)
+
+    def test_launches_are_spaced_across_workers(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            state = self._state(delay=0.6)
+            results = self._collect(
+                Path(temporary) / "run", state, make_requests(),
+                parallel=4, launch_interval=0.15,
+            )
+
+        self.assertEqual([result["status"] for result in results], ["ok"] * 4)
+        starts = sorted(start for start, _ in state["starts"])
+        gaps = [later - earlier for earlier, later in zip(starts, starts[1:])]
+        self.assertTrue(all(gap >= 0.13 for gap in gaps), gaps)
+        # Spacing delays launches; it does not cap concurrency.
+        self.assertEqual(state["max_active"], 4)
+
+    def test_without_an_interval_workers_start_together(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            state = self._state(delay=0.3)
+            self._collect(Path(temporary) / "run", state, make_requests(), parallel=4)
+
+        starts = sorted(start for start, _ in state["starts"])
+        self.assertLess(starts[-1] - starts[0], 0.1)
+
+    def test_retry_waits_for_its_own_launch_turn(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            state = self._state(fail_first=True)
+            results = self._collect(
+                Path(temporary) / "run", state, make_requests()[:1],
+                retries=1, launch_interval=0.3,
+            )
+
+        self.assertEqual(results[0]["status"], "ok")
+        (first, _), (second, attempt) = state["starts"]
+        self.assertEqual(attempt, 2)
+        self.assertGreaterEqual(second - first, 0.28)
+
+    def test_resumed_samples_do_not_take_launch_turns(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            run_dir = Path(temporary) / "run"
+            state = self._state()
+            self._collect(run_dir, state, make_requests(), parallel=4)
+            started = time.monotonic()
+            resumed = self._collect(
+                run_dir, state, make_requests(), parallel=4, resume=True,
+                launch_interval=30,
+            )
+
+        self.assertEqual([result["status"] for result in resumed], ["skipped"] * 4)
+        self.assertLess(time.monotonic() - started, 5)
+
+    def test_interrupt_releases_workers_waiting_for_their_turn(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            run_dir = Path(temporary) / "run"
+            state = self._state(interrupt_task="task-0", delay=0.2)
+            started = time.monotonic()
+            with self.assertRaises(KeyboardInterrupt):
+                self._collect(
+                    run_dir, state, make_requests(), parallel=4, launch_interval=30,
+                )
+            elapsed = time.monotonic() - started
+
+            # The other three were waiting 30-90 s for their turn; none launched
+            # and none left a sample directory behind.
+            self.assertLess(elapsed, 10)
+            self.assertEqual(list(state["calls"]), [("task-0", "provider/model")])
+            sample_dirs = sorted(path.name for path in (run_dir / "samples").glob("*/*"))
+            self.assertEqual(sample_dirs, ["00000000_task-0"])
+            info = json.loads((run_dir / "info.json").read_text())
+            self.assertEqual(info["state"], "interrupted")
+
+    def test_rejects_negative_or_non_finite_intervals(self) -> None:
+        for interval in (-1.0, float("inf"), float("nan")):
+            with self.subTest(interval=interval):
+                with self.assertRaises(ValueError):
+                    CollectionConfig(run_dir=Path("run"), launch_interval=interval)
+
+
 if __name__ == "__main__":
     unittest.main()
