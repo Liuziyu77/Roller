@@ -393,7 +393,7 @@ def _assistant_signature(message: Mapping[str, Any]) -> tuple[str, tuple[tuple[s
     return content, tuple(tools)
 
 
-def _main_chat_calls(sample_dir: Path, calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _main_chat_calls(sample_dir: Path, calls: list[dict[str, Any]]) -> list[tuple[dict[str, Any], list[dict[str, Any]]]]:
     """Require every root Call to match one ACTF main step in order."""
     trajectory = json.loads((sample_dir / "trace_ACTF.json").read_text(encoding="utf-8"))
     steps = trajectory.get("steps") if isinstance(trajectory, Mapping) else None
@@ -402,13 +402,20 @@ def _main_chat_calls(sample_dir: Path, calls: list[dict[str, Any]]) -> list[dict
     targets = [_assistant_signature(step.get("assistant_content", {})) for step in steps]
     if len(calls) != len(targets):
         raise SFTConversionError("root Calls do not correspond one-to-one with ACTF main steps")
-    for call, target in zip(calls, targets):
+    verified = []
+    for call, step, target in zip(calls, steps, targets):
         if call.get("export_status") != "available":
             raise SFTConversionError(f"main Call {call.get('call_id')} is incomplete")
         messages = _target_messages_from_call(call)
         if len(messages) != 1 or _assistant_signature(messages[0]) != target:
             raise SFTConversionError("root Call output does not match its ACTF main step")
-    return calls
+        # ACTF applies keep_thinking and retains visible Codex reasoning. Use
+        # that canonical value while the Call verifies the output and prompt.
+        reasoning = step["assistant_content"].get("reasoning_content")
+        if isinstance(reasoning, str):
+            messages[0]["reasoning_content"] = reasoning
+        verified.append((call, messages))
+    return verified
 
 
 def _compaction_boundaries(harness: str, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -440,7 +447,7 @@ def _root_calls(calls: list[dict[str, Any]], manifest: Mapping[str, Any]) -> lis
             if call.get("participant_id") in roots]
 
 
-def _segment_records(calls: list[dict[str, Any]], boundaries: list[dict[str, Any]]
+def _segment_records(calls: list[tuple[dict[str, Any], list[dict[str, Any]]]], boundaries: list[dict[str, Any]]
                      ) -> list[tuple[dict[str, Any], dict[str, Any]]]:
     """Use one continuation rule; window_index counts emitted SFT records."""
     times = [_time(boundary["timestamp"]) for boundary in boundaries]
@@ -451,7 +458,7 @@ def _segment_records(calls: list[dict[str, Any]], boundaries: list[dict[str, Any
         raise SFTConversionError("compaction boundaries are not in chronological order")
     exported: list[tuple[dict[str, Any], dict[str, Any]]] = []
     native_index = -1
-    for call in calls:
+    for call, target in calls:
         if call.get("export_status") != "available":
             raise SFTConversionError(f"main Call {call.get('call_id')} is incomplete")
         when = _time(call.get("started_at")) if boundaries else None
@@ -459,7 +466,6 @@ def _segment_records(calls: list[dict[str, Any]], boundaries: list[dict[str, Any
             raise SFTConversionError("main Call starts at an ambiguous compaction boundary")
         current_native = sum(when > boundary for boundary in times) if when else 0
         prompt, tools = _prompt_from_call(call)
-        target = _target_messages_from_call(call)
         if not prompt:
             raise SFTConversionError("compaction segment lacks its actual input")
         previous = exported[-1][1] if exported else None

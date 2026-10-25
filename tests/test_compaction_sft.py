@@ -230,6 +230,28 @@ def test_codex_text_and_tool_items_are_one_assistant_target(tmp_path: Path) -> N
         build_compaction_segments(tmp_path, "codex", manifest)
 
 
+@pytest.mark.parametrize("retained_reasoning", ["Inspect file.", ""])
+def test_codex_segment_preserves_actf_reasoning_retention(
+    tmp_path: Path, retained_reasoning: str,
+) -> None:
+    _actf(tmp_path, "ACK", {"content": "DONE", "reasoning_content": retained_reasoning,
+                            "tool_calls": []})
+    _write(tmp_path / "trace.jsonl", [{"type": "compacted",
+        "timestamp": "2026-10-15T00:00:03Z", "payload": {"window_id": "w"}}])
+    def call(index: int, prompt: str, answer: str, *, reasoning: bool = False) -> dict:
+        output = ([{"type": "reasoning", "summary": [
+            {"type": "summary_text", "text": "Inspect file."}]}] if reasoning else [])
+        output.append({"type": "message", "role": "assistant", "content": [
+            {"type": "output_text", "text": answer}]})
+        return _call(index, "root", "openai-responses", {"instructions": "s", "tools": [],
+            "input": [{"type": "message", "role": "user", "content": [
+                {"type": "input_text", "text": prompt}]}]}, {"output": output})
+    manifest = _capture(tmp_path, "root", [
+        call(1, "task", "ACK"), call(4, "summary", "DONE", reasoning=True)])
+    segments = build_compaction_segments(tmp_path, "codex", manifest)
+    assert segments[1][1]["messages"][-1]["reasoning_content"] == retained_reasoning
+
+
 def test_incomplete_main_call_blocks_export(tmp_path: Path) -> None:
     root = "root:session"
     _actf(tmp_path, "answer")
