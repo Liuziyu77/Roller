@@ -126,6 +126,7 @@ roller collect \
 | --- | --- | --- |
 | `--docker-image` / `--codex-image` | `ROLLER_CODEX_IMAGE` 或 `roller-codex:0.149.0` | 覆盖 Codex 镜像 |
 | `--codex-config` | 无 | 注入隔离容器的原生 `config.toml` |
+| `--codex-config-set KEY=VALUE` | 无 | 给每次 `codex exec` 追加 `-c KEY=VALUE`，可重复 |
 | `--reasoning-summary` | Codex 默认值 | `auto`、`concise`、`detailed` 或 `none` |
 | `--codex-web-search` | `disabled` | `disabled`、`cached` 或 `live` |
 | `--codex-websockets` / `--no-codex-websockets` | 关闭 | 自定义 provider 是否使用 Responses WebSocket |
@@ -140,6 +141,19 @@ roller collect ... \
 ```
 
 Roller 会把该文件复制到 task 容器中。命令行中的 API 地址、模型、Thinking、推理摘要和 Web Search 设置优先于文件中的同名设置。示例还包含 `model_verbosity` 和一份默认关闭的 MCP server 模板。修改配置后请使用新的 `--run-name`，并且不要在文件中保存 API Key。
+
+只需改个别设置时，可以用 `--codex-config-set` 代替配置文件：
+
+```bash
+roller collect ... \
+  --codex-config-set 'model_verbosity="low"' \
+  --codex-config-set model_providers.roller_api.stream_idle_timeout_ms=1800000
+```
+
+- 每项以 `-c KEY=VALUE` 追加在 Roller 自己的覆盖之后，每个 turn 都会传入。值按 TOML 解析，解析失败时作为字符串，所以字符串值建议带引号。
+- Codex 会静默忽略不认识的键，拼错的键不会生效，只有值的类型不对才会报错，请仔细核对键名。
+- 使用 `--api-base` 或 `--codex-api-base` 时，Roller 定义的 model provider 名为 `roller_api`。它的 `stream_idle_timeout_ms`（默认 300000 毫秒）、`stream_max_retries`（默认 5）、`request_max_retries`（默认 4）等键可以调整；两个参数都没给时，`model_providers.roller_api.*` 会被拒绝。`base_url`、`wire_api`、`env_key` 等由 Roller 管理的键会被拒绝，并提示应使用的 Roller 参数；各项设置之间也不能重叠。
+- 设置会写入 `lock.json` 和 `info.json`。只有键名本身像凭证（`token`、`api_key`、`password`、`secret` 等）的值会被脱敏，TOML 内联表形式的值按原样记录。修改设置后请使用新的 `--run-name`。不要用它传密钥。
 
 ## 5. 多模态能力
 
@@ -263,3 +277,12 @@ Codex 发出的 Responses 请求固定为 `store: false`，并回传之前的 `r
 **(5) `apply_patch: command not found`**
 
 Codex 运行时会把 `apply_patch` 别名加入 `PATH`，但 Debian 的 `/etc/profile` 会在 Codex 执行命令所用的登录 shell 中重置 `PATH`。当前的 `docker/codex/Dockerfile` 会安装固定的 `/usr/local/bin/apply_patch` 别名，此前构建的镜像需要重新构建。
+
+**(6) `idle timeout waiting for SSE` 或 `stream disconnected before completion`**
+
+Codex 在流式响应中连续 5 分钟（`stream_idle_timeout_ms` 默认 300000 毫秒）收不到数据就断开，然后最多重试 5 次，每次重试都会让模型重新生成。不流式返回工具调用参数的服务在模型写出大段参数时容易触发这个超时。使用 `--api-base` 或 `--codex-api-base` 时可以放宽 Roller provider 的空闲超时：
+
+```bash
+roller collect ... \
+  --codex-config-set model_providers.roller_api.stream_idle_timeout_ms=1800000
+```

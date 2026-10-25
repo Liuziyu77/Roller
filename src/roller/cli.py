@@ -5,6 +5,7 @@ import dataclasses
 import hashlib
 import json
 import logging
+import math
 import os
 import shutil
 import subprocess
@@ -35,6 +36,10 @@ from roller.harnesses.claude_code import (
     redact_anthropic_base_url,
 )
 from roller.harness_registry import HARNESSES, HARNESS_NAMES
+from roller.harnesses.config_overrides import (
+    parse_config_assignment,
+    recorded_config_assignments,
+)
 from roller.harnesses.container import PROXY_ENV_NAMES
 from roller.harnesses.deepseek import (
     DEFAULT_DEEPSEEK_IMAGE, DEEPSEEK_VERSION, DEEPSEEK_TOOLS,
@@ -57,6 +62,11 @@ from roller.harnesses.codex import (
     CodexHarness,
     codex_effort,
     redact_api_base,
+)
+from roller.harnesses.gateway_ports import (
+    DEFAULT_GATEWAY_PORT,
+    GatewayPortReservation,
+    reserve_gateway_ports,
 )
 from roller.harnesses.openclaw import (
     COMMON_ENV_NAMES as OPENCLAW_COMMON_ENV_NAMES,
@@ -222,6 +232,16 @@ def _build_parser() -> argparse.ArgumentParser:
     collect.add_argument("--timeout", type=int, default=600, help="per-trajectory timeout in seconds")
     collect.add_argument("--parallel", type=int, default=1)
     collect.add_argument(
+        "--launch-interval",
+        type=float,
+        default=0.0,
+        metavar="SECONDS",
+        help=(
+            "minimum seconds between two rollout launches, so --parallel workers "
+            "do not all start at once (default: 0)"
+        ),
+    )
+    collect.add_argument(
         "--grader-parallel",
         type=int,
         help="maximum concurrent benchmark graders (default: --parallel)",
@@ -349,7 +369,14 @@ def _build_parser() -> argparse.ArgumentParser:
 
     openclaw = collect.add_argument_group("OpenClaw")
     openclaw.add_argument("--model-config", help="OpenClaw models JSON; supports ${ENV_NAME}")
-    openclaw.add_argument("--gateway-port", type=int, default=18789)
+    openclaw.add_argument(
+        "--gateway-port",
+        type=int,
+        help=(
+            "first OpenClaw gateway port (default: the first range from "
+            f"{DEFAULT_GATEWAY_PORT} that no other run on this host holds)"
+        ),
+    )
     openclaw.add_argument("--gateway-port-step", type=int, default=10)
     openclaw.add_argument("--gateway-startup-timeout", type=float, default=240.0)
     openclaw.add_argument(
@@ -366,6 +393,17 @@ def _build_parser() -> argparse.ArgumentParser:
         type=int,
         metavar="TOKENS",
         help="override maxTokens for the selected OpenClaw model",
+    )
+    openclaw.add_argument(
+        "--openclaw-config-set",
+        action="append",
+        default=[],
+        type=_config_assignment,
+        metavar="KEY=VALUE",
+        help=(
+            "run `openclaw config set KEY VALUE` in every OpenClaw container after "
+            "Roller's own settings; repeatable. Paths Roller manages are rejected"
+        ),
     )
     openclaw.add_argument("--session-id", default="roller")
     openclaw.add_argument("--search-provider")
@@ -468,6 +506,17 @@ def _build_parser() -> argparse.ArgumentParser:
         help="optional Codex config.toml copied into the disposable container",
     )
     codex.add_argument(
+        "--codex-config-set",
+        action="append",
+        default=[],
+        type=_config_assignment,
+        metavar="KEY=VALUE",
+        help=(
+            "pass `-c KEY=VALUE` to every codex exec after Roller's own overrides; "
+            "repeatable. Paths Roller manages are rejected"
+        ),
+    )
+    codex.add_argument(
         "--reasoning-summary",
         choices=("auto", "concise", "detailed", "none"),
         help="Codex model_reasoning_summary override",
@@ -516,6 +565,13 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def _deduplicate(values: Sequence[str]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(value for value in values if value))
+
+
+def _config_assignment(text: str) -> tuple[str, str]:
+    try:
+        return parse_config_assignment(text)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from None
 
 
 def _docker_preflight(binary: str, image: str) -> str:
@@ -574,6 +630,7 @@ def _dry_run_payload(args: argparse.Namespace, requests: list) -> dict:
         "model_labels": list(dict.fromkeys(request.display_model for request in requests)),
         "trajectories": len(requests),
         "parallel": args.parallel,
+        "launch_interval": args.launch_interval,
         "grader_parallel": args.grader_parallel or args.parallel,
         "samples": args.samples,
         "opencode_max_steps": args.opencode_max_steps,
@@ -677,6 +734,8 @@ def _collect(args: argparse.Namespace) -> int:
         args.opencode_output_tokens = 32768 if args.bench == "skillsbench" else 8192
     if args.parallel < 1:
         raise ValueError("--parallel must be at least 1")
+    if not math.isfinite(args.launch_interval) or args.launch_interval < 0:
+        raise ValueError("--launch-interval must be a finite number of seconds >= 0")
     if args.grader_parallel is not None and args.grader_parallel < 1:
         raise ValueError("--grader-parallel must be at least 1")
     if args.samples < 1:
@@ -844,6 +903,14 @@ def _collect(args: argparse.Namespace) -> int:
         raise ValueError("--openclaw-model-request-timeout requires --model-config")
     if args.openclaw_max_tokens is not None and model_config is None:
         raise ValueError("--openclaw-max-tokens requires --model-config")
+    if args.openclaw_config_set and "openclaw" not in selected_harnesses:
+        raise ValueError(
+            "--openclaw-config-set is only valid when an OpenClaw participant is selected"
+        )
+    if args.codex_config_set and "codex" not in selected_harnesses:
+        raise ValueError(
+            "--codex-config-set is only valid when a Codex participant is selected"
+        )
 
     thinking_capabilities: ThinkingCapabilities | None = None
     thinking_capabilities_path: Path | None = None
@@ -901,7 +968,10 @@ def _collect(args: argparse.Namespace) -> int:
             container_user=(
                 None if args.container_user == "image" else args.container_user
             ),
-            gateway_port_start=args.gateway_port,
+            # Placeholder until the run reserves its range (host network only).
+            gateway_port_start=(
+                DEFAULT_GATEWAY_PORT if args.gateway_port is None else args.gateway_port
+            ),
             gateway_port_step=args.gateway_port_step,
             gateway_startup_timeout=args.gateway_startup_timeout,
             network=args.network,
@@ -920,6 +990,7 @@ def _collect(args: argparse.Namespace) -> int:
             keep_container_on_error=args.keep_container_on_error,
             set_image_model=args.set_image_model,
             docker_binary=args.docker_binary,
+            config_set=tuple(args.openclaw_config_set),
         )
         def openclaw_endpoint(model: str) -> str | None:
             providers = (model_config or {}).get("providers", {})
@@ -954,6 +1025,7 @@ def _collect(args: argparse.Namespace) -> int:
             keep_thinking=args.keep_thinking,
             keep_container_on_error=args.keep_container_on_error,
             docker_binary=args.docker_binary,
+            config_set=tuple(args.codex_config_set),
         )
         _validate_thinking_requests(
             requests, cli_harness=cli_harness, harness="codex",
@@ -1117,7 +1189,7 @@ def _collect(args: argparse.Namespace) -> int:
             ),
             "model_request_timeout_seconds": args.openclaw_model_request_timeout,
             "model_max_tokens": args.openclaw_max_tokens,
-            "gateway_port_start": args.gateway_port,
+            "gateway_port_start": openclaw_config.gateway_port_start,
             "gateway_port_step": args.gateway_port_step,
             "network": args.network,
             "session_id": args.session_id,
@@ -1129,6 +1201,8 @@ def _collect(args: argparse.Namespace) -> int:
             "pass_env_names": list(openclaw_config.pass_env),
             "collect_paths": args.collect_path,
             **({"capture_calls": True, "capture_debug": args.capture_debug} if openclaw_config.capture_calls else {}),
+            # Absent when unused so locks written before the option still match.
+            **({"config_set": recorded_config_assignments(openclaw_config.config_set)} if openclaw_config.config_set else {}),
         }
     if codex_config is not None:
         harness_configurations["codex"] = {
@@ -1147,6 +1221,7 @@ def _collect(args: argparse.Namespace) -> int:
             "supports_websockets": args.codex_websockets,
             "pass_env_names": list(codex_config.pass_env),
             **({"capture_calls": True, "capture_debug": args.capture_debug} if codex_config.capture_calls else {}),
+            **({"config_set": recorded_config_assignments(codex_config.config_set)} if codex_config.config_set else {}),
         }
     if claude_code_config is not None:
         harness_configurations["claude-code"] = {
@@ -1229,6 +1304,11 @@ def _collect(args: argparse.Namespace) -> int:
             **({"capture_calls": True, "capture_debug": args.capture_debug} if pi_config.capture_calls else {}),
         }
 
+    # OpenClaw user simulators run in the worker slots after the agents', so
+    # their gateways get ports of their own.
+    simulator_gateway_slot_offset = (
+        args.parallel if "openclaw" in simulator_harnesses else None
+    )
     run_info = {
         "schema_version": "roller.run/v1",
         "roller_version": __version__,
@@ -1247,6 +1327,7 @@ def _collect(args: argparse.Namespace) -> int:
             "workspace": str(workspace) if workspace else None,
             "timeout_seconds": args.timeout,
             "parallel": args.parallel,
+            "launch_interval": args.launch_interval,
             "grader_parallel": args.grader_parallel or args.parallel,
             "samples": args.samples,
             "retries": args.retries,
@@ -1264,9 +1345,7 @@ def _collect(args: argparse.Namespace) -> int:
                 "user_simulator_tasks": sum(
                     task.user_simulator is not None for task in tasks
                 ),
-                "simulator_gateway_slot_offset": (
-                    args.parallel if "openclaw" in simulator_harnesses else None
-                ),
+                "simulator_gateway_slot_offset": simulator_gateway_slot_offset,
             },
             "bundle_policy": {
                 "max_input_file_bytes": args.max_input_file_bytes,
@@ -1295,9 +1374,28 @@ def _collect(args: argparse.Namespace) -> int:
         )
 
     results: list[dict] | None = None
+    gateway_ports: GatewayPortReservation | None = None
     with tempfile.TemporaryDirectory(prefix=".roller-bundle-", dir=output_root) as temporary:
         bundle_store = TaskBundleStore(Path(temporary), bundle_policy)
         try:
+            if openclaw_config is not None and args.network == "host":
+                # Host-network gateways share the host's ports with any other
+                # run here; hold this run's range until collection ends.
+                gateway_ports = reserve_gateway_ports(
+                    args.gateway_port,
+                    args.gateway_port_step,
+                    args.parallel + (simulator_gateway_slot_offset or 0),
+                )
+                ports = gateway_ports.ports
+                openclaw_config = dataclasses.replace(
+                    openclaw_config, gateway_port_start=ports.start
+                )
+                # The same dict is in run_info, so info.json records it too.
+                harness_configurations["openclaw"]["gateway_port_start"] = ports.start
+                logger.info(
+                    "OpenClaw gateway ports %d-%d (every %d)",
+                    ports.start, ports[-1], ports.step,
+                )
             bundles = bundle_store.prepare_all(tasks)
             requests = bundle_store.attach(requests, bundles)
             run_dir.mkdir(parents=True, exist_ok=True)
@@ -1418,7 +1516,9 @@ def _collect(args: argparse.Namespace) -> int:
                 if spec is None:
                     return agent
                 simulator_slot = (
-                    slot + args.parallel if spec.harness == "openclaw" else slot
+                    slot + simulator_gateway_slot_offset
+                    if spec.harness == "openclaw"
+                    else slot
                 )
                 simulator = make_harness(spec.harness, simulator_slot)
                 return ConversationManager(
@@ -1430,6 +1530,7 @@ def _collect(args: argparse.Namespace) -> int:
                 CollectionConfig(
                     run_dir=run_dir,
                     parallel=args.parallel,
+                    launch_interval=args.launch_interval,
                     retries=args.retries,
                     resume=lock_decision.reuse_existing_samples,
                     keep_aux_traces=keep_aux_traces,
@@ -1445,6 +1546,8 @@ def _collect(args: argparse.Namespace) -> int:
                 complete_legacy_adoption(run_dir / "lock.json")
         finally:
             bundle_store.cleanup_runtime()
+            if gateway_ports is not None:
+                gateway_ports.release()
     assert results is not None
     failed = sum(result.get("status") in {"error", "timeout"} for result in results)
     print(f"Collected {len(results)} trajectories ({failed} failed).")

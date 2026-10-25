@@ -242,3 +242,25 @@ remove `--claude-max-thinking-tokens` and use only a `--thinking` effort that mo
 **(6) ACTF has thinking tokens but `reasoning_content` is empty**
 
 the service did not return plaintext. The converter did not drop it.
+
+**(7) Requests are interrupted or retried while the model writes long tool arguments**
+
+Some services do not stream tool-call arguments, so the connection can stay silent for minutes while the model writes a long argument. Claude Code's streaming idle timeout is `CLAUDE_STREAM_IDLE_TIMEOUT_MS` (300000 ms by default; smaller values have no effect) and its request timeout is `API_TIMEOUT_MS` (600000 ms by default). Both are environment variables Claude Code reads itself, so set them in the `env` block of the `--claude-settings` file:
+
+```json
+{
+  "env": {
+    "CLAUDE_STREAM_IDLE_TIMEOUT_MS": "1800000",
+    "API_TIMEOUT_MS": "3000000"
+  }
+}
+```
+
+or set them on the host and pass them with `--pass-env`:
+
+```bash
+export CLAUDE_STREAM_IDLE_TIMEOUT_MS=1800000 API_TIMEOUT_MS=3000000
+roller collect ... \
+  --pass-env CLAUDE_STREAM_IDLE_TIMEOUT_MS \
+  --pass-env API_TIMEOUT_MS
+```

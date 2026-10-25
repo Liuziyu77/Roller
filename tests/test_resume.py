@@ -16,6 +16,8 @@ from roller.harnesses.base import InteractiveHarness, InteractiveSession, TurnRe
 from roller.harness_registry import HARNESS_NAMES as HARNESSES
 from roller.models import HarnessResult, RunRequest, Task, UserSimulatorSpec
 
+from test_gateway_ports import isolate_gateway_ports
+
 
 class RecordingSession(InteractiveSession):
     def __init__(self, harness, request, output_dir) -> None:
@@ -86,6 +88,7 @@ class CliResumeCompatibilityTests(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
+        isolate_gateway_ports(self)
         self.calls = []
         patches = contextlib.ExitStack()
         self.addCleanup(patches.close)

@@ -167,7 +167,7 @@ def main():
     parser.add_argument('--max-output-tokens', type=int, default=4096, help='OpenClaw model output budget')
     parser.add_argument('--thinking', help='explicit reasoning effort for this test run')
     parser.add_argument('--openclaw-api', choices=['openai-completions', 'openai-responses'], default='openai-responses')
-    parser.add_argument('--gateway-port', type=int, default=18789, help='OpenClaw gateway port; use distinct ports for independent concurrent test runs')
+    parser.add_argument('--gateway-port', type=int, help='first OpenClaw gateway port (default: a free range picked by Roller)')
     parser.add_argument('--check-followup', action='store_true', help='add a second user turn after delegation to verify native root-thread resume')
     parser.add_argument('--disable-experimental-betas',action='store_true',help='use Claude native compatibility setting for gateways rejecting beta request fields')
     args=parser.parse_args()
@@ -214,7 +214,9 @@ def main():
                 'input': ['text'], 'reasoning': True, 'contextWindow': 128000, 'maxTokens': args.max_output_tokens}]}}}
             config_path = args.output / 'model-config.json'
             config_path.write_text(json.dumps(config))
-            command += ['--model-config', str(config_path), '--pass-env', args.api_key_env, '--gateway-port', str(args.gateway_port), '--openclaw-max-tokens', str(args.max_output_tokens)]
+            command += ['--model-config', str(config_path), '--pass-env', args.api_key_env, '--openclaw-max-tokens', str(args.max_output_tokens)]
+            if args.gateway_port is not None:
+                command += ['--gateway-port', str(args.gateway_port)]
 
         if args.disable_experimental_betas:
             command+=['--pass-env','CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS']

@@ -152,8 +152,10 @@ http_proxy                https_proxy               no_proxy
 | `--container-user` | `0` | 一次性 task 容器用户。`image` 使用镜像默认用户 |
 | `--docker-binary` | `docker` | Docker CLI 名称或路径 |
 | `--model-config` | 无 | 自定义模型服务和模型 JSON |
+| `--openclaw-model-request-timeout` | OpenClaw 默认值 | 模型请求超时（秒），同时作为流式响应的空闲超时，需要 `--model-config` |
+| `--openclaw-config-set KEY=VALUE` | 无 | 在每个 OpenClaw 容器中执行 `openclaw config set KEY VALUE`，可重复 |
 | `--network` | `host` | 容器网络模式 |
-| `--gateway-port` | `18789` | gateway 起始端口 |
+| `--gateway-port` | 自动 | gateway 起始端口。省略时从 `18789` 起选第一段空闲范围；显式指定时范围最好低于 `32768`，见第 10 节 (4) |
 | `--gateway-port-step` | `10` | worker 之间的端口间隔 |
 | `--gateway-startup-timeout` | `240` | 等待 gateway 就绪的秒数 |
 | `--session-id` | `roller` | OpenClaw session ID 前缀 |
@@ -166,6 +168,20 @@ http_proxy                https_proxy               no_proxy
 | `--set-image-model` / `--no-set-image-model` | 开启 | 是否设置 OpenClaw image model |
 | `--keep-container-on-error` | 关闭 | 出错后保留容器以便排查 |
 | `--collect-path` | 无 | Legacy：额外回收容器绝对路径 |
+
+需要调整 Roller 没有单独参数的 OpenClaw 设置时，使用 `--openclaw-config-set`：
+
+```bash
+roller collect ... \
+  --openclaw-config-set diagnostics.stuckSessionAbortMs=2700000
+```
+
+- 在 Roller 的配置步骤之后执行，作用于本次 run 的每个 OpenClaw 容器，包括 OpenClaw 用户模拟器。随后 Roller 再写入本次 rollout 的 gateway token 并启动 gateway。
+- 值按 OpenClaw 的规则解析：能解析为 JSON/JSON5 的按对应类型写入，否则作为字符串。OpenClaw 不认识的路径会让 rollout 在启动阶段报错。
+- Roller 自己管理的路径会被拒绝，并提示应使用的 Roller 参数，例如 `gateway.port`（`--gateway-port`）、`models`（`--model-config`）、`agents.defaults.thinkingDefault`（`--thinking`）。各项设置之间也不能重叠，例如不能同时设置 `agents.defaults.compaction` 和 `agents.defaults.compaction.reserveTokens`。
+- Agent 每轮的时限由 Roller 的 `--timeout` 决定：Roller 会把剩余时间传给 `openclaw agent --timeout`，它会覆盖 `agents.defaults.timeoutSeconds`。
+- 设置会写入 `lock.json` 和 `info.json`。只有键名本身像凭证（`token`、`apiKey`、`password`、`secret` 等）的值会被脱敏，JSON 对象形式的值按原样记录。修改设置后请使用新的 `--run-name`，`--resume` 会拒绝设置不一致的 run。
+- 不要用它传密钥：值还会出现在 `docker exec` 的命令行中。
 
 全部参数以当前安装版本为准：
 
@@ -349,7 +365,14 @@ roller collect \
 
 **(4) gateway 端口冲突**
 
-如果出现端口已被占用的错误，可以更换 OpenClaw gateway 的起始端口：
+使用默认的 `--network host` 时，每个 rollout 的 OpenClaw gateway 都监听在宿主机的 `起始端口 + slot × --gateway-port-step` 上（启用 OpenClaw 用户模拟器时，slot 数是 `--parallel` 的两倍）。同一台机器上同时跑多个 run 时，端口范围不能重叠。
+
+- 省略 `--gateway-port` 时，Roller 从 `18789` 起，选第一段既没被其他 Roller run 预留、也没被占用的范围，并在整个 run 期间持有预留。预留通过 `/tmp/roller-gateway-ports/` 下的锁文件实现，进程退出（包括崩溃）时自动释放。这个路径是固定的，不随 `$TMPDIR` 变化，这样同一台机器上的所有 run 都能看到彼此的预留。实际使用的起始端口记录在 `info.json` 中。
+- 显式指定的 `--gateway-port` 如果和其他 run 的预留重叠，或者有端口已被占用，run 会在写任何文件之前报错。显式指定的范围最好低于内核的临时端口范围（Linux 默认从 `32768` 起）：Roller 的本地代理监听在临时端口上，可能在 run 中途占用范围内的某个端口。
+- run 中途如果有其他程序占用了某个 rollout 的端口，该 rollout 会在启动 gateway 之前报 `OpenClaw gateway port ... is already in use`，不会连到别人的 gateway 上。
+- 起始端口和 `--gateway-port-step` 都不参与 `lock.json` 比对，`--resume` 时可以得到不同的范围。
+
+不使用锁文件的程序（包括更早版本的 Roller），只有正在监听的端口能被发现。和这类 run 同时运行时，最好显式分开端口范围：
 
 ```bash
 roller collect ... --gateway-port 22000
@@ -358,3 +381,21 @@ roller collect ... --gateway-port 22000
 **(5) 任务成功回复但 sample 失败**
 
 先查看 sample 的 `info.json` 和 `trace.jsonl`。常见原因包括轨迹转换失败，或者输出目录中包含不能安全回收的符号链接和特殊文件。详细规则见 [轨迹产出文件指南](../traces/trajectory-outputs.md)和[结果存储](../tasks/task-bundle-and-storage.md#5-输出回收)。
+
+**(6) 生成长工具参数时被中断：`LLM idle timeout (120s)` 或 `OPENCLAW_DIRECT_ABORT`**
+
+有些 OpenAI 兼容服务不流式返回工具调用参数，要等参数全部生成完才一次性下发。Agent 一次写入一个大文件时，连接上可能连续几分钟没有数据，触发 OpenClaw 的两个看门狗：
+
+- 模型空闲超时，默认 120 秒，报 `LLM idle timeout (120s): no response from model`；
+- 卡死会话恢复，流连续 6 分钟没有进展就中止 run，报 `AbortError: agent run aborted: code=OPENCLAW_DIRECT_ABORT`，gateway 日志中有 `stalled session ... reason=active_work_without_progress`。
+
+两者需要同时放宽：
+
+```bash
+roller collect ... \
+  --timeout 3600 \
+  --openclaw-model-request-timeout 3000 \
+  --openclaw-config-set diagnostics.stuckSessionAbortMs=2700000
+```
+
+`--openclaw-model-request-timeout` 同时也是单次模型请求的总时长上限，不能小于模型最长一次调用（推理加写出工具参数）所需的时间。
