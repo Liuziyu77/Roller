@@ -399,7 +399,7 @@ def _assistant_signature(message: Mapping[str, Any]) -> tuple[str, tuple[tuple[s
     return content, tuple(tools)
 
 
-def _main_chat_calls(sample_dir: Path, calls: list[dict[str, Any]]) -> list[tuple[dict[str, Any], list[dict[str, Any]]]]:
+def _calls_matching_main_steps(sample_dir: Path, calls: list[dict[str, Any]]) -> list[tuple[dict[str, Any], list[dict[str, Any]]]]:
     """Require every root Call to match one ACTF main step in order."""
     trajectory = json.loads((sample_dir / "trace_ACTF.json").read_text(encoding="utf-8"))
     steps = trajectory.get("steps") if isinstance(trajectory, Mapping) else None
@@ -532,7 +532,7 @@ def build_compaction_segments(sample_dir: Path, harness: str,
             return []
         if not native_reset and not _raw_context_changed(main):
             return []  # Preserve the existing linear SFT path, including images.
-    main = _main_chat_calls(sample_dir, main)
+    main = _calls_matching_main_steps(sample_dir, main)
     return _segment_records(main, boundaries)
 
 
