@@ -10,6 +10,7 @@
 | 直接训练 Task Agent | Run 级 `sft.jsonl` | 每行一个最小 SFT record，可直接流式读取 |
 | 查看原有训练记录 | Sample 级 `trace_SFT.json` | 与 `sft.jsonl` 中对应 record 完全相同 |
 | 查看压缩后的上下文 | Sample 级 `sft_segments/*.json` | 独立记录，训练时须显式处理目标范围 |
+| 顺序读取一个 run 的所有压缩分段 | Run 级 `sft_segments.jsonl` | 汇总相同的分段记录，读取时须处理目标范围 |
 | 轨迹分析、打分、统计 token | `trace_ACTF.json` | 有 step、reasoning、observation、metric 和时间信息 |
 | 追查 Harness session 原始事件 | `trace.jsonl` | OpenClaw、Codex、Claude Code、Hermes、OpenCode、DeepSeek 或 Pi native session，Roller 不做训练清洗 |
 | 查看 ACTF 捕获的首个 system prompt | `trace_ACTF.json` 顶层 | 来自各 Harness 可取得的 native/cache/wire 来源，只固化一次 |
@@ -252,7 +253,10 @@ SFT 表达的是从 session 事件重建的逻辑对话，不是每次 provider 
 受监督的 assistant 消息；其后的 assistant 消息也参与训练，夹在中间的 user/tool
 消息仅提供上下文。`info.json` 的分段元数据记录路径、顺序、边界来源和 Call ID。
 无法无损表示捕获的输入时，Roller 标记 SFT 不可用并保留 raw/ACTF 证据。
+使用 `--no-keep-thinking` 时，受监督的 reasoning 为空；如果 harness 在后续请求中确实
+回灌了此前的可见 thinking，分段 prompt 仍会如实保留这部分输入。
 压缩分段须由理解目标范围的读取器显式使用；原有 run 级 `sft.jsonl` 只含线性记录。
+有有效分段时，run 根目录还会生成 `sft_segments.jsonl`，按 request 顺序汇总这些记录。
 
 生成条件：
 
@@ -278,7 +282,7 @@ Codex 保留原始 Responses 工具定义、namespace 和 custom grammar。其�
 
 Collector 完成所有 request 后，按 request index 读取符合条件的线性
 `trace_SFT.json`，并原子、流式写入 run 根目录。压缩分段仍会校验，
-但不混入这个原有训练集：
+并单独写入 `sft_segments.jsonl`，不混入原有线性训练集：
 
 即使独立分段文件有效，run 汇总仍会把该样本计入原有训练集的 `sft_excluded`。
 

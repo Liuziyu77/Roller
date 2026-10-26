@@ -22,6 +22,11 @@ from roller.sft import SFTConversionError, _arguments_json, _normalize_tool_call
 from roller.storage import atomic_write_json
 
 SFT_SEGMENTS_DIR = "sft_segments"
+_CONTEXT_ONLY_REASONS = {
+    "Claude context compaction cannot be represented by the linear ACTF projection; use captured per-call contexts instead",
+    "Pi compaction requires captured per-call contexts",
+    "OpenClaw announcement input lacks native response binding; use captured per-call contexts",
+}
 
 
 def _is_main_compaction(row: Mapping[str, Any], mode: str) -> bool:
@@ -87,6 +92,19 @@ def _single_opencode_session(rows: list[dict[str, Any]], roots: set[str]) -> boo
     return sessions == roots
 
 
+def _opencode_request_scope(rows: list[dict[str, Any]],
+                            requests: list[dict[str, Any]]) -> tuple[set[str], bool]:
+    roots = root_session_ids(rows)
+    session_ids = {row.get("native_session_id") for row in requests
+                   if isinstance(row.get("native_session_id"), str)}
+    if not roots:
+        return session_ids, len(session_ids) > 1
+    if any(row.get("native_session_id") is None for row in requests):
+        ambiguous = not _single_opencode_session(rows, roots) or bool(session_ids - roots)
+        return (set() if not ambiguous else roots), ambiguous
+    return roots, False
+
+
 def has_main_compaction(path: Path, harness: str | None,
                         rows: list[dict[str, Any]] | None = None) -> bool:
     """Find native reset evidence without converting request content to SFT."""
@@ -101,19 +119,9 @@ def has_main_compaction(path: Path, harness: str | None,
                                for row in rows):
         return True
     requests = [row for row in rows if row.get("type") == "request"]
-    roots = root_session_ids(rows) if mode == "opencode" else set()
-    session_ids = {row.get("native_session_id") for row in requests
-                   if isinstance(row.get("native_session_id"), str)}
-    # Without session metadata, a single observed session is unambiguous.
-    if mode == "opencode" and not roots and len(session_ids) == 1:
-        roots = session_ids
-    if mode == "opencode" and not roots and len(session_ids) > 1:
-        return True  # Cannot establish which session supplied the main prompt.
-    if mode == "opencode" and roots and any(
-            row.get("native_session_id") is None for row in requests):
-        if not _single_opencode_session(rows, roots) or session_ids - roots:
-            return True  # An unattributed request may belong to a child.
-        roots = set()  # All requests belong to the one observed root.
+    roots, ambiguous = _opencode_request_scope(rows, requests) if mode == "opencode" else (set(), False)
+    if ambiguous:
+        return True  # A request may belong to a child; do not assume linearity.
     contexts = []
     for row in requests:
         if roots and row.get("native_session_id") not in roots:
@@ -238,7 +246,11 @@ def _responses_item(item: Mapping[str, Any]) -> list[dict[str, Any]]:
             raise SFTConversionError("Responses tool output is not text")
         return [{"role": "tool", "tool_call_id": identifier, "content": output}]
     if kind == "reasoning":
-        # Opaque reasoning in a later prompt cannot be reconstructed as text.
+        # An empty placeholder contributes no prompt content. Any populated
+        # reasoning item still needs a representation we do not have.
+        if (item.get("summary") in (None, []) and item.get("content") in (None, [])
+                and item.get("encrypted_content") in (None, "")):
+            return []
         raise SFTConversionError("Responses reasoning item cannot be represented in SFT")
     raise SFTConversionError(f"unsupported Responses input item: {kind}")
 
@@ -388,20 +400,36 @@ def _assistant_signature(message: Mapping[str, Any]) -> tuple[str, tuple[tuple[s
     for call in calls:
         if not isinstance(call, Mapping):
             raise SFTConversionError("ACTF tool call cannot be matched to a Call")
-        function = call.get("function") if call.get("type") == "function" else call
+        kind = call.get("type")
+        if kind == "function":
+            function = call.get("function")
+        elif kind == "custom":
+            function = call.get("custom")
+        else:
+            function = call
         if not isinstance(function, Mapping):
             raise SFTConversionError("ACTF tool call cannot be matched to a Call")
-        name, arguments = function.get("name"), function.get("arguments", {})
+        name = function.get("name")
         if not isinstance(name, str) or not name:
             raise SFTConversionError("ACTF tool call lacks a name")
-        encoded = _arguments_json(arguments, "ACTF tool arguments")
-        tools.append((name, json.dumps(json.loads(encoded), ensure_ascii=False, sort_keys=True)))
+        if kind == "custom" or call.get("native_type") == "custom_tool_call":
+            arguments = function.get("input")
+            if not isinstance(arguments, str):
+                raise SFTConversionError("ACTF custom tool input is not text")
+            tools.append((name, arguments))
+        else:
+            encoded = _arguments_json(function.get("arguments", function.get("input", {})),
+                                      "ACTF tool arguments")
+            tools.append((name, json.dumps(json.loads(encoded), ensure_ascii=False, sort_keys=True)))
     return content, tuple(tools)
 
 
 def _calls_matching_main_steps(sample_dir: Path, calls: list[dict[str, Any]]) -> list[tuple[dict[str, Any], list[dict[str, Any]]]]:
     """Require every root Call to match one ACTF main step in order."""
     trajectory = json.loads((sample_dir / "trace_ACTF.json").read_text(encoding="utf-8"))
+    reason = trajectory.get("sft_unavailable_reason") if isinstance(trajectory, Mapping) else None
+    if reason and reason not in _CONTEXT_ONLY_REASONS:
+        raise SFTConversionError(str(reason))
     steps = trajectory.get("steps") if isinstance(trajectory, Mapping) else None
     if not isinstance(steps, list) or not steps or any(not isinstance(step, Mapping) for step in steps):
         raise SFTConversionError("main ACTF steps are required to bind captured Calls")
@@ -516,6 +544,9 @@ def build_compaction_segments(sample_dir: Path, harness: str,
     mode = compaction_mode(harness)
     boundaries = _compaction_boundaries(harness, rows)
     native_reset = has_main_compaction(sample_dir / "trace.jsonl", harness, rows)
+    if mode == "opencode" and _opencode_request_scope(
+            rows, [row for row in rows if row.get("type") == "request"])[1]:
+        raise SFTConversionError("OpenCode request lacks a unique main-session identity")
     if mode in {"claude", "codex"} and not boundaries:
         return []
     if mode == "openclaw" and boundaries and not (sample_dir / "trace_ACTF.json").is_file():
@@ -524,6 +555,17 @@ def build_compaction_segments(sample_dir: Path, harness: str,
     capture_dir = manifest_path.parent
     calls = read_jsonl(capture_dir / "calls.jsonl")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    # A terminal native boundary has not changed any model prompt. In
+    # particular, its summary Call is auxiliary even if it shares the root
+    # participant ID; do not require it to match an ACTF main step.
+    if boundaries:
+        last = _time(boundaries[-1]["timestamp"])
+        if not any(_time(call.get("started_at")) > last for call in calls):
+            boundaries = boundaries[:-1]
+            if not boundaries:
+                return []
+    elif not native_reset and not _raw_context_changed(calls):
+        return []
     main = _root_calls(calls, manifest)
     if not boundaries:
         if not main or any(call.get("protocol") != "openai-chat-completions" for call in main):

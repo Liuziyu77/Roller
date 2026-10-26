@@ -623,7 +623,7 @@ class Collector:
         atomic_write_json(info_path, info)
 
     def _write_sft_dataset(self, results: list[dict[str, Any]]) -> None:
-        def rows() -> Iterator[dict[str, Any]]:
+        def rows(segmented: bool) -> Iterator[dict[str, Any]]:
             for result in results:
                 reason = sft_exclusion_reason(result)
                 if reason is not None and reason != SEGMENTED_SFT_REASON:
@@ -658,15 +658,19 @@ class Collector:
                         raise RuntimeError(
                             f"invalid SFT sample shape ({exc}): {path}"
                         ) from exc
-                    # Segments are retained and checked here, but their prompt
-                    # can contain assistant history. Legacy readers would train
-                    # those messages as targets, so keep sft.jsonl linear-only.
-                    if not segments:
-                        if "target_start_index" in row:
+                    # Keep masked segments separate from legacy linear records.
+                    if bool(segments) == segmented:
+                        if not segmented and "target_start_index" in row:
                             raise RuntimeError(f"legacy SFT record has a target mask: {path}")
                         yield row
 
-        write_jsonl(self.run_dir / "sft.jsonl", rows())
+        write_jsonl(self.run_dir / "sft.jsonl", rows(False))
+        segment_dataset = self.run_dir / "sft_segments.jsonl"
+        if any(isinstance(r.get("trajectory"), dict) and
+               r["trajectory"].get("sft_segments") for r in results):
+            write_jsonl(segment_dataset, rows(True))
+        else:
+            segment_dataset.unlink(missing_ok=True)
         def calls() -> Iterator[dict[str, Any]]:
             for result in results:
                 if result.get("status") not in {"ok", "skipped"}:

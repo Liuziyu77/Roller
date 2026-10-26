@@ -11,6 +11,7 @@ to use them for training, analysis, and debugging.
 | Train a Task Agent directly | Run-level `sft.jsonl` | One minimal SFT record per line, ready for streaming reads |
 | Inspect a legacy training record | Sample-level `trace_SFT.json` | Identical to the matching record in `sft.jsonl` |
 | Inspect compacted context | Sample-level `sft_segments/*.json` | Separate opt-in records with an explicit target mask |
+| Read all compacted records in a run | Run-level `sft_segments.jsonl` | Aggregates the same masked segment records in request order |
 | Trajectory analysis, scoring, token stats | `trace_ACTF.json` | Has step, reasoning, observation, metric, and timing |
 | Trace Harness session raw events | `trace.jsonl` | OpenClaw, Codex, Claude Code, Hermes, OpenCode, DeepSeek, or Pi native session; Roller does not clean it for training |
 | Inspect the first system prompt captured into ACTF | Top level of `trace_ACTF.json` | Taken from whichever native/cache/wire source each Harness can obtain, frozen once |
@@ -302,8 +303,12 @@ subsequent assistant messages are targets, while intervening user/tool messages
 remain context. Segment metadata in `info.json` records paths, order, boundary
 source, and Call IDs. If captured input cannot be represented faithfully,
 Roller records SFT as unavailable and retains raw/ACTF evidence.
+With `--no-keep-thinking`, supervised reasoning is empty, but a segment prompt
+still preserves earlier visible thinking if the harness actually sent it again.
 These segments require an opt-in reader that honors the target mask. The
 legacy run-level `sft.jsonl` remains linear-only.
+When valid segments exist, the run root also contains `sft_segments.jsonl`
+with those records in request order. Its reader must honor `target_start_index`.
 
 
 Generation conditions:
@@ -335,8 +340,8 @@ See [SFT data format](sft-format.md) for the full field definition.
 
 After the Collector finishes every request, it reads eligible linear
 `trace_SFT.json` records in request-index order and writes the run root
-atomically as a stream. It validates compaction segments but keeps them out of
-this legacy dataset:
+atomically as a stream. It validates compaction segments and writes them to
+`sft_segments.jsonl` separately, keeping this legacy dataset linear-only.
 
 The run summary counts a segmented sample as `sft_excluded` from the legacy
 dataset even when its separate segment files are valid.

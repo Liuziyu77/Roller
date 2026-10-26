@@ -6,7 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from roller.compaction_sft import build_compaction_segments, export_compaction_segments, has_main_compaction
+from roller.compaction_sft import (_assistant_signature, _responses_item,
+                                   build_compaction_segments, export_compaction_segments,
+                                   has_main_compaction)
 from roller.collector import CollectionConfig, Collector
 from roller.integrity import validate_resumable_sample
 from roller.models import HarnessResult, RunRequest, Task
@@ -44,6 +46,61 @@ def _actf(path: Path, *assistants: str | dict) -> None:
     ]}), encoding="utf-8")
 
 
+def test_empty_responses_reasoning_is_not_prompt_content() -> None:
+    assert _responses_item({"type": "reasoning", "summary": [], "content": None,
+                            "encrypted_content": None}) == []
+    with pytest.raises(SFTConversionError, match="reasoning item"):
+        _responses_item({"type": "reasoning", "encrypted_content": "opaque"})
+
+
+def test_codex_custom_tool_signatures_match_exact_input() -> None:
+    native = {"content": "", "tool_calls": [{"native_type": "custom_tool_call",
+               "name": "exec", "input": "echo hi", "arguments": {"input": "echo hi"}}]}
+    normalized = {"content": "", "tool_calls": [{"type": "custom",
+                  "custom": {"name": "exec", "input": "echo hi"}}]}
+    assert _assistant_signature(native) == _assistant_signature(normalized)
+    normalized["tool_calls"][0]["custom"]["input"] = "echo bye"
+    assert _assistant_signature(native) != _assistant_signature(normalized)
+
+
+def test_terminal_openclaw_compaction_keeps_linear_export(tmp_path: Path) -> None:
+    _actf(tmp_path, "DONE")
+    _write(tmp_path / "trace.jsonl", [{"type": "compaction", "id": "terminal",
+            "summary": "", "timestamp": "2026-10-15T00:00:05Z"}])
+    manifest = _capture(tmp_path, "root", [
+        _call(1, "root", "openai-chat-completions",
+              {"messages": [{"role": "user", "content": "task"}], "tools": []},
+              {"choices": [{"message": {"role": "assistant", "content": "DONE"}}]}),
+        _call(4, "root", "openai-chat-completions",
+              {"messages": [{"role": "user", "content": "summarize"}], "tools": []},
+              {"choices": [{"message": {"role": "assistant", "content": ""}}]}),
+    ])
+    assert build_compaction_segments(tmp_path, "openclaw", manifest) == []
+
+
+def test_linear_sample_does_not_require_root_capture_identity(tmp_path: Path) -> None:
+    _write(tmp_path / "trace.jsonl", [{"type": "session"}])
+    manifest = _capture(tmp_path, "root", [
+        _call(1, "root", "openai-chat-completions",
+              {"messages": [{"role": "user", "content": "task"}], "tools": []},
+              {"choices": [{"message": {"role": "assistant", "content": "DONE"}}]}),
+    ])
+    (tmp_path / manifest).write_text(json.dumps({"participants": []}), encoding="utf-8")
+    assert build_compaction_segments(tmp_path, "openclaw", manifest) == []
+
+
+def test_opencode_untagged_task_request_is_not_exported_as_main(tmp_path: Path) -> None:
+    _write(tmp_path / "trace.jsonl", [
+        {"type": "session_export", "data": {"info": {"id": "root"},
+            "messages": [{"parts": [{"type": "tool", "tool": "task"}]}]}},
+        {"type": "request", "native_session_id": None,
+         "body": {"messages": [{"role": "user", "content": "task"}]}},
+    ])
+    manifest = _capture(tmp_path, "root", [])
+    with pytest.raises(SFTConversionError, match="unique main-session identity"):
+        build_compaction_segments(tmp_path, "opencode", manifest)
+
+
 def test_claude_preserved_assistant_is_prompt_not_target(tmp_path: Path) -> None:
     root = "root:session"
     _actf(tmp_path, "EARLIER_ACK", "ANSWER")
@@ -78,6 +135,11 @@ def test_claude_preserved_assistant_is_prompt_not_target(tmp_path: Path) -> None
     assert segments[1]["boundary_event_id"] == "boundary-1"
     assert segments[1]["summary_call_id"] is None
     assert segments[1]["summary_call_binding"] == "unattributed"
+    trajectory = json.loads((tmp_path / "trace_ACTF.json").read_text())
+    trajectory["sft_unavailable_reason"] = "unrelated ACTF data loss"
+    (tmp_path / "trace_ACTF.json").write_text(json.dumps(trajectory), encoding="utf-8")
+    with pytest.raises(SFTConversionError, match="unrelated ACTF data loss"):
+        build_compaction_segments(tmp_path, "claude-code", manifest)
 
 
 def test_claude_compacts_during_one_user_tool_turn(tmp_path: Path) -> None:
@@ -742,6 +804,7 @@ def test_collector_uses_chat_call_rewrite_instead_of_linear_actf(
     validate_resumable_sample(sample, request, result)
     collector._write_sft_dataset([result])
     assert (tmp_path / "sft.jsonl").read_text() == ""
+    assert len((tmp_path / "sft_segments.jsonl").read_text().splitlines()) == 2
 
     calls[1]["output"] = answer("unmatched output")
     _capture(sample, "root", calls)
@@ -803,6 +866,8 @@ def test_collector_exports_aggregates_and_validates_compaction_segments(
     monkeypatch.setattr("roller.integrity.validate_capture", lambda *_: None)
     collector._write_sft_dataset([result])
     assert (tmp_path / "sft.jsonl").read_text() == ""
+    assert [json.loads(line) for line in (tmp_path / "sft_segments.jsonl").read_text().splitlines()] == [
+        json.loads((sample / item["path"]).read_text()) for item in result["trajectory"]["sft_segments"]]
 
     validate_resumable_sample(sample, request, result)
     segment = sample / result["trajectory"]["sft_segments"][1]["path"]
