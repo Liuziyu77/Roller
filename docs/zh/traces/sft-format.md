@@ -62,14 +62,18 @@ SFT record 不包含 schema version、task/model、usage、时间戳、step ID�
 每条分段包含 `messages`、`tools` 和 `target_start_index`。该索引之前的消息是
 窗口开始时模型实际收到的 prompt；从该索引起，只有 `role: "assistant"` 的消息
 参与训练，夹在其中的 user/tool 消息只提供上下文。下一段从上下文变化后的真实请求
-开始，可以同时含有摘要和保留的近期历史。`info.json` 中每段记录路径、顺序
+开始，可以同时含有摘要和保留的近期历史。
+原生事件和请求行只负责发现可能的上下文变化；实际分段内容与校验依据是捕获的
+主 Agent Calls。两种证据可能不一致，因此不能拿原生事件直接填充 SFT 内容。
+`info.json` 中每段记录路径、顺序
 `window_index`、`boundary_source`（`initial`、`native_boundary` 或
 `observed_context_change`）、可选的原生 `boundary_event_id` 及首尾 Call ID。
 无法归属摘要 Call 时，`summary_call_id` 为 null；原生边界的
 `summary_call_binding` 为 `unattributed`，没有原生边界时为 null。
 Roller 不根据文本或时间猜测摘要 Call 的归属。如果额外的 root Call 或合成的
 assistant step 无法与 ACTF 主干步骤一一对应，就不导出 SFT，但保留 raw 和 Calls。
-加密 reasoning 等无法表示的 prompt 内容会使压缩分段不可用，不会静默改写模型输入。
+加密 reasoning 等无法表示的 prompt 内容会使该压缩样本的 SFT 导出不可用，
+不会静默改写模型输入。
 原有 `sft.jsonl` 不收录这些分段，避免旧读取器把 prompt 中的 assistant 历史误训为目标。
 
 ### 1.1 多模态 record

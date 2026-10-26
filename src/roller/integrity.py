@@ -9,7 +9,7 @@ from typing import Any, Mapping
 from roller.models import RunRequest
 from roller.capture import validate_capture
 from roller.compaction_sft import SFT_SEGMENTS_DIR, build_compaction_segments, has_main_compaction
-from roller.harness_registry import requires_cache_trace
+from roller.harness_registry import allows_raw_only_actf, compaction_mode, requires_cache_trace
 from roller.sft import actf_to_sft, validate_sft_record
 
 
@@ -153,7 +153,7 @@ def _validate_trajectory_files(
         runtime if isinstance(runtime, Mapping) else None
     )
     raw_only = (
-        info.get("harness") in {"opencode", "openclaw"}
+        allows_raw_only_actf(info.get("harness"))
         and conversion_target == "actf"
     )
     sft_unavailable = conversion_target == "sft"
@@ -201,6 +201,7 @@ def _validate_trajectory_files(
         return
     manifest = capture.get("manifest") if isinstance(capture, Mapping) else None
     try:
+        # Captured Calls can reveal a rewrite that the native trace did not log.
         expected = (build_compaction_segments(base, info.get("harness"), manifest)
                     if not sft_unavailable and isinstance(manifest, str) else [])
         if not sft_unavailable and not segments and (
@@ -210,7 +211,7 @@ def _validate_trajectory_files(
         raise ValueError(f"compaction evidence cannot be validated: {exc}") from exc
 
     actf = _json_object(actf_path)
-    if info.get("harness") == "claude-code" and has_legacy_claude_sidechain(actf):
+    if compaction_mode(info.get("harness")) == "claude" and has_legacy_claude_sidechain(actf):
         raise ValueError(
             "legacy Claude Code sidechain steps are mixed into root ACTF/SFT; "
             "the sample cannot be safely reused or silently rerun"

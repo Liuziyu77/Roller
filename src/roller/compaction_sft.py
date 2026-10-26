@@ -1,8 +1,10 @@
-"""SFT windows reconstructed from captured main-agent requests.
+"""Reconstruct main-agent SFT windows from captured model Calls.
 
-Native events identify Claude, Codex, and OpenClaw compaction. For other
-harnesses, a request that no longer extends the verified context starts a new
-window. The request body establishes what the model actually saw.
+One window is one SFT record: its first Call supplies the full prompt, and
+assistant outputs from its Calls are targets. Later Calls join that record only
+when their prompts extend the verified record exactly. Native events identify
+known compaction boundaries; native request rows detect possible rewrites.
+Captured Calls establish the actual prompt and response for export.
 """
 from __future__ import annotations
 
@@ -14,6 +16,7 @@ from typing import Any, Mapping
 
 from roller.capture import _safe_file, read_jsonl
 from roller.claude_code_actf import _read_events as read_claude_events
+from roller.harness_registry import compaction_mode
 from roller.opencode_actf import root_session_ids
 from roller.sft import SFTConversionError, _arguments_json, _normalize_tool_call, validate_sft_record
 from roller.storage import atomic_write_json
@@ -21,14 +24,14 @@ from roller.storage import atomic_write_json
 SFT_SEGMENTS_DIR = "sft_segments"
 
 
-def _is_main_compaction(row: Mapping[str, Any], harness: str) -> bool:
-    if harness == "claude-code":
+def _is_main_compaction(row: Mapping[str, Any], mode: str) -> bool:
+    if mode == "claude":
         return row.get("subtype") == "compact_boundary" and not row.get("isSidechain")
-    return harness == "codex" and row.get("type") == "compacted"
+    return mode == "codex" and row.get("type") == "compacted"
 
 
 def _native_rows(path: Path, harness: str) -> list[dict[str, Any]]:
-    return read_claude_events(path) if harness == "claude-code" else read_jsonl(path)
+    return read_claude_events(path) if compaction_mode(harness) == "claude" else read_jsonl(path)
 
 
 def _comparable(value: Any) -> Any:
@@ -40,13 +43,20 @@ def _comparable(value: Any) -> Any:
     return value
 
 
-def _prefix_changed(inputs: list[list[Any]]) -> bool:
-    previous: list[Any] = []
-    for messages in inputs:
+def _context_changed(contexts: list[Mapping[str, Any]]) -> bool:
+    previous_messages: list[Any] | None = None
+    previous_tools: Any = None
+    for context in contexts:
+        messages = context.get("messages")
+        if not isinstance(messages, list):
+            continue
         current = _comparable(messages)
-        if previous and current[:len(previous)] != previous:
+        tools = _comparable(context.get("tools", []))
+        if previous_messages is not None and (
+            current[:len(previous_messages)] != previous_messages or tools != previous_tools
+        ):
             return True
-        previous = current
+        previous_messages, previous_tools = current, tools
     return False
 
 
@@ -79,40 +89,39 @@ def _single_opencode_session(rows: list[dict[str, Any]], roots: set[str]) -> boo
 
 def has_main_compaction(path: Path, harness: str | None,
                         rows: list[dict[str, Any]] | None = None) -> bool:
-    """Whether native evidence rules out a safe linear SFT export."""
+    """Find native reset evidence without converting request content to SFT."""
     rows = rows if rows is not None else _native_rows(path, harness or "")
-    if harness in {"claude-code", "codex"}:
-        return any(_is_main_compaction(row, harness) for row in rows)
-    if harness == "openclaw":
+    mode = compaction_mode(harness)
+    if mode in {"claude", "codex"}:
+        return any(_is_main_compaction(row, mode) for row in rows)
+    if mode == "openclaw":
         return any(row.get("type") == "compaction" for row in rows)
-    if harness == "pi" and any(row.get("type") == "event"
+    if mode == "pi" and any(row.get("type") == "event"
                                and (row.get("event") or {}).get("type") == "compaction_end"
                                for row in rows):
         return True
     requests = [row for row in rows if row.get("type") == "request"]
-    roots = root_session_ids(rows) if harness == "opencode" else set()
+    roots = root_session_ids(rows) if mode == "opencode" else set()
     session_ids = {row.get("native_session_id") for row in requests
                    if isinstance(row.get("native_session_id"), str)}
     # Without session metadata, a single observed session is unambiguous.
-    if harness == "opencode" and not roots and len(session_ids) == 1:
+    if mode == "opencode" and not roots and len(session_ids) == 1:
         roots = session_ids
-    if harness == "opencode" and not roots and len(session_ids) > 1:
+    if mode == "opencode" and not roots and len(session_ids) > 1:
         return True  # Cannot establish which session supplied the main prompt.
-    if harness == "opencode" and roots and any(
+    if mode == "opencode" and roots and any(
             row.get("native_session_id") is None for row in requests):
         if not _single_opencode_session(rows, roots) or session_ids - roots:
             return True  # An unattributed request may belong to a child.
         roots = set()  # All requests belong to the one observed root.
-    inputs = []
+    contexts = []
     for row in requests:
         if roots and row.get("native_session_id") not in roots:
             continue
         body = row.get("body", row)
-        messages = body.get("messages") if isinstance(body, Mapping) else None
-        if not isinstance(messages, list):
-            continue
-        inputs.append(messages)
-    return _prefix_changed(inputs)
+        if isinstance(body, Mapping):
+            contexts.append(body)
+    return _context_changed(contexts)
 
 
 def _time(value: Any) -> datetime:
@@ -361,15 +370,12 @@ def _target_messages_from_call(call: Mapping[str, Any]) -> list[dict[str, Any]]:
 
 def _raw_context_changed(calls: list[dict[str, Any]]) -> bool:
     """Detect a prompt rewrite without requiring SFT conversion of its content."""
-    inputs = []
+    contexts = []
     for call in calls:
-        if call.get("export_status") != "available":
-            continue
         context = call.get("context")
-        messages = context.get("messages") if isinstance(context, Mapping) else None
-        if isinstance(messages, list):
-            inputs.append(messages)
-    return _prefix_changed(inputs)
+        if isinstance(context, Mapping):
+            contexts.append(context)
+    return _context_changed(contexts)
 
 
 def _assistant_signature(message: Mapping[str, Any]) -> tuple[str, tuple[tuple[str, str], ...]]:
@@ -401,7 +407,10 @@ def _main_chat_calls(sample_dir: Path, calls: list[dict[str, Any]]) -> list[tupl
         raise SFTConversionError("main ACTF steps are required to bind captured Calls")
     targets = [_assistant_signature(step.get("assistant_content", {})) for step in steps]
     if len(calls) != len(targets):
-        raise SFTConversionError("root Calls do not correspond one-to-one with ACTF main steps")
+        raise SFTConversionError(
+            "root Calls do not correspond one-to-one with ACTF main steps; "
+            "an auxiliary or summary Call cannot be attributed safely"
+        )
     verified = []
     for call, step, target in zip(calls, steps, targets):
         if call.get("export_status") != "available":
@@ -419,15 +428,16 @@ def _main_chat_calls(sample_dir: Path, calls: list[dict[str, Any]]) -> list[tupl
 
 
 def _compaction_boundaries(harness: str, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    mode = compaction_mode(harness)
     boundaries = []
     for row in rows:
-        if not (_is_main_compaction(row, harness) or
-                harness == "openclaw" and row.get("type") == "compaction"
+        if not (_is_main_compaction(row, mode) or
+                mode == "openclaw" and row.get("type") == "compaction"
                 and isinstance(row.get("id"), str) and isinstance(row.get("summary"), str)):
             continue
-        if harness == "claude-code":
+        if mode == "claude":
             event_id = row.get("uuid")
-        elif harness == "openclaw":
+        elif mode == "openclaw":
             event_id = row["id"]
         else:
             event_id = (row.get("payload") or {}).get("window_id")
@@ -503,11 +513,12 @@ def build_compaction_segments(sample_dir: Path, harness: str,
                               manifest_relative: str) -> list[tuple[dict[str, Any], dict[str, Any]]]:
     """Build verified main-agent windows without changing the sample directory."""
     rows = _native_rows(sample_dir / "trace.jsonl", harness)
+    mode = compaction_mode(harness)
     boundaries = _compaction_boundaries(harness, rows)
     native_reset = has_main_compaction(sample_dir / "trace.jsonl", harness, rows)
-    if harness in {"claude-code", "codex"} and not boundaries:
+    if mode in {"claude", "codex"} and not boundaries:
         return []
-    if harness == "openclaw" and boundaries and not (sample_dir / "trace_ACTF.json").is_file():
+    if mode == "openclaw" and boundaries and not (sample_dir / "trace_ACTF.json").is_file():
         raise SFTConversionError("OpenClaw compaction requires ACTF main-step evidence")
     manifest_path = _safe_file(sample_dir, manifest_relative)
     capture_dir = manifest_path.parent

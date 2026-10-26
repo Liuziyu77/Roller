@@ -264,6 +264,23 @@ def test_incomplete_main_call_blocks_export(tmp_path: Path) -> None:
         build_compaction_segments(tmp_path, "claude-code", manifest)
 
 
+@pytest.mark.parametrize("root_ids", [[], ["root-a", "root-b"]])
+def test_compaction_rejects_ambiguous_root_participants(
+    tmp_path: Path, root_ids: list[str],
+) -> None:
+    _write(tmp_path / "trace.jsonl", [{"type": "system", "subtype": "compact_boundary",
+                                        "uuid": "boundary", "timestamp": "2026-10-15T00:00:02Z"}])
+    manifest = _capture(tmp_path, "root-a", [_call(3, "root-a", "anthropic-messages",
+        {"system": "s", "messages": [{"role": "user", "content": "summary"}], "tools": []},
+        {"content": [{"type": "text", "text": "answer"}]})])
+    manifest_path = tmp_path / manifest
+    data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    data["participants"] = [{"participant_id": root, "role": "root"} for root in root_ids]
+    manifest_path.write_text(json.dumps(data), encoding="utf-8")
+    with pytest.raises(SFTConversionError, match="one observed root participant"):
+        build_compaction_segments(tmp_path, "claude-code", manifest)
+
+
 def test_unverified_assistant_in_later_request_is_not_trained(tmp_path: Path) -> None:
     root = "root:session"
     _actf(tmp_path, "one", "two")
@@ -325,6 +342,27 @@ def test_chat_harness_context_rewrite_exports_actual_windows(tmp_path: Path, har
     assert [message["content"] for message in segments[1][1]["messages"]] == [
         "instructions", "compacted summary", "finish the task", "final answer"]
     assert segments[1][0]["boundary_event_id"] is None
+
+
+def test_tool_schema_change_starts_a_new_window(tmp_path: Path) -> None:
+    _write(tmp_path / "trace.jsonl", [{"type": "session"}])
+    _actf(tmp_path, "ACK", "DONE")
+    before = {"messages": [{"role": "user", "content": "task"}], "tools": []}
+    after = {"messages": [*before["messages"],
+                          {"role": "assistant", "content": "ACK"},
+                          {"role": "user", "content": "continue"}],
+             "tools": [{"type": "function", "function": {
+                 "name": "read", "parameters": {"type": "object"}}}]}
+    def output(answer: str) -> dict:
+        return {"choices": [{"message": {"role": "assistant", "content": answer}}]}
+    manifest = _capture(tmp_path, "root", [
+        _call(1, "root", "openai-chat-completions", before, output("ACK")),
+        _call(2, "root", "openai-chat-completions", after, output("DONE")),
+    ])
+    segments = build_compaction_segments(tmp_path, "hermes", manifest)
+    assert len(segments) == 2
+    assert segments[1][0]["boundary_source"] == "observed_context_change"
+    assert segments[1][1]["tools"] == after["tools"]
 
 
 @pytest.mark.parametrize("extra,following", [

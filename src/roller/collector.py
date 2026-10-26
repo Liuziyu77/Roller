@@ -19,6 +19,7 @@ from typing import Any, Callable, Iterator
 from roller.harnesses.base import Harness
 from roller.capture import _safe_file, read_jsonl, recover_capture_retention, validate_capture
 from roller.compaction_sft import SFT_SEGMENTS_DIR, export_compaction_segments, has_main_compaction
+from roller.harness_registry import allows_raw_only_actf
 from roller.integrity import (
     has_legacy_claude_sidechain,
     trajectory_conversion_unavailable,
@@ -336,7 +337,7 @@ class Collector:
             trajectory_source is None
             and final.status == "ok"
             and not (
-                harness_name in {"opencode", "openclaw"}
+                allows_raw_only_actf(harness_name)
                 and trajectory_conversion_unavailable(metadata) == "actf"
             )
         ):
