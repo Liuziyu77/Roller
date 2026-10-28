@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-from copy import deepcopy
 from pathlib import Path
 
 import pytest
@@ -120,20 +119,6 @@ def test_three_context_windows_export_aggregate_and_resume(tmp_path: Path, harne
                       metadata={"capture": capture}), [], "2026-10-17T00:00:00Z")
     validate_capture(sample, capture)
     validate_resumable_sample(sample, request, result)
-    if harness == "codex":
-        assert result["status"] == "ok"
-        assert result["runtime"]["trajectory_conversion"]["target"] == "sft"
-        assert "sft_segments" not in result["trajectory"]
-        collector._write_sft_dataset([result])
-        assert (tmp_path / "sft.jsonl").read_text() == ""
-        return
-    legacy = deepcopy(result)
-    for segment in legacy["trajectory"]["sft_segments"]:
-        segment.pop("boundary_source")
-        if segment["boundary_event_id"] is None:
-            segment.pop("summary_call_id")
-            segment.pop("summary_call_binding")
-    validate_resumable_sample(sample, request, legacy)
     collector._write_sft_dataset([result])
     assert (tmp_path / "sft.jsonl").read_text() == ""
     linear_dir = tmp_path / "samples/linear/00000001_linear"
@@ -243,11 +228,6 @@ def test_single_user_tool_round_trip_across_compaction(tmp_path: Path, harness: 
     validate_resumable_sample(sample, request, result)
     collector._write_sft_dataset([result])
     assert (tmp_path / "sft.jsonl").read_text() == ""
-    if harness == "codex":
-        assert result["status"] == "ok"
-        assert result["runtime"]["trajectory_conversion"]["target"] == "sft"
-        assert "sft_segments" not in result["trajectory"]
-        return
     rows = [json.loads((sample / item["path"]).read_text())
             for item in result["trajectory"]["sft_segments"]]
     assert result["status"] == "ok"
@@ -331,6 +311,31 @@ def test_linear_multimodal_sample_keeps_original_sft_export(tmp_path: Path) -> N
     assert result["status"] == "ok" and "sft_segments" not in result["trajectory"]
     assert record["images"] == ["data:image/png;base64,cG5n"]
     assert len((tmp_path / "sft.jsonl").read_text().splitlines()) == 1
+
+
+def test_terminal_compaction_keeps_resumable_linear_sft(tmp_path: Path) -> None:
+    """OpenClaw can compact after its last Call; no prompt changed."""
+    request = RunRequest(index=0, task=Task(id="terminal", prompts=("task",), source_index=0),
+                         model="model", timeout_seconds=30)
+    collector = Collector(CollectionConfig(run_dir=tmp_path), lambda slot: None)
+    sample = collector._sample_dir(request)
+    sample.mkdir(parents=True)
+    (sample / "trace.jsonl").write_text(json.dumps({
+        "type": "compaction", "id": "end", "summary": "",
+        "timestamp": "2026-10-17T00:00:09Z"}) + "\n", encoding="utf-8")
+    (sample / "trace_ACTF.json").write_text(json.dumps({
+        "schema_version": "ACTF_v1.0", "system_prompt": "instructions", "tools": [],
+        "steps": [{"step_id": 1, "user_content": "task", "assistant_content": {
+            "content": "DONE", "tool_calls": []}, "observation": []}]}), encoding="utf-8")
+    capture = _write_capture(sample, [
+        _call("openclaw", 1, [_message("openclaw", "user", "task")], "DONE"),
+        _call("openclaw", 2, [_message("openclaw", "user", "summarize")], "")])
+    result = collector._finalize_sample(request, sample, "openclaw", HarnessResult(
+        status="ok", elapsed_seconds=0.1, trace_path=str(sample / "trace.jsonl"),
+        trajectory_path=str(sample / "trace_ACTF.json"), metadata={"capture": capture}),
+        [], "2026-10-17T00:00:00Z")
+    assert result["trajectory"]["sft"] == "trace_SFT.json"
+    validate_resumable_sample(sample, request, result)
 
 
 def test_raw_only_compaction_can_resume(tmp_path: Path) -> None:

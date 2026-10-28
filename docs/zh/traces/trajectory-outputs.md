@@ -233,7 +233,7 @@ sample 可能仍有 ACTF。已显式记录的转换不可用状态见
 ### 4.3 Sample 级 SFT 记录
 
 线性 SFT 从 ACTF 生成，存入 `trace_SFT.json`。主 Agent 压缩上下文时，Roller
-仅在 root Calls 与 ACTF 主干步骤一一对应时根据捕获的 Calls 重建窗口，存入
+仅在 root Calls 与 ACTF 主干步骤一一对应（原生压缩行记录的摘要 Call 除外）时根据捕获的 Calls 重建窗口，存入
 `sft_segments/0001.json`、`0002.json` 等；否则标记 SFT 不可用，保留 raw 和 capture。
 纯文本线性样本顶层只有以下字段，图片样本额外包含 `images`：
 
@@ -253,8 +253,7 @@ SFT 表达的是从 session 事件重建的逻辑对话，不是每次 provider 
 受监督的 assistant 消息；其后的 assistant 消息也参与训练，夹在中间的 user/tool
 消息仅提供上下文。`info.json` 的分段元数据记录路径、顺序、边界来源和 Call ID。
 无法无损表示捕获的输入时，Roller 标记 SFT 不可用并保留 raw/ACTF 证据。
-使用 `--no-keep-thinking` 时，受监督的 reasoning 为空；如果 harness 在后续请求中确实
-回灌了此前的可见 thinking，分段 prompt 仍会如实保留这部分输入。
+使用 `--no-keep-thinking` 时，分段 prompt 和目标中的 reasoning 都会清空，与线性 SFT 一致。
 压缩分段须由理解目标范围的读取器显式使用；原有 run 级 `sft.jsonl` 只含线性记录。
 有有效分段时，run 根目录还会生成 `sft_segments.jsonl`，按 request 顺序汇总这些记录。
 
@@ -284,7 +283,7 @@ Collector 完成所有 request 后，按 request index 读取符合条件的线�
 `trace_SFT.json`，并原子、流式写入 run 根目录。压缩分段仍会校验，
 并单独写入 `sft_segments.jsonl`，不混入原有线性训练集：
 
-即使独立分段文件有效，run 汇总仍会把该样本计入原有训练集的 `sft_excluded`。
+run 汇总把这类样本计入 `sft_segmented`，不计入 `sft_included` 或 `sft_excluded`。
 
 - `status=ok` 的 sample 会进入；
 - `--resume` 复用的 `status=skipped` sample 原先必须是 `ok`，也会进入；

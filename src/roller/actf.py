@@ -9,6 +9,10 @@ from typing import Any, Iterable
 from roller.openclaw_delivery import OpenClawDeliveryTracker
 from roller.openclaw_usage import OpenClawUsage
 
+OPENCLAW_ANNOUNCEMENT_SFT_REASON = (
+    "OpenClaw announcement input lacks native response binding; use captured per-call contexts"
+)
+
 
 def _event_time(value: Any) -> datetime | None:
     if isinstance(value, (int, float)) and not isinstance(value, bool):
@@ -417,7 +421,7 @@ def convert_openclaw_trace(
         notification_inputs=notification_inputs,
     )
     if unresolved:
-        trajectory["sft_unavailable_reason"] = "OpenClaw announcement input lacks native response binding; use captured per-call contexts"
+        trajectory["sft_unavailable_reason"] = OPENCLAW_ANNOUNCEMENT_SFT_REASON
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = destination.with_name(f".{destination.name}.tmp")
     temporary.write_text(

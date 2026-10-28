@@ -10,6 +10,8 @@ from roller.actf import openclaw_events_to_actf
 from roller.storage import atomic_write_json
 from roller.usage import ZERO_USAGE
 
+PI_COMPACTION_SFT_REASON = "Pi compaction requires captured per-call contexts"
+
 
 def read_pi_events(path: Path) -> list[dict[str, Any]]:
     # JSONL framing is LF only: Unicode separators are valid inside strings.
@@ -143,7 +145,7 @@ def pi_events_to_actf(events: Iterable[dict[str, Any]], *, keep_thinking: bool =
         raise ValueError("Pi journal contains incomplete turns or requests")
     result = openclaw_events_to_actf(rows, system_prompts=[system], tools=tools, keep_thinking=keep_thinking)
     if compacted:
-        result["sft_unavailable_reason"] = "Pi compaction requires captured per-call contexts"
+        result["sft_unavailable_reason"] = PI_COMPACTION_SFT_REASON
     return result
 
 

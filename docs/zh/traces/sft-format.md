@@ -68,10 +68,11 @@ SFT record 不包含 schema version、task/model、usage、时间戳、step ID�
 `info.json` 中每段记录路径、顺序
 `window_index`、`boundary_source`（`initial`、`native_boundary` 或
 `observed_context_change`）、可选的原生 `boundary_event_id` 及首尾 Call ID。
-无法归属摘要 Call 时，`summary_call_id` 为 null；原生边界的
-`summary_call_binding` 为 `unattributed`，没有原生边界时为 null。
-Roller 不根据文本或时间猜测摘要 Call 的归属。如果额外的 root Call 或合成的
-assistant step 无法与 ACTF 主干步骤一一对应，就不导出 SFT，但保留 raw 和 Calls。
+root Calls 按顺序绑定 ACTF 主干步骤。Codex 和 OpenClaw 以主 Agent 身份发送压缩摘要
+请求；这类 Call 只有在对不上下一个主干步骤、且其文本原样记录在随后的原生压缩行里时
+才会被跳过。其他多出的 root Call，或没有对应 Call 的合成 assistant step，都会使 SFT
+不可导出，但保留 raw 和 Calls。harness 回放历史时改写的 tool-call ID 不会切出新分段；
+分段使用最近一次 prompt 中的 ID。
 加密 reasoning 等无法表示的 prompt 内容会使该压缩样本的 SFT 导出不可用，
 不会静默改写模型输入。
 原有 `sft.jsonl` 不收录这些分段，避免旧读取器把 prompt 中的 assistant 历史误训为目标。

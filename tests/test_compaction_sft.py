@@ -133,8 +133,6 @@ def test_claude_preserved_assistant_is_prompt_not_target(tmp_path: Path) -> None
     assert record["messages"][2]["content"] == "EARLIER_ACK"
     assert record["messages"][4]["content"] == "ANSWER"
     assert segments[1]["boundary_event_id"] == "boundary-1"
-    assert segments[1]["summary_call_id"] is None
-    assert segments[1]["summary_call_binding"] == "unattributed"
     trajectory = json.loads((tmp_path / "trace_ACTF.json").read_text())
     trajectory["sft_unavailable_reason"] = "unrelated ACTF data loss"
     (tmp_path / "trace_ACTF.json").write_text(json.dumps(trajectory), encoding="utf-8")
@@ -208,14 +206,11 @@ def test_codex_summary_call_is_not_a_training_target(tmp_path: Path) -> None:
     root = "thread:root"
     _actf(tmp_path, "ack", "done")
     _write(tmp_path / "trace.jsonl", [
-        {"type": "response_item", "payload": {"type": "message", "role": "assistant",
-                                             "id": "summary-msg", "content": [
-                                                 {"type": "output_text", "text": "summary"}]}},
         {"type": "compacted", "timestamp": "2026-10-15T00:00:03Z",
-         "payload": {"window_id": "window-2", "message": "summary"}},
+         "payload": {"window_id": "window-2", "message": "Prefix:\nsummary"}},
     ])
-    def response(identifier: str, value: str) -> dict:
-        return {"output": [{"type": "message", "role": "assistant", "id": identifier,
+    def response(value: str) -> dict:
+        return {"output": [{"type": "message", "role": "assistant",
                             "content": [{"type": "output_text", "text": value}]}]}
     before = {"instructions": "system", "tools": [],
               "input": [{"type": "message", "role": "user",
@@ -225,15 +220,47 @@ def test_codex_summary_call_is_not_a_training_target(tmp_path: Path) -> None:
             {"type": "input_text", "text": "CONTEXT CHECKPOINT COMPACTION"}]}]}
     after = {**before, "input": [*before["input"],
         {"type": "message", "role": "user", "content": [
-            {"type": "input_text", "text": "summary"}]}]}
-    manifest = _capture(tmp_path, root, [
-        _call(1, root, "openai-responses", before, response("answer-1", "ack")),
-        _call(2, root, "openai-responses", compact_request, None, status="unavailable"),
-        _call(3, root, "openai-responses", compact_request, response("summary-msg", "summary")),
-        _call(4, root, "openai-responses", after, response("answer-2", "done")),
-    ])
-    with pytest.raises(SFTConversionError, match="one-to-one"):
+            {"type": "input_text", "text": "Prefix:\nsummary"}]}]}
+    calls = [
+        _call(1, root, "openai-responses", before, response("ack")),
+        _call(2, root, "openai-responses", compact_request, response("summary")),
+        _call(4, root, "openai-responses", after, response("done")),
+    ]
+    manifest = _capture(tmp_path, root, calls)
+    segments = build_compaction_segments(tmp_path, "codex", manifest)
+    assert [(item["first_call_id"], item["last_call_id"]) for item, _ in segments] == [
+        ("call-1", "call-1"), ("call-4", "call-4")]
+    assert "summary" not in [message["content"] for _, record in segments
+                             for message in record["messages"] if message["role"] == "assistant"]
+
+    # A summary Call is skipped only on native evidence: its exact text.
+    calls[1]["output"] = response("a different summary")
+    manifest = _capture(tmp_path, root, calls)
+    with pytest.raises(SFTConversionError, match="matches neither"):
         build_compaction_segments(tmp_path, "codex", manifest)
+    calls[1]["export_status"] = "unavailable"
+    manifest = _capture(tmp_path, root, calls)
+    with pytest.raises(SFTConversionError, match="incomplete"):
+        build_compaction_segments(tmp_path, "codex", manifest)
+
+
+def test_main_reply_quoted_by_summary_still_binds_to_its_step(tmp_path: Path) -> None:
+    """OpenClaw summaries often quote the final answer that preceded them."""
+    _actf(tmp_path, "CEDAR-2093", "DONE")
+    _write(tmp_path / "trace.jsonl", [{"type": "compaction", "id": "boundary",
+        "timestamp": "2026-10-15T00:00:04Z", "summary": "## Goal\nfound CEDAR-2093"}])
+    def call(index: int, prompt: str, answer: str) -> dict:
+        return _call(index, "session:roller", "openai-chat-completions",
+            {"messages": [{"role": "user", "content": prompt}], "tools": []},
+            {"choices": [{"message": {"role": "assistant", "content": answer}}]})
+    manifest = _capture(tmp_path, "session:roller", [
+        call(1, "task", "CEDAR-2093"),
+        call(2, "summarize history", "## Goal"),
+        call(3, "summarize turn prefix", "found CEDAR-2093"),
+        call(5, "summary then continue", "DONE")])
+    segments = build_compaction_segments(tmp_path, "openclaw", manifest)
+    assert [(item["first_call_id"], item["last_call_id"]) for item, _ in segments] == [
+        ("call-1", "call-1"), ("call-5", "call-5")]
 
 
 def test_codex_unattributed_summary_does_not_require_text_matching(tmp_path: Path) -> None:
@@ -252,7 +279,6 @@ def test_codex_unattributed_summary_does_not_require_text_matching(tmp_path: Pat
         call(4, "root", "DONE")])
     segments = build_compaction_segments(tmp_path, "codex", manifest)
     assert len(segments) == 2
-    assert segments[1][0]["summary_call_id"] is None
     assert segments[1][1]["messages"][-1]["content"] == "DONE"
 
 
@@ -288,8 +314,85 @@ def test_codex_text_and_tool_items_are_one_assistant_target(tmp_path: Path) -> N
 
     _actf(tmp_path, "ACK", {"content": "Reading now", "tool_calls": [
         {"name": "read", "arguments": {"path": "wrong"}}]})
-    with pytest.raises(SFTConversionError, match="does not match"):
+    with pytest.raises(SFTConversionError, match="matches neither"):
         build_compaction_segments(tmp_path, "codex", manifest)
+
+
+def test_codex_replayed_response_items_continue_one_window(tmp_path: Path) -> None:
+    _actf(tmp_path, {"content": "Reading", "tool_calls": [
+        {"name": "read", "arguments": {"path": "a"}}]}, "DONE")
+    _write(tmp_path / "trace.jsonl", [{"type": "compacted",
+        "timestamp": "2026-10-15T00:00:01Z", "payload": {"window_id": "w"}}])
+    user = {"type": "message", "role": "user", "content": [
+        {"type": "input_text", "text": "summary"}]}
+    text = {"type": "message", "role": "assistant", "content": [
+        {"type": "output_text", "text": "Reading"}]}
+    tool = {"type": "function_call", "call_id": "tool-1", "name": "read",
+            "arguments": '{"path":"a"}'}
+    reasoning = {"type": "reasoning", "summary": [], "content": None, "encrypted_content": None}
+    def call(index: int, items: list[dict], output: list[dict]) -> dict:
+        return _call(index, "root", "openai-responses",
+                     {"instructions": "s", "tools": [], "input": items}, {"output": output})
+    manifest = _capture(tmp_path, "root", [
+        call(2, [user], [reasoning, text, tool]),
+        call(3, [user, reasoning, text, tool,
+                 {"type": "function_call_output", "call_id": "tool-1", "output": "data"}],
+             [{"type": "message", "role": "assistant", "content": [
+                 {"type": "output_text", "text": "DONE"}]}]),
+    ])
+    segments = build_compaction_segments(tmp_path, "codex", manifest)
+    assert [(item["first_call_id"], item["last_call_id"]) for item, _ in segments] == [
+        ("call-2", "call-3")]
+    assert [message["role"] for message in segments[0][1]["messages"]] == [
+        "system", "user", "assistant", "tool", "assistant"]
+
+
+def test_replayed_tool_call_ids_do_not_split_a_window(tmp_path: Path) -> None:
+    """OpenClaw may rewrite tool-call IDs when it replays history."""
+    _actf(tmp_path, {"content": "", "tool_calls": [
+        {"name": "read", "arguments": {"path": "a"}}]}, "DONE")
+    _write(tmp_path / "trace.jsonl", [{"type": "compaction", "id": "boundary",
+        "timestamp": "2026-10-15T00:00:01Z", "summary": "summary"}])
+    def tool_call(identifier: str) -> dict:
+        return {"role": "assistant", "content": None, "tool_calls": [{
+            "id": identifier, "type": "function",
+            "function": {"name": "read", "arguments": '{"path": "a"}'}}]}
+    def call(index: int, messages: list[dict], output: dict) -> dict:
+        return _call(index, "root", "openai-chat-completions",
+                     {"messages": messages, "tools": []}, {"choices": [{"message": output}]})
+    prompt = [{"role": "user", "content": "summary"}]
+    manifest = _capture(tmp_path, "root", [
+        call(2, prompt, tool_call("toolu_01")),
+        call(3, [*prompt, tool_call("toolu01"),
+                 {"role": "tool", "tool_call_id": "toolu01", "content": "data"}],
+             {"role": "assistant", "content": "DONE"}),
+    ])
+    segments = build_compaction_segments(tmp_path, "openclaw", manifest)
+    assert len(segments) == 1
+    messages = segments[0][1]["messages"]
+    assert messages[1]["tool_calls"][0]["id"] == messages[2]["tool_call_id"] == "toolu01"
+
+
+def test_no_keep_thinking_clears_replayed_prompt_reasoning(tmp_path: Path) -> None:
+    _actf(tmp_path, {"content": "", "reasoning_content": "", "tool_calls": [
+        {"name": "Read", "arguments": {"p": "a"}}]}, "DONE")
+    _write(tmp_path / "trace.jsonl", [{"type": "system", "subtype": "compact_boundary",
+                                        "uuid": "b", "timestamp": "2026-10-15T00:00:01Z"}])
+    use = [{"type": "thinking", "thinking": "private"},
+           {"type": "tool_use", "id": "t1", "name": "Read", "input": {"p": "a"}}]
+    def call(index: int, messages: list[dict], output: list[dict]) -> dict:
+        return _call(index, "root", "anthropic-messages",
+                     {"system": "s", "messages": messages, "tools": []}, {"content": output})
+    prompt = [{"role": "user", "content": "summary"}]
+    manifest = _capture(tmp_path, "root", [
+        call(2, prompt, use),
+        call(3, [*prompt, {"role": "assistant", "content": use}, {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "t1", "content": "data"}]}],
+             [{"type": "text", "text": "DONE"}]),
+    ])
+    segments = build_compaction_segments(tmp_path, "claude-code", manifest, keep_thinking=False)
+    assert len(segments) == 1
+    assert "private" not in json.dumps(segments)
 
 
 @pytest.mark.parametrize("retained_reasoning", ["Inspect file.", ""])
@@ -501,8 +604,7 @@ def test_openclaw_unattributed_summary_without_synthetic_reply_exports(tmp_path:
         call(4, "root", "saved summary then continue", "DONE")])
     segments = build_compaction_segments(tmp_path, "openclaw", manifest)
     assert len(segments) == 2
-    assert segments[1][0]["summary_call_id"] is None
-    assert segments[1][0]["summary_call_binding"] == "unattributed"
+    assert segments[1][0]["boundary_source"] == "native_boundary"
 
 
 def test_unmatched_main_reply_in_assistant_history_is_not_called_a_summary(tmp_path: Path) -> None:

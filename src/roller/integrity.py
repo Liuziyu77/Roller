@@ -38,6 +38,15 @@ def trajectory_conversion_unavailable(
     return target if target in {"actf", "sft"} else None
 
 
+def keeps_thinking(metadata: Mapping[str, Any] | None) -> bool:
+    """Read the recorded ``--keep-thinking`` choice; bridge harnesses nest it in settings."""
+    if not isinstance(metadata, Mapping):
+        return True
+    settings = metadata.get("settings")
+    settings = settings if isinstance(settings, Mapping) else {}
+    return bool(metadata.get("keep_thinking", settings.get("keep_thinking", True)))
+
+
 def has_legacy_claude_sidechain(trajectory: Mapping[str, Any]) -> bool:
     """Identify older ACTF records that mixed child steps into the root."""
 
@@ -202,10 +211,13 @@ def _validate_trajectory_files(
     manifest = capture.get("manifest") if isinstance(capture, Mapping) else None
     try:
         # Captured Calls can reveal a rewrite that the native trace did not log.
-        expected = (build_compaction_segments(base, info.get("harness"), manifest)
+        expected = (build_compaction_segments(base, info.get("harness"), manifest,
+                                              keep_thinking=keeps_thinking(runtime))
                     if not sft_unavailable and isinstance(manifest, str) else [])
-        if not sft_unavailable and not segments and (
-                expected or has_main_compaction(raw_path, info.get("harness"))):
+        # Like the collector: without Calls, any native reset rules out linear SFT.
+        uncaptured_reset = (not isinstance(manifest, str)
+                            and has_main_compaction(raw_path, info.get("harness")))
+        if not sft_unavailable and not segments and (expected or uncaptured_reset):
             raise ValueError("context reset requires per-call export, not linear SFT")
     except (OSError, UnicodeError, json.JSONDecodeError, KeyError, TypeError, AttributeError) as exc:
         raise ValueError(f"compaction evidence cannot be validated: {exc}") from exc
@@ -230,20 +242,7 @@ def _validate_trajectory_files(
     if segments and not sft_unavailable:
         if not isinstance(manifest, str):
             raise ValueError("SFT segments lack their captured Calls")
-        # Older exports predate these explanatory fields. Their paths, Call
-        # bindings, and record contents still have to match rebuilt evidence.
-        added_fields = {"boundary_source", "summary_call_id", "summary_call_binding"}
-        rebuilt = [metadata for metadata, _ in expected]
-        if len(segments) != len(rebuilt) or any(not isinstance(row, Mapping) for row in segments):
-            raise ValueError("SFT segment metadata does not match captured boundaries and Calls")
-        normalized = [
-            {**{key: value for key, value in current.items()
-                if key in added_fields and key not in saved
-                and (key == "boundary_source" or saved.get("boundary_event_id") is None)},
-             **saved}
-            for saved, current in zip(segments, rebuilt)
-        ]
-        if normalized != rebuilt:
+        if segments != [metadata for metadata, _ in expected]:
             raise ValueError("SFT segment metadata does not match captured boundaries and Calls")
         expected_paths = {item["path"] for item in segments}
         if not segment_dir.is_dir() or segment_dir.is_symlink():

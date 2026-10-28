@@ -14,19 +14,19 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Mapping
 
+from roller.actf import OPENCLAW_ANNOUNCEMENT_SFT_REASON
 from roller.capture import _safe_file, read_jsonl
-from roller.claude_code_actf import _read_events as read_claude_events
+from roller.claude_code_actf import CLAUDE_COMPACTION_SFT_REASON, _read_events as read_claude_events
 from roller.harness_registry import compaction_mode
 from roller.opencode_actf import root_session_ids
+from roller.pi_actf import PI_COMPACTION_SFT_REASON
 from roller.sft import SFTConversionError, _arguments_json, _normalize_tool_call, validate_sft_record
 from roller.storage import atomic_write_json
 
 SFT_SEGMENTS_DIR = "sft_segments"
-_CONTEXT_ONLY_REASONS = {
-    "Claude context compaction cannot be represented by the linear ACTF projection; use captured per-call contexts instead",
-    "Pi compaction requires captured per-call contexts",
-    "OpenClaw announcement input lacks native response binding; use captured per-call contexts",
-}
+# These only reject the linear ACTF projection; captured Calls supersede them.
+_CONTEXT_ONLY_REASONS = {CLAUDE_COMPACTION_SFT_REASON, PI_COMPACTION_SFT_REASON,
+                         OPENCLAW_ANNOUNCEMENT_SFT_REASON}
 
 
 def _is_main_compaction(row: Mapping[str, Any], mode: str) -> bool:
@@ -285,6 +285,19 @@ def _chat_message(message: Mapping[str, Any]) -> dict[str, Any]:
     return {"role": role, "content": value}
 
 
+def _merge_response_items(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Codex stores one response as separate text and tool items; ACTF keeps one step."""
+    merged: list[dict[str, Any]] = []
+    for message in messages:
+        previous = merged[-1] if merged else None
+        if previous is not None and previous["role"] == message["role"] == "assistant":
+            previous["content"] = "\n\n".join(text for text in (previous["content"], message["content"]) if text)
+            previous["tool_calls"].extend(message["tool_calls"])
+        else:
+            merged.append(message)
+    return merged
+
+
 def _prompt_from_call(call: Mapping[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     context = call.get("context")
     if not isinstance(context, Mapping):
@@ -323,6 +336,7 @@ def _prompt_from_call(call: Mapping[str, Any]) -> tuple[list[dict[str, Any]], li
             if not isinstance(item, Mapping):
                 raise SFTConversionError("Responses request has an invalid item")
             messages.extend(_responses_item(item))
+        messages = _merge_response_items(messages)
         tools = deepcopy(tools_value)
     elif protocol == "openai-chat-completions":
         items = context.get("messages", [])
@@ -360,15 +374,10 @@ def _target_messages_from_call(call: Mapping[str, Any]) -> list[dict[str, Any]]:
                 # rejected because the actual prompt cannot be represented.
                 continue
             result.extend(_responses_item(item))
-        if not result or any(message["role"] != "assistant" for message in result):
+        result = _merge_response_items(result)
+        if len(result) != 1 or result[0]["role"] != "assistant":
             raise SFTConversionError("Responses output has no representable assistant target")
-        # Codex can emit text and tool calls as separate items in one response.
-        # ACTF represents that response as one assistant step.
-        return [{"role": "assistant", "reasoning_content": "",
-                 "content": "\n\n".join(message["content"] for message in result
-                                        if message["content"]),
-                 "tool_calls": [tool for message in result
-                                for tool in message["tool_calls"]]}]
+        return result
     if call.get("protocol") == "openai-chat-completions":
         choices = output.get("choices")
         if not isinstance(choices, list) or len(choices) != 1:
@@ -424,8 +433,25 @@ def _assistant_signature(message: Mapping[str, Any]) -> tuple[str, tuple[tuple[s
     return content, tuple(tools)
 
 
-def _calls_matching_main_steps(sample_dir: Path, calls: list[dict[str, Any]]) -> list[tuple[dict[str, Any], list[dict[str, Any]]]]:
-    """Require every root Call to match one ACTF main step in order."""
+def _is_summary_call(call: Mapping[str, Any], messages: list[dict[str, Any]],
+                     boundaries: list[dict[str, Any]]) -> bool:
+    """The next native boundary recorded this Call's text as its summary."""
+    started = _time(call.get("started_at"))
+    boundary = next((item for item in boundaries if _time(item["timestamp"]) > started), None)
+    summary = boundary["summary"] if boundary else None
+    return (isinstance(summary, str) and len(messages) == 1 and not messages[0]["tool_calls"]
+            and bool(messages[0]["content"]) and messages[0]["content"] in summary)
+
+
+def _calls_matching_main_steps(sample_dir: Path, calls: list[dict[str, Any]],
+                               boundaries: list[dict[str, Any]]
+                               ) -> list[tuple[dict[str, Any], list[dict[str, Any]]]]:
+    """Bind root Calls to ACTF main steps in order; only native summaries are skipped.
+
+    Codex and OpenClaw send compaction requests under the main identity. A
+    Call is skipped only when it does not match the next main step and its
+    text is recorded verbatim in the following native compaction row.
+    """
     trajectory = json.loads((sample_dir / "trace_ACTF.json").read_text(encoding="utf-8"))
     reason = trajectory.get("sft_unavailable_reason") if isinstance(trajectory, Mapping) else None
     if reason and reason not in _CONTEXT_ONLY_REASONS:
@@ -434,24 +460,30 @@ def _calls_matching_main_steps(sample_dir: Path, calls: list[dict[str, Any]]) ->
     if not isinstance(steps, list) or not steps or any(not isinstance(step, Mapping) for step in steps):
         raise SFTConversionError("main ACTF steps are required to bind captured Calls")
     targets = [_assistant_signature(step.get("assistant_content", {})) for step in steps]
-    if len(calls) != len(targets):
-        raise SFTConversionError(
-            "root Calls do not correspond one-to-one with ACTF main steps; "
-            "an auxiliary or summary Call cannot be attributed safely"
-        )
     verified = []
-    for call, step, target in zip(calls, steps, targets):
+    for call in calls:
         if call.get("export_status") != "available":
             raise SFTConversionError(f"main Call {call.get('call_id')} is incomplete")
         messages = _target_messages_from_call(call)
-        if len(messages) != 1 or _assistant_signature(messages[0]) != target:
-            raise SFTConversionError("root Call output does not match its ACTF main step")
-        # ACTF applies keep_thinking and retains visible Codex reasoning. Use
-        # that canonical value while the Call verifies the output and prompt.
-        reasoning = step["assistant_content"].get("reasoning_content")
-        if isinstance(reasoning, str):
-            messages[0]["reasoning_content"] = reasoning
-        verified.append((call, messages))
+        index = len(verified)
+        if (index < len(steps) and len(messages) == 1
+                and _assistant_signature(messages[0]) == targets[index]):
+            # ACTF applies keep_thinking and retains visible Codex reasoning. Use
+            # that canonical value while the Call verifies the output and prompt.
+            reasoning = steps[index]["assistant_content"].get("reasoning_content")
+            if isinstance(reasoning, str):
+                messages[0]["reasoning_content"] = reasoning
+            verified.append((call, messages))
+        elif not _is_summary_call(call, messages, boundaries):
+            raise SFTConversionError(
+                f"root Calls do not correspond one-to-one with ACTF main steps; Call "
+                f"{call.get('call_id')} matches neither the next step nor a native summary"
+            )
+    if len(verified) != len(steps):
+        raise SFTConversionError(
+            "root Calls do not correspond one-to-one with ACTF main steps; "
+            f"{len(steps) - len(verified)} steps have no Call"
+        )
     return verified
 
 
@@ -464,12 +496,14 @@ def _compaction_boundaries(harness: str, rows: list[dict[str, Any]]) -> list[dic
                 and isinstance(row.get("id"), str) and isinstance(row.get("summary"), str)):
             continue
         if mode == "claude":
-            event_id = row.get("uuid")
+            event_id, summary = row.get("uuid"), None
         elif mode == "openclaw":
-            event_id = row["id"]
+            event_id, summary = row["id"], row["summary"]
         else:
-            event_id = (row.get("payload") or {}).get("window_id")
-        boundaries.append({"event_id": event_id, "timestamp": row.get("timestamp")})
+            payload = row.get("payload") or {}
+            event_id, summary = payload.get("window_id"), payload.get("message")
+        boundaries.append({"event_id": event_id, "timestamp": row.get("timestamp"),
+                           "summary": summary})
     return boundaries
 
 
@@ -485,8 +519,16 @@ def _root_calls(calls: list[dict[str, Any]], manifest: Mapping[str, Any]) -> lis
             if call.get("participant_id") in roots]
 
 
-def _segment_records(calls: list[tuple[dict[str, Any], list[dict[str, Any]]]], boundaries: list[dict[str, Any]]
-                     ) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+def _without_tool_ids(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """OpenClaw rewrites tool-call IDs when replaying history to some providers."""
+    return [{**message, "tool_calls": [{**call, "id": ""} for call in message["tool_calls"]]}
+            if message["role"] == "assistant" else
+            {**message, "tool_call_id": ""} if message["role"] == "tool" else message
+            for message in messages]
+
+
+def _segment_records(calls: list[tuple[dict[str, Any], list[dict[str, Any]]]], boundaries: list[dict[str, Any]],
+                     keep_thinking: bool) -> list[tuple[dict[str, Any], dict[str, Any]]]:
     """Use one continuation rule; window_index counts emitted SFT records."""
     times = [_time(boundary["timestamp"]) for boundary in boundaries]
     if any(not isinstance(boundary["event_id"], str) or not boundary["event_id"]
@@ -497,8 +539,6 @@ def _segment_records(calls: list[tuple[dict[str, Any], list[dict[str, Any]]]], b
     exported: list[tuple[dict[str, Any], dict[str, Any]]] = []
     native_index = -1
     for call, target in calls:
-        if call.get("export_status") != "available":
-            raise SFTConversionError(f"main Call {call.get('call_id')} is incomplete")
         when = _time(call.get("started_at")) if boundaries else None
         if when in times:
             raise SFTConversionError("main Call starts at an ambiguous compaction boundary")
@@ -506,13 +546,19 @@ def _segment_records(calls: list[tuple[dict[str, Any], list[dict[str, Any]]]], b
         prompt, tools = _prompt_from_call(call)
         if not prompt:
             raise SFTConversionError("compaction segment lacks its actual input")
+        if not keep_thinking:
+            for message in prompt:
+                if message["role"] == "assistant":
+                    message["reasoning_content"] = ""
         previous = exported[-1][1] if exported else None
         prefix = previous["messages"] if previous else []
         continuation = (previous is not None and current_native == native_index
-                        and tools == previous["tools"] and prompt[:len(prefix)] == prefix
+                        and tools == previous["tools"]
+                        and _without_tool_ids(prompt[:len(prefix)]) == _without_tool_ids(prefix)
                         and not any(item["role"] == "assistant" for item in prompt[len(prefix):]))
         if continuation:
-            previous["messages"].extend(prompt[len(prefix):] + target)
+            # The newest prompt carries the IDs the harness actually replayed.
+            previous["messages"] = prompt + target
             exported[-1][0]["last_call_id"] = call["call_id"]
         else:
             boundary = boundaries[current_native - 1] if current_native > native_index and current_native else None
@@ -521,8 +567,6 @@ def _segment_records(calls: list[tuple[dict[str, Any], list[dict[str, Any]]]], b
                         "boundary_source": ("native_boundary" if boundary else
                                             "observed_context_change" if exported else "initial"),
                         "boundary_event_id": boundary["event_id"] if boundary else None,
-                        "summary_call_id": None,
-                        "summary_call_binding": "unattributed" if boundary else None,
                         "first_call_id": call["call_id"], "last_call_id": call["call_id"]}
             record = {"messages": prompt + target, "tools": tools,
                       "target_start_index": len(prompt)}
@@ -537,9 +581,13 @@ def _segment_records(calls: list[tuple[dict[str, Any], list[dict[str, Any]]]], b
     return exported
 
 
-def build_compaction_segments(sample_dir: Path, harness: str,
-                              manifest_relative: str) -> list[tuple[dict[str, Any], dict[str, Any]]]:
-    """Build verified main-agent windows without changing the sample directory."""
+def build_compaction_segments(sample_dir: Path, harness: str, manifest_relative: str, *,
+                              keep_thinking: bool = True) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+    """Build verified main-agent windows without changing the sample directory.
+
+    ``keep_thinking=False`` clears reasoning from prompts as well as targets,
+    matching the linear SFT export.
+    """
     rows = _native_rows(sample_dir / "trace.jsonl", harness)
     mode = compaction_mode(harness)
     boundaries = _compaction_boundaries(harness, rows)
@@ -555,15 +603,11 @@ def build_compaction_segments(sample_dir: Path, harness: str,
     capture_dir = manifest_path.parent
     calls = read_jsonl(capture_dir / "calls.jsonl")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    # A terminal native boundary has not changed any model prompt. In
-    # particular, its summary Call is auxiliary even if it shares the root
-    # participant ID; do not require it to match an ACTF main step.
     if boundaries:
-        last = _time(boundaries[-1]["timestamp"])
-        if not any(_time(call.get("started_at")) > last for call in calls):
-            boundaries = boundaries[:-1]
-            if not boundaries:
-                return []
+        # Compaction after the last captured Call changed no model prompt.
+        first = _time(boundaries[0]["timestamp"])
+        if not any(_time(call.get("started_at")) > first for call in calls):
+            return []
     elif not native_reset and not _raw_context_changed(calls):
         return []
     main = _root_calls(calls, manifest)
@@ -574,14 +618,15 @@ def build_compaction_segments(sample_dir: Path, harness: str,
             return []
         if not native_reset and not _raw_context_changed(main):
             return []  # Preserve the existing linear SFT path, including images.
-    main = _calls_matching_main_steps(sample_dir, main)
-    return _segment_records(main, boundaries)
+    main = _calls_matching_main_steps(sample_dir, main, boundaries)
+    return _segment_records(main, boundaries, keep_thinking)
 
 
-def export_compaction_segments(sample_dir: Path, harness: str,
-                               manifest_relative: str) -> list[dict[str, Any]]:
+def export_compaction_segments(sample_dir: Path, harness: str, manifest_relative: str, *,
+                               keep_thinking: bool = True) -> list[dict[str, Any]]:
     """Write SFT windows only after every window has passed validation."""
-    segments = build_compaction_segments(sample_dir, harness, manifest_relative)
+    segments = build_compaction_segments(sample_dir, harness, manifest_relative,
+                                         keep_thinking=keep_thinking)
     for metadata, record in segments:
         atomic_write_json(sample_dir / metadata["path"], record)
     return [metadata for metadata, _ in segments]

@@ -76,12 +76,14 @@ The two sources can differ, so a native hint alone never supplies SFT content.
 `info.json` records each segment path, sequential `window_index`,
 `boundary_source` (`initial`,
 `native_boundary`, or `observed_context_change`), optional native
-`boundary_event_id`, and first/last Call IDs. `summary_call_id` is null when
-no summary Call can be attributed; `summary_call_binding` is `unattributed`
-for a native boundary without a bound Call, or null without such a boundary.
-Roller does not infer summary Call ownership from matching text or timestamps.
-If an extra root Call or a synthetic assistant step prevents a one-to-one
-match with ACTF main steps, SFT export is unavailable; raw trace and Calls remain.
+`boundary_event_id`, and first/last Call IDs.
+Root Calls are bound to ACTF main steps in order. Codex and OpenClaw send
+compaction summary requests under the main identity; such a Call is skipped only
+when it does not match the next main step and the following native compaction
+row records its text verbatim. Any other extra root Call, or a synthetic
+assistant step without a Call, makes SFT export unavailable; raw trace and
+Calls remain. Tool-call IDs a harness rewrites when replaying history do not
+start a new segment; a segment keeps the IDs from its latest prompt.
 Opaque prompt content, such as encrypted reasoning, makes SFT export for the
 compacted sample unavailable rather than silently changing the model input.
 

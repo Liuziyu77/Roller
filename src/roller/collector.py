@@ -22,6 +22,7 @@ from roller.compaction_sft import SFT_SEGMENTS_DIR, export_compaction_segments, 
 from roller.harness_registry import allows_raw_only_actf
 from roller.integrity import (
     has_legacy_claude_sidechain,
+    keeps_thinking,
     trajectory_conversion_unavailable,
     validate_resumable_sample,
 )
@@ -362,7 +363,9 @@ class Collector:
                     capture = metadata.get("capture") or {}
                     manifest = capture.get("manifest") if isinstance(capture, dict) else None
                     if isinstance(manifest, str):
-                        sft_segments = export_compaction_segments(sample_dir, harness_name, manifest)
+                        sft_segments = export_compaction_segments(
+                            sample_dir, harness_name, manifest,
+                            keep_thinking=keeps_thinking(metadata))
                         if sft_segments:
                             sft_path.unlink(missing_ok=True)
                         else:

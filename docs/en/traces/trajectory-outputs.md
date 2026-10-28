@@ -278,7 +278,8 @@ ACTF. Explicitly recorded conversion unavailability is stored in
 Linear SFT is generated from ACTF as `trace_SFT.json`. For main-agent
 compaction, Roller reconstructs windows from captured Calls and writes
 `sft_segments/0001.json`, `0002.json`, etc., only when root Calls correspond
-one-to-one with ACTF main steps. Otherwise SFT is marked unavailable while
+one-to-one with ACTF main steps, apart from summary Calls recorded by native
+compaction rows. Otherwise SFT is marked unavailable while
 the raw trace and capture remain. Text-only linear records contain
 these top-level fields;
 image records also contain `images`:
@@ -303,8 +304,8 @@ subsequent assistant messages are targets, while intervening user/tool messages
 remain context. Segment metadata in `info.json` records paths, order, boundary
 source, and Call IDs. If captured input cannot be represented faithfully,
 Roller records SFT as unavailable and retains raw/ACTF evidence.
-With `--no-keep-thinking`, supervised reasoning is empty, but a segment prompt
-still preserves earlier visible thinking if the harness actually sent it again.
+With `--no-keep-thinking`, reasoning is cleared from segment prompts as well as
+targets, matching linear SFT.
 These segments require an opt-in reader that honors the target mask. The
 legacy run-level `sft.jsonl` remains linear-only.
 When valid segments exist, the run root also contains `sft_segments.jsonl`
@@ -343,8 +344,8 @@ After the Collector finishes every request, it reads eligible linear
 atomically as a stream. It validates compaction segments and writes them to
 `sft_segments.jsonl` separately, keeping this legacy dataset linear-only.
 
-The run summary counts a segmented sample as `sft_excluded` from the legacy
-dataset even when its separate segment files are valid.
+The run summary counts such a sample as `sft_segmented`, not `sft_included`
+or `sft_excluded`.
 
 - Samples with `status=ok` are included;
 - `--resume` reused samples with `status=skipped` were originally `ok`, and are

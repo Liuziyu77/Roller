@@ -173,7 +173,7 @@ class TrajectoryAuditTests(unittest.TestCase):
         ]
         before = json.dumps(results)
         self.assertEqual(training_summary(results), {
-            "sft_included": 2, "sft_excluded": 5, "thinking_mismatch": 2,
+            "sft_included": 2, "sft_segmented": 0, "sft_excluded": 5, "thinking_mismatch": 2,
             "wire_unverified": 1, "wire_not_observable": 1,
         })
         self.assertEqual(sum(sft_exclusion_reason(r) is None for r in results), 2)
