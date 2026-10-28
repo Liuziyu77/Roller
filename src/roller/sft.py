@@ -232,13 +232,28 @@ def _placeholder_count(message: Mapping[str, Any]) -> int:
 def validate_sft_record(record: Any) -> None:
     """Check the top-level shape and the multimodal alignment contract.
 
-    Text-only records keep exactly ``messages`` + ``tools``. Records with
+    Legacy text-only records keep exactly ``messages`` + ``tools`` and remain
+    the only records in run-level ``sft.jsonl``. Separate compaction segments
+    carry ``target_start_index``. Assistant messages at
+    or after that index are supervised targets; intervening user/tool messages
+    are context, and earlier assistant messages are preserved prompt history.
+    Records with
     images add a non-empty ``images`` list of base64 data URIs whose length
     equals the number of ``<image>`` placeholders in ``messages``.
     """
     if not isinstance(record, Mapping):
         raise ValueError("SFT record must be a JSON object")
     keys = set(record)
+    target_start = record.get("target_start_index")
+    if "target_start_index" in keys:
+        if (not isinstance(target_start, int) or isinstance(target_start, bool)
+                or target_start < 1 or not isinstance(record.get("messages"), list)
+                or target_start >= len(record["messages"])):
+            raise ValueError("target_start_index must identify a target after the prompt")
+        target = record["messages"][target_start]
+        if not isinstance(target, Mapping) or target.get("role") != "assistant":
+            raise ValueError("target_start_index must point to an assistant target")
+        keys.remove("target_start_index")
     if keys == {"messages", "tools"}:
         return
     if keys != {"messages", "tools", "images"}:

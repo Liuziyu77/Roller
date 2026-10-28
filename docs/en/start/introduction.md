@@ -58,11 +58,12 @@ A successful rollout normally contains:
 | --- | --- |
 | <code>trace.jsonl</code> | Keeps the Harness-native events for debugging and future conversion. |
 | <code>trace_ACTF.json</code> | Presents different Harnesses in one analysis and visualization format. |
-| <code>trace_SFT.json</code> | Stores one standard sample for training-data workflows. |
+| <code>trace_SFT.json</code> | Stores a linear SFT record when conversion is available. |
+| <code>sft_segments/</code> | Stores compacted context windows listed in the sample's <code>info.json</code>. |
 | <code>results/</code> | Contains files that the Task asked the agent to create. |
 | <code>info.json</code> | Records status, timing, usage, versions, and provenance. |
 
-The run also contains a combined <code>sft.jsonl</code> for successful samples. See [Trajectory outputs](../traces/trajectory-outputs.md) when you need the exact retention and failure rules.
+The run also contains a combined <code>sft.jsonl</code> for eligible linear samples. Compacted segments stay in each sample directory. See [Trajectory outputs](../traces/trajectory-outputs.md) for the exact retention and failure rules.
 
 ## 5. Choosing a Harness
 

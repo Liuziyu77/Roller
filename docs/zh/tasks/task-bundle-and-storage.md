@@ -256,10 +256,11 @@ ACTF 文件直接保存 `ACTF_v1.0` trajectory object：
 
 ### 7.3 `trace_SFT.json` 与 `sft.jsonl`
 
-`trace_SFT.json` 由 ACTF 投影得到，顶层严格只有 `messages` 和 `tools`，不包含
+线性样本的 `trace_SFT.json` 由 ACTF 投影得到；纯文本记录顶层为 `messages` 和 `tools`，不包含
 task/model、usage、时间戳或其他运行 metadata。Run 根目录的 `sft.jsonl` 按 request
-顺序汇总所有存在无损 SFT 的成功 task Agent，每行一个相同结构的 record。带有明确
-`runtime.trajectory_conversion` 降级标记的成功样本不会写入该文件。完整字段和校验规则见
+顺序汇总符合条件的线性 Task Agent 记录。压缩样本改为导出 `sft_segments/`，路径列在
+`info.json` 中，不进入原有 run 级文件。带有明确 `runtime.trajectory_conversion`
+降级标记的成功样本也不会写入该文件。完整字段和校验规则见
 [SFT 数据格式](../traces/sft-format.md)。
 
 所有轨迹层、辅助文件、参数组合及失败/Resume 下的产出条件见

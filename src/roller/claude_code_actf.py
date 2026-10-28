@@ -11,6 +11,11 @@ from typing import Any, Iterable, Mapping
 
 from roller.storage import atomic_write_json
 
+CLAUDE_COMPACTION_SFT_REASON = (
+    "Claude context compaction cannot be represented by the linear ACTF projection; "
+    "use captured per-call contexts instead"
+)
+
 
 def _read_events(path: Path) -> list[dict[str, Any]]:
     events: list[dict[str, Any]] = []
@@ -544,10 +549,7 @@ def claude_code_events_to_actf(
         "finished_at": steps[-1]["finished_at"] if steps else last_time,
     }
     if any(row.get("subtype") == "compact_boundary" for row in rows):
-        result["sft_unavailable_reason"] = (
-            "Claude context compaction cannot be represented by the linear ACTF projection; "
-            "use captured per-call contexts instead"
-        )
+        result["sft_unavailable_reason"] = CLAUDE_COMPACTION_SFT_REASON
     return result
 
 

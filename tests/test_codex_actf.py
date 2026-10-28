@@ -196,6 +196,32 @@ class CodexActfTests(unittest.TestCase):
         self.assertEqual(sft["messages"][2]["tool_calls"][0]["id"], "call-1")
         self.assertEqual(sft["messages"][3]["role"], "tool")
 
+    def test_compaction_summary_response_is_not_a_main_step(self) -> None:
+        events = [
+            *_events(),
+            {"timestamp": "2026-08-22T01:00:10Z", "type": "response_item", "payload": {
+                "type": "reasoning", "summary": [{"text": "Condense the history."}]}},
+            {"timestamp": "2026-08-22T01:00:11Z", "type": "response_item", "payload": {
+                "type": "message", "role": "assistant",
+                "content": [{"type": "output_text", "text": "Read input.txt; it says hello."}]}},
+            {"timestamp": "2026-08-22T01:00:12Z", "type": "event_msg",
+             "payload": {"type": "token_count", "info": {}}},
+            {"timestamp": "2026-08-22T01:00:13Z", "type": "compacted", "payload": {
+                "message": "Another model summarized:\nRead input.txt; it says hello."}},
+            {"timestamp": "2026-08-22T01:00:14Z", "type": "response_item", "payload": {
+                "type": "message", "role": "assistant",
+                "content": [{"type": "output_text", "text": "Still hello."}]}},
+        ]
+        steps = codex_events_to_actf(events, user_messages=["read input.txt"])["steps"]
+        self.assertEqual([step["assistant_content"]["content"] for step in steps],
+                         ["", "Done.", "Still hello."])
+        self.assertEqual(steps[2]["assistant_content"]["reasoning_content"], "")
+
+        # Without the summary text in the native row, nothing is dropped.
+        events[-2]["payload"]["message"] = "Another model summarized:\n"
+        steps = codex_events_to_actf(events, user_messages=["read input.txt"])["steps"]
+        self.assertEqual(len(steps), 4)
+
     def test_can_strip_reasoning_and_extract_cumulative_usage(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             source = Path(temporary) / "trace.jsonl"

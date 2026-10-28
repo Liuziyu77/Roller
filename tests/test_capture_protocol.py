@@ -6,7 +6,7 @@ import tempfile
 import unittest
 
 from roller.capture import CallRecorder, read_jsonl, validate_capture
-from roller.model_protocols import chat_response
+from roller.model_protocols import chat_response, response_finished
 from roller.opencode_capture import finalize_opencode_capture
 from roller.opencode_actf import opencode_events_to_actf
 from roller.sft import actf_to_sft
@@ -212,10 +212,13 @@ class SharedProtocolTests(unittest.TestCase):
 
 
 class ChatStreamTests(unittest.TestCase):
-    def stream(self, done=True):
+    def stream(self, done=True, continuation_id=None):
+        continuation = {"index": 0, "function": {"arguments": '"pwd"}'}}
+        if continuation_id is not None:
+            continuation["id"] = continuation_id
         chunks = [
             {"id": "r", "model": "model", "choices": [{"index": 0, "delta": {"role": "assistant", "reasoning_content": "plan", "tool_calls": [{"index": 0, "id": "t", "function": {"name": "bash", "arguments": '{"command":'}}]}}]},
-            {"id": "r", "choices": [{"index": 0, "delta": {"tool_calls": [{"index": 0, "function": {"arguments": '"pwd"}'}}]}, "finish_reason": "tool_calls"}]},
+            {"id": "r", "choices": [{"index": 0, "delta": {"tool_calls": [continuation]}, "finish_reason": "tool_calls"}]},
             {"id": "r", "choices": [], "usage": {"total_tokens": 4}},
         ]
         return ("".join("data: "+json.dumps(c)+"\n\n" for c in chunks) + ("data: [DONE]\n\n" if done else "")).encode()
@@ -230,6 +233,20 @@ class ChatStreamTests(unittest.TestCase):
     def test_finished_choice_without_stream_end_is_partial(self):
         with self.assertRaisesRegex(ValueError, "DONE"):
             chat_response(self.stream(False), "text/event-stream")
+
+    def test_empty_leading_metadata_does_not_replace_response_id(self):
+        prefix = b'data: {"id":"","choices":[],"created":0}\n\n'
+        output = chat_response(prefix + self.stream(), "text/event-stream")
+        self.assertEqual(output["id"], "r")
+
+    def test_empty_continuation_does_not_erase_tool_call_id(self):
+        output = chat_response(self.stream(continuation_id=""), "text/event-stream")
+        self.assertEqual(output["choices"][0]["message"]["tool_calls"][0]["id"], "t")
+        self.assertTrue(response_finished("openai-chat-completions", output))
+
+    def test_conflicting_tool_call_id_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "changed ID"):
+            chat_response(self.stream(continuation_id="other"), "text/event-stream")
 
 
 if __name__ == "__main__":

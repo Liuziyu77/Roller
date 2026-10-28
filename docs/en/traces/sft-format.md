@@ -1,13 +1,15 @@
 # SFT data format
 
-Roller generates a training file, `trace_SFT.json`, for each successful trajectory,
-alongside the raw trace and ACTF. Run-root `sft.jsonl` aggregates
-every successful sample in request-index order. Each line is identical to the
-corresponding `trace_SFT.json`.
+Roller writes `trace_SFT.json` for a linear trajectory. When the main agent
+compacts its context, it writes one record per verified context window under
+`sft_segments/` and lists them in `info.json` as `trajectory.sft_segments`.
+Run-root `sft.jsonl` keeps the original linear-record format and contains one
+line per eligible linear sample. Compaction segments are separate, opt-in
+records; they are never mixed into the legacy run dataset.
 
 ## 1. Top-level structure
 
-A text-only SFT record has exactly `messages` and `tools` at the top level:
+A text-only linear SFT record has exactly `messages` and `tools` at the top level:
 
 ```json
 {
@@ -57,6 +59,33 @@ A text-only SFT record has exactly `messages` and `tools` at the top level:
 An SFT record does not include schema version, task/model, usage, timestamps,
 step ID, stop reason, run path, or other metadata. That information remains in
 the adjacent `info.json` and `trace_ACTF.json`.
+
+### Compaction segments
+
+Each segment has `messages`, `tools`, and `target_start_index`. The first
+`target_start_index` messages are the actual model prompt at the start of that
+window. Assistant messages at or after that index are training targets;
+intervening user and tool messages provide context and are excluded from loss.
+Do not train these files with a reader that treats every assistant message as
+a target. The legacy `sft.jsonl` deliberately excludes them.
+The next segment starts with the actual prompt observed after a context change,
+which can include a summary and recent history.
+Native events and request rows only discover possible context changes; captured
+root Calls supply the prompt and response used to build and verify each record.
+The two sources can differ, so a native hint alone never supplies SFT content.
+`info.json` records each segment path, sequential `window_index`,
+`boundary_source` (`initial`,
+`native_boundary`, or `observed_context_change`), optional native
+`boundary_event_id`, and first/last Call IDs.
+Root Calls are bound to ACTF main steps in order. Codex and OpenClaw send
+compaction summary requests under the main identity; such a Call is skipped only
+when it does not match the next main step and the following native compaction
+row records its text verbatim. Any other extra root Call, or a synthetic
+assistant step without a Call, makes SFT export unavailable; raw trace and
+Calls remain. Tool-call IDs a harness rewrites when replaying history do not
+start a new segment; a segment keeps the IDs from its latest prompt.
+Opaque prompt content, such as encrypted reasoning, makes SFT export for the
+compacted sample unavailable rather than silently changing the model input.
 
 ### 1.1 Multimodal records
 
@@ -198,7 +227,10 @@ networks. The sample therefore retains raw/ACTF and records SFT as unavailable.
 └── samples/<model>/<index>_<task>/
     ├── trace.jsonl
     ├── trace_ACTF.json
-    └── trace_SFT.json
+    ├── trace_SFT.json          # linear samples
+    └── sft_segments/          # compacted samples
+        ├── 0001.json
+        └── 0002.json
 ```
 
 For a User Simulator rollout, the Task Agent SFT is in the root sample. The

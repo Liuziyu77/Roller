@@ -10,6 +10,8 @@ from roller.actf import openclaw_events_to_actf
 from roller.storage import atomic_write_json
 from roller.usage import ZERO_USAGE
 
+PI_COMPACTION_SFT_REASON = "Pi compaction requires captured per-call contexts"
+
 
 def read_pi_events(path: Path) -> list[dict[str, Any]]:
     # JSONL framing is LF only: Unicode separators are valid inside strings.
@@ -25,6 +27,7 @@ def pi_events_to_actf(events: Iterable[dict[str, Any]], *, keep_thinking: bool =
     calls, completed_calls = {}, set()
     turn, turn_count, request_count, assistant_count = None, 0, 0, 0
     awaiting_reply = False
+    compacting = compacted = False
     last_role = None
     users = 0
     for record in events:
@@ -38,7 +41,7 @@ def pi_events_to_actf(events: Iterable[dict[str, Any]], *, keep_thinking: bool =
             users, last_role = 0, None
             continue
         if kind == "turn_end":
-            if turn is None or record.get("turn") != turn or users != 1 or last_role != "assistant" or awaiting_reply or set(calls) != completed_calls:
+            if turn is None or record.get("turn") != turn or users != 1 or last_role != "assistant" or awaiting_reply or compacting or set(calls) != completed_calls:
                 raise ValueError("Pi turn is incomplete")
             turn = None
             turn_count += 1
@@ -47,6 +50,20 @@ def pi_events_to_actf(events: Iterable[dict[str, Any]], *, keep_thinking: bool =
             continue
         if turn is None or record.get("turn") != turn:
             raise ValueError("Pi event is outside its turn")
+        if kind == "event":
+            event_type = record["event"].get("type")
+            if event_type == "compaction_start":
+                if compacting or awaiting_reply:
+                    raise ValueError("Pi compaction overlaps an active request")
+                compacting = compacted = True
+                continue
+            if event_type == "compaction_end":
+                if not compacting:
+                    raise ValueError("Pi compaction ends without a start")
+                compacting = False
+                continue
+        if compacting:
+            continue  # The summary request and response are not main-agent steps.
         if kind == "context":
             continue
         if kind == "request":
@@ -69,8 +86,8 @@ def pi_events_to_actf(events: Iterable[dict[str, Any]], *, keep_thinking: bool =
             awaiting_reply = True
             continue
         event = record["event"]
-        if event.get("type") in {"compaction_start", "compaction_end", "auto_retry_start"}:
-            raise ValueError("Pi compaction and retry cannot be represented as a linear trajectory")
+        if event.get("type") == "auto_retry_start":
+            raise ValueError("Pi retry cannot be represented as a linear trajectory")
         if event.get("type") != "message_end":
             continue
         message = deepcopy(event["message"])
@@ -126,7 +143,10 @@ def pi_events_to_actf(events: Iterable[dict[str, Any]], *, keep_thinking: bool =
         rows.append({"type": "message", "timestamp": message.get("timestamp"), "message": message})
     if turn is not None or not turn_count or not system or request_count != assistant_count or set(calls) != completed_calls:
         raise ValueError("Pi journal contains incomplete turns or requests")
-    return openclaw_events_to_actf(rows, system_prompts=[system], tools=tools, keep_thinking=keep_thinking)
+    result = openclaw_events_to_actf(rows, system_prompts=[system], tools=tools, keep_thinking=keep_thinking)
+    if compacted:
+        result["sft_unavailable_reason"] = PI_COMPACTION_SFT_REASON
+    return result
 
 
 def convert_pi_trace(source: Path, destination: Path, *, keep_thinking: bool = True) -> dict[str, Any]:

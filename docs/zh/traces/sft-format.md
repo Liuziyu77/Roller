@@ -1,11 +1,13 @@
 # SFT 数据格式
 
-Roller 为每条成功轨迹生成训练文件 `trace_SFT.json`，同时保留 raw trace 和 ACTF。Run 根目录的 `sft.jsonl` 按 request index 汇总所有成功 sample，
-每行与对应的 `trace_SFT.json` 内容相同。
+线性轨迹生成 `trace_SFT.json`。主 Agent 压缩上下文时，Roller 按已验证的上下文窗口
+在 `sft_segments/` 下保存多条记录，并在 `info.json` 的 `trajectory.sft_segments`
+列出路径。Run 根目录的 `sft.jsonl` 保持原有线性 record 格式，每条符合条件的线性
+样本占一行；压缩分段独立保存，须由显式支持目标范围的读取器使用。
 
 ## 1. 顶层结构
 
-纯文本 SFT record 顶层严格只有 `messages` 和 `tools`：
+纯文本线性 SFT record 顶层严格只有 `messages` 和 `tools`：
 
 ```json
 {
@@ -54,6 +56,26 @@ Roller 为每条成功轨迹生成训练文件 `trace_SFT.json`，同时保留 r
 
 SFT record 不包含 schema version、task/model、usage、时间戳、step ID、stop reason、
 运行路径或其他 metadata。这些信息仍保留在相邻的 `info.json` 和 `trace_ACTF.json`。
+
+### 压缩分段
+
+每条分段包含 `messages`、`tools` 和 `target_start_index`。该索引之前的消息是
+窗口开始时模型实际收到的 prompt；从该索引起，只有 `role: "assistant"` 的消息
+参与训练，夹在其中的 user/tool 消息只提供上下文。下一段从上下文变化后的真实请求
+开始，可以同时含有摘要和保留的近期历史。
+原生事件和请求行只负责发现可能的上下文变化；实际分段内容与校验依据是捕获的
+主 Agent Calls。两种证据可能不一致，因此不能拿原生事件直接填充 SFT 内容。
+`info.json` 中每段记录路径、顺序
+`window_index`、`boundary_source`（`initial`、`native_boundary` 或
+`observed_context_change`）、可选的原生 `boundary_event_id` 及首尾 Call ID。
+root Calls 按顺序绑定 ACTF 主干步骤。Codex 和 OpenClaw 以主 Agent 身份发送压缩摘要
+请求；这类 Call 只有在对不上下一个主干步骤、且其文本原样记录在随后的原生压缩行里时
+才会被跳过。其他多出的 root Call，或没有对应 Call 的合成 assistant step，都会使 SFT
+不可导出，但保留 raw 和 Calls。harness 回放历史时改写的 tool-call ID 不会切出新分段；
+分段使用最近一次 prompt 中的 ID。
+加密 reasoning 等无法表示的 prompt 内容会使该压缩样本的 SFT 导出不可用，
+不会静默改写模型输入。
+原有 `sft.jsonl` 不收录这些分段，避免旧读取器把 prompt 中的 assistant 历史误训为目标。
 
 ### 1.1 多模态 record
 
@@ -179,7 +201,10 @@ SFT，因为导出过程不会读取文件或网络。该样本会保留 raw/ACT
 └── samples/<model>/<index>_<task>/
     ├── trace.jsonl
     ├── trace_ACTF.json
-    └── trace_SFT.json
+    ├── trace_SFT.json          # 线性样本
+    └── sft_segments/          # 压缩样本
+        ├── 0001.json
+        └── 0002.json
 ```
 
 User Simulator rollout 的任务 Agent SFT 位于根 sample，模拟用户自己的 SFT 位于

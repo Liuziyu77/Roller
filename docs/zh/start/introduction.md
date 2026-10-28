@@ -58,11 +58,12 @@ Task + 模型 + Harness
 | --- | --- |
 | <code>trace.jsonl</code> | 保存 Harness 原生事件，便于排错和以后重新转换。 |
 | <code>trace_ACTF.json</code> | 把不同 Harness 的轨迹整理为统一的分析与可视化格式。 |
-| <code>trace_SFT.json</code> | 保存一条可用于训练数据流程的标准样本。 |
+| <code>trace_SFT.json</code> | 可转换时保存一条线性 SFT 记录。 |
+| <code>sft_segments/</code> | 保存压缩后的上下文分段，路径列在 sample 的 <code>info.json</code> 中。 |
 | <code>results/</code> | 保存 Task 要求 Agent 生成的文件。 |
 | <code>info.json</code> | 记录状态、耗时、usage、版本和运行来源。 |
 
-run 目录还会把成功样本汇总到 <code>sft.jsonl</code>。需要了解准确的保留规则和失败行为时，请阅读[轨迹产出文件](../traces/trajectory-outputs.md)。
+run 目录只把符合条件的线性样本汇总到 <code>sft.jsonl</code>；压缩分段保存在各 sample 目录。需要了解准确的保留规则和失败行为时，请阅读[轨迹产出文件](../traces/trajectory-outputs.md)。
 
 ## 5. 如何选择 Harness
 

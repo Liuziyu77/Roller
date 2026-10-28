@@ -1554,6 +1554,7 @@ def _collect(args: argparse.Namespace) -> int:
     training = training_summary(results)
     print(
         f"SFT: {training['sft_included']} included, "
+        f"{training['sft_segmented']} segmented, "
         f"{training['sft_excluded']} excluded. "
         f"Thinking audit: {training['thinking_mismatch']} mismatch; "
         f"wire {training['wire_unverified']} unverified, "

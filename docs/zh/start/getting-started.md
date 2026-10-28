@@ -135,24 +135,29 @@ runs/quickstart/
         └── <index>_<task-id>/
 ```
 
-每个成功 sample 至少应有：
+多数成功 sample 至少有：
 
 ```text
 trace.jsonl
 trace_ACTF.json
-trace_SFT.json
 info.json
 ```
+
+线性样本还会有 `trace_SFT.json`。主 Agent 发生上下文压缩时，`info.json` 的
+`trajectory.sft_segments` 列出 `sft_segments/0001.json`、`0002.json` 等分段记录。
+无法安全表示上下文的样本会标记 SFT 不可用。
 
 验收顺序：
 
 1. 本次运行目录下的 `info.json` 中，`state` 是否为 `finished`，`summary.failed` 是否为 `0`，`summary.completed` 是否等于预期执行数量。
 2. 每个 sample `info.json` 中的 `status` 是否为 `ok`，`usage.request_count` 是否大于 `0`。
 3. `trace_ACTF.json` 是否包含完整的用户输入和模型输出。若存在工具调用，调用与结果是否正确配对。
-4. `trace_SFT.json` 顶层是否只有 `messages` 和 `tools`（含图片的样本会额外带
-   `images`，且 `<image>` 占位符数量与之一致）。
+4. 每条可用 SFT 是否包含 `messages` 和 `tools`；图片记录还包含 `images`，
+   压缩分段还包含 `target_start_index`。
 5. 需要文件交付的 task，其 sample `results/` 中是否包含预期文件。
-6. run `sft.jsonl` 行数是否等于成功生成 `trace_SFT.json` 的 sample 数。
+6. run `sft.jsonl` 是否每条符合条件的**线性**样本占一行。压缩样本保留在
+   `sft_segments/`，只供理解 `target_start_index` 的训练读取器显式使用，
+   不进入原有的 run 级训练集。
 
 各文件何时生成、失败时会保留哪些内容，见 [轨迹产出文件指南](../traces/trajectory-outputs.md)。
 

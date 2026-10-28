@@ -369,6 +369,21 @@ def codex_events_to_actf(
                     calls_by_id[call_id] = call
             continue
 
+        if event_type == "compacted":
+            # Local compaction records its summary response just before this
+            # row and stores the last summary text as the suffix of ``message``.
+            # That response answered the compaction prompt, not the task.
+            summary = payload.get("message")
+            last = groups[-1] if groups else None
+            if (isinstance(summary, str) and last is not None and not last["tool_calls"]
+                    and last["content"] and summary.endswith(last["content"][-1])):
+                groups.pop()
+                current = None
+                if last["user_content"]:
+                    pending_user, pending_user_time = last["user_content"], last["user_time"]
+            pending_reasoning = []
+            continue
+
         if event_type != "response_item":
             continue
 

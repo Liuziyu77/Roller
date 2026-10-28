@@ -6,8 +6,10 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from roller.integrity import trajectory_conversion_unavailable
+from roller.integrity import keeps_thinking, trajectory_conversion_unavailable
 from roller.thinking import THINKING_LEVELS
+
+SEGMENTED_SFT_REASON = "segmented_sft_requires_target_mask"
 
 
 def sft_exclusion_reason(result: dict[str, Any]) -> str | None:
@@ -26,6 +28,11 @@ def sft_exclusion_reason(result: dict[str, Any]) -> str | None:
         return "thinking_effort_mismatch"
     if trajectory_conversion_unavailable(runtime) in {"actf", "sft"}:
         return "conversion_unavailable"
+    trajectory = result.get("trajectory")
+    if isinstance(trajectory, dict) and trajectory.get("sft_segments"):
+        # Segments need an explicit target mask. Legacy sft.jsonl consumers
+        # train every assistant message and must not receive these records.
+        return SEGMENTED_SFT_REASON
     return None
 
 
@@ -36,10 +43,12 @@ def training_summary(results: list[dict[str, Any]]) -> dict[str, int]:
     and unverified wire controls. Missing legacy audits are not counted as
     matched or not-observable; no new evidence is inferred on resume.
     """
-    summary = dict(sft_included=0, sft_excluded=0, thinking_mismatch=0,
+    summary = dict(sft_included=0, sft_segmented=0, sft_excluded=0, thinking_mismatch=0,
                    wire_unverified=0, wire_not_observable=0)
     for result in results:
-        key = "sft_excluded" if sft_exclusion_reason(result) else "sft_included"
+        reason = sft_exclusion_reason(result)
+        key = ("sft_segmented" if reason == SEGMENTED_SFT_REASON else
+               "sft_excluded" if reason else "sft_included")
         summary[key] += 1
         runtime = result.get("runtime")
         runtime = runtime if isinstance(runtime, dict) else {}
@@ -65,8 +74,8 @@ def thinking_audit(trajectory: dict[str, Any], metadata: dict[str, Any]) -> dict
         requested = settings.get("reasoning_effort")
     if requested is None:
         return None
-    keep_thinking = metadata.get("keep_thinking", settings.get("keep_thinking", True))
-    audit: dict[str, Any] = {"requested_effort": requested, "retained_in_actf": bool(keep_thinking)}
+    keep_thinking = keeps_thinking(metadata)
+    audit: dict[str, Any] = {"requested_effort": requested, "retained_in_actf": keep_thinking}
     if not keep_thinking:
         audit.update(status="not_observable", visible_reasoning_observed=None,
                      visible_reasoning_characters=None, visible_reasoning_steps=None)
