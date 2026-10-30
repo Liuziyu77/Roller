@@ -433,6 +433,46 @@ def _assistant_signature(message: Mapping[str, Any]) -> tuple[str, tuple[tuple[s
     return content, tuple(tools)
 
 
+def _tool_arguments_match(observed: str, native: str) -> bool:
+    """A Harness may record a tool input after applying its schema defaults.
+
+    Claude Code stores ``Edit`` with ``replace_all: false`` in its native
+    session even when the model never emitted the key, so the native step
+    may carry keys the wire response does not. Every key the model did send
+    must still be present and equal; keys only the Harness added are ignored.
+    Non-JSON inputs (Codex custom tools) keep comparing exactly.
+    """
+
+    if observed == native:
+        return True
+    try:
+        sent, recorded = json.loads(observed), json.loads(native)
+    except (TypeError, ValueError):
+        return False
+    if not isinstance(sent, dict) or not isinstance(recorded, dict):
+        return False
+    return not set(sent) - set(recorded) and all(
+        recorded[key] == value for key, value in sent.items()
+    )
+
+
+def _signature_matches(observed: tuple[str, tuple[tuple[str, str], ...]],
+                       native: tuple[str, tuple[tuple[str, str], ...]]) -> bool:
+    """Bind a captured Call to a native step; text and tool order stay exact."""
+
+    if observed == native:
+        return True
+    observed_content, observed_tools = observed
+    native_content, native_tools = native
+    if observed_content != native_content or len(observed_tools) != len(native_tools):
+        return False
+    return all(
+        observed_name == native_name and _tool_arguments_match(observed_args, native_args)
+        for (observed_name, observed_args), (native_name, native_args)
+        in zip(observed_tools, native_tools)
+    )
+
+
 def _is_summary_call(call: Mapping[str, Any], messages: list[dict[str, Any]],
                      boundaries: list[dict[str, Any]]) -> bool:
     """The next native boundary recorded this Call's text as its summary."""
@@ -467,7 +507,7 @@ def _calls_matching_main_steps(sample_dir: Path, calls: list[dict[str, Any]],
         messages = _target_messages_from_call(call)
         index = len(verified)
         if (index < len(steps) and len(messages) == 1
-                and _assistant_signature(messages[0]) == targets[index]):
+                and _signature_matches(_assistant_signature(messages[0]), targets[index])):
             # ACTF applies keep_thinking and retains visible Codex reasoning. Use
             # that canonical value while the Call verifies the output and prompt.
             reasoning = steps[index]["assistant_content"].get("reasoning_content")
