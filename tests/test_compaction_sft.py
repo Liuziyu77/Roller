@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 
 from roller.compaction_sft import (_assistant_signature, _responses_item,
-                                   build_compaction_segments, export_compaction_segments,
-                                   has_main_compaction)
+                                   _signature_matches, build_compaction_segments,
+                                   export_compaction_segments, has_main_compaction)
 from roller.collector import CollectionConfig, Collector
 from roller.integrity import validate_resumable_sample
 from roller.models import HarnessResult, RunRequest, Task
@@ -61,6 +61,62 @@ def test_codex_custom_tool_signatures_match_exact_input() -> None:
     assert _assistant_signature(native) == _assistant_signature(normalized)
     normalized["tool_calls"][0]["custom"]["input"] = "echo bye"
     assert _assistant_signature(native) != _assistant_signature(normalized)
+
+
+def test_harness_filled_tool_default_still_binds_to_its_step() -> None:
+    """Claude Code records Edit with replace_all=false the model never sent."""
+    sent = {"content": "edit", "tool_calls": [{"type": "function", "function": {
+        "name": "Edit", "arguments": {"file_path": "a.py", "new_string": "b"}}}]}
+    native = {"content": "edit", "tool_calls": [{"type": "function", "function": {
+        "name": "Edit", "arguments": {"file_path": "a.py", "new_string": "b",
+                                      "replace_all": False}}}]}
+    assert _signature_matches(_assistant_signature(sent), _assistant_signature(native))
+    # A value the model did send still has to agree.
+    sent["tool_calls"][0]["function"]["arguments"]["replace_all"] = True
+    assert not _signature_matches(_assistant_signature(sent), _assistant_signature(native))
+    # An argument only the Call carries is still an unbound Call.
+    sent["tool_calls"][0]["function"]["arguments"] = {"file_path": "a.py",
+                                                      "new_string": "b", "extra": 1}
+    assert not _signature_matches(_assistant_signature(sent), _assistant_signature(native))
+    # Text, tool name and tool count keep comparing exactly.
+    other = {"content": "edit", "tool_calls": [{"type": "function", "function": {
+        "name": "Write", "arguments": {"file_path": "a.py", "new_string": "b"}}}]}
+    assert not _signature_matches(_assistant_signature(other), _assistant_signature(native))
+    assert not _signature_matches(_assistant_signature({"content": "other", "tool_calls": []}),
+                                  _assistant_signature({"content": "edit", "tool_calls": []}))
+
+
+def test_claude_tool_default_does_not_block_compaction_export(tmp_path: Path) -> None:
+    root = "root:session"
+    native_edit = {"content": "edit", "tool_calls": [{"type": "function", "id": "call_1",
+        "function": {"name": "Edit", "arguments": {"path": "a.py", "replace_all": False}}}]}
+    _actf(tmp_path, native_edit, "ANSWER")
+    _write(tmp_path / "trace.jsonl", [
+        {"type": "system", "subtype": "compact_boundary", "uuid": "boundary-1",
+         "timestamp": "2026-10-15T00:00:03Z", "isSidechain": False},
+    ])
+    before = {"model": "claude", "system": "before", "tools": [],
+              "messages": [{"role": "user", "content": "task"}]}
+    after = {"model": "claude", "system": "after", "tools": [], "messages": [
+        {"role": "user", "content": "summary"},
+        {"role": "user", "content": "go on"},
+    ]}
+    calls = [
+        # The wire response omits replace_all; the native step records it.
+        _call(1, root, "anthropic-messages", before, {"content": [
+            {"type": "text", "text": "edit"},
+            {"type": "tool_use", "id": "call_1", "name": "Edit", "input": {"path": "a.py"}}]}),
+        _call(4, root, "anthropic-messages", after,
+              {"content": [{"type": "text", "text": "ANSWER"}]}),
+    ]
+    manifest = _capture(tmp_path, root, calls)
+    segments = export_compaction_segments(tmp_path, "claude-code", manifest)
+    assert len(segments) == 2
+    record = json.loads((tmp_path / segments[0]["path"]).read_text())
+    validate_sft_record(record)
+    # The exported target keeps what the model actually sent, not the default.
+    arguments = json.loads(record["messages"][-1]["tool_calls"][0]["function"]["arguments"])
+    assert arguments == {"path": "a.py"}
 
 
 def test_terminal_openclaw_compaction_keeps_linear_export(tmp_path: Path) -> None:
