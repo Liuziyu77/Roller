@@ -119,6 +119,59 @@ def test_claude_tool_default_does_not_block_compaction_export(tmp_path: Path) ->
     assert arguments == {"path": "a.py"}
 
 
+def _replay_window(tmp_path: Path, replayed_input: dict) -> list[dict]:
+    """One window after a boundary whose first target is replayed in the next prompt."""
+    root = "root:session"
+    native_edit = {"content": "edit", "tool_calls": [{"type": "function", "id": "call_1",
+        "function": {"name": "Edit", "arguments": {"replace_all": False, "path": "a.py"}}}]}
+    _actf(tmp_path, "ACK", native_edit, "ANSWER")
+    _write(tmp_path / "trace.jsonl", [
+        {"type": "system", "subtype": "compact_boundary", "uuid": "boundary-1",
+         "timestamp": "2026-10-15T00:00:03Z", "isSidechain": False},
+    ])
+    before = {"model": "claude", "system": "s", "tools": [],
+              "messages": [{"role": "user", "content": "task"}]}
+    after = {"model": "claude", "system": "s", "tools": [], "messages": [
+        {"role": "user", "content": "summary"}, {"role": "user", "content": "go on"}]}
+    later = {"model": "claude", "system": "s", "tools": [], "messages": [
+        {"role": "user", "content": "summary"}, {"role": "user", "content": "go on"},
+        {"role": "assistant", "content": [{"type": "text", "text": "edit"},
+            {"type": "tool_use", "id": "call_1", "name": "Edit", "input": replayed_input}]},
+        {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "call_1",
+                                      "content": "ok"}]}]}
+    calls = [
+        _call(1, root, "anthropic-messages", before,
+              {"content": [{"type": "text", "text": "ACK"}]}),
+        # The model sent neither replace_all nor the Harness's key order.
+        _call(4, root, "anthropic-messages", after, {"content": [
+            {"type": "text", "text": "edit"},
+            {"type": "tool_use", "id": "call_1", "name": "Edit", "input": {"path": "a.py"}}]}),
+        _call(5, root, "anthropic-messages", later,
+              {"content": [{"type": "text", "text": "ANSWER"}]}),
+    ]
+    manifest = _capture(tmp_path, root, calls)
+    return [record for _, record in
+            build_compaction_segments(tmp_path, "claude-code", manifest)]
+
+
+def test_replayed_tool_arguments_do_not_split_a_window(tmp_path: Path) -> None:
+    records = _replay_window(tmp_path, {"replace_all": False, "path": "a.py"})
+    assert len(records) == 2
+    window = records[1]
+    targets = [item for item in window["messages"][window["target_start_index"]:]
+               if item["role"] == "assistant"]
+    assert [item["content"] for item in targets] == ["edit", "ANSWER"]
+    # A continued window keeps the newest prompt, so an earlier target carries
+    # the replayed arguments, as it already did for replayed tool-call IDs.
+    assert json.loads(targets[0]["tool_calls"][0]["function"]["arguments"]) == {
+        "replace_all": False, "path": "a.py"}
+
+
+def test_rewritten_tool_argument_still_splits_a_window(tmp_path: Path) -> None:
+    records = _replay_window(tmp_path, {"replace_all": False, "path": "other.py"})
+    assert len(records) == 3
+
+
 def test_terminal_openclaw_compaction_keeps_linear_export(tmp_path: Path) -> None:
     _actf(tmp_path, "DONE")
     _write(tmp_path / "trace.jsonl", [{"type": "compaction", "id": "terminal",

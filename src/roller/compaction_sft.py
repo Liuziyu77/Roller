@@ -567,6 +567,55 @@ def _without_tool_ids(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
             for message in messages]
 
 
+def _replayed_prefix_matches(replayed: list[dict[str, Any]],
+                             stored: list[dict[str, Any]]) -> bool:
+    """A window's own messages against the same messages in a later prompt.
+
+    A stored window ends with the target as the model sent it, while the next
+    prompt replays that turn as the Harness recorded it: the same arguments
+    can come back with the schema defaults applied and the keys in another
+    order. Compare tool arguments by value, so that only a real context
+    rewrite ends the window.
+    """
+
+    normalized_replayed = _without_tool_ids(replayed)
+    normalized_stored = _without_tool_ids(stored)
+    if len(normalized_replayed) != len(normalized_stored):
+        return False
+    for replayed_message, stored_message in zip(normalized_replayed, normalized_stored):
+        if replayed_message == stored_message:
+            continue
+        replayed_calls = replayed_message.get("tool_calls") or []
+        stored_calls = stored_message.get("tool_calls") or []
+        if (len(replayed_calls) != len(stored_calls)
+                or _without_tool_calls(replayed_message) != _without_tool_calls(stored_message)):
+            return False
+        for replayed_call, stored_call in zip(replayed_calls, stored_calls):
+            if (_without_arguments(replayed_call) != _without_arguments(stored_call)
+                    or not _tool_arguments_match(_call_arguments(stored_call),
+                                                 _call_arguments(replayed_call))):
+                return False
+    return True
+
+
+def _without_tool_calls(message: Mapping[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in message.items() if key != "tool_calls"}
+
+
+def _without_arguments(call: Mapping[str, Any]) -> dict[str, Any]:
+    function = call.get("function")
+    if not isinstance(function, Mapping):
+        return dict(call)
+    return {**call, "function": {key: value for key, value in function.items()
+                                 if key != "arguments"}}
+
+
+def _call_arguments(call: Mapping[str, Any]) -> str:
+    function = call.get("function")
+    arguments = function.get("arguments") if isinstance(function, Mapping) else None
+    return arguments if isinstance(arguments, str) else ""
+
+
 def _segment_records(calls: list[tuple[dict[str, Any], list[dict[str, Any]]]], boundaries: list[dict[str, Any]],
                      keep_thinking: bool) -> list[tuple[dict[str, Any], dict[str, Any]]]:
     """Use one continuation rule; window_index counts emitted SFT records."""
@@ -594,7 +643,7 @@ def _segment_records(calls: list[tuple[dict[str, Any], list[dict[str, Any]]]], b
         prefix = previous["messages"] if previous else []
         continuation = (previous is not None and current_native == native_index
                         and tools == previous["tools"]
-                        and _without_tool_ids(prompt[:len(prefix)]) == _without_tool_ids(prefix)
+                        and _replayed_prefix_matches(prompt[:len(prefix)], prefix)
                         and not any(item["role"] == "assistant" for item in prompt[len(prefix):]))
         if continuation:
             # The newest prompt carries the IDs the harness actually replayed.
