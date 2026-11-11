@@ -3,7 +3,7 @@
 `roller collect` 会保存轨迹、训练数据、运行信息和任务输出。本页列出各文件的内容、
 生成与保留条件，以及训练、分析和调试时的用途。
 
-## 1. 先看结论
+## 1. 速查
 
 | 需求 | 首选文件 | 原因 |
 | --- | --- | --- |
@@ -109,6 +109,10 @@ trace_ACTF.json ── 线性 ────────────────�
 捕获的 Calls ──── 压缩 ─────────────────────────> sft_segments/（显式使用）
 ```
 
+下图展示相同的数据链路，虚线部分为需通过参数开启的文件。
+
+![轨迹数据流：Harness session 复制为 trace.jsonl 并转换为 trace_ACTF.json，再生成 trace_SFT.json 和 sft.jsonl；--capture-calls 开启压缩分段导出，--wire-trace full 将请求体保存到 wire_trace.jsonl](../../../assets/diagrams/pipeline-zh-light.png)
+
 `trace.jsonl` 记录当前 Harness session 的事件。ACTF 将这些事件转换为分析格式，
 SFT 再去除训练不需要的字段。SFT 不参与 ACTF 或 raw 的生成。
 
@@ -134,8 +138,8 @@ engine；Roller 不从 session 文件猜测这些变换，而是在最终 API �
 Codex 同样会在 native session 与 Responses input 之间加入 base/developer instructions、
 environment context、tool namespace、resume history 和压缩结果；这些最终形态也只能由 full
 wire 确认。Claude Code 的 native session 也不等于 Anthropic Messages request：CLI 会添加
-system blocks、tools schema、project/context instructions、缓存标记和对话管理结果。要检查
-模型请求，使用 Claude Code `--wire-trace full`。
+system blocks、tools schema、project/context instructions、缓存标记和对话管理结果。如需检查
+模型请求，请使用 Claude Code `--wire-trace full`。
 
 Session 和请求之间可能存在以下差异：
 
@@ -143,10 +147,10 @@ Session 和请求之间可能存在以下差异：
   或 provider 规则被过滤；
 - session 中没有逐条对应事件、模型请求中却有：组装后的 system prompt、tools schema、
   workspace/bootstrap 注入、每轮 runtime context 或 hook 增补内容；
-- 内容仍在但表示不同：Harness/provider adapter 可以把内部 message/block 转成
+- 内容仍在但表示不同：Harness/provider adapter 可以将内部 message/block 转换为
   Chat Completions `messages` 或 Responses `input` 的最终协议形态。
 
-用 `trace.jsonl` 复盘 Agent 的逻辑轨迹，用 `wire_trace full` 检查每次 HTTP 模型请求
+使用 `trace.jsonl` 回顾 Agent 的逻辑轨迹，使用 `wire_trace full` 检查每次 HTTP 模型请求
 的 JSON context。ACTF/SFT 从 session raw 转换而来，无法恢复每次请求经过压缩、裁剪
 或临时注入后的 context。
 
@@ -157,7 +161,7 @@ Session 和请求之间可能存在以下差异：
 OpenClaw 内容包括 transcript 中的 user、assistant、thinking、tool call、tool result、usage
 等原始 message event。默认镜像中，Roller 通过公开的
 `openclaw/plugin-sdk/session-transcript-runtime` 按精确 session identity 读取事件，再逐条
-序列化为 JSONL；它不为了训练而删除、合并或重排合法事件。这里的“原始”是相对 Roller
+序列化为 JSONL；它不为了训练而删除、合并或重排合法事件。此处的“原始”是相对 Roller
 的 ACTF/SFT 转换而言，不是底层 SQLite/JSONL 文件的字节副本，也不是网络层原始请求或
 响应。SDK 只返回 OpenClaw 认可的 transcript 事件，因此底层存储中的损坏行或非事件记录
 不会出现在导出文件中。legacy OpenClaw 不提供该 SDK 时，Roller 才直接复制 session JSONL。
@@ -180,7 +184,7 @@ Sample `info.json.trajectory.raw_schema` 会分别标记 `openclaw-session-jsonl
   找到指定 session JSONL 或最新 fallback，Codex 路径要求找到最新 native rollout JSONL，
   Claude Code 路径要求找到本容器最新的主 session；
 - Harness 成功返回但不能取得非空 raw trace 时，sample 会改为 `error`；
-- Harness 本身为 `error` 或 `timeout` 时，只要仍能导出 transcript，raw 就会保留。
+- Harness 本身为 `error` 或 `timeout` 时，若仍能导出 transcript，raw 仍会保留。
 
 用途与边界：
 
@@ -223,10 +227,10 @@ ACTF 顶层保存 `schema_version`、`system_prompt`、完整 `tools`、`steps` 
 OpenClaw ACTF 只把 cache trace 中首个有效的组装后 system prompt 和 wire trace 中首个
 非空 tools schema 固化在顶层；Codex ACTF 使用 native system 事件和原始请求工具定义；Claude Code ACTF 使用首个捕获到的 Anthropic system/tools，无 wire 时回退到
 native 推导。它们都没有逐 step 保存每次请求的完整 messages/input。Codex 额外保留逐请求工具
-快照，工具变化时不导出 SFT；需要检查这些变化时使用 full wire，OpenClaw
+快照，工具变化时不导出 SFT；如需检查这些变化，请使用 full wire，OpenClaw
 还可结合 full cache trace。
 
-只要 raw 存在，Roller 就会尝试转换，包括 Harness 已经失败或超时的 sample。因此错误
+raw 存在时，Roller 均会尝试转换，包括 Harness 已经失败或超时的 sample。因此错误
 sample 可能仍有 ACTF。已显式记录的转换不可用状态见
 `runtime.trajectory_conversion`；它与 Harness 的采集状态分开保存。
 
@@ -269,9 +273,9 @@ SFT 表达的是从 session 事件重建的逻辑对话，不是每次 provider 
 
 Codex 保留原始 Responses 工具定义、namespace 和 custom grammar。其他 harness 的 function
 定义继续统一为嵌套 function schema。image 工具结果会导出为 `<image>` 占位符加顶层 `images` data-URI 列表，对齐
-约定见 [SFT 数据格式](sft-format.md)。其余无法无损导出的内容——audio 等未知 block
-类型、不支持的 media type、损坏的 base64、只引用路径而没有字节的 image block——仍会
-令 SFT 转换失败。Collector 在 `runtime.trajectory_conversion` 中记录
+约定见 [SFT 数据格式](sft-format.md)。其余无法无损导出的内容仍会令 SFT 转换失败，包括 audio
+等未知 block 类型、不支持的 media type、损坏的 base64，以及只引用路径而没有字节的
+image block。Collector 在 `runtime.trajectory_conversion` 中记录
 `target: "sft"`、`status: "unavailable"` 和原因，保留采集状态及 raw/ACTF；
 汇总跳过该样本，Resume 不为导出失败重新调用模型。Roller 不会静默丢失内容。
 
@@ -281,18 +285,18 @@ Codex 保留原始 Responses 工具定义、namespace 和 custom grammar。其�
 
 Collector 完成所有 request 后，按 request index 读取符合条件的线性
 `trace_SFT.json`，并原子、流式写入 run 根目录。压缩分段仍会校验，
-并单独写入 `sft_segments.jsonl`，不混入原有线性训练集：
+并单独写入 `sft_segments.jsonl`，不混入原有线性训练集。
 
 run 汇总把这类样本计入 `sft_segmented`，不计入 `sft_included` 或 `sft_excluded`。
 
-- `status=ok` 的 sample 会进入；
-- `--resume` 复用的 `status=skipped` sample 原先必须是 `ok`，也会进入；
-- `error` 和 `timeout` 不会进入，即使它们保留了部分 raw/ACTF/SFT；
+- `status=ok` 的 sample 会被纳入；
+- `--resume` 复用的 `status=skipped` sample 原先必须是 `ok`，也会被纳入；
+- `error` 和 `timeout` 不会被纳入，即使它们保留了部分 raw/ACTF/SFT；
 - 没有成功样本时仍生成空文件；
-- User Simulator 的子轨迹不会进入。
+- User Simulator 的子轨迹不会被纳入。
 
 每行与对应的 sample 级 SFT record 相同，不增加 task ID 或其他 metadata。样本
-来源需要通过相邻 run/sample `info.json` 和目录位置追溯。
+来源须通过相邻 run/sample `info.json` 和目录位置追溯。
 
 ## 5. 诊断与辅助文件
 
@@ -305,13 +309,13 @@ Harness 前停止。
 
 锁不会保存 credential：敏感 key 的值替换为 `<redacted>`；URL 的 userinfo 和 fragment
 被移除，敏感 query value 被替换，`api-version` 等非敏感 query 则保留参与比较。
-credential 或 pass-through env 的值变化不会让锁失配；如果它们会改变实际模型行为，应
+credential 或 pass-through env 的值变化不会导致锁失配；若它们会改变实际模型行为，应
 另建 run。配置对象直接比较，task/input/context 则复用 Task Bundle 已有的 digest。
 
 ### 5.2 Run `info.json`
 
 CLI 在正式采集前写入初始 run 信息；Collector 在首条结果、之后每累计 25 条结果时更新，
-如果两次完成事件相隔至少 30 秒也会立即更新，并在中断和收尾阶段强制 checkpoint。它
+若两次完成事件相隔至少 30 秒，也会立即更新，并在中断和收尾阶段强制 checkpoint。它
 保存：
 
 - Roller 版本和采集配置；
@@ -323,8 +327,8 @@ CLI 在正式采集前写入初始 run 信息；Collector 在首条结果、之�
 - token、cache、cost、请求数汇总；
 - 每个 sample 的状态、错误、路径与 usage。
 
-可捕获的中断（如 `Ctrl-C`）会立即取消还在排队的 sample，只等正在执行的 sample 正常收尾
-（回收 trace、清理容器），然后写 `state=interrupted`，并尽力用已完成 sample 生成一份部分
+可捕获的中断（如 `Ctrl-C`）会立即取消仍在排队的 sample，仅等待正在执行的 sample 正常收尾
+（回收 trace、清理容器），然后写入 `state=interrupted`，并尝试用已完成 sample 生成一份部分
 `sft.jsonl`。`SIGKILL`、断电或宿主机故障无法执行最后一次写入，但原子写和周期 checkpoint
 可以保证 `info.json` 是上一个完整快照；Viewer 还会扫描已 finalize 的 sample。
 
@@ -332,10 +336,10 @@ CLI 在正式采集前写入初始 run 信息；Collector 在首条结果、之�
 
 每个完成 finalize 的 sample 都会写入，包括失败 sample。它保存 task/model、Harness、
 最终状态、错误、attempt 历史、usage、耗时、raw/ACTF/SFT 相对路径、输出回收信息、
-runtime 和输入 provenance。训练文件不包含的 metadata 保存在这里。
+runtime 和输入 provenance。训练文件不包含的 metadata 保存在此文件中。
 
 OpenClaw session 有时会用 `api=cli` 再记录一次已交付的回复，但真正的 CLI backend 回复
-也使用这个标记。Roller 不会按这个字段直接删除消息：只有在同一轮、与最新 provider 回复
+也使用该标记。Roller 不会仅凭该标记删除消息：只有在同一轮、与最新 provider 回复
 的 provider/model 相同，且匹配到已记录用量时，才去重 token 和 request count。
 最终文本与已交付文本一致时省略重复消息；gap-fill 的新文本仍进入 ACTF/SFT，但不重复
 计入 step metric。匹配到的 gap-fill 会更新已交付文本，重复投递不再增加消息或用量。
@@ -347,8 +351,8 @@ OpenClaw session 有时会用 `api=cli` 再记录一次已交付的回复，但�
 
 OpenClaw 2026.7.1 的 CLI 累计报告可同时包含四项 token 分量的整轮累加值，以及最后一次
 调用的 `totalTokens`（上下文用量）。匹配整轮报告时，四项分量必须逐项一致；total 只接受
-已记录的整轮总和或最后一次调用的正值。Roller 保留 provider 调用的统计，不把这个上下文 total
-再加一遍。最后一次同源调用失败时，CLI 兜底仍独立计数；若随后 provider 重试成功，整轮
+已记录的整轮总和或最后一次调用的正值。Roller 保留 provider 调用的统计，不会重复累加
+该上下文 total。最后一次同源调用失败时，CLI 兜底仍独立计数；若随后 provider 重试成功，整轮
 匹配会包含先前失败调用已经报告的有效 usage 和费用。
 
 `cost_usd` 按匹配的单次调用或截至当时的整轮调用补记差额，不把费用镜像当作新收费。
@@ -370,7 +374,7 @@ Roller 复制后按敏感 key 递归脱敏，再用它填充 ACTF 顶层 `system
 - `--no-cache-trace`：不创建，ACTF/SFT 的 system content 为 `""`。
 
 ACTF 顶层只使用首个 `stream:context.system`，没有该阶段时回退到首个
-`session:loaded.system`。如果 system prompt 会随调用变化，只有 full 模式保留的原始
+`session:loaded.system`。若 system prompt 随调用变化，只有 full 模式保留的原始
 cache trace 能展示每次差异；ACTF 顶层值不能代表所有 step。
 
 脱敏基于 JSON key，不会扫描 system prompt 自由文本中的秘密；该文件和下游 ACTF/SFT
@@ -416,11 +420,11 @@ Claude Code 2.1.222 追加的 transport-only `beta=true` query 和 `anthropic-be
 ### 5.6 如何审计 context 压缩或改写
 
 1. 使用 `--wire-trace full` 运行最小可复现 task；OpenClaw 同时保留默认
-   `--cache-trace`。不要用默认 `actf` 代替 full，因为它不保存 messages/input。
+   `--cache-trace`。不得用默认 `actf` 代替 full，因为它不保存 messages/input。
 2. 按 `wire_trace.jsonl` 的 `seq` 顺序比较各条 `body.messages`（Chat Completions 或
    Anthropic Messages）或 `body.input`（Responses），同时检查 `body.system`、
    `body.tools` 与采样参数。
-3. 将差异与 `trace.jsonl` 的 session 事件对照。不要按行一一对应：一次 Agent turn 可以
+3. 将差异与 `trace.jsonl` 的 session 事件对照。不应期望逐行一一对应：一次 Agent turn 可以
    包含多次模型请求，每次 wire body 又会重复当时保留的历史。
 4. OpenClaw 可查看 `cache_trace.jsonl` 中每个 `stream:context` 的 system prompt；Codex 则
    比较 full wire 各请求的 `instructions`、developer input 和 environment context；
@@ -448,7 +452,7 @@ prompt、tool result、reasoning、文件内容和运行时注入信息。
 
 仅 User Simulator task 生成。它保存双方可见的 user/assistant 轮次、终止原因、待发送但
 未交付的 instruction、参与模型和时间，不复制双方隐藏 reasoning、tool call 或 tool
-result。需要训练或分析任一参与方时，应使用各自的 raw/ACTF/SFT。
+result。如需训练或分析任一参与方，应使用各自的 raw/ACTF/SFT。
 
 ## 6. 参数组合如何影响轨迹
 
@@ -464,7 +468,7 @@ result。需要训练或分析任一参与方时，应使用各自的 raw/ACTF/S
 | Claude Code `full` | 必须显式 `--api-base --network host` | 捕获 Anthropic `input_schema` | `wire_trace` | 请求级审计 |
 | `off` | 不为记录启动代理 | OpenClaw/Codex 为 `null`；Claude Code 从 native 推导 | 不保留 | 最小诊断关闭模式 |
 
-OpenClaw 的 `off` 或 `actf` 降级后，如果轨迹实际调用了工具，SFT 校验会因缺少工具 schema
+OpenClaw 的 `off` 或 `actf` 降级后，若轨迹包含工具调用，SFT 校验会因缺少工具 schema
 失败；没有工具调用时，SFT 的 `tools` 为 `[]`。Claude Code 保留原有 native schema 回退。
 Codex 不推导 schema：未捕获（包括 `off`、WebSocket、未配置 API 地址）、工具定义变化或
 programmatic `additional_tools` 都会使 SFT 不可用，详见 [Codex 工具捕获](../harnesses/codex-configuration.md#9-轨迹与请求记录)。
@@ -473,7 +477,7 @@ programmatic `additional_tools` 都会使 SFT 不可用，详见 [Codex 工具�
 
 | 参数 | 当前回复 | 后续请求历史 | ACTF | SFT | raw |
 | --- | --- | --- | --- | --- | --- |
-| `--keep-thinking`（默认） | 后端返回什么就接收什么 | 保留 Harness 正常历史 | 保存可见 reasoning | 从 ACTF 保存 | 保留原始事件 |
+| `--keep-thinking`（默认） | 按后端返回内容原样接收 | 保留 Harness 正常历史 | 保存可见 reasoning | 从 ACTF 保存 | 保留原始事件 |
 | `--no-keep-thinking` | 当前轮仍可产生 reasoning | OpenClaw 剥离后续 wire history；Codex/Claude Code 不改写 resume/continue | reasoning 置空 | reasoning 置空 | 仍保留原始事件 |
 
 `--thinking LEVEL` 设置 Harness/模型请求的推理档位；能否保存 reasoning 文本取决于服务的返回内容。GPT 原生
@@ -495,11 +499,11 @@ effort、开源模型 profile 和 OpenClaw 镜像限制见
 `runtime.thinking_audit`。该审计只统计 ACTF 中实际保留的可见 reasoning。若请求 `off`
 后仍返回可见 reasoning，状态为 `mismatch`，Roller 同时记录 runtime warning，但不会删除或
 修改模型返回的文本。使用 `--no-keep-thinking` 时状态为 `not_observable`：导出字段为空不代表
-模型没有进行隐藏推理。
+模型未执行隐藏推理。
 
 `mismatch` 样本保持实际执行状态和单样本 SFT，便于检查；同时记录
 `runtime.sft_eligibility = {"eligible": false, "reason": "thinking_effort_mismatch"}`，
-不纳入训练汇总 `sft.jsonl`，续跑同样排除。该规则不把 `no_visible_reasoning` 当作
+不纳入训练汇总 `sft.jsonl`，Resume 时同样排除。该规则不把 `no_visible_reasoning` 当作
 关闭推理的证明。失败或超时的样本保留已有 raw/ACTF，但不导出单样本 SFT。
 
 归档前还会记录以下审计（主 Agent 与 user simulator 均适用）：
@@ -517,7 +521,7 @@ effort、开源模型 profile 和 OpenClaw 镜像限制见
 - 明确 wire 冲突和上述不完整轨迹会记录 `sft_eligibility.eligible=false`，排除主 Agent
   的训练汇总。参数省略不会自动被当成匹配或据此过滤；可转换的单样本 SFT 保留用于诊断。
   user simulator 的失败/超时归档同样不生成 SFT；其成功轨迹保留审计及诊断 SFT，不混入
-  主 Agent 的汇总。旧样本续跑不会自动补算此前未记录的新审计。
+  主 Agent 的汇总。Resume 不会为旧样本自动补算此前未记录的新审计。
 
 若严格转换没有生成 ACTF，Pi/OpenClaw 可从已完成的原生 assistant 消息中记录
 `completion_audit.source=native`（忽略历史 context 和未完成 delta）；其他未知 schema
@@ -532,7 +536,7 @@ effort、开源模型 profile 和 OpenClaw 镜像限制见
 
 终端完成提示与 run `info.json` 的 `summary.training` 会汇总：SFT 纳入/排除数量、
 thinking 冲突样本数、wire 无法确认/不可观测样本数。统计单位是已处理的主 Agent 样本，
-不是 HTTP 请求或 simulator；续跑样本也计入。一个样本可能同时属于 reasoning 冲突和
+不是 HTTP 请求或 simulator；Resume 复用的样本也计入。一个样本可能同时属于 reasoning 冲突和
 wire 无法确认，分类不可直接相加。旧样本缺少审计不表示匹配。该汇总与实际 SFT 导出
 共用排除规则，不新增 strict 开关、不改变执行状态或 CLI 退出码，也不代表任务 grader 通过。
 
@@ -547,8 +551,8 @@ OpenClaw 仍要求 `--model-config` 中存在可代理 `baseUrl`；Codex 和 Cla
 | `--cache-trace`（默认） | 使用捕获到的首个组装后 system prompt | 仅 full 模式最终保留 |
 | `--no-cache-trace` | `""` | 不创建 |
 
-如果训练需要保留 Agent 首次捕获到的组装后 system prompt，不应关闭 cache trace。若需要
-复现每一次模型调用的 context，仅有 ACTF/SFT 不足，必须另外保存 full cache/wire。
+若训练需要保留 Agent 首次捕获到的组装后 system prompt，不应关闭 cache trace。如需
+复现每一次模型调用的 context，仅有 ACTF/SFT 不足，须另外保存 full cache/wire。
 
 ## 7. 成功、失败、重试与 Resume
 
@@ -569,10 +573,10 @@ ACTF 或 SFT 哪一层不可用，run 级 `sft.jsonl` 会跳过该样本。
 ### 7.2 失败 sample
 
 对于 `error` 或 `timeout` sample，结束阶段仍会尝试回收 raw、system prompt、tools 和
-安全输出，并进行 ACTF/SFT 转换。保留下来的完整或部分轨迹可用于诊断，但不会进入
+安全输出，并将其转换为 ACTF/SFT。保留下来的完整或部分轨迹可用于诊断，但不会进入
 run 级 `sft.jsonl`。
 
-以下情况会把原本成功的 Harness 结果改为 `error`：
+以下情况会将原本成功的 Harness 结果改为 `error`：
 
 - 找不到 raw session trace；
 - 缺少必需轨迹且没有显式 conversion downgrade；
@@ -592,8 +596,8 @@ attempt 的进程日志 `rollout/*.attempt-<N>.log`（例如 OpenClaw 的 `gatew
 
 Resume 先要求当前 run lock 与旧 `lock.json` 一致；task/model 顺序、Task Bundle、模型配置、
 Docker image ID、timeout 或轨迹语义选项变化时直接停止，避免不同采集条件混批。旧 run
-没有锁时会写入当前锁并把旧 sample 全部重跑一次；持久迁移标记会一直禁止复用，直到
-整次重采和 run 级 SFT 汇总成功，即使中途被强杀也不会误信遗留 sample。
+没有锁时会写入当前锁并将旧 sample 全部重新执行一次；持久迁移标记会一直禁止复用，直到
+整次重采和 run 级 SFT 汇总成功，即使进程中途被强制终止，遗留 sample 也不会被视为可信。
 
 锁一致后，`--resume` 只复用旧状态为 `ok` 且满足以下条件的 sample：
 
@@ -609,7 +613,7 @@ Docker image ID、timeout 或轨迹语义选项变化时直接停止，避免不
 
 复用结果在本次 run 中标为 `skipped`，仍会写入新的 `sft.jsonl`。缺失任一必需文件或
 轨迹校验不通过时，会重新执行整个 sample。输出清单保存的 SHA-256 不会在 Resume 时
-重新计算，以免为了常规断点续跑再次读取大型产物；需要内容级审计时可单独核对该 hash。
+重新计算，以免常规断点恢复时再次读取大型产物；如需内容级审计，可单独核对该 hash。
 
 ## 8. 推荐配置
 
@@ -656,10 +660,10 @@ roller collect \
 5. tool call ID 与 tool message 一一对应；
 6. tools schema 与训练时 chat template 的工具格式兼容；
 7. system prompt、用户内容、tool result、reasoning 和 Agent 输出已完成隐私审查；
-8. 如果使用 `--no-keep-thinking`，确认 raw/full 诊断层不会被误当成已去除 thinking 的
+8. 若使用了 `--no-keep-thinking`，确认 raw/full 诊断层不会被误当成已去除 thinking 的
    发布数据；
-9. 如果数据声明要复现模型可见 context，确认采集使用 `--wire-trace full`、wire `seq`
-   连续且请求数符合预期；不要用 ACTF/SFT 代替逐请求证据；
+9. 若数据集声明可复现模型可见 context，确认采集使用 `--wire-trace full`、wire `seq`
+   连续且请求数符合预期；不得用 ACTF/SFT 代替逐请求证据；
 
 Hermes raw 使用 `roller.hermes-events/v1`：记录完整请求快照、模型响应/usage 和压缩前的工具消息，不生成 `cache_trace.jsonl`。详见 [Hermes 轨迹](../harnesses/hermes-configuration.md)。
 

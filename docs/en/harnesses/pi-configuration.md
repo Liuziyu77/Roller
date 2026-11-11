@@ -15,7 +15,7 @@ Use the Pi Agent Harness when a task needs:
 - local-image inspection with a vision-capable model.
 - single-turn, multi-turn, Task Agent, or User Simulator execution.
 
-It does not accept images or video directly in task messages. Account login, other Pi providers, custom plugins, and automatic compaction are also disabled.
+The Pi Agent Harness does not accept images or video directly in task messages. Account login, other Pi providers, custom plugins, and automatic compaction are also disabled.
 
 ## 2. Image preparation
 
@@ -31,7 +31,7 @@ The default base image is `node:22.22.0-bookworm-slim`. For another base image, 
 
 ## 3. Environment variables and API
 
-The Pi Harness connects to an OpenAI Chat Completions service with streaming and tool-call support. A first run needs an API address, an API key, and a model ID.
+The Pi Harness connects to an OpenAI Chat Completions service with streaming and tool-call support. A first run requires an API address, an API key, and a model ID.
 
 | Setting | Default source | CLI override |
 | --- | --- | --- |
@@ -41,7 +41,7 @@ The Pi Harness connects to an OpenAI Chat Completions service with streaming and
 
 The value of `--pi-api-key-env` or `--api-key-env` is the name of a host environment variable, not the key itself. The key is read at execution time and is not written to public configuration.
 
-Replace `...`, the API address, and `model-id` with values from the model service. The first command runs one task so the configuration can be checked before a larger run:
+Replace `...`, the API address, and `model-id` with values from the model service. The following command runs a single task so that the configuration can be checked before a larger run:
 
 ```bash
 export ROLLER_PI_KEY='...'
@@ -65,12 +65,12 @@ This table lists Pi-specific runtime flags only. See section 3 for API addresses
 
 | Flag | Default and behavior |
 | --- | --- |
-| `--pi-image` | Precedes `--docker-image`, `ROLLER_PI_IMAGE`, and `roller-pi:0.85.1` |
-| `--pi-max-steps` | At most 12 model requests per user message, also bounded by task/turn deadlines |
-| `--pi-context-length` | 128000, at least 1024. Match the actual model service |
-| `--pi-output-tokens` | 8192. Positive and smaller than the context window. Sent as `max_tokens` |
+| `--pi-image` | Takes precedence over `--docker-image`. If neither is set, `ROLLER_PI_IMAGE` is used, with `roller-pi:0.85.1` as the fallback |
+| `--pi-max-steps` | At most 12 model requests per user message, also bounded by task and turn deadlines |
+| `--pi-context-length` | 128000 by default, minimum 1024. Set it to match the actual model service |
+| `--pi-output-tokens` | 8192 by default. Must be positive and smaller than the context window. Sent as `max_tokens` |
 | `--thinking` / `runtime.thinking` | `off/minimal/low/medium/high/xhigh/max`. Defaults to `off`, with `none` as an alias |
-| `--wire-trace` | Every mode journals native requests. `full` additionally captures HTTP requests and requires an explicit API address with `--network host` |
+| `--wire-trace` | Every mode records native requests. `full` additionally captures HTTP requests and requires an explicit API address with `--network host` |
 | `--no-keep-thinking` | Removes reasoning only from ACTF/SFT. Native events and continuation history retain it |
 
 Thinking is sent as `reasoning_effort`: `off` becomes `none`, and other levels retain their names. The endpoint must support the selected value. Vendor-specific thinking protocols are not translated automatically.
@@ -128,11 +128,11 @@ Pi starts a separate Shell per Bash call, so `export`/`cd` do not persist. Store
 
 **(4) Long tasks exceed the context window**
 
-Automatic compaction is disabled. Raise `--pi-context-length` to match the real model service.
+Automatic compaction is disabled. Raise `--pi-context-length` to match the actual model service.
 
 **(5) Task execution times out**
 
-The container is stopped and existing output files recovered. Adjust `--timeout` or `--pi-max-steps` as needed.
+The container is stopped and the existing output files are recovered. Adjust `--timeout` or `--pi-max-steps` as needed.
 
 **(6) `--wire-trace full` fails to start**
 

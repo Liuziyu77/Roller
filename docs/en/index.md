@@ -2,11 +2,11 @@
 
 Roller runs tool-using AI agents in disposable Docker containers and records the full process: prompts, reasoning, tool calls, tool results, generated files, and run metadata. It is designed for repeatable data collection and evaluation across different models and agent runtimes.
 
-**New to Roller?** Read the [Introduction](start/introduction.md) first. It explains the main ideas without requiring any setup. Then follow [Getting started](start/getting-started.md) to create your first trajectory.
+New users should read the [Introduction](start/introduction.md) first. It explains the main concepts and requires no setup. Then follow [Getting started](start/getting-started.md) to create a first trajectory.
 
 ## What Roller does
 
-You provide a set of Tasks, one or more models, and a Harness. Roller creates an isolated rollout for every Task and model combination, then writes the results to a structured run directory.
+Roller takes a set of Tasks, one or more models, and a Harness as input. It creates an isolated rollout for every Task and model combination, then writes the results to a structured run directory.
 
 ~~~text
 tasks.jsonl × models
@@ -26,14 +26,14 @@ Common uses include:
 - collecting single-turn, multi-turn, and tool-using Agent trajectories.
 - comparing models or Harnesses on the same Tasks.
 - reviewing reasoning, tool calls, tool results, and generated files.
-- preparing normalized ACTF traces or SFT JSONL.
+- preparing normalized traces or SFT JSONL.
 - resuming interrupted collection and inspecting results in the built-in Viewer.
 
-Roller requires Python 3.10+. The project currently uses Task schema <code>roller.task/v1</code> and trace format <code>ACTF_v1.0</code>. It is in Alpha and licensed under Apache 2.0. Source: [GitHub](https://github.com/Liuziyu77/Roller).
+Roller requires Python 3.10+. The project currently uses Task schema <code>roller.task/v1</code>. It is in Alpha and licensed under Apache 2.0. Source: [GitHub](https://github.com/Liuziyu77/Roller).
 
 ## Choose a Harness
 
-The first-run guide uses **OpenClaw**. You can stay with that path until you have produced one successful trajectory. The other Harnesses are useful when you need a specific agent runtime or API protocol.
+The first-run guide uses OpenClaw. That path is sufficient until one successful trajectory has been produced. The other Harnesses apply when a specific agent runtime or API protocol is required.
 
 | Harness | Model API | Typical use |
 | --- | --- | --- |
@@ -45,15 +45,15 @@ The first-run guide uses **OpenClaw**. You can stay with that path until you hav
 | DeepSeek Harness | DeepSeek Chat Completions | Native SDK sessions and persistent Bash |
 | Pi Agent | OpenAI Chat Completions | Native AgentSession and coding tools |
 
-All seven use the same Task, Sample, ACTF, and SFT formats, as well as the same Viewer, retry, and Resume workflow. Their images, APIs, tools, and reasoning options differ.
+All seven use the same Task, Sample, trace, and SFT formats, as well as the same Viewer, retry, and Resume workflow. Their images, APIs, tools, and reasoning options differ.
 
 ## Where to begin
 
 1. Read [Introduction](start/introduction.md) to understand Task, Harness, rollout, run, and trace.
 2. Follow [Getting started](start/getting-started.md) to install Roller, run a dry-run, collect one batch, and open the Viewer.
-3. Use [Task format](tasks/task-format.md) when you are ready to write your own Tasks.
-4. Read the matching Harness guide when you need a runtime other than the OpenClaw example.
-5. Use [Trajectory outputs](traces/trajectory-outputs.md) when you need exact ACTF, SFT, wire-trace, or failure-retention rules.
+3. Use [Task format](tasks/task-format.md) when writing custom Tasks.
+4. Read the matching Harness guide when a runtime other than the OpenClaw example is required.
+5. Use [Trajectory outputs](traces/trajectory-outputs.md) for the exact trace, SFT, wire-trace, or failure-retention rules.
 
 ~~~{toctree}
 :maxdepth: 1

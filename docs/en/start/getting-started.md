@@ -1,19 +1,19 @@
 # Getting started: from install to the first trajectory
 
-This guide uses **OpenClaw** as the example and takes one Task from installation to a saved trajectory. Other Harnesses follow the same main workflow: prepare the configuration, run a dry-run, collect trajectories, check the results, and open the Viewer. Images, API configuration, and Harness-specific options differ, so refer to the corresponding Harness guide when adapting this workflow.
+This guide uses OpenClaw as the example and describes the complete procedure for one Task, from installation to a saved trajectory. Other Harnesses follow the same main workflow: prepare the configuration, run a dry-run, collect trajectories, check the results, and open the Viewer. Images, API configuration, and Harness-specific options differ; refer to the corresponding Harness guide when adapting this workflow.
 
-By the end, you will have checked the configuration with a dry-run, completed a real collection, found the output files, and opened the result in the Viewer. If Task, Harness, rollout, run, or trace are unfamiliar terms, read the [Introduction](introduction.md) first.
+The guide covers, in order, a dry-run check of the configuration, a real collection, locating the output files, and opening the result in the Viewer. If the terms Task, Harness, rollout, run, or trace are unfamiliar, read the [Introduction](introduction.md) first.
 
 ## 1. Prepare the runtime environment
 
-You need:
+Requirements:
 
 - Python 3.10+.
 - Docker (install separately).
 - the OpenClaw image.
 - a model API that supports OpenAI Responses or Chat Completions.
 
-Use an isolated Python environment. This example uses Conda and Python 3.11. Run it from the repository root:
+Use an isolated Python environment. This example uses Conda and Python 3.11. Run the following commands from the repository root:
 
 ```bash
 conda create -n roller python=3.11 -y
@@ -26,7 +26,7 @@ docker version
 
 Using `python -m pip` ensures that pip belongs to the activated Python environment. After Docker is installed and started, `docker version` shows both Client and Server information.
 
-On macOS, open **Docker Desktop → Settings → Resources → Network**, enable **Enable host networking**, and restart Docker Desktop. Roller uses host networking so OpenClaw can reach its local request proxy.
+On macOS, open **Docker Desktop → Settings → Resources → Network**, enable **Enable host networking**, and restart Docker Desktop. Roller uses host networking so that OpenClaw can reach its local request proxy.
 
 ## 2. Prepare the OpenClaw image
 
@@ -44,9 +44,9 @@ Alternatively, load an existing archive:
 docker load -i /path/to/openclaw-2026.7.1-2-linux-amd64.tar.gz
 ```
 
-If you use a custom image tag, pass it with `--docker-image` or set `ROLLER_OPENCLAW_IMAGE`.
+To use a custom image tag, pass it with `--docker-image` or set `ROLLER_OPENCLAW_IMAGE`.
 
-Keep the default reasoning settings for the first run. Roller saves the visible reasoning text returned by the model service. If the service reports only reasoning token counts, there is no reasoning text to save.
+Keep the default reasoning settings for the first run. Roller saves the visible reasoning text returned by the model service. If the service reports only reasoning token counts, no reasoning text is saved.
 
 ## 3. Prepare the OpenClaw API configuration
 
@@ -56,7 +56,7 @@ Copy the local environment template:
 cp examples/env/api.env.example examples/env/api.env
 ```
 
-In `examples/env/api.env`, set `MY_PROXY_BASE_URL` and `MY_PROXY_API_KEY` to the actual model service URL and API key. This guide does not use the other Harnesses or Web Search, so leave the remaining variables empty.
+In `examples/env/api.env`, set `MY_PROXY_BASE_URL` and `MY_PROXY_API_KEY` to the actual model service URL and API key. This guide does not use the other Harnesses or Web Search; leave the remaining variables empty.
 
 Save the file, then load the variables into the current shell:
 
@@ -67,13 +67,13 @@ set +a
 ```
 
 
-Open the repository template at [`examples/config/openclaw/models.json`](../../../examples/config/openclaw/models.json) and change the model `id` to the name of the model being used. In later commands, the model ID after the provider name must exactly match this `id`. For example, if you set `id` to `qwen3.8-flash`, use `--model my-openai-proxy/qwen3.8-flash` in the commands that follow.
+Open the repository template at [`examples/config/openclaw/models.json`](../../../examples/config/openclaw/models.json) and set the model `id` to the name of the model in use. In subsequent commands, the model ID after the provider name must exactly match this `id`. For example, if `id` is set to `qwen3.8-flash`, use `--model my-openai-proxy/qwen3.8-flash` in subsequent commands.
 
-## 4. Meet the example Task
+## 4. Example Tasks
 
-[`examples/tasks/tasks.jsonl`](../../../examples/tasks/tasks.jsonl) contains four tasks from simple to more involved:
+[`examples/tasks/tasks.jsonl`](../../../examples/tasks/tasks.jsonl) contains four tasks, ordered from simple to complex:
 
-| ID | What it shows |
+| ID | Demonstrates |
 | --- | --- |
 | `01_text_only` | Single-turn plain text |
 | `02_local_markdown` | Read an input file and write to `outputs/` |
@@ -93,9 +93,9 @@ roller collect \
   --dry-run
 ```
 
-A dry-run checks that Roller can read the tasks and options before real collection, then previews the rollouts it would run. It does not start containers, call the model API, or create run results. Continue to real collection after it finishes without errors.
+Before real collection, a dry-run checks that Roller can read the tasks and options, then previews the rollouts it would run. A dry-run does not start containers, call the model API, or create run results. Proceed to real collection after the dry-run completes without errors.
 
-## 6. Collect for real
+## 6. Real collection
 
 ```bash
 roller collect \
@@ -109,17 +109,17 @@ roller collect \
   --run-name quickstart
 ```
 
-What the flags mean:
+Flag descriptions:
 
 | Flag | Meaning |
 | --- | --- |
 | `--parallel 4` | Run at most 4 rollouts at once |
-| `--retries 1` | After the first failure, retry at most 1 more time |
+| `--retries 1` | After the first failure, retry at most 1 additional time |
 | `--timeout 600` | Total timeout per rollout is 600 seconds |
 | `--output runs` | Host root directory for all runs |
 | `--run-name quickstart` | This run is saved as `runs/quickstart` |
 
-If a directory with the same name already exists, Roller refuses to overwrite it by default. Continue the original run with `--resume`. Start a new experiment with a new `--run-name`.
+If a directory with the same name already exists, Roller refuses to overwrite it by default. To continue the original run, add `--resume`. To start a new experiment, use a new `--run-name`.
 
 ## 7. Check the results
 
@@ -135,7 +135,7 @@ runs/quickstart/
         └── <index>_<task-id>/
 ```
 
-Most successful samples have at least:
+Most successful samples contain at least the following files:
 
 ```text
 trace.jsonl
@@ -143,12 +143,12 @@ trace_ACTF.json
 info.json
 ```
 
-Linear samples also have `trace_SFT.json`. If main-agent context was compacted,
+Linear samples also contain `trace_SFT.json`. If main-agent context was compacted,
 `info.json` lists `trajectory.sft_segments`, and the SFT records are stored as
 `sft_segments/0001.json`, `0002.json`, and so on. A successful sample can also
 record SFT as unavailable when its context cannot be represented safely.
 
-Check in this order:
+Check the following items in order:
 
 1. Whether `state` in the top-level `info.json` for the run is `finished`, `summary.failed` is `0`, and `summary.completed` matches the expected number of executions.
 2. Whether `status` in every sample `info.json` is `ok` and `usage.request_count` is greater than `0`.
@@ -156,11 +156,11 @@ Check in this order:
 4. Whether each available SFT record has `messages` and `tools`; image records
    also have `images`, and compaction segments have `target_start_index`.
 5. For tasks that must deliver files, whether the sample `results/` contains the expected files.
-6. Whether run `sft.jsonl` has one line per eligible **linear** SFT sample.
+6. Whether run `sft.jsonl` has one line per eligible linear SFT sample.
    Compacted samples stay in `sft_segments/` and require a training reader that
    honors `target_start_index`; they never enter the legacy run dataset.
 
-For when each file is written and what is retained on failure, see [Trajectory outputs](../traces/trajectory-outputs.md).
+[Trajectory outputs](../traces/trajectory-outputs.md) describes when each file is written and what is retained on failure.
 
 ## 8. Open the Viewer
 
@@ -168,16 +168,16 @@ For when each file is written and what is retained on failure, see [Trajectory o
 roller view runs/quickstart
 ```
 
-It listens on `127.0.0.1:17865` by default and switches to a free port if that one is busy. After the command starts, open the URL it prints in a browser.
+The Viewer listens on `127.0.0.1:17865` by default and switches to a free port if that port is in use. After the command starts, open the printed URL in a browser.
 
-The Viewer shows the ACTF timeline. Inspector is for the system prompt, tools schema, run info, and raw content. See the [Viewer guide](../traces/viewer.md).
+The Viewer shows the ACTF timeline. The Inspector shows the system prompt, tools schema, run info, and raw content. For details, see the [Viewer guide](../traces/viewer.md).
 
 ## 9. Next steps
 
-- Write your own data: [Task format](../tasks/task-format.md)
+- Write custom task data: [Task format](../tasks/task-format.md)
 - Configure reasoning: [OpenClaw Harness guide](../harnesses/openclaw-configuration.md#6-thinking-configuration)
 - Understand the training format: [SFT data format](../traces/sft-format.md)
-- See every CLI option: [CLI reference](cli-reference.md)
+- List all CLI options: [CLI reference](cli-reference.md)
 
 ## 10. Common issues
 
@@ -201,8 +201,8 @@ The service may support only Chat Completions. Set the OpenClaw provider `api` t
 
 Use `--resume` for the original experiment. Change `--run-name` for a new one.
 
-**(6) Viewer does not show new tasks**
+**(6) The Viewer does not show new tasks**
 
-Confirm that the run root directory was passed, refresh the page, and check run `info.json`.
+Confirm that the run root directory was passed, refresh the page, and check the run `info.json`.
 
 The OpenClaw Harness guide lists additional OpenClaw-specific errors.

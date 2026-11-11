@@ -15,7 +15,7 @@ Use the Hermes Harness when a task needs:
 - single-turn, multi-turn, Task Agent, or User Simulator execution.
 - ACTF, SFT, token usage, and result-file export.
 
-It does not currently accept images or video directly in task messages. Remote terminals, persistent memory, and automatic skill learning are also outside its scope.
+The Hermes Harness does not currently accept images or video directly in task messages. Remote terminals, persistent memory, and automatic skill learning are also outside its scope.
 
 ## 2. Image preparation
 
@@ -33,7 +33,7 @@ The default base image uses Python 3.11. For another base image or package mirro
 
 ## 3. Environment variables and API
 
-The Hermes Harness connects to an OpenAI Chat Completions service with tool-call support. It does not require a separate Hermes gateway. A first run needs an API address, an API key, and a model ID.
+The Hermes Harness connects to an OpenAI Chat Completions service with tool-call support. It does not require a separate Hermes gateway. A first run requires an API address, an API key, and a model ID.
 
 | Setting | Default source | CLI override |
 | --- | --- | --- |
@@ -43,7 +43,7 @@ The Hermes Harness connects to an OpenAI Chat Completions service with tool-call
 
 The value of `--hermes-api-key-env` or `--api-key-env` is the name of a host environment variable, not the key itself. The key is read at execution time and is not written to public examples or run configuration.
 
-Replace `...`, the API address, and `model-id` with values from the model service. The first command runs one task so the configuration can be checked before a larger run:
+Replace `...`, the API address, and `model-id` with values from the model service. The following command runs a single task so that the configuration can be checked before a larger run:
 
 ```bash
 export ROLLER_HERMES_KEY='...'
@@ -67,10 +67,10 @@ This table lists Hermes-specific runtime flags only. See section 3 for API addre
 
 | Option | Default / behavior |
 | --- | --- |
-| `--hermes-image` | Overrides shared `--docker-image`. Otherwise `ROLLER_HERMES_IMAGE`, then `roller-hermes:d15ed4445207` |
+| `--hermes-image` | Takes precedence over the shared `--docker-image`. If neither is set, `ROLLER_HERMES_IMAGE` is used, with `roller-hermes:d15ed4445207` as the fallback |
 | `--hermes-context-length` | Optional context window override, at least 64000 tokens |
-| `--hermes-max-iterations` | `12` model iterations per user turn. Total task timeout also applies |
-| `--hermes-vision` / `--no-hermes-vision` | Enable `vision_analyze` and declare that the selected model accepts image input. Enabled by default |
+| `--hermes-max-iterations` | `12` model iterations per user turn. The total task timeout also applies |
+| `--hermes-vision` / `--no-hermes-vision` | Enables `vision_analyze` and declares that the selected model accepts image input. Enabled by default |
 | `--thinking` / `runtime.thinking` | Optional native reasoning hint: `off/minimal/low/medium/high/xhigh`. Actual support and normalization depend on Hermes and the provider/model |
 | `--wire-trace` | Native request records always preserve tool definitions and assembled prompts. `full` also records HTTP traffic and requires an explicit API address with `--network host` |
 | `--no-keep-thinking` | Removes reasoning from ACTF/SFT export. The native history remains available |
@@ -79,7 +79,7 @@ The same settings apply when Hermes is the Task Agent or User Simulator. After c
 
 ## 5. Multimodal capabilities
 
-Hermes provides terminal, file, and optional image tools. When both the model and API service accept image input, `vision_analyze` can open a local image. Disable the image tool with `--no-hermes-vision` for a text-only model.
+Hermes provides terminal, file, and optional image tools. When both the model and API service accept image input, `vision_analyze` can open a local image. For a text-only model, disable the image tool with `--no-hermes-vision`.
 
 Images enter the workspace through `files.inputs`, and image-tool results are preserved in the native trace, ACTF, and multimodal SFT. Task `messages[].content` accepts strings only and cannot contain image blocks directly. Video and remote terminals are not supported.
 
@@ -87,7 +87,7 @@ Images enter the workspace through `files.inputs`, and image-tool results are pr
 
 Each Agent or Simulator runs in an isolated disposable container. Inputs are read-only, Context files are copied to their declared task paths, and output files are collected into the sample `results/` directory.
 
-Conversation history and workspace files persist across turns for the same participant. Each turn starts a new Python agent process, so in-memory state such as background process handles does not persist. Write information to workspace files when it must survive into a later turn.
+Conversation history and workspace files persist across turns for the same participant. Each turn starts a new Python agent process, so in-memory state such as background process handles does not persist. Store information that a later turn needs in workspace files.
 
 Persistent Hermes memory and automatic skill learning are disabled during collection. Tasks can still read Context and skill files by path.
 
@@ -118,7 +118,7 @@ For a first run, use one simple task and then check:
 
 **(1) The endpoint reports a context window error**
 
-This revision requires at least 64,000 tokens. Set `--hermes-context-length` to the model’s actual supported size.
+This revision requires at least 64,000 tokens. Set `--hermes-context-length` to the context size supported by the model.
 
 **(2) A trajectory is not counted as successful**
 
@@ -126,7 +126,7 @@ Incomplete turns, empty final replies, malformed tool arguments or definitions, 
 
 **(3) Task execution times out**
 
-Execution is stopped and available artifacts retained. Adjust `--timeout` or `--hermes-max-iterations` as needed.
+Execution is stopped and the available artifacts are retained. Adjust `--timeout` or `--hermes-max-iterations` as needed.
 
 **(4) An existing run cannot be resumed**
 

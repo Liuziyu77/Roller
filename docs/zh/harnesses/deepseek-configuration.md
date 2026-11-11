@@ -1,10 +1,10 @@
 # DeepSeek Harness 指南
 
-DeepSeek Harness 用于通过官方 DeepSeek Harness 运行文本和文件类 task。它连接支持流式响应、工具调用和 DeepSeek thinking 字段的 Chat Completions 服务。本页按照镜像、API、专属参数、会话和轨迹的顺序介绍首次使用所需内容。
+DeepSeek Harness 用于通过官方 DeepSeek Harness 运行文本和文件类 task。该 Harness 连接支持流式响应、工具调用和 DeepSeek thinking 字段的 Chat Completions 服务。本页按照镜像、API、专属参数、session 和轨迹的顺序介绍首次使用所需内容。
 
 Roller 当前固定使用官方 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 0.1.5rc1，并使用只提供 Bash 的 `sdk-minimal` 工具配置。Task 字段见 [Task 格式参考](../tasks/task-format.md)，通用产物见 [轨迹产出文件指南](../traces/trajectory-outputs.md)。
 
-首次使用时，先完成第 1 至第 3 节并运行示例命令。后面的专属参数、工具限制和轨迹说明可在需要相应功能时再查看。
+首次使用时，请先完成第 1 至第 3 节并运行示例命令。后续章节介绍专属参数、工具限制和轨迹，可在需要相应功能时查阅。
 
 ## 1. 适用范围
 
@@ -27,11 +27,11 @@ docker build -t roller-deepseek:0.1.5rc1 docker/deepseek
 
 镜像包含官方 SDK 和运行时。宿主机无需另外安装 DeepSeek Harness。构建完成后，在第 3 节配置 API 地址、API Key 和模型 ID。
 
-默认基础镜像为 `python:3.12-slim`，支持 Linux x86_64 和 aarch64。需要更换基础镜像或 Debian 软件源时，参见 [Docker 构建与镜像源](../start/docker-builds.md)。
+默认基础镜像为 `python:3.12-slim`，支持 Linux x86_64 和 aarch64。如需更换基础镜像或 Debian 软件源，请参见 [Docker 构建与镜像源](../start/docker-builds.md)。
 
 ## 3. 环境变量与 API
 
-DeepSeek Harness 连接支持流式响应、工具调用和 DeepSeek thinking 字段的 Chat Completions 服务。第一次运行需要准备 API 地址、API Key 和模型 ID。
+DeepSeek Harness 连接支持流式响应、工具调用和 DeepSeek thinking 字段的 Chat Completions 服务。首次运行需要准备 API 地址、API Key 和模型 ID。
 
 | 配置项 | 默认读取 | CLI 覆盖 |
 | --- | --- | --- |
@@ -39,9 +39,9 @@ DeepSeek Harness 连接支持流式响应、工具调用和 DeepSeek thinking �
 | API Key | `DEEPSEEK_API_KEY` | `--deepseek-api-key-env`，单一 Harness 运行也可用 `--api-key-env` |
 | 模型 ID | task 的 `model` 或 `--model` | 原样发送给服务 |
 
-`--deepseek-api-key-env` 和 `--api-key-env` 的值是宿主机环境变量名，不是 Key 本身。Key 只在执行时读取，不写入 task、run 配置或公开产物。
+`--deepseek-api-key-env` 和 `--api-key-env` 的值是宿主机环境变量名，不是 Key 本身。Key 仅在执行时读取，不写入 task、run 配置或公开产物。
 
-将下面的 `...`、API 地址和 `model-id` 替换为模型服务提供的实际值。第一次运行只执行一个 task，便于先确认配置是否正确：
+将以下命令中的 `...`、API 地址和 `model-id` 替换为模型服务提供的实际值。首次运行仅执行一个 task，以便在大规模运行前确认配置是否正确：
 
 ```bash
 export ROLLER_DEEPSEEK_KEY='...'
@@ -61,41 +61,41 @@ roller collect \
 (deepseek-cli-flags)=
 ## 4. DeepSeek 专属参数
 
-下面只列 DeepSeek 专属运行参数。API 地址和 Key 的配置方式见第 3 节。所有 Harness 共用的参数见 [CLI 参数参考](../start/cli-reference.md)。
+下表仅列出 DeepSeek 专属运行参数。API 地址和 Key 的配置方式见第 3 节。所有 Harness 共用的参数见 [CLI 参数参考](../start/cli-reference.md)。
 
 | 参数 | 默认值与行为 |
 | --- | --- |
-| `--deepseek-image` | 优先于 `--docker-image`、`ROLLER_DEEPSEEK_IMAGE`、`roller-deepseek:0.1.5rc1` |
-| `--deepseek-max-steps` | 每条用户消息最多 12 次模型请求，另受任务/对话轮次超时约束 |
+| `--deepseek-image` | 优先于 `--docker-image`。两者均未设置时使用 `ROLLER_DEEPSEEK_IMAGE`，该变量也未设置时使用 `roller-deepseek:0.1.5rc1` |
+| `--deepseek-max-steps` | 每条用户消息最多 12 次模型请求，同时受 task 和对话轮次超时的限制 |
 | `--deepseek-context-length` | 默认 128000，至少 1024，按实际服务设置 |
 | `--deepseek-output-tokens` | 默认 8192，必须为正且小于上下文窗口 |
-| `--thinking` / `runtime.thinking` | 原生支持 `off/low/high/max`。`none` 是 `off` 别名。省略时使用 DeepSeek Harness 的默认行为 |
+| `--thinking` / `runtime.thinking` | 原生支持 `off/low/high/max`。`none` 是 `off` 的别名。省略时使用 DeepSeek Harness 的默认行为 |
 | `--wire-trace` | 控制请求记录方式。`full` 额外保存完整 HTTP 请求，需要显式 API 地址和 `--network host` |
-| `--no-keep-thinking` | 仅移除 ACTF/SFT reasoning，保留原始事件和续聊历史 |
+| `--no-keep-thinking` | 仅移除 ACTF/SFT 中的 reasoning，保留原始事件和续聊历史 |
 
-DeepSeek 作为 Task Agent 或 User Simulator 时都使用这些参数。修改镜像、API 地址、步数或 token 上限后，建议换一个新的 `--run-name`，避免与旧运行配置冲突。
+DeepSeek 作为 Task Agent 或 User Simulator 时均使用这些参数。修改镜像、API 地址、步数或 token 上限后，建议使用新的 `--run-name`，以免与原有运行配置冲突。
 
 ## 5. 多模态能力
 
-DeepSeek Harness 当前固定使用官方最小工具配置 `sdk-minimal`，只向模型提供持久化 `bash`，没有图片查看工具。因此当前适合文本和普通文件任务，不支持需要模型理解图片内容的任务。
+DeepSeek Harness 当前固定使用官方最小工具配置 `sdk-minimal`，仅向模型提供持久化 `bash`，不提供图片查看工具。因此适用于文本和普通文件任务，不支持需要模型理解图片内容的任务。
 
-图片文件可以通过 `files.inputs` 放入工作区，但只会作为普通文件存在，不会作为图片内容发送给模型。Task 的 `messages[].content` 当前也只支持字符串，不能直接写入图片内容块。视觉任务应选择支持图片工具的其他 Harness。
+图片文件可通过 `files.inputs` 放入工作区，但仅作为普通文件存在，不会作为图片内容发送给模型。Task 的 `messages[].content` 当前也只支持字符串，不能直接写入图片内容块。视觉任务应选择支持图片工具的其他 Harness。
 
-## 6. 会话与工作区
+## 6. Session 与工作区
 
-每个 Agent 或 Simulator 都在独立容器中运行。输入文件只读，Context 文件复制到 task 声明的位置，输出文件在结束后回收到 sample 的 `results/`。
+每个 Agent 或 Simulator 均在独立容器中运行。输入文件只读，Context 文件复制到 task 声明的位置，输出文件在结束后回收至 sample 的 `results/`。
 
-同一参与者的多轮消息会复用同一个 DeepSeek 会话和 Bash 环境。对话历史、工作区文件、shell 变量和当前工作目录都会保留，因此后续轮次可以继续使用前面的状态。
+同一参与者的多轮消息复用同一个 DeepSeek session 和 Bash 环境。对话历史、工作区文件、shell 变量和当前工作目录均会保留，因此后续轮次可沿用此前的状态。
 
 ## 7. 工具与能力限制
 
 当前 `sdk-minimal` 工具配置只提供一个持续可用的 `bash` 工具。读写文件和搜索内容也通过 Bash 命令完成，不提供单独的图片、Web、MCP 或子 Agent 工具。
 
-自动压缩已关闭。长 task 需要通过 `--deepseek-context-length` 设置足够的上下文窗口，并确保所选模型服务支持 DeepSeek 的请求格式和 thinking 字段。
+自动压缩已关闭。长 task 需要通过 `--deepseek-context-length` 设置足够大的上下文窗口；所选模型服务须支持 DeepSeek 的请求格式和 thinking 字段。
 
 ## 8. 轨迹与请求记录
 
-一次运行会生成三类主要轨迹文件：
+一次运行生成三类主要轨迹文件：
 
 | 文件 | 用途 |
 | --- | --- |
@@ -103,7 +103,7 @@ DeepSeek Harness 当前固定使用官方最小工具配置 `sdk-minimal`，只�
 | `trace_ACTF.json` | 将对话、reasoning、Bash 调用和结果整理成统一结构 |
 | `trace_SFT.json` | 将成功轨迹整理成训练数据格式 |
 
-失败、截断、空回复、未完成工具调用或无法完整保存的内容不会被标记为成功。超时后会停止容器，并尽量回收已经生成的轨迹和结果文件。
+错误、截断、空回复、未完成的工具调用或无法完整保存的内容不会被标记为成功。超时后停止容器，并尽量回收已生成的轨迹和结果文件。
 
 ## 9. 首次运行检查
 
@@ -118,20 +118,20 @@ DeepSeek Harness 当前固定使用官方最小工具配置 `sdk-minimal`，只�
 
 **(1) 轨迹被拒绝**
 
-失败、截断、空回复、未完成工具调用及无法无损表示的非文本内容都会被拒绝，检查 `trace.jsonl` 定位原因。
+错误、截断或空回复、未完成的工具调用，以及无法无损表示为文本的内容均会被拒绝。请检查 `trace.jsonl` 定位原因。
 
-**(2) 长任务超窗**
+**(2) 长任务超出上下文窗口**
 
-自动压缩已关闭，按实际服务调大 `--deepseek-context-length`。
+自动压缩已关闭。请按实际服务能力调大 `--deepseek-context-length`。
 
 **(3) task 执行超时**
 
-整个容器被停止并回收已有文件，按需调整 `--timeout` 或 `--deepseek-max-steps`。
+整个容器将被停止，已有文件会被回收。可按需调整 `--timeout` 或 `--deepseek-max-steps`。
 
 **(4) 无法继续旧的 run**
 
-镜像、API 地址或运行参数发生变化后，旧 run 不能安全续跑。请更换 `--run-name`。
+镜像、API 地址或运行参数发生变化后，旧 run 无法安全地继续执行。请使用新的 `--run-name`。
 
 **(5) `--wire-trace full` 无法启动**
 
-需要显式 API 地址和 `--network host`。
+请设置显式 API 地址，并保持启用 `--network host`。

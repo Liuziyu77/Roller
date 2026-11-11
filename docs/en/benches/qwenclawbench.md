@@ -9,7 +9,7 @@ Roller reuses the upstream tasks, assets, automated graders, LLM rubrics,
 weights, and 0.75 penalty threshold. It supports OpenClaw, Codex, Claude Code,
 Hermes, OpenCode, DeepSeek, and Pi. The adapter defaults to
 `harness: openclaw`, which `--harness` can override. Other Harnesses can be
-explored, but comparable leaderboard experiments should use OpenClaw and fix
+used for exploration. Comparable leaderboard experiments should use OpenClaw and fix
 the image, agent model, judge model, and run count.
 
 ## 1. Data and export
@@ -43,8 +43,8 @@ id, run index, and total run count remain in
 ## 2. One-command runner
 
 `scripts/run-qwenclawbench.sh` exports tasks, collects trajectories, and writes
-`<OUTPUT_ROOT>/<RUN_NAME>/report.json`. Put model and judge credentials in
-environment variables before a full hybrid run:
+`<OUTPUT_ROOT>/<RUN_NAME>/report.json`. Before a full hybrid run, set the model and judge
+credentials as environment variables:
 
 ```bash
 export LOCAL_VLLM_API_KEY=local
@@ -62,14 +62,14 @@ The script defaults to OpenClaw and three runs per task. `TASK_IDS` and
 `CATEGORIES` accept comma-separated lists. `PARALLEL`, `RETRIES`,
 `RUNS_PER_TASK`, `OUTPUT_ROOT`, and `RUN_NAME` override their defaults. Set
 `QWENCLAW_REQUIRE_JUDGE=0` only when selecting automated-only tasks. For
-OpenClaw, `OPENCLAW_MODEL_REQUEST_TIMEOUT_SECONDS` defaults to `300`, avoiding
-the runtime's implicit 120-second stream-idle ceiling for slow or buffered
+OpenClaw, `OPENCLAW_MODEL_REQUEST_TIMEOUT_SECONDS` defaults to `300`, which avoids
+the runtime's implicit 120-second stream-idle limit for slow or buffered
 providers. When `MODEL` contains `glm`, the runner also defaults `RETRIES` to
 `1` and `OPENCLAW_MAX_TOKENS` to `32768`; other models default to zero retries
 and preserve the model config's `maxTokens`. Explicit `RETRIES` and
-`OPENCLAW_MAX_TOKENS` values always win. For another Harness, set `HARNESS`,
+`OPENCLAW_MAX_TOKENS` values always take precedence. For another Harness, set `HARNESS`,
 `API_BASE`, and `API_KEY_ENV`;
-`API_KEY_ENV` is the name of the variable holding the model API key:
+`API_KEY_ENV` is the name of the variable that holds the model API key:
 
 ```bash
 export ROLLER_MODEL_API_KEY=replace-me
@@ -138,7 +138,7 @@ not required:
 | `QWENCLAW_JUDGE_MAX_RETRIES` | Request attempts; default 3, clamped to 1 through 100 |
 
 `JUDGE_BASE_URL`, `JUDGE_API_KEY`, and `JUDGE_MODEL` are compatibility
-fallbacks for the first three variables. The dedicated `QWENCLAW_*` names win.
+fallbacks for the first three variables. The dedicated `QWENCLAW_*` names take precedence.
 
 Use the same local Qwen for task execution and judging:
 
@@ -156,8 +156,8 @@ roller collect --tasks /tmp/qwenclawbench.jsonl \
 ```
 
 To test an external API later, replace only these three judge variables. A
-different judge endpoint, model, or prompt changes scores, so record and fix
-them for comparative runs.
+different judge endpoint, model, or prompt changes scores. Record and fix
+these settings for comparative runs.
 
 ## 5. Scoring and aggregation
 

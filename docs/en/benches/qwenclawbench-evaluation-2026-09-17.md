@@ -41,5 +41,5 @@ Invalid samples count as zero.
 | `bailian/deepseek-v4-flash` | DeepSeek-V3.2-Thinking | **-4.18** | -10.21 | -6.56 |
 
 The two evaluated models are reference projections rather than official
-rankings. The official leaderboard uses Claude as judge, while this evaluation
-uses GLM-5.2, and the model, harness, endpoint, and service versions differ.
+rankings. The official leaderboard uses Claude as judge; this evaluation
+uses GLM-5.2. The model, harness, endpoint, and service versions also differ.

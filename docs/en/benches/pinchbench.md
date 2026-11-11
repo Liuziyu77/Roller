@@ -21,11 +21,11 @@ mkdir -p "$ROLLER_RUN_ROOT"
 `prepare-pinchbench.sh` clones the upstream data when the target directory is missing and pulls
 the pinned `linux/amd64` OpenClaw image. It does not update an existing checkout. The script
 prints the commit for experiment records and does not read or write API keys. To prepare the
-environment by hand, clone <https://github.com/pinchbench/skill> and pull
+environment manually, clone <https://github.com/pinchbench/skill> and pull
 `ghcr.io/openclaw/openclaw:2026.7.1-2`.
 
-OpenClaw also needs a model configuration. Save the following as `example.models.json`, then
-replace the API URL, key, and model ID with values from your model provider:
+OpenClaw also requires a model configuration. Save the following as `example.models.json`, then
+replace the API URL, key, and model ID with the values from the model provider:
 
 ```json
 {
@@ -42,7 +42,7 @@ replace the API URL, key, and model ID with values from your model provider:
 }
 ```
 
-Run two automatically graded tasks before starting a larger job. They do not need a judge:
+Before starting a larger job, run two automatically graded tasks. These tasks do not require a judge:
 
 ```bash
 roller collect --bench pinchbench --bench-root "$PINCHBENCH_ROOT" \
@@ -59,7 +59,7 @@ The command writes `smoke/tasks.jsonl` and
 The `all` and `core` variants contain LLM and hybrid grading tasks. For a result comparable to
 the upstream PinchBench setup, keep the default judge,
 `anthropic/claude-haiku-4.5`. Roller sends judge requests to
-`https://openrouter.ai/api/v1`, so this run only needs an OpenRouter key:
+`https://openrouter.ai/api/v1`; therefore this run requires only an OpenRouter key:
 
 ```bash
 export OPENROUTER_API_KEY=...
@@ -83,14 +83,14 @@ roller collect --bench pinchbench --bench-root "$PINCHBENCH_ROOT" \
 
 Roller takes a content-addressed snapshot of `workspace_files` and copies it into a writable
 workspace for each sample. It never changes the upstream checkout.
-`sessions[].new_session: true` starts another OpenClaw session in the same container, preserving
-the filesystem. The grader receives the combined transcript. Private answers for the image task
-enter the container after the agent exits.
+`sessions[].new_session: true` starts another OpenClaw session in the same container, and the
+filesystem is preserved. The grader receives the combined transcript. Private answers for the image task
+are placed in the container after the agent exits.
 
 The default judge request matches the current upstream PinchBench settings:
 `anthropic/claude-haiku-4.5`, `temperature=0`,
 `max_completion_tokens=2048`, no streaming, a 300-second timeout, and one request. A separate
-3600-second wall-clock limit stops a stuck grader process without changing that request.
+3600-second wall-clock limit stops a hung grader process without changing that request.
 
 For a custom OpenAI-compatible judge, set `PINCHBENCH_JUDGE_BASE_URL`,
 `PINCHBENCH_JUDGE_API_KEY`, and `PINCHBENCH_JUDGE_MODEL`. Set
@@ -98,7 +98,7 @@ For a custom OpenAI-compatible judge, set `PINCHBENCH_JUDGE_BASE_URL`,
 `PINCHBENCH_JUDGE_STREAM=true` only when the endpoint requires it. Scores from a different judge
 model are not directly comparable to the official result.
 
-A reasoning model may use the default 2048-token budget before it emits JSON. Increase the budget
+A reasoning model may exhaust the default 2048-token budget before it emits JSON. Increase the budget
 with `PINCHBENCH_JUDGE_MAX_TOKENS=8192`. When `PINCHBENCH_JUDGE_RETRIES` is greater than zero,
 Roller retries network errors and successful responses without a parseable score. If streamed
 `content` is empty, the grader also checks `reasoning_content`.
@@ -122,5 +122,5 @@ proxy settings.
 | upload/register/trend/judge cache | Roller does not implement these leaderboard and post-processing features |
 
 Roller writes reports locally and does not upload them to the PinchBench leaderboard. Tasks that
-use search, email, calendar, third-party integrations, or a skill registry still need the matching
+use search, email, calendar, third-party integrations, or a skill registry still require the corresponding
 network access and credentials. Roller prepares the four upstream FWS mock tasks automatically.

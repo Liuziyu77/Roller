@@ -5,7 +5,7 @@ Roller uses `roller.task/v1` to describe the conversation, files, Context, and r
 - `.jsonl`: each non-empty line is one task.
 - `.json`: the top level is a task array, or `{"tasks": [...]}`.
 
-Machine-readable constraints are in the [Task JSON Schema](../../../schemas/task.schema.json).
+The machine-readable constraints are defined in the [Task JSON Schema](../../../schemas/task.schema.json).
 
 ## 1. Complete single-turn example
 
@@ -42,7 +42,7 @@ Machine-readable constraints are in the [Task JSON Schema](../../../schemas/task
 }
 ```
 
-If the task list is at `examples/tasks/tasks.jsonl`, then `file_root` resolves to:
+If the task list is located at `examples/tasks/tasks.jsonl`, `file_root` resolves to:
 
 ```text
 examples/tasks/files/product_summary/
@@ -51,10 +51,10 @@ examples/tasks/files/product_summary/
 ├── context/
 │   ├── USER.md
 │   └── MEMORY.md
-└── outputs/                   # 逻辑输出目录，可不预先创建
+└── outputs/                   # logical output directory; it need not exist in advance
 ```
 
-When the task runs, the input remains at `inputs/product-brief.md`; files the Agent writes to `outputs/summary.md` end up in the sample as `results/summary.md`.
+During the task, the input remains at `inputs/product-brief.md`. A file that the Agent writes to `outputs/summary.md` is stored in the sample as `results/summary.md`.
 
 ## 2. Top-level fields
 
@@ -75,11 +75,11 @@ Minimal task:
 {"schema_version":"roller.task/v1","id":"hello","prompt":"计算 2+3，只回复数字。"}
 ```
 
-To group Task Agent settings, you can also use
-`"task_agent": {"harness": "codex", "model": "provider/model"}`; it is equivalent to the top-level
-`harness`/`model`, and repeated declarations must stay consistent. `agent` is a compatibility alias.
+Task Agent settings can also be grouped in one object:
+`"task_agent": {"harness": "codex", "model": "provider/model"}`. This object is equivalent to the top-level
+`harness`/`model`; values declared in both places must be consistent. `agent` is a compatibility alias.
 
-If a task has no `model`, the run must provide at least one `--model`. Repeating `--model` runs each task once per model; once the CLI provides models, the task's own `model` is not part of that combination.
+If a task has no `model`, the run must provide at least one `--model`. When `--model` is repeated, each task runs once per model. When the CLI provides models, the task's own `model` is not part of the combinations of that run.
 
 ## 3. Conversation modes
 
@@ -97,7 +97,7 @@ If a task has no `model`, the run must provide at least one `--model`. Repeating
 
 ### 3.2 Predefined multi-turn
 
-Each element in `messages` is one user-message turn. Roller sends them in order to the same Agent session:
+Each element in `messages` is one user-message turn. Roller sends the elements in order to the same Agent session:
 
 ```json
 {
@@ -147,13 +147,13 @@ Roller does not infer turns from Markdown headings, separators, or other text ma
 }
 ```
 
-In this mode the task does not predefine user messages. Each turn, the Conversation Manager gives the User Simulator the fixed instruction and the full conversation, and the Simulator decides the next instruction or to finish.
+In this mode, the task does not predefine user messages. In each turn, the Conversation Manager passes the fixed instruction and the full conversation to the User Simulator, which decides whether to send the next instruction or to finish.
 
-`user_simulator` cannot appear together with `prompt`, `question`, or `messages`. Fields and scheduling details are in [User Simulator and dynamic conversation](user-simulator.md).
+`user_simulator` cannot appear together with `prompt`, `question`, or `messages`. Fields and scheduling details are described in [User Simulator and dynamic conversation](user-simulator.md).
 
 ## 4. `file_root`
 
-`file_root` is the file-pack root for the current task. Relative paths are resolved from the directory that contains the task list; absolute paths are also allowed for `file_root`, but portable datasets should use relative paths.
+`file_root` is the file-pack root for the current task. Relative paths are resolved from the directory that contains the task list. `file_root` can also be an absolute path, but portable datasets should use relative paths.
 
 For example:
 
@@ -172,7 +172,7 @@ Corresponding declaration:
 {"file_root": "files/task_001"}
 ```
 
-`files.inputs[].source` and `files.output_dir` are both logical paths relative to that root. Roller does not write Agent output back to the host `file_root`, so parallel models cannot overwrite each other; files are saved under each sample's `results/`.
+`files.inputs[].source` and `files.output_dir` are both logical paths relative to this root. Roller does not write Agent output back to the host `file_root`, so parallel models cannot overwrite each other's output. Output files are saved under the `results/` directory of each sample.
 
 ## 5. Input files
 
@@ -210,16 +210,16 @@ Corresponding declaration:
 | `required` | `true` | Whether a missing path fails the task before start |
 | `sha256` | none | Optional checksum of the file or directory contents |
 
-Inputs are read-only by default. For example, `inputs/data.csv` appears at:
+Inputs are read-only by default. For example, `inputs/data.csv` is available at the following paths:
 
 ```text
 /tmp_workspace/inputs/data.csv
 /roller/task/inputs/inputs/data.csv
 ```
 
-The first path is suitable to cite directly in a prompt; the second is a stable entry point to the full input snapshot.
-Set `"input_mode": "copy"` in `files` when the Agent must edit seed files in place. Roller first
-copies the complete input tree into a private writable workspace. The default, `mount`, keeps read-only mounts.
+The first path can be referenced directly in a prompt; the second path is a stable entry point to the full input snapshot.
+If the Agent must modify seed files in place, set `"input_mode": "copy"` in `files`. In this mode, Roller first
+copies the complete input tree into a private writable workspace. The default value, `mount`, uses read-only mounts.
 
 ## 6. Context and system files
 
@@ -262,7 +262,7 @@ Default targets:
 | `agents` | `AGENTS.md` |
 | `skill` / `skills` | `skills/<source-name>` |
 
-The OpenClaw adapter injects Context into `/root/<target>` and `/tmp_workspace/<target>`. Capture policy and content retention rules are in [Files, Task Bundles, and result storage](task-bundle-and-storage.md#3-context-injection-and-capture).
+The OpenClaw adapter injects Context into `/root/<target>` and `/tmp_workspace/<target>`. Capture policy and content retention rules are described in [Files, Task Bundles, and result storage](task-bundle-and-storage.md#3-context-injection-and-capture).
 
 ## 7. Output directory
 
@@ -274,11 +274,11 @@ The OpenClaw adapter injects Context into `/root/<target>` and `/tmp_workspace/<
 }
 ```
 
-`output_dir` defaults to `outputs` and may be a deeper relative path such as `deliverables/final`. Roller creates a writable directory at `/tmp_workspace/<output_dir>/` and links `/roller/task/outputs` to the same location.
+`output_dir` defaults to `outputs` and may be a nested relative path such as `deliverables/final`. Roller creates a writable directory at `/tmp_workspace/<output_dir>/` and links `/roller/task/outputs` to the same location.
 
-After the task finishes, every safe file and empty directory in that folder is copied into the sample's `results/`. There is no need to list output filenames in advance; the old `files.outputs` field for declaring them is no longer supported.
+After the task finishes, every safe file and empty directory in this directory is copied into the sample's `results/`. Output filenames do not need to be listed in advance; the legacy `files.outputs` field, which declared them, is no longer supported.
 
-`files.output_dir` names the directory to collect from the Agent workspace. CLI `--output` names the host root where the entire run is saved. For example, `files.output_dir=outputs` with `--output /data/roller-runs --run-name demo` saves the Agent's `outputs/report.md` as `/data/roller-runs/demo/samples/.../results/report.md`.
+`files.output_dir` specifies the directory collected from the Agent workspace. The CLI option `--output` specifies the host root directory where the entire run is saved. For example, with `files.output_dir=outputs` and `--output /data/roller-runs --run-name demo`, the Agent's `outputs/report.md` is saved as `/data/roller-runs/demo/samples/.../results/report.md`.
 
 ## 8. Runtime
 
@@ -301,30 +301,30 @@ After the task finishes, every safe file and empty directory in that folder is c
 | `env` | Host environment variable names the Task requires; the task fails if any is missing or empty |
 | `setup` | Shell commands run in `/tmp_workspace` before the Agent starts |
 | `thinking` | Overrides this task's Harness reasoning/thinking setting; for OpenClaw see [Thinking configuration](../harnesses/openclaw-configuration.md#6-thinking-configuration), for Codex see [Thinking configuration](../harnesses/codex-configuration.md#6-thinking-configuration), for Claude Code see [Thinking configuration](../harnesses/claude-code-configuration.md#6-thinking-configuration) |
-| `image` | Override the container image for this task; primarily generated by bench adapters |
-| `workspace_path` | Override this task's absolute workspace path inside the container |
+| `image` | Overrides the container image for this task; primarily generated by bench adapters |
+| `workspace_path` | Overrides this task's absolute workspace path inside the container |
 | `image_build` | Reproducible task-image build definition; Roller builds a missing image before collection |
 
-`env` and `setup` both accept a single string or an array of strings. Task authors should treat setup as executable code and only run commands from trusted datasets.
+`env` and `setup` both accept a single string or an array of strings. Task authors should treat setup as executable code and run only commands from trusted datasets.
 
 The Roller schema for `thinking` accepts `off/minimal/low/medium/high/xhigh/adaptive/max/ultra`;
-`none` is normalized to `off`. The value in the task takes precedence over CLI `--thinking`. Modern OpenClaw releases
+`none` is normalized to `off`. The value in the task takes precedence over CLI `--thinking`. Newer OpenClaw releases
 validate levels against the selected provider/model profile; Roller only rejects advanced levels on the legacy
 `2026.3.11` runtime that is known to silently downgrade them. Codex maps valid levels to `model_reasoning_effort` and rejects
 the OpenClaw-only `adaptive` and `off`, which has no shared equivalent; other effort levels are forwarded to Codex
 and validated by the selected model and endpoint. Claude Code 2.1.222 accepts
 `low/medium/high/xhigh/max/ultracode`; Roller maps `ultra` to `ultracode` and rejects
-`off/minimal/adaptive`. Available levels depend on the Harness version, model, and provider; each validates the value.
-The Task Agent can use OpenClaw, Codex, Claude Code, Hermes, OpenCode, DeepSeek, or Pi; the User Simulator can also choose any of these seven Harnesses in its own `harness` field. Task Agent harnesses may be mixed per task; an explicit `--harness` overrides all of them. The Simulator can choose independently.
+`off/minimal/adaptive`. The available levels depend on the Harness version, model, and provider; each of them validates the value.
+The Task Agent can use OpenClaw, Codex, Claude Code, Hermes, OpenCode, DeepSeek, or Pi; the User Simulator can also select any of these seven Harnesses in its own `harness` field. Task Agent harnesses may differ between tasks; an explicit `--harness` overrides all of them. The Simulator Harness is selected independently.
 
 ## 9. Path and format validation
 
-Roller runs these checks before starting Docker:
+Roller performs the following checks before starting Docker:
 
 - Task IDs must be unique within the list.
 - Input paths must be POSIX-style paths relative to `file_root`.
 - Inputs and `output_dir` must not use absolute paths, `..`, or globs.
-- `output_dir` must not sit under `inputs/` or `context/`, and must not overlap an input or Context target.
+- `output_dir` must not be located under `inputs/` or `context/`, and must not overlap an input or Context target.
 - A Context target must not use the reserved top-level directories `inputs`, `outputs`, or `context`.
 - `sha256` must be a 64-character hexadecimal string.
 - User Simulator `max_turns` must be in `1–100`.
@@ -340,4 +340,4 @@ Roller can still read some older Interns2_data-style fields:
 - `persona`
 - `warmup`
 
-New data should use `prompt`, `file_root`, `files.inputs`, `files.context`, `files.output_dir`, and `runtime.setup`, so paths, snapshots, and Resume behavior stay explicit.
+New data should use `prompt`, `file_root`, `files.inputs`, `files.context`, `files.output_dir`, and `runtime.setup`, so that paths, snapshots, and Resume behavior remain explicit.

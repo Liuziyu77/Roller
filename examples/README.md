@@ -1,16 +1,16 @@
 # Roller Examples
 
-[项目首页](../README.md) · [快速上手](../docs/zh/start/getting-started.md) · [Task 格式](../docs/zh/tasks/task-format.md) · [产物说明](../docs/zh/traces/trajectory-outputs.md)
+[项目首页](../README_zh-CN.md) · [快速上手](../docs/zh/start/getting-started.md) · [Task 格式](../docs/zh/tasks/task-format.md) · [产物说明](../docs/zh/traces/trajectory-outputs.md)
 
 本目录包含配置模板、task 和运行命令。安装步骤、task 字段和轨迹格式见对应指南。
 
 | 使用目的 | 入口 |
 | --- | --- |
-| 跑通模型服务、Harness 和轨迹采集 | [基础 Task 清单](#基础-task-清单)：4 条文本、文件、Context 和多轮任务 |
+| 验证模型服务、Harness 和轨迹采集能否正常运行 | [基础 Task 清单](#基础-task-清单)：4 条文本、文件、Context 和多轮任务 |
 | 检查不同输入形式和 Harness 组合的功能 | [Coverage 功能测试](#coverage-功能测试)：按场景选择任务，附离线校验和结果验收 |
-| 一条命令导出、运行并汇总 benchmark | [Benchmark 一键运行](#benchmark-一键运行)：QwenClawBench |
+| 通过一条命令导出、运行并汇总 benchmark | [Benchmark 一键运行](#benchmark-一键运行)：QwenClawBench |
 
-以下命令均从 **Roller 项目根目录** 执行。
+以下命令均在 Roller 项目根目录下执行。
 
 ## 目录内容
 
@@ -50,8 +50,8 @@ examples/
 
 ## Benchmark 一键运行
 
-项目根目录的脚本会依次执行 `bench export`、`collect` 和
-`bench report`，临时 task 清单退出时自动删除，报告写入
+项目根目录的脚本依次执行 `bench export`、`collect` 和
+`bench report`，退出时自动删除临时 task 清单，并将报告写入
 `<OUTPUT_ROOT>/<RUN_NAME>/report.json`：
 
 ```bash
@@ -66,12 +66,12 @@ RUNS_PER_TASK=1 \
 ./scripts/run-qwenclawbench.sh
 ```
 
-`HARNESS` 默认为 `openclaw`。使用其他 Harness 时设置 `API_BASE` 和
-`API_KEY_ENV`；后者是保存 Key 的环境变量名，不是 Key 本身。通用变量还有
+`HARNESS` 默认为 `openclaw`。使用其他 Harness 时，设置 `API_BASE` 和
+`API_KEY_ENV`；后者为保存 Key 的环境变量名，而非 Key 本身。其他通用变量包括
 `PARALLEL`、`RETRIES`、`OUTPUT_ROOT`、`RUN_NAME`、`TASK_IDS`、
-`CATEGORIES` 和可选的 `MAX_STEPS`。QwenClawBench 的 `RUNS_PER_TASK`
+`CATEGORIES` 以及可选的 `MAX_STEPS`。QwenClawBench 的 `RUNS_PER_TASK`
 默认为 3；运行 hybrid task 前必须设置 `QWENCLAW_JUDGE_BASE_URL`、
-`QWENCLAW_JUDGE_API_KEY` 和 `QWENCLAW_JUDGE_MODEL`。脚本后的参数会原样追加
+`QWENCLAW_JUDGE_API_KEY` 和 `QWENCLAW_JUDGE_MODEL`。脚本之后的参数将原样传递
 给 `roller collect`，例如 `./scripts/run-qwenclawbench.sh --resume`。
 
 完整的运行与评分约束见
@@ -85,11 +85,11 @@ Coverage 用于检查清单解析、文件和 Context 输入、Runtime 配置、
 
 正常任务中，1428 条覆盖 51 种场景在 OpenClaw、Codex、Claude Code、Hermes、OpenCode、DeepSeek、Pi 上的执行；196 条覆盖全部 49 种 Task Agent × User Simulator 配对。
 
-任务以加法、读取小文件、写入短答案为主，对话最多两轮。输入文件已随仓库提供，下载后无需另行准备 `Roller_Data`。
+任务以加法、读取小文件、写入短答案为主，对话最多两轮。输入文件已随仓库提供，获取仓库后无需另行准备 `Roller_Data`。
 
 ### 先做离线校验
 
-需要 Python 3.10+，无需 Docker、API Key 或额外 Python 依赖：
+离线校验需要 Python 3.10+，无需 Docker、API Key 或额外 Python 依赖：
 
 ```bash
 python examples/coverage/suite.py list
@@ -100,11 +100,11 @@ python examples/coverage/validate_merged.py
 python examples/coverage/suite.py run --case formats/jsonl/codex --dry-run
 ```
 
-将 `--case formats/jsonl/codex` 改成 `--case '*'` 可遍历全部 406 组。错误输入由校验脚本逐条验证，不作为正常任务提交给模型。
+将 `--case formats/jsonl/codex` 改为 `--case '*'` 即可遍历全部 406 组。错误输入由校验脚本逐条验证，不作为正常任务提交给模型。
 
 ### 配置后运行一组任务
 
-按 [Getting Started](../docs/zh/start/getting-started.md) 准备 Roller 和所选 Harness 的镜像，再复制 Coverage 的 [环境配置模板](coverage/config/.env.example)。下面以 Codex 的 4 条加法任务为例：
+按 [Getting Started](../docs/zh/start/getting-started.md) 准备 Roller 和所选 Harness 的镜像，然后复制 Coverage 的 [环境配置模板](coverage/config/.env.example)。以下以 Codex 的 4 条加法任务为例：
 
 ```bash
 cp examples/coverage/config/.env.example examples/coverage/config/.env
@@ -120,18 +120,18 @@ python examples/coverage/suite.py run --case formats/jsonl/codex \
 python examples/coverage/suite.py check --case formats/jsonl/codex
 ```
 
-默认并发 2、单次超时 180 秒、重试 0，结果写入 `runs/coverage/formats__jsonl__codex/`。本地 `.env` 和 `runs/` 已被 Git 忽略。其他 Harness、Simulator 配对及结果检查方式见 [Coverage 使用说明](coverage/README.md)。
+默认并发数为 2，单次超时为 180 秒，重试次数为 0；结果写入 `runs/coverage/formats__jsonl__codex/`。本地 `.env` 和 `runs/` 已被 Git 忽略。其他 Harness、Simulator 配对及结果检查方式见 [Coverage 使用说明](coverage/README.md)。
 
 ### 选择任务入口
 
 | 需要验证的内容 | 使用方式 |
 | --- | --- |
-| 某个输入场景或 Harness | 从 [场景清单](coverage/COVERAGE.md) 选择组名，用 `suite.py run --case ...` 运行、`suite.py check` 验收；保留原始格式、自定义 key 和特殊 ID 的测试 |
-| 一次运行多个 Harness | 用 [merge.py](coverage/merge.py) 选择场景并绑定实际模型，生成单个 JSON 后交给 `roller collect`；完整模板见 [all_tasks.json](coverage/all_tasks.json) |
-| 检查合并运行的结果 | 用 [report.py](coverage/report.py) 检查采集状态、答案、产物和轨迹；`--fail-on-check` 可用于 CI |
-| 检查已有样本能否 Resume | 用 [audit_resume.py](coverage/audit_resume.py) 做只读审计；实际恢复仍使用原采集命令加 `--resume` |
+| 某个输入场景或 Harness | 从 [场景清单](coverage/COVERAGE.md) 选择组名，使用 `suite.py run --case ...` 运行，使用 `suite.py check` 验收；此方式保留原始格式、自定义 key 和特殊 ID 的测试 |
+| 一次运行多个 Harness | 使用 [merge.py](coverage/merge.py) 选择场景并绑定实际模型，生成单个 JSON 后传给 `roller collect`；完整模板见 [all_tasks.json](coverage/all_tasks.json) |
+| 检查合并运行的结果 | 使用 [report.py](coverage/report.py) 检查采集状态、答案、产物和轨迹；`--fail-on-check` 可用于 CI |
+| 检查已有样本能否 Resume | 使用 [audit_resume.py](coverage/audit_resume.py) 执行只读审计；实际恢复时，仍在原采集命令中添加 `--resume` |
 
-总 JSON 中的模型名是占位值，合并时会统一原始清单格式和 ID；本地模型配置与任务副本的生成命令见 [混合 Harness 运行说明](coverage/README.md#4-使用一个总-json-运行混合-harness)。其中 28 条可选视觉任务需要模型、服务与图像工具支持；Hermes、OpenCode、DeepSeek 和 Pi 各 4 条视觉任务用于记录暂未支持的视觉输入；二进制文件读取测试仅验证文件访问能力。
+总 JSON 中的模型名为占位值，合并时将统一原始清单格式和 ID；本地模型配置与任务副本的生成命令见 [混合 Harness 运行说明](coverage/README.md#4-使用一个总-json-运行混合-harness)。其中 28 条可选视觉任务需要模型、服务与图像工具支持；Hermes、OpenCode、DeepSeek 和 Pi 各 4 条视觉任务用于记录暂未支持的视觉输入；二进制文件读取测试仅验证文件访问能力。
 
 ## 基础样例的采集准备
 
@@ -147,7 +147,7 @@ source examples/env/api.env
 set +a
 ```
 
-`examples/env/api.env` 已被 Git 忽略。不要把真实 Key 写进 JSON、task 或命令行。
+`examples/env/api.env` 已被 Git 忽略。请勿将真实 Key 写入 JSON、task 或命令行。
 
 ## Harness 配置模板
 
@@ -165,14 +165,14 @@ set +a
 - Chat Completions：`"api": "openai-completions"`；
 - OpenClaw 的 `--model` 必须与 `providers.<name>` 和 `models[].id` 完全对应；
 - Codex 和 Claude Code 不读取 OpenClaw models JSON，分别直接使用 Responses 和 Anthropic
-  Messages API；二者的 model、endpoint、Key 环境变量和 effort 都通过 CLI 设置；
+  Messages API；二者的 model、endpoint、Key 环境变量和 effort 均通过 CLI 设置；
 - `--codex-config` 和 `--claude-settings` 是可选的 Harness 原生配置入口，不是模型注册表。
 
-完整规则见 [OpenClaw Harness 指南](../docs/zh/harnesses/openclaw-configuration.md#2-模型配置文件)。
+完整规则见 [OpenClaw Harness 指南](../docs/zh/harnesses/openclaw-configuration.md#31-模型配置)。
 
 ## 基础 Task 清单
 
-[`tasks/tasks.jsonl`](tasks/tasks.jsonl) 每行一条 task：
+[`tasks/tasks.jsonl`](tasks/tasks.jsonl) 每行包含一条 task：
 
 | ID | 输入 | 验证点 |
 | --- | --- | --- |
@@ -213,7 +213,7 @@ roller collect \
 
 ## Codex：运行相同 Task
 
-服务必须支持 Responses protocol，且本地已构建 `roller-codex:0.149.0`：
+服务必须支持 Responses 协议，且本地已构建 `roller-codex:0.149.0`：
 
 ```bash
 roller collect \
@@ -231,13 +231,13 @@ roller collect \
   --run-name examples-codex
 ```
 
-`--codex-config` 可以省略；示例文件只设置 Roller 没有覆盖的 text verbosity，并保留一个注释掉的
-MCP 模板。第四条 task 会通过 `codex exec resume --last` 延续 session。镜像、API 和 reasoning
-细节见 [Codex Harness 指南](../docs/zh/harnesses/codex-configuration.md)。
+`--codex-config` 可省略；示例文件仅设置 Roller 未覆盖的 text verbosity，并保留一个已注释的
+MCP 模板。第四条 task 通过 `codex exec resume --last` 延续 session。镜像、API 和 reasoning
+的详细说明见 [Codex Harness 指南](../docs/zh/harnesses/codex-configuration.md)。
 
 ## OpenCode：原生会话与文件工具
 
-按 [OpenCode 指南](../docs/zh/harnesses/opencode-configuration.md) 构建固定版本镜像，配置流式 Chat Completions 服务：
+按 [OpenCode 指南](../docs/zh/harnesses/opencode-configuration.md) 构建固定版本镜像，并配置流式 Chat Completions 服务：
 
 ```bash
 python examples/coverage/suite.py run --case data/txt/opencode \
@@ -246,11 +246,11 @@ python examples/coverage/suite.py run --case data/txt/opencode \
 python examples/coverage/suite.py check --case data/txt/opencode
 ```
 
-支持 Agent、Simulator、原生 session 续聊、ACTF/SFT 和 Resume。暂不支持视觉验收。
+支持 Agent、Simulator、原生 session 续接、ACTF/SFT 和 Resume；暂不支持视觉验收。
 
 ## DeepSeek Harness：原生 SDK 与持久化 Bash
 
-按 [DeepSeek 指南](../docs/zh/harnesses/deepseek-configuration.md) 构建镜像，配置 DeepSeek 兼容服务：
+按 [DeepSeek 指南](../docs/zh/harnesses/deepseek-configuration.md) 构建镜像，并配置 DeepSeek 兼容服务：
 
 ```bash
 python examples/coverage/suite.py run --case data/txt/deepseek \
@@ -260,11 +260,11 @@ python examples/coverage/suite.py run --case data/txt/deepseek \
 python examples/coverage/suite.py check --case data/txt/deepseek
 ```
 
-使用 `--case '*/deepseek' --exclude-case 'vision/*'` 选择 200 条非视觉输入任务。13 种相关 Simulator 配对共 52 条，可用 `--case 'simulators/pair/deepseek--*' --case 'simulators/pair/*--deepseek'` 选择。
+使用 `--case '*/deepseek' --exclude-case 'vision/*'` 选择 200 条非视觉输入任务。涉及 DeepSeek 的 13 种 Simulator 配对共 52 条，可用 `--case 'simulators/pair/deepseek--*' --case 'simulators/pair/*--deepseek'` 选择。
 
 ## Pi Agent Harness：原生会话与文件工具
 
-按 [Pi 指南](../docs/zh/harnesses/pi-configuration.md) 构建镜像，配置支持工具调用的流式 Chat Completions 服务：
+按 [Pi 指南](../docs/zh/harnesses/pi-configuration.md) 构建镜像，并配置支持工具调用的流式 Chat Completions 服务：
 
 ```bash
 python examples/coverage/suite.py run --case data/txt/pi \
@@ -274,11 +274,11 @@ python examples/coverage/suite.py run --case data/txt/pi \
 python examples/coverage/suite.py check --case data/txt/pi
 ```
 
-使用 `--case '*/pi' --exclude-case 'vision/*'` 选择 200 条非视觉输入任务。涉及 Pi 的 13 种 Simulator 配对共 52 条，可用 `--case 'simulators/pair/pi--*' --case 'simulators/pair/*--pi'` 选择。多轮保留会话历史和文件，Bash 每次启动独立 Shell。
+使用 `--case '*/pi' --exclude-case 'vision/*'` 选择 200 条非视觉输入任务。涉及 Pi 的 13 种 Simulator 配对共 52 条，可用 `--case 'simulators/pair/pi--*' --case 'simulators/pair/*--pi'` 选择。多轮对话中保留会话历史和文件；Bash 每次调用均启动独立 Shell。
 
 ## Hermes：文本、文件与多轮任务
 
-按 [Hermes 指南](../docs/zh/harnesses/hermes-configuration.md) 构建镜像，配置 Chat Completions API 后运行：
+按 [Hermes 指南](../docs/zh/harnesses/hermes-configuration.md) 构建镜像并配置 Chat Completions API，然后执行：
 
 ```bash
 python examples/coverage/suite.py run --case data/txt/hermes \
@@ -308,15 +308,15 @@ roller collect \
   --run-name examples-claude-code
 ```
 
-`--claude-settings` 可以省略；示例只关闭 commit co-author 标记，不改变 permission mode、thinking
-或工具行为。第四条 task 会通过 `claude --continue` 延续 session。镜像、endpoint 和 thinking
+`--claude-settings` 可省略；示例文件仅关闭 commit co-author 标记，不改变 permission mode、thinking
+或工具行为。第四条 task 通过 `claude --continue` 延续 session。镜像、endpoint 和 thinking
 配置见 [Claude Code Harness 指南](../docs/zh/harnesses/claude-code-configuration.md)。
 
 ## 进阶案例
 
 ### 动态 User Simulator
 
-[`tasks/user-simulator.jsonl`](tasks/user-simulator.jsonl) 让另一个 OpenClaw Harness 扮演 HR，根据任务 Agent 当前草稿逐轮补充招聘需求：
+[`tasks/user-simulator.jsonl`](tasks/user-simulator.jsonl) 中，另一个 OpenClaw Harness 扮演 HR，根据 Task Agent 的当前草稿逐轮补充招聘需求：
 
 ```bash
 roller collect \
@@ -328,7 +328,7 @@ roller collect \
   --run-name examples-user-simulator
 ```
 
-Task 已内置 `model: my-openai-proxy/my-model`。动态对话会额外生成 `conversation.json` 和 `user_simulator/` 轨迹；Task Agent 与 Simulator 可在各自字段中选择 OpenClaw、Codex、Claude Code、Hermes、OpenCode、DeepSeek 或 Pi。详见 [User Simulator](../docs/zh/tasks/user-simulator.md)。
+Task 已内置 `model: my-openai-proxy/my-model`。动态对话额外生成 `conversation.json` 和 `user_simulator/` 轨迹；Task Agent 与 Simulator 可在各自字段中选择 OpenClaw、Codex、Claude Code、Hermes、OpenCode、DeepSeek 或 Pi。详见 [User Simulator](../docs/zh/tasks/user-simulator.md)。
 
 ### 多模态输入
 
@@ -374,4 +374,4 @@ roller view runs/examples-openclaw
 - 每个成功 sample 是否有 `trace.jsonl`、`trace_ACTF.json`、`trace_SFT.json` 和 `info.json`；
 - run 根目录 `sft.jsonl` 是否按 request 顺序汇总成功样本。
 
-编写任务参见 [Task](../docs/zh/tasks/task-format.md)；选择训练、调试与审计所需的文件参见 [轨迹产出文件指南](../docs/zh/traces/trajectory-outputs.md)。
+编写 task 时参见 [Task](../docs/zh/tasks/task-format.md)；如需选择训练、调试与审计所需的文件，参见 [轨迹产出文件指南](../docs/zh/traces/trajectory-outputs.md)。

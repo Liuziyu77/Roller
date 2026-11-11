@@ -1,7 +1,7 @@
 # SFT data format
 
 Roller writes `trace_SFT.json` for a linear trajectory. When the main agent
-compacts its context, it writes one record per verified context window under
+compacts its context, Roller writes one record per verified context window under
 `sft_segments/` and lists them in `info.json` as `trajectory.sft_segments`.
 Run-root `sft.jsonl` keeps the original linear-record format and contains one
 line per eligible linear sample. Compaction segments are separate, opt-in
@@ -70,9 +70,10 @@ Do not train these files with a reader that treats every assistant message as
 a target. The legacy `sft.jsonl` deliberately excludes them.
 The next segment starts with the actual prompt observed after a context change,
 which can include a summary and recent history.
-Native events and request rows only discover possible context changes; captured
-root Calls supply the prompt and response used to build and verify each record.
-The two sources can differ, so a native hint alone never supplies SFT content.
+Native events and request rows are used only to detect possible context changes;
+captured root Calls supply the prompt and response used to build and verify each
+record. The two sources can differ; therefore a native hint alone never supplies
+SFT content.
 `info.json` records each segment path, sequential `window_index`,
 `boundary_source` (`initial`,
 `native_boundary`, or `observed_context_change`), optional native
@@ -82,7 +83,7 @@ compaction summary requests under the main identity; such a Call is skipped only
 when it does not match the next main step and the following native compaction
 row records its text verbatim. Any other extra root Call, or a synthetic
 assistant step without a Call, makes SFT export unavailable; raw trace and
-Calls remain. Tool-call IDs a harness rewrites when replaying history do not
+Calls remain. Tool-call IDs that a Harness rewrites when replaying history do not
 start a new segment; a segment keeps the IDs from its latest prompt.
 Opaque prompt content, such as encrypted reasoning, makes SFT export for the
 compacted sample unavailable rather than silently changing the model input.
@@ -91,7 +92,7 @@ compacted sample unavailable rather than silently changing the model input.
 
 When a tool result carries an image that the ACTF layer captured losslessly as
 base64 bytes, the record additionally has a top-level `images` list. The image
-does not stay inline: its position in the message text becomes the reserved
+is not kept inline: its position in the message text is replaced by the reserved
 placeholder `<image>`, and the normalized data URI is appended to `images`:
 
 ```json
@@ -122,18 +123,19 @@ placeholder `<image>`, and the normalized data URI is appended to `images`:
 }
 ```
 
-The contract is:
+The following rules apply:
 
-- Scanning `messages` front to back, the Nth `<image>` placeholder corresponds
-  to `images[N-1]`, so the placeholder count always equals `len(images)`.
+- When `messages` is scanned from first to last, the Nth `<image>` placeholder
+  corresponds to `images[N-1]`; the placeholder count therefore always equals
+  `len(images)`.
 - `images` entries are complete `data:image/png|jpeg|webp|gif;base64,…` URIs;
   raw base64 is never stored. Identical images are not deduplicated: the list
-  encodes the occurrence sequence, not a blob store.
-- Text-only records never gain an `images` key, so existing pure-text data and
-  consumers stay backward compatible.
+  records the sequence of occurrences and is not a blob store.
+- Text-only records never contain an `images` key, so existing text-only data
+  and consumers remain backward compatible.
 - Collision checks cover message content, reasoning, and tool-call arguments.
   Because `<image>` is reserved, a record with images fails conversion when
-  source text already contains a literal `<image>` that cannot be told apart
+  source text already contains a literal `<image>` that cannot be distinguished
   from a placeholder.
 
 ## 2. Message rules
@@ -147,9 +149,9 @@ The contract is:
 - `tool_calls[*]` uses the function-call structure. `function.arguments` is a
   compact JSON string.
 - `tool` contains only `role`, `tool_call_id`, and string `content`.
-- The assistant after a tool call follows the matching tool message directly.
-  No empty user message is inserted.
-- `tools` keeps captured tool definitions. Codex preserves the native Responses list (flat functions, namespaces, custom grammars, and built-in tools), including unused tools and all original schema fields; consumers must support this format. Other harnesses keep the existing nested function representation. Codex requires captured definitions even when no tools were called; missing capture never becomes an empty list.
+- The assistant message after a tool call directly follows the matching tool
+  message. No empty user message is inserted.
+- `tools` keeps captured tool definitions. Codex preserves the native Responses list (flat functions, namespaces, custom grammars, and built-in tools), including unused tools and all original schema fields; consumers must support this format. Other Harnesses keep the existing nested function representation. Codex requires captured definitions even when no tools were called; a missing capture is never replaced with an empty list.
 - Codex custom calls use `{"id":"...","type":"custom","custom":{"name":"...","input":"original string"}}`. Function/custom call namespace fields are preserved. Changing schemas or programmatic `additional_tools` items retain their exact snapshots in ACTF and make SFT explicitly unavailable.
 
 ## 3. ACTF mapping
@@ -164,7 +166,7 @@ The contract is:
 | Top-level `tools` | Top-level `tools` |
 
 `metric`, `started_at`, `finished_at`, and observation `toolName`, `isError`,
-and `details` do not enter SFT. The text of a tool error is still kept as-is.
+and `details` do not enter SFT. The text of a tool error is retained unchanged.
 GPT Responses encrypted reasoning does not enter the training data. Only the
 visible reasoning summary in ACTF enters `reasoning_content`.
 
@@ -190,19 +192,18 @@ standard library: some releases reject excess padding, so its acceptance is not
 guaranteed across versions. Rejected samples retain raw/ACTF, are marked as
 conversion failures, and are excluded from SFT aggregation without preventing
 valid samples from being aggregated. Roller does not relax decoding to accept
-invalid padding. Anything else —
-audio or other unknown block types, unsupported media types, malformed
-base64, or an image block that only references a file path without bytes —
-still fails conversion. The Collector records `target: "sft"`,
+invalid padding. All other content still fails conversion: audio or other
+unknown block types, unsupported media types, malformed base64, and image
+blocks that only reference a file path without bytes. The Collector records `target: "sft"`,
 `status: "unavailable"`, and the reason in `runtime.trajectory_conversion`,
 retains raw/ACTF, and omits SFT and its aggregate entry. This does not turn a
 completed collection into a failure; Resume reuses the collected sample without
 calling the model again. Roller never silently drops content. The converter itself never reads files
-or networks: a harness whose image tool only leaves a path must materialize
-the bytes into the ACTF layer while the file is still accessible.
+or accesses the network: a Harness whose image tool only leaves a path must
+materialize the bytes into the ACTF layer while the file is still accessible.
 
-These are accepted SFT block shapes, not a claim that every Harness can invoke
-vision at runtime. Image tool results are handled as follows:
+These are the block shapes that SFT accepts; they do not imply that every
+Harness can invoke vision at runtime. Image tool results are handled as follows:
 
 | Harness | Runtime image path | ACTF/SFT image preservation |
 | --- | --- | --- |
@@ -216,7 +217,8 @@ vision at runtime. Image tool results are handled as follows:
 
 An OpenCode image attachment that only carries a remote URL or path remains in
 ACTF but cannot form multimodal SFT, because export never reads files or
-networks. The sample therefore retains raw/ACTF and records SFT as unavailable.
+accesses the network. The sample therefore retains raw/ACTF and records SFT as
+unavailable.
 
 ## 5. File locations
 
@@ -241,4 +243,4 @@ simulated user's own SFT is at `user_simulator/trace_SFT.json`. Run-level
 
 Tools called in one assistant message may finish in any order. SFT export pairs results by `tool_call_id` and emits tool messages in that assistant message's `tool_calls` array order. It does not sort by tool name or lexicographic ID, or move results across steps. Duplicate, missing, unmatched and name-mismatched results still fail conversion.
 
-Images are appended to the top-level `images` list after ordering results, so the Nth `<image>` still maps to `images[N-1]`. Raw traces and ACTF observation order remain unchanged for inspection of completion order. This canonicalizes training output; reversed results were not necessarily mispaired when consumed by ID. Existing SFT files are not automatically rewritten; re-export to apply this ordering.
+Images are appended to the top-level `images` list after ordering results, so the Nth `<image>` still maps to `images[N-1]`. Raw traces and ACTF observation order remain unchanged, so the actual completion order can still be inspected. This rule makes the order of training output canonical; results in reversed order were not necessarily mispaired when consumed by ID. Existing SFT files are not rewritten automatically; re-export them to apply this ordering.

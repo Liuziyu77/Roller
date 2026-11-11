@@ -37,15 +37,15 @@ roller collect --bench skillsbench --bench-root "$SKILLSBENCH_ROOT" \
 
 `prepare-skillsbench.sh` accepts any persistent directory. It clones v1.1 when the directory is
 missing. For an existing checkout, it verifies the commit without changing the data. It also builds
-`roller-opencode:1.18.30` and never reads or writes an API key. To prepare the environment by hand,
+`roller-opencode:1.18.30` and does not read or write an API key. To prepare the environment manually,
 check out the `v1.1` tag and build `docker/opencode`.
 
-Replace the example API URL, key, and model ID with values from your model provider before running
-the commands.
+Before running the commands, replace the example API URL, key, and model ID with the values from
+the model provider.
 
 Each `collect` command writes `tasks.jsonl` and `bench-report.json` to its run directory.
 SkillsBench defaults to three samples per task, 100 OpenCode steps per turn, and 32768 output tokens
-per model response. Change these with `--samples`, `--opencode-max-steps`, and
+per model response. These values can be changed with `--samples`, `--opencode-max-steps`, and
 `--opencode-output-tokens`.
 
 For comparable runs, use the `v1.1` tag at commit

@@ -31,7 +31,7 @@ The default base image is `python:3.12-slim`, with Linux x86_64 and aarch64 supp
 
 ## 3. Environment variables and API
 
-The DeepSeek Harness connects to a Chat Completions service that supports streaming, tool calls, and DeepSeek thinking fields. A first run needs an API address, an API key, and a model ID.
+The DeepSeek Harness connects to a Chat Completions service that supports streaming, tool calls, and DeepSeek thinking fields. A first run requires an API address, an API key, and a model ID.
 
 | Setting | Default source | CLI override |
 | --- | --- | --- |
@@ -41,7 +41,7 @@ The DeepSeek Harness connects to a Chat Completions service that supports stream
 
 The value of `--deepseek-api-key-env` or `--api-key-env` is the name of a host environment variable, not the key itself. The key is read at execution time and is not written to the task, run configuration, or public outputs.
 
-Replace `...`, the API address, and `model-id` with values from the model service. The first command runs one task so the configuration can be checked before a larger run:
+Replace `...`, the API address, and `model-id` with values from the model service. The following command runs a single task so that the configuration can be checked before a larger run:
 
 ```bash
 export ROLLER_DEEPSEEK_KEY='...'
@@ -65,13 +65,13 @@ This table lists DeepSeek-specific runtime flags only. See section 3 for API add
 
 | Option | Default / behavior |
 | --- | --- |
-| `--deepseek-image` | Precedes `--docker-image`, `ROLLER_DEEPSEEK_IMAGE`, then `roller-deepseek:0.1.5rc1` |
+| `--deepseek-image` | Takes precedence over `--docker-image`. If neither is set, `ROLLER_DEEPSEEK_IMAGE` is used, with `roller-deepseek:0.1.5rc1` as the fallback |
 | `--deepseek-max-steps` | 12 model requests per user turn. Task and conversation deadlines also apply |
-| `--deepseek-context-length` | 128000 tokens, minimum 1024, match the endpoint |
-| `--deepseek-output-tokens` | 8192, positive and smaller than the context window |
-| `--thinking` / `runtime.thinking` | Native `off/low/high/max`. `none` aliases `off`. Omission uses the DeepSeek Harness default |
+| `--deepseek-context-length` | 128000 tokens by default, minimum 1024. Set it to match the endpoint |
+| `--deepseek-output-tokens` | 8192 by default. Must be positive and smaller than the context window |
+| `--thinking` / `runtime.thinking` | Natively supports `off/low/high/max`. `none` is an alias of `off`. If omitted, the DeepSeek Harness default applies |
 | `--wire-trace` | Controls request recording. `full` also saves complete HTTP requests and requires an explicit API address with `--network host` |
-| `--no-keep-thinking` | Removes reasoning from ACTF/SFT only, preserving native history |
+| `--no-keep-thinking` | Removes reasoning from ACTF/SFT only. Native history is retained |
 
 The same settings apply when DeepSeek is the Task Agent or User Simulator. After changing the image, API address, step limit, or token limits, use a new `--run-name` to avoid a conflict with the previous run configuration.
 
@@ -79,7 +79,7 @@ The same settings apply when DeepSeek is the Task Agent or User Simulator. After
 
 The DeepSeek Harness currently uses the official `sdk-minimal` tool configuration. It provides one persistent `bash` tool and no image viewer, so it supports text and ordinary file tasks but not tasks that require visual understanding.
 
-Image files can enter the workspace through `files.inputs`, but they remain ordinary files and are not sent to the model as image content. Task `messages[].content` currently accepts strings only and cannot contain image blocks directly. Use another Harness with an image tool for vision tasks.
+Image files can enter the workspace through `files.inputs`, but they remain ordinary files and are not sent to the model as image content. Task `messages[].content` currently accepts strings only and cannot contain image blocks directly. For vision tasks, use another Harness that provides an image tool.
 
 ## 6. Sessions and workspace
 
@@ -122,11 +122,11 @@ Errors, truncated or empty replies, incomplete tool calls, and content that cann
 
 **(2) Long tasks exceed the context window**
 
-Automatic compaction is disabled. Raise `--deepseek-context-length` to match the real service.
+Automatic compaction is disabled. Raise `--deepseek-context-length` to match the actual service.
 
 **(3) Task execution times out**
 
-The container is stopped and available artifacts recovered. Adjust `--timeout` or `--deepseek-max-steps` as needed.
+The container is stopped and the available artifacts are recovered. Adjust `--timeout` or `--deepseek-max-steps` as needed.
 
 **(4) An existing run cannot be resumed**
 

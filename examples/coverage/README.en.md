@@ -4,11 +4,11 @@
 
 This suite contains 1624 runnable tasks in 406 groups of four, plus 20 isolated negative cases. It covers OpenClaw, Codex, Claude Code, Hermes, OpenCode, DeepSeek, Pi, and all 49 Agent/Simulator pairings. Tasks perform short arithmetic, file reads, or small writes; conversations have at most two Agent turns.
 
-Fixtures are included, so you can run and regenerate the suite without the original `Roller_Data` directory. Run commands from the **Roller repository root** using **Python 3.10+**.
+The fixtures are included in the repository, so running and regenerating the suite does not require the original `Roller_Data` directory. Run all commands from the Roller repository root with Python 3.10+.
 
 ## Offline checks
 
-No Docker, API credentials, or additional Python packages are needed:
+The offline checks do not require Docker, API credentials or additional Python packages:
 
 ```bash
 python examples/coverage/suite.py list
@@ -21,7 +21,7 @@ These checks validate parsing, routing, bundles, capture policies, expected erro
 
 ## Run four tasks
 
-Install Roller and prepare Harness images following [Getting Started](../../docs/en/start/getting-started.md). Copy and edit the environment template:
+Install Roller and prepare the Harness images as described in [Getting Started](../../docs/en/start/getting-started.md). Then copy and edit the environment template:
 
 ```bash
 cp examples/coverage/config/.env.example examples/coverage/config/.env
@@ -37,7 +37,7 @@ python examples/coverage/suite.py run --case formats/jsonl/codex \
 python examples/coverage/suite.py check --case formats/jsonl/codex
 ```
 
-The local `.env` is ignored by Git and must be explicitly exported. Defaults: concurrency 2, timeout 180 seconds per rollout, zero retries. Outputs go to `runs/coverage/<case__harness>/`. Use the same `--output` when running and checking.
+The local `.env` is ignored by Git and must be explicitly exported. The defaults are a concurrency of 2, a timeout of 180 seconds per rollout and zero retries. Outputs are written to `runs/coverage/<case__harness>/`. Use the same `--output` when running and checking.
 
 | Harness | Required protocol | Model variable | Collector arguments after `--` |
 | --- | --- | --- | --- |
@@ -49,13 +49,13 @@ The local `.env` is ignored by Git and must be explicitly exported. Defaults: co
 | DeepSeek Harness | DeepSeek Chat Completions | `ROLLER_TEST_DEEPSEEK_MODEL` | `--deepseek-api-base`, `--deepseek-api-key-env` |
 | Pi Agent | Streaming Chat Completions | `ROLLER_TEST_PI_MODEL` | `--pi-api-base`, `--pi-api-key-env` |
 
-OpenClaw's model ID and protocol are set by `ROLLER_TEST_OPENCLAW_MODEL_ID` and `ROLLER_TEST_OPENCLAW_API` in `.env`. Check that your endpoint supports the protocol required by each Harness. The environment template also lists optional image overrides.
+OpenClaw's model ID and protocol are set by `ROLLER_TEST_OPENCLAW_MODEL_ID` and `ROLLER_TEST_OPENCLAW_API` in `.env`. Verify that the endpoint supports the protocol required by each Harness. The environment template also lists optional image overrides.
 
-`--exclude-case` excludes matching groups; for example, `--case '*/hermes' --exclude-case 'vision/*'` selects 200 Hermes tasks. `--case` accepts quoted globs and can be repeated: `--case 'data/*/codex'` selects 40 tasks; `--case 'simulators/pair/*'` selects 196 tasks and requires all seven Harnesses. CLI options such as `--codex-model` override environment values. The runner binds both Agent and Simulator models while preserving inheritance cases.
+`--exclude-case` excludes matching groups; for example, `--case '*/hermes' --exclude-case 'vision/*'` selects 200 Hermes tasks. `--case` accepts quoted globs and can be repeated: `--case 'data/*/codex'` selects 40 tasks; `--case 'simulators/pair/*'` selects 196 tasks and requires all seven Harnesses. CLI options such as `--codex-model` override environment values. The runner binds both the Agent and Simulator models and preserves the inheritance cases.
 
 ## One JSON for a mixed run
 
-`all_tasks.json` is the complete portable template with placeholder models. Create a local copy with your models; this example selects 24 arithmetic tasks:
+`all_tasks.json` is the complete portable template with placeholder models. Create a local copy bound to the actual models. The following example selects 28 arithmetic tasks:
 
 ```bash
 python examples/coverage/merge.py \
@@ -97,18 +97,18 @@ python examples/coverage/audit_resume.py runs/coverage/merged/collection \
   --output runs/coverage/merged/resume-audit.json
 ```
 
-Use `--case '*'` for all 1624 tasks, including optional vision cases. Add `--dry-run` to the collector command to check its plan first. `merge.py` uses explicit model arguments rather than environment defaults to keep regeneration deterministic. Export `ROLLER_EXAMPLE_TOKEN=ENV_OK` for `runtime/env` tasks; the supplied `.env` already does this.
+To select all 1624 tasks, including the optional vision cases, use `--case '*'`. To check the plan first, add `--dry-run` to the collector command. `merge.py` takes explicit model arguments instead of environment defaults so that regeneration is deterministic. Export `ROLLER_EXAMPLE_TOKEN=ENV_OK` for `runtime/env` tasks; the supplied `.env` already sets it.
 
-Merging normalizes input formats, custom CLI keys and IDs. Use `suite.py` for original JSON/JSONL and ID coverage. Absolute-root cases are stored with relative paths and materialized by the runner; `--absolute-roots` does this for a local merged file. When copying the merged JSON, include the fixtures it references.
+Merging normalizes input formats, custom CLI keys and IDs. To test the original JSON/JSONL formats and IDs, use `suite.py`. Absolute-root cases are stored with relative paths and materialized by the runner; `--absolute-roots` does the same for a local merged file. When copying the merged JSON, include the fixtures it references.
 
-Reports distinguish collection success from strict correctness; `--fail-on-check` returns nonzero for incomplete or incorrect results. Resume audits use recorded trace settings and each participant's actual Harness; they check sample reuse, not the run lock. To resume collection, reuse the task file and command with `--resume`. Context captured with `none` is intentionally rerun.
+Reports distinguish collection success from strict correctness; `--fail-on-check` returns nonzero for incomplete or incorrect results. Resume audits use the recorded trace settings and the actual Harness of each participant; they check sample reuse, not the run lock. To resume collection, rerun the same command on the same task file with `--resume`. Context captured with `none` is intentionally rerun.
 
 ## Scope and maintenance
 
-- The matrix covers formats, dialogues, routing, ten text formats, bundles, context, runtime setup/environment, outputs, four binary formats, optional vision, grading and Simulators. See [COVERAGE.md](COVERAGE.md) for individual groups.
-- Binary file access does not imply visual, PDF text or speech understanding. Vision requires image tools, a capable model and compatible API handling. OpenClaw also needs `"input": ["text", "image"]`; use an ignored `config/openclaw.local.json` copy for local changes. Non-text tool output can encounter current SFT export limitations.
-- Negative cases are checked individually, never submitted as a normal task list. String-only message content and expected path/configuration errors are tested offline.
-- Fixture provenance includes dataset-relative paths and SHA-256 hashes. Source Python files are read as text, not executed. Additional tiny media and context files are generated locally.
+- The matrix covers formats, dialogues, routing, ten text formats, bundles, context, runtime setup/environment, outputs, four binary formats, optional vision, grading and Simulators. The individual groups are listed in [COVERAGE.md](COVERAGE.md).
+- Binary file access does not imply visual, PDF text or speech understanding. Vision cases require image tools, a model with image support and compatible API handling. The OpenClaw model configuration must also declare `"input": ["text", "image"]`; for local changes, use a copy at `config/openclaw.local.json`, which is ignored. Non-text tool output can be affected by current limitations of the SFT export.
+- Negative cases are checked individually and are never submitted as a normal task list. String-only message content and expected path/configuration errors are tested offline.
+- The fixture provenance records dataset-relative paths and SHA-256 hashes. Source Python files are read as text and are not executed. Additional tiny media and context files are generated locally.
 
 Regenerate the public suite from bundled fixtures without model calls:
 
@@ -119,12 +119,12 @@ python examples/coverage/suite.py validate
 python examples/coverage/validate_merged.py
 ```
 
-To import another complete dataset, use `generate.py --data-root /path/to/Roller_Data`, then merge and validate. Add scenarios and four expectations in the generator, rather than editing generated JSON alone. Keep credentials, local configs and reports out of the public suite; `runs/` is ignored by Git.
+To import another complete dataset, run `generate.py --data-root /path/to/Roller_Data`, then merge and validate. Add new scenarios, each with four expectations, in the generator instead of editing only the generated JSON. Keep credentials, local configurations and reports out of the public suite; `runs/` is ignored by Git.
 
 Hermes uses the pinned `terminal` and `file` toolsets. Vision tools are outside the initial adapter scope; Hermes vision cases document unsupported visual inputs and are excluded from the required passing set. See the [Hermes guide](../../docs/en/harnesses/hermes-configuration.md).
 
 OpenCode uses native CLI sessions and text/file tools. Its optional vision cases document unsupported visual inputs. See the [OpenCode guide](../../docs/en/harnesses/opencode-configuration.md).
 
-DeepSeek uses the official `sdk-minimal` profile with persistent Bash. Vision cases are outside initial acceptance. See the [DeepSeek guide](../../docs/en/harnesses/deepseek-configuration.md).
+DeepSeek uses the official `sdk-minimal` profile with persistent Bash. Vision cases are outside the scope of the initial acceptance. See the [DeepSeek guide](../../docs/en/harnesses/deepseek-configuration.md).
 
 Pi uses a native AgentSession and seven text/file tools. Conversation history and files persist across turns; vision cases document unsupported visual inputs. See the [Pi guide](../../docs/en/harnesses/pi-configuration.md).

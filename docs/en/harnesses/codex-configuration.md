@@ -1,6 +1,6 @@
 # Codex Harness guide
 
-The Codex Harness runs tasks through the Codex CLI when they need terminal, file, or image tools. It connects to a model service that supports the Responses API. This guide follows the order needed for a first run: image, API, Harness-specific flags, sessions, and outputs.
+The Codex Harness runs tasks through the Codex CLI when they require terminal, file, or image tools. It connects to a model service that supports the Responses API. This guide follows the order needed for a first run: image, API, Harness-specific flags, sessions, and outputs.
 
 Roller currently pins Codex 0.149.0. For Task fields, see [Task format reference](../tasks/task-format.md). For shared outputs, see [Trajectory output file guide](../traces/trajectory-outputs.md).
 
@@ -15,7 +15,7 @@ Use the Codex Harness when a task needs:
 - single-turn, multi-turn, Task Agent, or User Simulator execution.
 - the native Codex session plus ACTF, SFT, and token-usage export.
 
-An endpoint that only supports Chat Completions cannot be used directly. Task messages also cannot contain image blocks directly. Roller can preserve only visible reasoning or summaries returned by the API, not hidden reasoning.
+An endpoint that only supports Chat Completions cannot be used directly. Task messages also cannot contain image blocks directly. Roller can preserve only the visible reasoning or summaries returned by the API; hidden reasoning cannot be recovered.
 
 ## 2. Image preparation
 
@@ -49,7 +49,7 @@ docker build \
 
 For `DEBIAN_MIRROR` and `DEBIAN_SECURITY_MIRROR`, see [Docker builds and package mirrors](../start/docker-builds.md). Set `NPM_REGISTRY` to override npm downloads, or leave it unset to keep the existing npm configuration.
 
-If the default Debian mirrors are slow on the current network, override the mirror URLs at build time without
+If the default Debian mirrors are slow on the current network, override the mirror URLs at build time instead of
 editing the Dockerfile:
 
 ```bash
@@ -63,7 +63,7 @@ docker build \
   .
 ```
 
-Verify:
+Verify the result:
 
 ```bash
 docker run --rm roller-codex:0.149.0 codex --version
@@ -84,11 +84,11 @@ export ROLLER_CODEX_IMAGE=roller-codex:0.149.0
 ```
 
 Do not use the automatically changing `@openai/codex@latest` for a production collection. Roller writes the
-actual `codex_version`, image tag, and image ID to the run and sample `info.json` files so the environment can be checked later.
+actual `codex_version`, image tag, and image ID to the run and sample `info.json` files, so the environment can be verified later.
 
 ## 3. Environment variables and API
 
-The Codex Harness needs a model service that implements the Responses API. A first run requires an API address, an API key, and a model ID. A working `/v1/chat/completions` route alone does not mean Codex can run.
+The Codex Harness requires a model service that implements the Responses API. A first run requires an API address, an API key, and a model ID. A working `/v1/chat/completions` route alone does not mean that Codex can run.
 
 | Setting | Default source | CLI override |
 | --- | --- | --- |
@@ -115,12 +115,12 @@ roller collect \
 
 `--api-key-env` accepts an environment-variable name, not the key itself. With a custom API address, Roller uses Responses HTTP streaming by default. Keep the default `--no-codex-websockets` unless the service explicitly supports Responses WebSocket.
 
-Keep the default `--wire-trace actf` and `--network host` in the example command so Roller can record the tool definitions needed for ACTF/SFT. If request recording is disabled, Roller still produces the native Codex trace and ACTF, but does not export SFT without complete tool definitions.
+Keep the default `--wire-trace actf` and `--network host` in the example command so that Roller can record the tool definitions required for ACTF/SFT. If request recording is disabled, Roller still produces the native Codex trace and ACTF, but it does not export SFT without complete tool definitions.
 
 (codex-cli-flags)=
 ## 4. Codex-specific flags
 
-This table lists Codex-specific runtime flags only. See section 3 for API addresses and keys. See the [CLI reference](../start/cli-reference.md) for flags shared by all Harnesses.
+This table lists Codex-specific runtime flags only. API addresses and keys are described in section 3. For the flags shared by all Harnesses, see the [CLI reference](../start/cli-reference.md).
 
 | Flag | Default | Purpose |
 | --- | --- | --- |
@@ -131,18 +131,18 @@ This table lists Codex-specific runtime flags only. See section 3 for API addres
 | `--codex-web-search` | `disabled` | `disabled`, `cached`, or `live` |
 | `--codex-websockets` / `--no-codex-websockets` | Off | Whether a custom provider uses Responses WebSocket |
 
-A single Codex run can use the shared flag forms. In a mixed-Harness run, use dedicated forms such as `--codex-image`, `--codex-api-base`, and `--codex-api-key-env` so the settings apply only to the intended participant.
+A single Codex run can use the shared flag forms. In a mixed-Harness run, use the dedicated forms such as `--codex-image`, `--codex-api-base`, and `--codex-api-key-env` so that the settings apply only to the intended participant.
 
-For a custom model provider, MCP server, or another native Codex setting, provide:
+For a custom model provider, an MCP server, or another native Codex setting, provide a configuration file:
 
 ```bash
 roller collect ... \
   --codex-config examples/config/codex/config.toml.example
 ```
 
-Roller copies this file into the task container. Command-line values for the API address, model, thinking effort, reasoning summary, and Web Search take priority over matching file settings. The example also contains `model_verbosity` and a disabled MCP server template. Use a new `--run-name` after changing the file, and do not store API keys in it.
+Roller copies this file into the task container. Command-line values for the API address, model, thinking effort, reasoning summary, and Web Search take priority over the matching file settings. The example also contains `model_verbosity` and a disabled MCP server template. Use a new `--run-name` after changing the file, and do not store API keys in it.
 
-To change a few settings without a file, use `--codex-config-set`:
+To change individual settings without a file, use `--codex-config-set`:
 
 ```bash
 roller collect ... \
@@ -150,20 +150,20 @@ roller collect ... \
   --codex-config-set model_providers.roller_api.stream_idle_timeout_ms=1800000
 ```
 
-- Each setting is appended as `-c KEY=VALUE` after Roller's own overrides, on every turn. Values are parsed as TOML and fall back to a plain string, so quote string values.
-- Codex silently ignores keys it does not recognize, so check the spelling: a misspelled key has no effect, and only a value of the wrong type is an error.
-- With `--api-base` or `--codex-api-base`, the model provider Roller defines is named `roller_api`. Its `stream_idle_timeout_ms` (300000 ms by default), `stream_max_retries` (5 by default), `request_max_retries` (4 by default), and similar keys can be changed; without either flag, `model_providers.roller_api.*` keys are rejected. Keys Roller manages, such as `base_url`, `wire_api`, and `env_key`, are rejected with a pointer to the Roller flag to use instead, and settings may not overlap each other.
-- Settings are recorded in `lock.json` and `info.json`. A value is redacted only when its own key name looks like a credential (`token`, `api_key`, `password`, `secret`, ...); inline TOML table values are recorded verbatim. Use a new `--run-name` after changing them, and do not pass secrets this way.
+- Each setting is appended as `-c KEY=VALUE` after Roller's own overrides, on every turn. Values are parsed as TOML and fall back to a plain string; therefore, string values must be quoted.
+- Codex silently ignores keys it does not recognize. Verify the spelling: a misspelled key has no effect, and only a value of the wrong type is reported as an error.
+- With `--api-base` or `--codex-api-base`, the model provider that Roller defines is named `roller_api`. Its `stream_idle_timeout_ms` (300000 ms by default), `stream_max_retries` (5 by default), `request_max_retries` (4 by default), and similar keys can be changed. Without either flag, `model_providers.roller_api.*` keys are rejected. Keys that Roller manages, such as `base_url`, `wire_api`, and `env_key`, are rejected with a reference to the Roller flag to use instead, and settings must not overlap each other.
+- Settings are recorded in `lock.json` and `info.json`. A value is redacted only when its own key name resembles a credential (`token`, `api_key`, `password`, `secret`, ...); inline TOML table values are recorded verbatim. Use a new `--run-name` after changing them, and do not pass secrets this way.
 
 ## 5. Multimodal capabilities
 
 The Codex Harness supports both text-only models and vision-capable Responses models. Images enter the workspace through `files.inputs`, and Codex can open local images with its native `view_image` tool. Image tool results are preserved in the native trace, ACTF, and multimodal SFT, where SFT uses `<image>` placeholders and the top-level `images` field.
 
-Vision tasks also require the Codex version, selected model, and Responses API service to support image input. Task `messages[].content` currently accepts strings only and cannot contain image blocks directly. Text-only models can continue to process text and ordinary files, but they cannot complete tasks that require understanding image content.
+Vision tasks also require the Codex version, the selected model, and the Responses API service to support image input. Task `messages[].content` currently accepts strings only and cannot contain image blocks directly. Text-only models can continue to process text and ordinary files, but they cannot complete tasks that require understanding image content.
 
 ## 6. Thinking configuration
 
-`--thinking` sets Codex reasoning effort. If omitted, Codex, the model, and the service use their defaults.
+`--thinking` sets Codex reasoning effort. If it is omitted, Codex, the model, and the service use their defaults.
 
 Example:
 
@@ -174,15 +174,15 @@ roller collect ... \
   --reasoning-summary detailed
 ```
 
-The Codex Harness passes `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, and `ultra` to Codex as reasoning effort. Actual support depends on the model and API service. `off`, `none`, and the OpenClaw-specific `adaptive` value are not supported. For a new model, omit `--thinking` or begin with a level explicitly supported by the service.
+The Codex Harness passes `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, and `ultra` to Codex as reasoning effort. Actual support depends on the model and the API service. `off`, `none`, and the OpenClaw-specific `adaptive` value are not supported. For a new model, omit `--thinking` or begin with a level explicitly supported by the service.
 
-`--reasoning-summary` controls visible reasoning summaries and accepts `auto`, `concise`, `detailed`, or `none`. If the service returns plaintext reasoning, Roller prefers that content. Encrypted-only reasoning does not appear in ACTF/SFT.
+`--reasoning-summary` controls visible reasoning summaries and accepts `auto`, `concise`, `detailed`, or `none`. If the service returns plaintext reasoning, Roller gives priority to that content. Encrypted-only reasoning does not appear in ACTF/SFT.
 
-`--no-keep-thinking` clears ACTF/SFT `reasoning_content` only. It does not change the native Codex session or continuation context.
+`--no-keep-thinking` clears ACTF/SFT `reasoning_content` only. It does not change the native Codex session or the continuation context.
 
 ## 7. Web Search
 
-Codex disables Web Search by default. Change it only for tasks that need online information:
+Codex disables Web Search by default. Change this setting only for tasks that require online information:
 
 | Value | Behavior |
 | --- | --- |
@@ -196,7 +196,7 @@ Example:
 --codex-web-search live
 ```
 
-Searches are stored as tool calls in the trajectory, so the query and returned results can be inspected in Viewer.
+Searches are stored as tool calls in the trajectory; therefore, the query and the returned results can be inspected in Viewer.
 
 ## 8. Sessions and workspace
 
@@ -211,11 +211,11 @@ Predefined multi-turn messages continue one Codex session, so conversation histo
 
 ### 8.1 User Simulator
 
-Codex can act as either the Task Agent or User Simulator. Configure the Harness and model separately at the task top level and under `user_simulator`. Each role keeps its own session in an isolated container.
+Codex can act as either the Task Agent or the User Simulator. Configure the Harness and model separately at the task top level and under `user_simulator`. Each role keeps its own session in an isolated container.
 
 ## 9. Trajectories and request recording
 
-A run produces these main files:
+A run produces the following main files:
 
 | File | Purpose |
 | --- | --- |
@@ -238,17 +238,17 @@ SFT keeps the Responses tool format used by Codex. Image samples add an `images`
 
 ### 9.4 Complete request records
 
-The default `--wire-trace actf` keeps only the tool information needed for ACTF/SFT. To inspect the complete request received by the model, temporarily use:
+The default `--wire-trace actf` keeps only the tool information required for ACTF/SFT. To inspect the complete request received by the model, use the following setting temporarily:
 
 ```text
 --wire-trace full
 ```
 
-The sample then retains complete request records. They can contain message text, tool arguments, and reasoning settings, so use them only for troubleshooting or auditing. `--wire-trace off` records no request tool definitions. Codex still produces its native trace and ACTF, but does not generate SFT without complete tool definitions.
+The sample then retains complete request records. They can contain message text, tool arguments, and reasoning settings; therefore, they should be used only for troubleshooting or auditing. `--wire-trace off` records no request tool definitions. Codex still produces its native trace and ACTF, but it does not generate SFT without complete tool definitions.
 
 ## 10. First-run check
 
-Keep `--limit 1` in the example command for the first run. After it finishes, check:
+Keep `--limit 1` in the example command for the first run. After it finishes, check the following:
 
 1. `info.json` in the run directory has `state` set to `finished`.
 2. The sample `info.json` has `status` set to `ok`.
@@ -259,28 +259,28 @@ Keep `--limit 1` in the example command for the first run. After it finishes, ch
 
 **(1) `Codex requires a non-empty API key`**
 
-The host variable pointed to by `--api-key-env` is missing or empty. Check the variable name. Do not put the key directly in the task.
+The host variable referenced by `--api-key-env` is missing or empty. Verify the variable name. Do not put the key directly in the task.
 
 **(2) `/responses` returns 404 or a protocol error**
 
 The API service only has Chat Completions, or its Responses streaming/tool protocol is incompatible. Switch to a
-Responses-capable service. The OpenClaw Harness can still be used for model services that only support Chat Completions.
+Responses-capable service. For model services that support only Chat Completions, the OpenClaw Harness remains available.
 
 **(3) `Codex native trace produced no assistant steps`**
 
-Codex exited before producing a valid reply. Inspect the sample `info.json` and `trace.jsonl` first. For further troubleshooting, use `--keep-container-on-error` to retain the failed container and check the `codex_version` recorded in `info.json`.
+Codex exited before producing a valid reply. Inspect the sample `info.json` and `trace.jsonl` first. For further troubleshooting, use `--keep-container-on-error` to retain the failed container and verify the `codex_version` recorded in `info.json`.
 
 **(4) `invalid_encrypted_content` / `Encrypted content could not be decrypted or parsed`**
 
-Codex always sends Responses requests with `store: false` and replays earlier `reasoning.encrypted_content` items, and Codex does not expose a setting to turn this off. Some relayed endpoints intermittently fail to verify reasoning they issued themselves. When the request recording proxy is active (the default `--wire-trace actf` with `--no-codex-websockets`), Roller resends the identical request up to 3 times when a 400 response has JSON `error.code` equal to `invalid_encrypted_content`, including gzip/deflate responses. Each retry is recorded as an `upstream_retry` entry in `--wire-trace full` records. Stopping the proxy cancels pending retries. If every attempt fails, the error still ends the rollout. Persistent failures need a fix on the endpoint side.
+Codex always sends Responses requests with `store: false` and replays earlier `reasoning.encrypted_content` items, and Codex does not expose a setting to turn this off. Some relayed endpoints intermittently fail to verify reasoning they issued themselves. When the request recording proxy is active (the default `--wire-trace actf` with `--no-codex-websockets`), Roller resends the identical request up to 3 times when a 400 response has JSON `error.code` equal to `invalid_encrypted_content`, including gzip/deflate responses. Each retry is recorded as an `upstream_retry` entry in `--wire-trace full` records. Stopping the proxy cancels pending retries. If every attempt fails, the error still ends the rollout. Persistent failures require a fix on the endpoint side.
 
 **(5) `apply_patch: command not found`**
 
-Codex adds its `apply_patch` alias to `PATH` at runtime, but Debian's `/etc/profile` resets `PATH` in the login shells Codex uses to run commands. The current `docker/codex/Dockerfile` installs a fixed `/usr/local/bin/apply_patch` alias, so rebuild images made before this change.
+Codex adds its `apply_patch` alias to `PATH` at runtime, but Debian's `/etc/profile` resets `PATH` in the login shells that Codex uses to run commands. The current `docker/codex/Dockerfile` installs a fixed `/usr/local/bin/apply_patch` alias; images built before this change must be rebuilt.
 
 **(6) `idle timeout waiting for SSE` or `stream disconnected before completion`**
 
-Codex drops a streaming response after 5 minutes without data (`stream_idle_timeout_ms`, 300000 ms by default) and retries up to 5 times, each retry making the model generate again. Services that do not stream tool-call arguments trip this when the model writes long arguments. With `--api-base` or `--codex-api-base`, raise the idle timeout of Roller's provider:
+Codex drops a streaming response after 5 minutes without data (`stream_idle_timeout_ms`, 300000 ms by default) and retries up to 5 times, each retry making the model generate again. Services that do not stream tool-call arguments trip this timeout when the model writes long arguments. With `--api-base` or `--codex-api-base`, raise the idle timeout of Roller's provider:
 
 ```bash
 roller collect ... \

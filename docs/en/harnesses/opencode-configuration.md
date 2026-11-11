@@ -15,7 +15,7 @@ Use the OpenCode Harness when a task needs:
 - local-image inspection with a vision-capable model.
 - single-turn, multi-turn, Task Agent, or User Simulator execution.
 
-It does not accept images directly in task messages. Account login, MCP, subagents, persistent memory, and automatic compaction are also disabled. Long tasks need a sufficiently large model context window.
+The OpenCode Harness does not accept images directly in task messages. Account login, MCP, subagents, persistent memory, and automatic compaction are also disabled. Long tasks need a sufficiently large model context window.
 
 ## 2. Image preparation
 
@@ -31,7 +31,7 @@ The default base image is `python:3.12-slim-bookworm`, with Linux x86_64 and aar
 
 ## 3. Environment variables and API
 
-The OpenCode Harness connects to an OpenAI Chat Completions service with streaming and tool-call support. A first run needs an API address, an API key, and a model ID.
+The OpenCode Harness connects to an OpenAI Chat Completions service with streaming and tool-call support. A first run requires an API address, an API key, and a model ID.
 
 | Setting | Default source | CLI override |
 | --- | --- | --- |
@@ -41,7 +41,7 @@ The OpenCode Harness connects to an OpenAI Chat Completions service with streami
 
 The value of `--opencode-api-key-env` or `--api-key-env` is the name of a host environment variable, not the key itself. The key is read at execution time and is not written to public configuration.
 
-Replace `...`, the API address, and `model-id` with values from the model service. The first command runs one task so the configuration can be checked before a larger run:
+Replace `...`, the API address, and `model-id` with values from the model service. The following command runs a single task so that the configuration can be checked before a larger run:
 
 ```bash
 export ROLLER_OPENCODE_KEY='...'
@@ -65,11 +65,11 @@ This table lists OpenCode-specific runtime flags only. See section 3 for API add
 
 | Option | Default / behavior |
 | --- | --- |
-| `--opencode-image` | Overrides `--docker-image`, then `ROLLER_OPENCODE_IMAGE`, then `roller-opencode:1.18.30` |
+| `--opencode-image` | Takes precedence over `--docker-image`. If neither is set, `ROLLER_OPENCODE_IMAGE` is used, with `roller-opencode:1.18.30` as the fallback |
 | `--opencode-max-steps` | 100 for SkillsBench and 12 otherwise, also bounded by the task timeout |
-| `--opencode-context-length` | 128000 tokens by default, minimum 1024, match the actual model |
-| `--opencode-output-tokens` | 32768 for SkillsBench and 8192 otherwise, positive and smaller than the context window |
-| `--opencode-vision` / `--no-opencode-vision` | Declares image-input support to OpenCode. Enabled by default and explicitly disableable for text-only models |
+| `--opencode-context-length` | 128000 tokens by default, minimum 1024. Set it to match the actual model |
+| `--opencode-output-tokens` | 32768 for SkillsBench and 8192 otherwise. Must be positive and smaller than the context window |
+| `--opencode-vision` / `--no-opencode-vision` | Declares image-input support to OpenCode. Enabled by default; can be disabled explicitly for text-only models |
 | `--thinking` / `runtime.thinking` | `off/minimal/low/medium/high/xhigh`. `off` maps to `none`. Provider support is required |
 | `--wire-trace` | Native requests and tool definitions are captured in every mode. `full` adds HTTP records and requires an explicit API address with `--network host` |
 | `--no-keep-thinking` | Removes reasoning from ACTF/SFT only. Native logs and continuation history are retained |
@@ -100,7 +100,7 @@ A run produces three main trajectory files:
 | `trace_ACTF.json` | Normalizes the conversation, reasoning, tool calls, and results |
 | `trace_SFT.json` | Converts a successful trajectory into training-data format |
 
-Image attachments are preserved in ACTF and multimodal SFT. Tool definitions come from the actual model request rather than being inferred from call arguments.
+Image attachments are preserved in ACTF and multimodal SFT. Tool definitions are taken from the actual model request and are not inferred from call arguments.
 
 Incomplete sessions, empty replies, API errors, truncated replies, corrupt traces, or tool definitions that change unexpectedly are not marked successful. A timeout stops the container and preserves available trajectories and files when possible.
 
@@ -125,11 +125,11 @@ Incomplete sessions, empty replies, API errors, truncated replies, missing or ch
 
 **(3) Long tasks exceed the context window**
 
-Automatic compaction is disabled. Raise `--opencode-context-length` to match the real service capability.
+Automatic compaction is disabled. Raise `--opencode-context-length` to match the actual capability of the service.
 
 **(4) Task execution times out**
 
-The container is stopped and available artifacts recovered. Adjust `--timeout` or `--opencode-max-steps` as needed.
+The container is stopped and the available artifacts are recovered. Adjust `--timeout` or `--opencode-max-steps` as needed.
 
 **(5) `--wire-trace full` fails to start**
 

@@ -1,19 +1,19 @@
 # 快速上手：从安装到第一条轨迹
 
-本页以 **OpenClaw** 为例，带你把一条示例 Task 从安装运行到生成轨迹。其他 Harness 也可以沿用准备配置、dry-run、正式采集、验收结果和打开 Viewer 这条主流程。各 Harness 的镜像、API 配置和专属参数并不完全相同，实际使用时请同时参考后面的对应 Harness 指南。
+本页以 OpenClaw 为例，介绍一条示例 Task 从安装到生成轨迹的完整流程。其他 Harness 可沿用相同的主流程：准备配置、dry-run、正式采集、验收结果和打开 Viewer。各 Harness 的镜像、API 配置和专属参数不完全相同，实际使用时请同时参考对应的 Harness 指南。
 
-完成后，你会执行一次 dry-run 和正式采集，找到输出文件，并在 Viewer 中打开结果。如果还不熟悉 Task、Harness、rollout、run 或 trace，可以先阅读 [Roller 简介](introduction.md)。
+本页依次完成 dry-run、正式采集、输出文件定位和 Viewer 查看。若不熟悉 Task、Harness、rollout、run 或 trace 等术语，可先阅读 [Roller 简介](introduction.md)。
 
 ## 1. 准备运行环境
 
-需要：
+环境要求：
 
 - Python 3.10+。
-- Docker（用户自行安装）。
+- Docker（需自行安装）。
 - OpenClaw 镜像。
 - 支持 OpenAI Responses 或 Chat Completions 的模型 API。
 
-建议使用独立的 Python 环境。下面以 Conda 和 Python 3.11 为例，在仓库根目录执行：
+建议使用独立的 Python 环境。以下以 Conda 和 Python 3.11 为例，在仓库根目录执行：
 
 ```bash
 conda create -n roller python=3.11 -y
@@ -24,9 +24,9 @@ roller --version
 docker version
 ```
 
-这里使用 `python -m pip`，确保 pip 属于刚刚激活的 Python 环境。安装并启动 Docker 后，`docker version` 会显示 Client 和 Server 信息。
+使用 `python -m pip` 可确保 pip 属于当前激活的 Python 环境。安装并启动 Docker 后，`docker version` 会显示 Client 和 Server 信息。
 
-在 macOS 上使用 Docker Desktop 时，还需要在 **Settings → Resources → Network** 中打开 **Enable host networking**，然后重启 Docker Desktop。Roller 默认通过 host network 让 OpenClaw 访问本地请求代理。
+在 macOS 上使用 Docker Desktop 时，还需在 **Settings → Resources → Network** 中启用 **Enable host networking**，然后重启 Docker Desktop。Roller 默认通过 host network 使 OpenClaw 能够访问本地请求代理。
 
 ## 2. 准备 OpenClaw 镜像
 
@@ -38,15 +38,15 @@ OpenClaw 同时支持 OpenAI Responses 和 Chat Completions。
 docker pull ghcr.io/openclaw/openclaw:2026.7.1-2
 ```
 
-也可以加载已有归档：
+也可加载已有归档：
 
 ```bash
 docker load -i /path/to/openclaw-2026.7.1-2-linux-amd64.tar.gz
 ```
 
-如果使用自定义镜像 tag，可以通过 `--docker-image` 传入，或者设置 `ROLLER_OPENCLAW_IMAGE`。
+如需使用自定义镜像 tag，请通过 `--docker-image` 传入，或设置 `ROLLER_OPENCLAW_IMAGE`。
 
-第一次运行可以保留默认 reasoning 配置。Roller 会保存模型服务返回的可见 reasoning 文本。如果服务只返回 reasoning token 数，就没有可以保存的 reasoning 文本。
+首次运行可保留默认 reasoning 配置。Roller 保存模型服务返回的可见 reasoning 文本。若服务仅返回 reasoning token 数，则没有可保存的 reasoning 文本。
 
 ## 3. 准备 OpenClaw API 配置
 
@@ -56,7 +56,7 @@ docker load -i /path/to/openclaw-2026.7.1-2-linux-amd64.tar.gz
 cp examples/env/api.env.example examples/env/api.env
 ```
 
-在 `examples/env/api.env` 中，将 `MY_PROXY_BASE_URL` 和 `MY_PROXY_API_KEY` 改成实际模型服务的地址和 Key。本页不使用其他 Harness 或 Web Search，其他变量暂时留空。
+在 `examples/env/api.env` 中，将 `MY_PROXY_BASE_URL` 和 `MY_PROXY_API_KEY` 设置为实际模型服务的地址和 Key。本页不使用其他 Harness 或 Web Search，其余变量保持为空。
 
 保存后，将变量加载到当前 shell：
 
@@ -67,11 +67,11 @@ set +a
 ```
 
 
-打开仓库提供的 [`examples/config/openclaw/models.json`](../../../examples/config/openclaw/models.json)，将其中的 model `id` 改为实际使用的模型名。后续命令中 provider 后面的 model ID 必须与这里的 `id` 完全一致。例如，如果把 `id` 改为 `qwen3.8-flash`，后续命令就要使用 `--model my-openai-proxy/qwen3.8-flash`。
+打开仓库提供的 [`examples/config/openclaw/models.json`](../../../examples/config/openclaw/models.json)，将其中的 model `id` 设置为实际使用的模型名。后续命令中 provider 之后的 model ID 必须与该 `id` 完全一致。例如，若将 `id` 设置为 `qwen3.8-flash`，后续命令须使用 `--model my-openai-proxy/qwen3.8-flash`。
 
-## 4. 认识示例 Task
+## 4. 示例 Task
 
-[`examples/tasks/tasks.jsonl`](../../../examples/tasks/tasks.jsonl) 包含四条由简到繁的 task：
+[`examples/tasks/tasks.jsonl`](../../../examples/tasks/tasks.jsonl) 包含四条由简到繁排列的 task：
 
 | ID | 展示内容 |
 | --- | --- |
@@ -93,7 +93,7 @@ roller collect \
   --dry-run
 ```
 
-Dry-run 用于在正式采集前检查 task 和参数是否能被 Roller 正确读取，并预览即将执行的 rollout。它不会启动容器、调用模型 API 或生成 run 结果。确认没有报错后，再进行正式采集。
+Dry-run 在正式采集前检查 Roller 能否正确读取 task 和参数，并预览即将执行的 rollout。Dry-run 不启动容器、不调用模型 API，也不生成 run 结果。确认无报错后，再执行正式采集。
 
 ## 6. 正式采集
 
@@ -113,17 +113,17 @@ roller collect \
 
 | 参数 | 含义 |
 | --- | --- |
-| `--parallel 4` | 同时运行最多 4 个 rollout |
+| `--parallel 4` | 最多同时运行 4 个 rollout |
 | `--retries 1` | 首次失败后最多再尝试 1 次 |
 | `--timeout 600` | 每个 rollout 的总超时为 600 秒 |
 | `--output runs` | 所有 run 的宿主机根目录 |
 | `--run-name quickstart` | 本次 run 保存为 `runs/quickstart` |
 
-同名目录已存在时，Roller 默认拒绝覆盖。原配置继续运行应增加 `--resume`。新实验应改用新的 `--run-name`。
+同名目录已存在时，Roller 默认拒绝覆盖。如需按原配置继续运行，请添加 `--resume`。如需开始新实验，请使用新的 `--run-name`。
 
 ## 7. 验收结果
 
-成功后先检查 run 根目录：
+采集成功后，首先检查 run 根目录：
 
 ```text
 runs/quickstart/
@@ -135,7 +135,7 @@ runs/quickstart/
         └── <index>_<task-id>/
 ```
 
-多数成功 sample 至少有：
+多数成功的 sample 至少包含以下文件：
 
 ```text
 trace.jsonl
@@ -143,11 +143,11 @@ trace_ACTF.json
 info.json
 ```
 
-线性样本还会有 `trace_SFT.json`。主 Agent 发生上下文压缩时，`info.json` 的
+线性 sample 还包含 `trace_SFT.json`。主 Agent 发生上下文压缩时，`info.json` 的
 `trajectory.sft_segments` 列出 `sft_segments/0001.json`、`0002.json` 等分段记录。
-无法安全表示上下文的样本会标记 SFT 不可用。
+无法安全表示上下文的 sample 会将 SFT 标记为不可用。
 
-验收顺序：
+按以下顺序验收：
 
 1. 本次运行目录下的 `info.json` 中，`state` 是否为 `finished`，`summary.failed` 是否为 `0`，`summary.completed` 是否等于预期执行数量。
 2. 每个 sample `info.json` 中的 `status` 是否为 `ok`，`usage.request_count` 是否大于 `0`。
@@ -155,11 +155,11 @@ info.json
 4. 每条可用 SFT 是否包含 `messages` 和 `tools`；图片记录还包含 `images`，
    压缩分段还包含 `target_start_index`。
 5. 需要文件交付的 task，其 sample `results/` 中是否包含预期文件。
-6. run `sft.jsonl` 是否每条符合条件的**线性**样本占一行。压缩样本保留在
-   `sft_segments/`，只供理解 `target_start_index` 的训练读取器显式使用，
+6. run `sft.jsonl` 中是否每条符合条件的线性 sample 各占一行。压缩 sample 保留在
+   `sft_segments/`，仅供支持 `target_start_index` 的训练读取器显式使用，
    不进入原有的 run 级训练集。
 
-各文件何时生成、失败时会保留哪些内容，见 [轨迹产出文件指南](../traces/trajectory-outputs.md)。
+各文件的生成时机及失败时保留的内容见[轨迹产出文件指南](../traces/trajectory-outputs.md)。
 
 ## 8. 打开 Viewer
 
@@ -167,22 +167,22 @@ info.json
 roller view runs/quickstart
 ```
 
-默认监听 `127.0.0.1:17865`，被占用时自动改用空闲端口。命令启动后，在浏览器中打开终端打印的 URL。
+Viewer 默认监听 `127.0.0.1:17865`，该端口被占用时自动改用空闲端口。命令启动后，在浏览器中打开终端输出的 URL。
 
-Viewer 会展示 ACTF 时间线。Inspector 用于查看 system prompt、tools schema、运行信息和原始内容。详见 [Viewer 指南](../traces/viewer.md)。
+Viewer 展示 ACTF 时间线。Inspector 用于查看 system prompt、tools schema、运行信息和原始内容。详见 [Viewer 指南](../traces/viewer.md)。
 
 ## 9. 下一步
 
-- 写自己的数据：[Task 格式参考](../tasks/task-format.md)
+- 编写自定义 task 数据：[Task 格式参考](../tasks/task-format.md)
 - 配置 reasoning：[OpenClaw Harness 指南](../harnesses/openclaw-configuration.md#6-thinking-配置)
 - 理解训练格式：[SFT 数据格式](../traces/sft-format.md)
-- 查全部命令行选项：[CLI 参数参考](cli-reference.md)
+- 查询全部命令行选项：[CLI 参数参考](cli-reference.md)
 
 ## 10. 常见问题
 
 **(1) Docker preflight 失败**
 
-检查 `docker version` 是否能连接 Server，以及镜像是否已 pull/load。
+检查 `docker version` 是否能连接 Server，以及镜像是否已拉取或加载。
 
 **(2) OpenClaw 找不到模型**
 
@@ -194,14 +194,14 @@ Viewer 会展示 ACTF 时间线。Inspector 用于查看 system prompt、tools s
 
 **(4) `/responses` 返回 404**
 
-服务可能只支持 Chat Completions。把 OpenClaw provider 的 `api` 改为 `openai-completions`。
+服务可能只支持 Chat Completions。将 OpenClaw provider 的 `api` 设置为 `openai-completions`。
 
 **(5) 同名 run 已存在**
 
-原实验使用 `--resume`，新实验更换 `--run-name`。
+继续原实验时使用 `--resume`；开始新实验时更换 `--run-name`。
 
-**(6) Viewer 没有新 task**
+**(6) Viewer 未显示新 task**
 
-确认传入的是 run 根目录，刷新页面并检查 run `info.json`。
+确认传入的是 run 根目录，然后刷新页面并检查 run 的 `info.json`。
 
-OpenClaw Harness 指南还列有更多 OpenClaw 相关错误。
+OpenClaw Harness 指南列出了更多 OpenClaw 相关错误。

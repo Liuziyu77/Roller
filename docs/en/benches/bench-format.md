@@ -11,15 +11,15 @@ task export and scoring before that teardown:
 
 `roller collect --bench NAME --bench-root ROOT` performs translation,
 collection, grading, and aggregation in one command. The three-step `bench
-export` / ordinary `collect` / `bench report` interface remains available when
-you need to inspect or edit the intermediate task JSONL. Registered adapters
+export` / ordinary `collect` / `bench report` interface remains available for
+inspecting or editing the intermediate task JSONL. Registered adapters
 are listed by `roller bench list`.
 
 ## 1. Why the grader must run inside the container
 
-Bench scoring almost always needs files the Agent just wrote (generated scripts,
+Bench scoring almost always requires files written by the Agent during the task (generated scripts,
 rendered figures, downloaded data), and `session.finish()` runs
-`rm -f <container>`. So the grader cannot run after `collect` returns. The grader
+`rm -f <container>`. Therefore the grader cannot run after `collect` returns. The grader
 must run at this point:
 
 ```
@@ -29,11 +29,11 @@ session.start() → per-turn send() → [grader runs here] → session.finish() 
 `GradedHarness` wraps an `InteractiveHarness` and reuses its run loop, inserting
 the grader between the last turn and teardown without changing the wrapped harness.
 
-Only `InteractiveHarness` can provide a live container, so running a bench on a
-non-interactive harness raises `TypeError` at startup. This catches the missing
-scoring support before running a batch of tasks.
+Only `InteractiveHarness` can provide a live container. Running a bench on a
+non-interactive harness therefore raises `TypeError` at startup. The error reports the
+missing scoring support before a batch of tasks runs.
 
-## 2. Three seams: why existing code barely changes
+## 2. Three seams: why existing code requires few changes
 
 The bench layer uses three existing interfaces:
 
@@ -93,18 +93,18 @@ standard task fields:
 | `kwargs` | `{}` | Extra arguments passed to the entry function |
 | `env` | `[]` | Environment variable names to pass from the host into the grading container |
 | `timeout_seconds` | `120` | Grading timeout, 1 to 3600 |
-| `needs_transcript` | `true` | Whether the session record must be fed to the grader |
+| `needs_transcript` | `true` | Whether the session record must be passed to the grader |
 | `workspace_path` | harness default | Grader working directory (absolute path inside the container) |
-| `transcript_path` | derived automatically | Write this only when the harness cannot report the session file location itself |
-| `score_key` | `overall_score` | Which key to take from the grader return value as the total score |
+| `transcript_path` | derived automatically | Set only when the harness cannot report the session file location itself |
+| `score_key` | `overall_score` | Key in the grader return value that is used as the total score |
 | `stage` | `[]` | Host paths copied into the container only before grading; see §4 |
 
 Grader calling convention:
 
 ```python
-def grade(transcript, workspace_path):   # transcript 仅在 needs_transcript 时传入
+def grade(transcript, workspace_path):   # transcript is passed only when needs_transcript is set
     ...
-    return {"overall_score": 0.75, "detail": {...}}   # 必须返回 dict
+    return {"overall_score": 0.75, "detail": {...}}   # must return a dict
 ```
 
 A non-dict return raises an error. Roller wraps the function in a runner, copies
@@ -116,16 +116,16 @@ and judge request logs.
 
 Grading failures are recorded separately from valid zero scores:
 
-- The grader returns `overall_score: 0.0` normally → a true 0.
-- The grader crashed / timed out / produced unparseable output / a `stage`
-  source is missing on the host → `score.json` still has a 0 plus an `error`
-  field. Aggregation counts it in `unscored_count` and lists it separately in
+- If the grader returns `overall_score: 0.0` normally, the score is a valid 0.
+- If the grader crashes, times out or produces unparseable output, or a `stage`
+  source is missing on the host, `score.json` still contains a 0 and an `error`
+  field. Aggregation counts the sample in `unscored_count` and lists it separately in
   the report.
 
 ## 4. `stage`: do not put answers in the Agent workspace
 
-Many benches keep ground truth and seed files in the same directory. If you
-mount that whole directory into the container, the Agent can read the answers.
+Many benches keep ground truth and seed files in the same directory. If the
+whole directory is mounted into the container, the Agent can read the answers.
 This exposes ground truth to the model and invalidates the evaluation setup.
 
 `stage` copies files from the host to the container after the Agent's last turn
@@ -146,8 +146,8 @@ scoring files from a zero score caused by an incorrect answer.
 `info.json["runtime"]["bench"]`, and aggregates with each bench's
 `aggregate()` (default: `mean_aggregate`).
 
-The default mean divides by the full sample count, counting grading failures as 0,
-which matches how common benches report officially. It also reports separately:
+The default mean divides by the full sample count and counts grading failures as 0,
+which matches the official reporting method of common benches. The report also lists separately:
 
 - `scored_count` / `unscored_count`
 - `scored_average` (mean over successfully scored samples only)
@@ -175,7 +175,7 @@ from roller.benches.base import BenchAdapter, BenchBinding, GradeSpec
 
 class MyBenchAdapter(BenchAdapter):
     name = "mybench"
-    description = "MyBench — 一句话说明"
+    description = "MyBench: one-line description"
 
     def load(self, root, *, categories=None, task_ids=None):
         rows = []
@@ -196,8 +196,8 @@ class MyBenchAdapter(BenchAdapter):
         return rows
 ```
 
-Then add one line to the registry in `src/roller/benches/__init__.py`. Optionally
-override `categories()` and `aggregate()` (only when you need to match the
+Then add one line to the registry in `src/roller/benches/__init__.py`. Optionally,
+override `categories()` and `aggregate()` (required only to match the
 upstream reporting method).
 
 Account for the following when implementing an adapter:
@@ -220,15 +220,15 @@ Account for the following when implementing an adapter:
 ### 6.1 Every bench needs a README
 
 Commit `docs/zh/benches/<name>.md` and an English page under `docs/en/benches/`
-with the adapter. Describe the bench's configuration and link here for shared
-behavior. Include:
+with the adapter. The page describes the bench's configuration and links to this page for shared
+behavior. It should include:
 
 1. Commands from cloning upstream through `bench report`;
 2. A table mapping upstream options to Roller settings, including CLI flags and
    environment variables;
-3. Unsupported upstream options and why other flags cannot replace them (example: WCB's timeout multiplier rewrites
-   the task file and therefore also changes the budget told to the Agent in the
-   prompt; `--timeout` only changes wall-clock time and is not equivalent);
+3. Unsupported upstream options and why other flags cannot replace them (for example, WCB's timeout multiplier rewrites
+   the task file and therefore also changes the budget stated to the Agent in the
+   prompt; `--timeout` changes only the wall-clock time and is not equivalent);
 4. Required environment variables and whether they need `--pass-env`;
 5. Known issues, especially those that affect validity without raising errors,
    with commands to check for them after a run.
@@ -267,27 +267,27 @@ roller bench report runs/<run-name> --output report.json
 ```
 
 `--category` and `--task-id` can both be repeated. `--task-timeouts` is the key
-switch for a bench run: each bench task carries its own timeout (WildClawBench
+flag for a bench run: each bench task carries its own timeout (WildClawBench
 has five measured values: 300/360/600/900/1200), while `build_requests`
-normally consumes only one global `--timeout`. Without this flag, short tasks
-get too much time and long tasks are cut by the wall clock. Being cut looks a
-lot like the model cannot do the task.
+normally uses only one global `--timeout`. Without this flag, short tasks
+receive too much time and long tasks are cut off by the wall clock. A task that is cut off
+closely resembles a task that the model cannot complete.
 One-command `collect --bench` enables per-task timeouts automatically and saves
-`tasks.jsonl` plus `bench-report.json` in the run directory, so it needs neither
+`tasks.jsonl` and `bench-report.json` in the run directory. It therefore requires neither
 `--task-timeouts` nor a separate `bench report` invocation.
 
-Environment variables the grader needs must be passed with `--pass-env` (which
-variables are declared by the bench's task definition). When a variable is
-missing, Roller warns and still continues, so confirm the logs have no
-`grading environment variable ... is unset` before a real run.
+Environment variables required by the grader must be passed with `--pass-env`; the
+bench's task definition declares which variables are required. When a variable is
+missing, Roller issues a warning and continues. Before a real run, confirm that the logs do not contain
+`grading environment variable ... is unset`.
 
 ## 8. Supported benches
 
 See each bench's README for its configuration (see §6.1):
 
-| Bench | `--harness` | README | One-liner |
+| Bench | `--harness` | README | Summary |
 | --- | --- | --- | --- |
-| `wildclawbench` | `openclaw` | [WildClawBench](wildclawbench.md) | 60 real-scenario tasks in 6 categories; the grader runs in the container; `gt/` for 26 tasks goes through `stage` |
+| `wildclawbench` | `openclaw` | [WildClawBench](wildclawbench.md) | 60 real-scenario tasks in 6 categories; the grader runs in the container; `gt/` for 26 tasks is supplied through `stage` |
 | `skillsbench` | `opencode` | [SkillsBench](skillsbench.md) | Builds each task environment; supports `with-skill` / `no-skill` and official verifiers |
 | `pinchbench` | `openclaw` | [PinchBench](pinchbench.md) | Manifest-driven export with automated, LLM-judge, hybrid, and multi-session tasks |
 | `qwenclawbench` | `openclaw` | [QwenClawBench](qwenclawbench.md) | 100 tasks in 8 domains; automated/hybrid grading, penalized scores, and repeated runs |

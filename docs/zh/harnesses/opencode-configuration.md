@@ -1,10 +1,10 @@
 # OpenCode Harness 指南
 
-OpenCode Harness 用于通过 OpenCode Agent 执行需要读写文件、运行命令或查看图片的 task。它连接支持流式响应和工具调用的 OpenAI Chat Completions 服务。本页按照镜像、API、专属参数、会话和轨迹的顺序介绍首次使用所需内容。
+OpenCode Harness 用于通过 OpenCode Agent 执行需要读写文件、运行命令或查看图片的 task。该 Harness 连接支持流式响应和工具调用的 OpenAI Chat Completions 服务。本页按照镜像、API、专属参数、session 和轨迹的顺序介绍首次使用所需内容。
 
 Roller 当前固定使用 [OpenCode](https://opencode.ai/docs/cli/) 1.18.30。Task 字段见 [Task 格式参考](../tasks/task-format.md)，通用产物见 [轨迹产出文件指南](../traces/trajectory-outputs.md)。
 
-首次使用时，先完成第 1 至第 3 节并运行示例命令。后面的专属参数、会话和轨迹说明可在需要相应功能时再查看。
+首次使用时，请先完成第 1 至第 3 节并运行示例命令。后续章节介绍专属参数、session和轨迹，可在需要相应功能时查阅。
 
 ## 1. 适用范围
 
@@ -15,7 +15,7 @@ OpenCode Harness 适合以下场景：
 - 使用具备视觉能力的模型查看本地图片。
 - 运行单轮、多轮、Task Agent 或 User Simulator task。
 
-当前不支持直接在 task 消息中放入图片，也不启用账号登录、MCP、子 Agent、长期记忆和自动压缩。长任务需要为模型配置足够的上下文窗口。
+当前不支持在 task 消息中直接放入图片，也不启用账号登录、MCP、子 Agent、持久记忆和自动压缩。长任务需要为模型配置足够大的上下文窗口。
 
 ## 2. 镜像准备
 
@@ -27,11 +27,11 @@ docker build -t roller-opencode:1.18.30 docker/opencode
 
 镜像包含固定版本的 OpenCode 及其运行依赖。宿主机无需安装 Node.js、Bun 或 OpenCode。构建完成后，在第 3 节配置 API 地址、API Key 和模型 ID。
 
-默认基础镜像为 `python:3.12-slim-bookworm`，支持 Linux x86_64 和 aarch64。需要更换基础镜像、npm 下载源或 Debian 软件源时，参见 [Docker 构建与镜像源](../start/docker-builds.md)。
+默认基础镜像为 `python:3.12-slim-bookworm`，支持 Linux x86_64 和 aarch64。如需更换基础镜像、npm 下载源或 Debian 软件源，请参见 [Docker 构建与镜像源](../start/docker-builds.md)。
 
 ## 3. 环境变量与 API
 
-OpenCode Harness 连接支持流式响应和工具调用的 OpenAI Chat Completions 服务。第一次运行需要准备 API 地址、API Key 和模型 ID。
+OpenCode Harness 连接支持流式响应和工具调用的 OpenAI Chat Completions 服务。首次运行需要准备 API 地址、API Key 和模型 ID。
 
 | 配置项 | 默认读取 | CLI 覆盖 |
 | --- | --- | --- |
@@ -39,9 +39,9 @@ OpenCode Harness 连接支持流式响应和工具调用的 OpenAI Chat Completi
 | API Key | `OPENAI_API_KEY` | `--opencode-api-key-env`，单一 Harness 运行也可用 `--api-key-env` |
 | 模型 ID | task 的 `model` 或 `--model` | 原样发送给 API，OpenCode 内部会添加 `roller/` 名称前缀 |
 
-`--opencode-api-key-env` 和 `--api-key-env` 的值是宿主机环境变量名，不是 Key 本身。Key 只在执行时读取，不写入公开配置。
+`--opencode-api-key-env` 和 `--api-key-env` 的值是宿主机环境变量名，不是 Key 本身。Key 仅在执行时读取，不写入公开配置。
 
-将下面的 `...`、API 地址和 `model-id` 替换为模型服务提供的实际值。第一次运行只执行一个 task，便于先确认配置是否正确：
+将以下命令中的 `...`、API 地址和 `model-id` 替换为模型服务提供的实际值。首次运行仅执行一个 task，以便在大规模运行前确认配置是否正确：
 
 ```bash
 export ROLLER_OPENCODE_KEY='...'
@@ -61,48 +61,48 @@ roller collect \
 (opencode-cli-flags)=
 ## 4. OpenCode 专属参数
 
-下面只列 OpenCode 专属运行参数。API 地址和 Key 的配置方式见第 3 节。所有 Harness 共用的参数见 [CLI 参数参考](../start/cli-reference.md)。
+下表仅列出 OpenCode 专属运行参数。API 地址和 Key 的配置方式见第 3 节。所有 Harness 共用的参数见 [CLI 参数参考](../start/cli-reference.md)。
 
 | 参数 | 默认值与行为 |
 | --- | --- |
-| `--opencode-image` | 优先于 `--docker-image`。否则使用 `ROLLER_OPENCODE_IMAGE` 或 `roller-opencode:1.18.30` |
-| `--opencode-max-steps` | SkillsBench 默认为 100，其他任务默认为 12，另受整次 task 执行的超时限制 |
-| `--opencode-context-length` | 模型上下文窗口，默认 128000，至少 1024，按服务真实能力设置 |
+| `--opencode-image` | 优先于 `--docker-image`。两者均未设置时使用 `ROLLER_OPENCODE_IMAGE`，该变量也未设置时使用 `roller-opencode:1.18.30` |
+| `--opencode-max-steps` | SkillsBench 默认为 100，其他任务默认为 12，同时受整个 task 的超时限制 |
+| `--opencode-context-length` | 模型上下文窗口，默认 128000，至少 1024，按服务实际能力设置 |
 | `--opencode-output-tokens` | SkillsBench 默认为 32768，其他任务默认为 8192，必须小于上下文窗口 |
 | `--opencode-vision` / `--no-opencode-vision` | 是否向 OpenCode 声明模型支持图片输入。默认开启，纯文本模型可显式关闭 |
 | `--thinking` / `runtime.thinking` | 支持 `off/minimal/low/medium/high/xhigh`。传给兼容服务的 reasoning effort，`off` 映射为 `none`，仍需服务支持 |
 | `--wire-trace` | 默认 `actf`。各模式均通过插件保留原生请求和工具定义。`full` 额外保存 HTTP 记录，要求显式 API 地址和 `--network host` |
 | `--no-keep-thinking` | 仅移除 ACTF/SFT 中的 reasoning。原生日志和续聊历史保持完整 |
 
-OpenCode 作为 Task Agent 或 User Simulator 时都使用这些参数。修改镜像、API 地址、上下文窗口或步骤上限后，建议换一个新的 `--run-name`，避免与旧运行配置冲突。
+OpenCode 作为 Task Agent 或 User Simulator 时均使用这些参数。修改镜像、API 地址、上下文窗口或步骤上限后，建议使用新的 `--run-name`，以免与原有运行配置冲突。
 
 ## 5. 多模态能力
 
-OpenCode 可以使用 `bash`、`read`、`write`、`edit`、`apply_patch`、`glob` 和 `grep`。具备视觉能力的模型和服务可以通过 `read` 打开本地图片。使用纯文本模型时，可以通过 `--no-opencode-vision` 关闭图片输入声明。
+OpenCode 可使用 `bash`、`read`、`write`、`edit`、`apply_patch`、`glob` 和 `grep`。具备视觉能力的模型和服务可通过 `read` 打开本地图片。使用纯文本模型时，可通过 `--no-opencode-vision` 关闭图片输入声明。
 
-图片通过 `files.inputs` 进入工作区，并由 `read` 生成图片附件。图片结果会保留到原始轨迹、ACTF 和多模态 SFT。Task 的 `messages[].content` 当前只支持字符串，不能直接写入图片内容块。
+图片通过 `files.inputs` 进入工作区，并由 `read` 生成图片附件。图片结果保留在原始轨迹、ACTF 和多模态 SFT 中。Task 的 `messages[].content` 当前只支持字符串，不能直接写入图片内容块。
 
-## 6. 会话与工作区
+## 6. Session 与工作区
 
-每个 Agent 或 Simulator 都在独立容器中运行，不会读取宿主机的 OpenCode 配置。输入文件只读，Context 文件复制到 task 声明的位置，输出文件在结束后回收到 sample 的 `results/`。
+每个 Agent 或 Simulator 均在独立容器中运行，不读取宿主机的 OpenCode 配置。输入文件只读，Context 文件复制到 task 声明的位置，输出文件在结束后回收至 sample 的 `results/`。
 
-同一参与者的多轮消息会恢复同一个 OpenCode 会话，因此对话历史和工作区文件可以继续使用。每一轮都会启动新的 CLI 进程，后台进程句柄不会保留。
+同一参与者的多轮消息恢复同一个 OpenCode session，因此对话历史和工作区文件仍可使用。每一轮均启动新的 CLI 进程，因此后台进程句柄不会保留。
 
-采集时不会自动分享会话、更新 OpenCode 或启用 MCP、子 Agent 和联网工具。Context 和 skill 文件仍可按路径读取。
+采集时不会自动分享 session、更新 OpenCode，也不启用 MCP、子 Agent 和联网工具。Context 和 skill 文件仍可按路径读取。
 
 ## 7. 轨迹与请求记录
 
-一次运行会生成三类主要轨迹文件：
+一次运行生成三类主要轨迹文件：
 
 | 文件 | 用途 |
 | --- | --- |
-| `trace.jsonl` | 保存 OpenCode 原生会话和实际模型请求，主要用于排错 |
+| `trace.jsonl` | 保存 OpenCode 原生 session 和实际模型请求，主要用于排错 |
 | `trace_ACTF.json` | 将对话、reasoning、工具调用和结果整理成统一结构 |
 | `trace_SFT.json` | 将成功轨迹整理成训练数据格式 |
 
-图片附件会保留到 ACTF 和多模态 SFT。工具定义来自实际模型请求，而不会根据调用参数猜测。
+图片附件保留在 ACTF 和多模态 SFT 中。工具定义取自实际模型请求，不根据调用参数推断。
 
-不完整会话、空回复、API 错误、截断回复、损坏的轨迹或前后不一致的工具定义不会被标记为成功。超时后会停止容器，并尽量回收已经生成的轨迹和文件。
+不完整 session、空回复、API 错误、截断回复、损坏的轨迹或前后不一致的工具定义不会被标记为成功。超时后停止容器，并尽量回收已生成的轨迹和文件。
 
 ## 8. 首次运行检查
 
@@ -121,16 +121,16 @@ OpenCode Harness 要求模型服务支持流式 Chat Completions 和工具调用
 
 **(2) 轨迹失败**
 
-不完整会话、空回复、API 错误、截断回复、缺失或变化的工具定义和损坏的 JSONL 都会触发失败，检查 `trace.jsonl` 定位原因。
+不完整 session、空回复、API 错误、截断回复、缺失或变化的工具定义，以及损坏的 JSONL 均判定为失败。请检查 `trace.jsonl` 定位原因。
 
-**(3) 长任务超窗失败**
+**(3) 长任务超出上下文窗口**
 
-自动压缩已关闭，按服务真实能力调大 `--opencode-context-length`。
+自动压缩已关闭。请按服务实际能力调大 `--opencode-context-length`。
 
 **(4) task 执行超时**
 
-容器被停止并尝试回收已有轨迹和文件，按需调整 `--timeout` 或 `--opencode-max-steps`。
+容器将被停止，并尽量回收已有轨迹和文件。可按需调整 `--timeout` 或 `--opencode-max-steps`。
 
 **(5) `--wire-trace full` 无法启动**
 
-需要显式 API 地址和 `--network host`。
+请设置显式 API 地址，并保持启用 `--network host`。

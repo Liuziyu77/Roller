@@ -1,8 +1,8 @@
 # Docker builds and package mirrors
 
-This page answers one specific question: when building a Roller-provided Harness image locally, how should you select package repositories, base images, and proxies?
+This page describes how to select package repositories, base images, and proxies when building a Roller-provided Harness image locally.
 
-If you are following the quickstart with OpenClaw, you usually do not need the build arguments below. Roller uses a pinned official OpenClaw image directly. See the [OpenClaw Harness guide](../harnesses/openclaw-configuration.md) for image preparation and overrides.
+The quickstart with OpenClaw usually does not require the build arguments below. Roller uses a pinned official OpenClaw image directly. See the [OpenClaw Harness guide](../harnesses/openclaw-configuration.md) for image preparation and overrides.
 
 Codex, Claude Code, Hermes, OpenCode, DeepSeek, and Pi use Dockerfiles in this repository. When the public package services are reachable, follow the default build command in the corresponding Harness guide. Continue with this page only when downloads are slow, an internal package service is required, a different base image is needed, or the build must use a proxy.
 

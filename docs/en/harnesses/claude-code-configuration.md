@@ -69,8 +69,8 @@ docker run --rm roller-claude-code:2.1.222 claude --version
 export ROLLER_CLAUDE_CODE_IMAGE=roller-claude-code:2.1.222
 ```
 
-Production datasets should pin the Claude Code version. Native session fields, permission modes, and effort lists evolve
-with the CLI. Roller writes the actual `claude_code_version`, image tag, and image ID into run/sample info.
+Production datasets should pin the Claude Code version. Native session fields, permission modes, and effort lists change
+between CLI versions. Roller writes the actual `claude_code_version`, image tag, and image ID into run/sample info.
 
 ## 3. Environment variables and API
 
@@ -99,9 +99,9 @@ roller collect \
   --run-name claude-code-demo
 ```
 
-`--api-key-env` accepts an environment-variable name, not the key itself. The API address may stop at the service host, `/v1`, or the full `/v1/messages` path. Roller normalizes it so `/v1/messages` is not added twice.
+`--api-key-env` accepts an environment-variable name, not the key itself. The API address may end at the service host, at `/v1`, or at the full `/v1/messages` path. Roller normalizes the address so that `/v1/messages` is not appended twice.
 
-If a model appears in a list but execution still fails, send one minimal request to `/v1/messages` to confirm that the current account can call it. Only a successful `/v1/messages` request confirms Claude Code compatibility.
+If a model appears in the model list but execution still fails, send a minimal request to `/v1/messages` to confirm that the current account can call the model. Only a successful `/v1/messages` request confirms Claude Code compatibility.
 
 (claude-code-cli-flags)=
 ## 4. Claude Code-specific flags
@@ -116,13 +116,13 @@ This table lists Claude Code-specific runtime flags only. See section 3 for API 
 | `--claude-max-thinking-tokens` | None | Set `MAX_THINKING_TOKENS` for Claude Code |
 | `--claude-permission-mode` | `bypassPermissions` | Select the Claude Code permission mode |
 
-A single Claude Code run can use the shared flag forms. In a mixed-Harness run, use dedicated forms such as `--claude-code-image`, `--claude-api-base`, and `--claude-api-key-env` so the settings apply only to the intended participant.
+A single Claude Code run can use the shared flag forms. In a mixed-Harness run, use dedicated forms such as `--claude-code-image`, `--claude-api-base`, and `--claude-api-key-env` so that the settings apply only to the intended participant.
 
 ## 5. Multimodal capabilities
 
 The Claude Code Harness supports both text-only and vision-capable models. Images enter the workspace through `files.inputs`, and Claude Code can open local images with its native `Read` tool. Image tool results are preserved in the native trace, ACTF, and multimodal SFT, where SFT uses `<image>` placeholders and the top-level `images` field.
 
-Vision tasks also require the selected model and Anthropic-compatible API service to support image content blocks. Task `messages[].content` currently accepts strings only and cannot contain image blocks directly. Text-only models can continue to process text and ordinary files, but they cannot complete tasks that require understanding image content.
+Vision tasks also require the selected model and Anthropic-compatible API service to support image content blocks. Task `messages[].content` currently accepts strings only and cannot contain image blocks directly. Text-only models can still process text and ordinary files, but they cannot complete tasks that require understanding image content.
 
 ## 6. Thinking configuration
 
@@ -138,7 +138,7 @@ Vision tasks also require the selected model and Anthropic-compatible API servic
 | `max` | `max` | Use only when the model supports it |
 | `ultra` | `ultracode` | Roller name mapped to the Claude Code name |
 
-`off`, `none`, `minimal`, and `adaptive` have no matching Claude Code level and fail before startup. For a new model, omit `--thinking` or begin with a level explicitly supported by the service.
+`off`, `none`, `minimal`, and `adaptive` have no matching Claude Code level and fail before startup. For a new model, omit `--thinking` or start with a level that the service explicitly supports.
 
 To limit thinking tokens, also use:
 
@@ -146,7 +146,7 @@ To limit thinking tokens, also use:
 --claude-max-thinking-tokens 4096
 ```
 
-Models support token limits in different ways. Remove this flag if the service rejects it and keep only `--thinking`.
+Models support token limits in different ways. If the service rejects this flag, remove it and keep only `--thinking`.
 
 Visible thinking, reasoning, or analysis returned by Claude Code is written to ACTF/SFT `reasoning_content`. The field can be empty when the service returns only a token count or encrypted content. `--no-keep-thinking` clears exported ACTF/SFT reasoning without changing the native session.
 
@@ -168,7 +168,7 @@ Automated collection defaults to `bypassPermissions` so execution does not stop 
 Each Agent or Simulator runs in an isolated disposable container and does not read host Claude login data, settings, or session history.
 
 - Inputs are read-only and keep their Task Bundle relative paths.
-- Context files are copied to their declared task paths. Name the target `CLAUDE.md` when Claude Code should discover project instructions automatically.
+- Context files are copied to their declared task paths. For Claude Code to discover project instructions automatically, name the target `CLAUDE.md`.
 - `runtime.setup` runs before the first turn.
 - The output directory remains writable and is collected into the sample `results/` directory.
 
@@ -176,7 +176,7 @@ Predefined multi-turn messages continue one Claude Code session, so conversation
 
 ## 9. Trajectories and request recording
 
-A run produces these main files:
+A run produces the following main files:
 
 | File | Purpose |
 | --- | --- |
@@ -205,7 +205,7 @@ The default `--wire-trace actf` captures system prompts and tool definitions for
 --wire-trace full
 ```
 
-The sample then keeps `wire_trace.jsonl`. It can contain complete messages, tool arguments, and thinking settings, so use it only for troubleshooting or auditing. `--wire-trace off` keeps the native Claude Code session but records no request details.
+The sample then also contains `wire_trace.jsonl`. This file can contain complete messages, tool arguments, and thinking settings; use it only for troubleshooting or auditing. `--wire-trace off` keeps the native Claude Code session but records no request details.
 
 ## 10. First-run check
 
@@ -221,15 +221,15 @@ For a first run, use one simple task and then check:
 
 **(1) `Invalid token`**
 
-check the host variable pointed to by `--api-key-env`.
+Check the host environment variable named by `--api-key-env`.
 
 **(2) `No available channel for model`**
 
-the model appears in the list, but the current account/group has no available route.
+The model appears in the list, but the current account or group has no available route.
 
 **(3) URL shows `/v1/v1/messages`**
 
-do not pass `ANTHROPIC_BASE_URL` into the container by hand. Use Roller's `--api-base` so it can normalize.
+Do not pass `ANTHROPIC_BASE_URL` into the container manually. Use Roller's `--api-base` so that Roller can normalize the address.
 
 **(4) `invalid beta flag`**
 
@@ -237,15 +237,15 @@ Use an explicit `--api-base` and keep the default `--wire-trace actf`. Roller re
 
 **(5) The model rejects `budget_tokens` or requires adaptive thinking**
 
-remove `--claude-max-thinking-tokens` and use only a `--thinking` effort that model supports.
+Remove `--claude-max-thinking-tokens` and use only a `--thinking` effort that the model supports.
 
 **(6) ACTF has thinking tokens but `reasoning_content` is empty**
 
-the service did not return plaintext. The converter did not drop it.
+The service did not return plaintext. The empty field is not caused by the converter.
 
 **(7) Requests are interrupted or retried while the model writes long tool arguments**
 
-Some services do not stream tool-call arguments, so the connection can stay silent for minutes while the model writes a long argument. Claude Code's streaming idle timeout is `CLAUDE_STREAM_IDLE_TIMEOUT_MS` (300000 ms by default; smaller values have no effect) and its request timeout is `API_TIMEOUT_MS` (600000 ms by default). Both are environment variables Claude Code reads itself, so set them in the `env` block of the `--claude-settings` file:
+Some services do not stream tool-call arguments. While the model writes a long argument, the connection can remain idle for minutes. Claude Code's streaming idle timeout is `CLAUDE_STREAM_IDLE_TIMEOUT_MS` (300000 ms by default; smaller values have no effect) and its request timeout is `API_TIMEOUT_MS` (600000 ms by default). Both are environment variables that Claude Code reads directly. Set them in the `env` block of the `--claude-settings` file:
 
 ```json
 {
@@ -256,7 +256,7 @@ Some services do not stream tool-call arguments, so the connection can stay sile
 }
 ```
 
-or set them on the host and pass them with `--pass-env`:
+Alternatively, set them on the host and pass them with `--pass-env`:
 
 ```bash
 export CLAUDE_STREAM_IDLE_TIMEOUT_MS=1800000 API_TIMEOUT_MS=3000000

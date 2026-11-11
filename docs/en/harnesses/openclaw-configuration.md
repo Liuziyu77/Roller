@@ -2,7 +2,7 @@
 
 The OpenClaw Harness runs text, file, image, and Web Search tasks through OpenClaw Agent. It can connect to OpenAI Responses or Chat Completions-compatible services. This guide follows the order needed for a first run: image, model API, Harness-specific flags, thinking, trajectories, and search.
 
-For a first collection, follow [Getting started](../start/getting-started.md). Use this guide to continue with custom models and OpenClaw-specific features. For Task fields, see [Task format reference](../tasks/task-format.md). For shared outputs, see [Trajectory output file guide](../traces/trajectory-outputs.md).
+For a first collection, follow [Getting started](../start/getting-started.md). This guide covers custom models and OpenClaw-specific features. For Task fields, see [Task format reference](../tasks/task-format.md). For shared outputs, see [Trajectory output file guide](../traces/trajectory-outputs.md).
 
 ## 1. Scope
 
@@ -13,7 +13,7 @@ Use the OpenClaw Harness when a task needs:
 - single-turn or multi-turn execution.
 - optional thinking and Web Search.
 
-Task messages cannot contain image blocks directly. Add images through `files.inputs`, then let the OpenClaw image tool read them from the workspace.
+Task messages cannot contain image blocks directly. Add images through `files.inputs`. The OpenClaw image tool then reads them from the workspace.
 
 ## 2. Image preparation
 
@@ -104,7 +104,7 @@ The `api` value selects the protocol supported by the model service:
 
 ### 3.3 Load environment variables
 
-The API address and credentials in the model config are read from the current shell through `${ENV_NAME}` placeholders. Create a local file from the example, then replace `MY_PROXY_BASE_URL` and `MY_PROXY_API_KEY` with the actual values from the model service:
+The API address and credentials in the model config are read from the current shell through `${ENV_NAME}` placeholders. Create a local file from the example, then set `MY_PROXY_BASE_URL` and `MY_PROXY_API_KEY` to the actual values provided by the model service:
 
 ```bash
 cp examples/env/api.env.example examples/env/api.env
@@ -128,9 +128,9 @@ roller collect \
   --run-name openclaw-demo
 ```
 
-The `my-openai-proxy/my-model` value must match the model configuration in section 3.1. The first command runs one task so the configuration can be checked before a larger run.
+The `my-openai-proxy/my-model` value must match the model configuration in section 3.1. The command runs one task so that the configuration can be verified before a larger run.
 
-These common variables are passed into the OpenClaw container automatically when they exist and are non-empty on the host:
+The following common variables are passed into the OpenClaw container automatically when they are set and non-empty on the host:
 
 ```text
 OPENROUTER_API_KEY        OPENROUTER_BASE_URL
@@ -146,14 +146,14 @@ This section lists the flags that need special attention when running OpenClaw. 
 
 | Flag | Default | Purpose |
 | --- | --- | --- |
-| `--docker-image` / `--openclaw-image` | `ROLLER_OPENCLAW_IMAGE` or the built-in value | Overrides the OpenClaw image, use the specific form in mixed-Harness runs |
+| `--docker-image` / `--openclaw-image` | `ROLLER_OPENCLAW_IMAGE` or the built-in value | Overrides the OpenClaw image. Use the specific form in mixed-Harness runs |
 | `--container-user` | `0` | User inside the one-shot task container. `image` uses the image default user |
 | `--docker-binary` | `docker` | Docker CLI name or path |
 | `--model-config` | none | Custom provider/model JSON |
 | `--openclaw-model-request-timeout` | OpenClaw default | Model request timeout in seconds, also used as the streaming idle timeout. Requires `--model-config` |
 | `--openclaw-config-set KEY=VALUE` | none | Run `openclaw config set KEY VALUE` in every OpenClaw container. Repeatable |
 | `--network` | `host` | Container network mode |
-| `--gateway-port` | Automatic | Gateway start port. When omitted, the first free range from `18789` up is used. Keep an explicit range below `32768`; see section 10 (4) |
+| `--gateway-port` | Automatic | Gateway start port. When omitted, the first free range starting at `18789` is used. Keep an explicit range below `32768`; see section 10 (4) |
 | `--gateway-port-step` | `10` | Port interval between workers |
 | `--gateway-startup-timeout` | `240` | Seconds to wait for the gateway to become ready |
 | `--session-id` | `roller` | OpenClaw session ID prefix |
@@ -175,10 +175,10 @@ roller collect ... \
 ```
 
 - Settings are applied after Roller's configuration step, in every OpenClaw container of the run, including an OpenClaw user simulator. Roller then writes the per-rollout gateway token and starts the gateway.
-- Values follow OpenClaw's parsing: anything that parses as JSON/JSON5 is written with that type, everything else as a string. A path OpenClaw does not recognize makes the rollout fail during startup.
-- Paths Roller manages are rejected with a pointer to the Roller flag to use instead, for example `gateway.port` (`--gateway-port`), `models` (`--model-config`), and `agents.defaults.thinkingDefault` (`--thinking`). Settings may not overlap each other either, such as `agents.defaults.compaction` together with `agents.defaults.compaction.reserveTokens`.
+- Values are parsed according to OpenClaw's rules: a value that parses as JSON/JSON5 is written with that type, and any other value is written as a string. A path that OpenClaw does not recognize causes the rollout to fail during startup.
+- Roller rejects paths that it manages and names the Roller flag to use instead, for example `gateway.port` (`--gateway-port`), `models` (`--model-config`), and `agents.defaults.thinkingDefault` (`--thinking`). Settings must not overlap each other either, for example `agents.defaults.compaction` together with `agents.defaults.compaction.reserveTokens`.
 - Roller's `--timeout` governs the agent turn: Roller passes the remaining budget to `openclaw agent --timeout`, which overrides `agents.defaults.timeoutSeconds`.
-- Settings are recorded in `lock.json` and `info.json`. A value is redacted only when its own key name looks like a credential (`token`, `apiKey`, `password`, `secret`, ...); JSON object values are recorded verbatim. Use a new `--run-name` after changing them; `--resume` refuses a run whose settings differ.
+- Settings are recorded in `lock.json` and `info.json`. A value is redacted only when its own key name resembles a credential (`token`, `apiKey`, `password`, `secret`, ...); JSON object values are recorded verbatim. Use a new `--run-name` after changing them; `--resume` refuses a run whose settings differ.
 - Do not pass secrets this way: values also appear on the `docker exec` command line.
 
 Check the flags available in the installed version:
@@ -209,7 +209,7 @@ The full template is [`examples/config/openclaw/models-multimodal.json`](../../.
 
 Images enter the task workspace through `files.inputs` and are then opened with OpenClaw's image-viewing tool. Task `messages[].content` currently accepts strings only and cannot contain image blocks directly. Text-only models can still process text and ordinary files, but they cannot complete tasks that require understanding image content.
 
-By default Roller also tries to set the task model as OpenClaw's image model. Older OpenClaw versions that do not support this setting only log a warning. Disable with `--no-set-image-model`.
+By default, Roller also attempts to set the task model as OpenClaw's image model. Older OpenClaw versions that do not support this setting only log a warning. To disable this behavior, use `--no-set-image-model`.
 
 ## 6. Thinking configuration
 
@@ -267,7 +267,7 @@ Some API services accept only certain levels or use service-specific reasoning f
 
 ### 6.4 Saving reasoning content
 
-`--thinking` controls the requested reasoning effort. `--keep-thinking` controls whether visible reasoning is written to trajectories. The two flags have different purposes.
+`--thinking` and `--keep-thinking` have different purposes: `--thinking` controls the requested reasoning effort, and `--keep-thinking` controls whether visible reasoning is written to trajectories.
 
 `--keep-thinking` is enabled by default. If the model service returns visible reasoning, Roller includes it in ACTF and SFT and retains it in later multi-turn request history. `--no-keep-thinking` removes that content but does not disable model reasoning.
 
@@ -287,9 +287,9 @@ If OpenClaw reports that a level is unsupported, switch to a level explicitly su
 
 ## 7. Trajectories and request recording
 
-This section explains which OpenClaw runtime information Roller records and how to keep complete model requests when troubleshooting.
+This section describes which OpenClaw runtime information Roller records and how to retain complete model requests for troubleshooting.
 
-A run produces these main trajectory files:
+A run produces the following main trajectory files:
 
 | File | Purpose |
 | --- | --- |
@@ -312,7 +312,7 @@ The default `--cache-trace` writes the system prompt assembled by OpenClaw into 
 
 ## 8. Web Search
 
-Web Search lets the OpenClaw agent look up information on the web while running a task. Configure it only when a task needs online search. Tasks that use local files, existing context, or no web information can skip this section.
+Web Search allows the OpenClaw agent to query the web while running a task. Configure it only when a task needs online search. Tasks that use local files, existing context, or no web information do not require this configuration.
 
 Web Search requires both a search provider and its API key. The following example uses Brave Search.
 
@@ -340,7 +340,7 @@ roller collect \
 
 ## 9. First-run check
 
-Use `--limit 1` for the first run, then start a larger collection after the configuration works. After the command finishes, check:
+Use `--limit 1` for the first run, and start a larger collection after the configuration is verified. After the command finishes, check the following:
 
 1. `info.json` in the run directory has `state` set to `finished`.
 2. The sample `info.json` has `status` set to `ok`.
@@ -359,18 +359,18 @@ A `${ENV_NAME}` in the model JSON is unset in the current shell, or its value is
 
 **(3) Model request returns 404 or a protocol error**
 
-Usually the trailing path on `baseUrl` or the selected `api` protocol does not match. Confirm whether the server implements the Responses API or the Chat Completions API.
+The usual cause is a mismatch in the trailing path of `baseUrl` or in the selected `api` protocol. Confirm whether the server implements the Responses API or the Chat Completions API.
 
 **(4) Gateway port conflict**
 
-With the default `--network host`, each rollout's OpenClaw gateway listens on the host at `start port + slot × --gateway-port-step` (with an OpenClaw user simulator there are twice `--parallel` slots). Runs sharing a machine must not share a range.
+With the default `--network host`, each rollout's OpenClaw gateway listens on the host at `start port + slot × --gateway-port-step` (with an OpenClaw user simulator, the number of slots is twice `--parallel`). Runs on the same machine must not use overlapping ranges.
 
-- Without `--gateway-port`, Roller picks the first range from `18789` up that no other Roller run has reserved and nothing listens on, and holds that reservation for the whole run. Reservations are lock files under `/tmp/roller-gateway-ports/`, released when the process exits, crashes included. The path is fixed, whatever `$TMPDIR` is, so every run on the host sees the same reservations. The start port used is recorded in `info.json`.
-- An explicit `--gateway-port` whose range overlaps another run's reservation or a port in use fails before the run writes anything. Keep an explicit range below the kernel's ephemeral port range (`32768` and up by default on Linux): Roller's local proxies listen on ephemeral ports and could take a port of the range mid-run.
-- If something takes a rollout's port during the run, that rollout fails with `OpenClaw gateway port ... is already in use` before starting its gateway, instead of connecting to someone else's gateway.
-- Neither the start port nor `--gateway-port-step` is compared by `lock.json`, so `--resume` may get a different range.
+- Without `--gateway-port`, Roller selects the first range starting at `18789` that no other Roller run has reserved and on which no process is listening, and holds that reservation for the whole run. Reservations are lock files under `/tmp/roller-gateway-ports/` and are released when the process exits, including when it crashes. The path is fixed regardless of `$TMPDIR`, so every run on the host sees the same reservations. The start port used is recorded in `info.json`.
+- An explicit `--gateway-port` whose range overlaps another run's reservation or a port in use fails before the run writes anything. Keep an explicit range below the kernel's ephemeral port range (`32768` and up by default on Linux), because Roller's local proxies listen on ephemeral ports and could occupy a port in the range during the run.
+- If another process takes a rollout's port during the run, that rollout fails with `OpenClaw gateway port ... is already in use` before starting its gateway, instead of connecting to a gateway that belongs to another process.
+- Neither the start port nor `--gateway-port-step` is compared by `lock.json`; therefore, `--resume` may be assigned a different range.
 
-Programs that take no lock, including older Roller versions, are only noticed through ports they are listening on. When running next to one, keep the ranges apart explicitly:
+Programs that do not take a lock, including older Roller versions, are detected only through the ports on which they listen. When running alongside such a program, separate the ranges explicitly:
 
 ```bash
 roller collect ... --gateway-port 22000
@@ -382,12 +382,12 @@ Inspect the sample `info.json` and `trace.jsonl` first. Common causes are a traj
 
 **(6) Interrupted while writing long tool arguments: `LLM idle timeout (120s)` or `OPENCLAW_DIRECT_ABORT`**
 
-Some OpenAI-compatible services do not stream tool-call arguments and send them in one piece once they are complete. When the agent writes a large file in one call, the connection can stay silent for minutes and trip two OpenClaw watchdogs:
+Some OpenAI-compatible services do not stream tool-call arguments and send them in one piece after they are complete. When the agent writes a large file in one call, the connection can remain idle for minutes and trigger two OpenClaw watchdogs:
 
 - the model idle timeout, 120 seconds by default, reported as `LLM idle timeout (120s): no response from model`;
 - stuck-session recovery, which aborts the run after 6 minutes without stream progress, reported as `AbortError: agent run aborted: code=OPENCLAW_DIRECT_ABORT`, with `stalled session ... reason=active_work_without_progress` in the gateway log.
 
-Raise both:
+Raise both limits:
 
 ```bash
 roller collect ... \
@@ -396,4 +396,4 @@ roller collect ... \
   --openclaw-config-set diagnostics.stuckSessionAbortMs=2700000
 ```
 
-`--openclaw-model-request-timeout` also caps the total duration of one model request, so it must cover the model's longest single call, reasoning plus the tool arguments it writes.
+`--openclaw-model-request-timeout` also caps the total duration of one model request; therefore, it must cover the model's longest single call, including reasoning and the tool arguments it writes.
