@@ -763,6 +763,23 @@ exec node --input-type=module -e "$1"
                 ],
                 "cache trace path setup",
             )
+        # OpenClaw masks credential-shaped text (``RV_9fc…1812``) when it
+        # persists a session, and later turns rebuild context from that copy.
+        # Task text must survive verbatim; trajectories are sensitive anyway.
+        try:
+            self._checked(
+                ["exec", container, "openclaw", "config", "set", "logging.redactSensitive", "off"],
+                "transcript redaction setup",
+            )
+        except RuntimeError as exc:
+            # Releases that retired the key reject it; keep running.
+            logger.warning(
+                "[%s] OpenClaw %s kept logging.redactSensitive; its session transcript "
+                "may abbreviate credential-shaped task text: %s",
+                request.task.id,
+                version,
+                exc,
+            )
         if self.config.set_image_model:
             image_result = self.runtime.run(
                 [

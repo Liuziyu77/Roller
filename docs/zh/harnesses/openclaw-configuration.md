@@ -308,6 +308,8 @@ roller collect \
 | `full` | 额外保存完整请求到 `wire_trace.jsonl`，并生成脱敏后的 `cache_trace.jsonl` | 排错或审计模型实际收到的内容 |
 | `off` | 不记录请求数据，ACTF 中的 `tools` 为 `null` | 不需要请求信息时 |
 
+OpenClaw 写 session 记录时，默认会把形似凭据的文本缩写（例如 `RV_9fc89bb7400a1812` 变成 `RV_9fc…1812`），后续轮次又从这份记录重建上下文，导致模型和最终产物都拿不到原文。Roller 因此在启动时设置 `logging.redactSensitive=off`，让 `trace.jsonl`、ACTF 和 SFT 保留任务原文；这些文件本身就应按敏感数据处理。已移除该配置项的 OpenClaw 版本会拒绝这条设置，Roller 只记一条 warning 并继续运行。
+
 `trace.jsonl` 记录的是 OpenClaw session 事件，不一定等于实际发送给模型的完整请求。需要检查模型实际收到的 messages、tools 和参数时，使用 `--wire-trace full`。
 
 `full` 会产生更大的文件，其中可能包含 prompt、reasoning、工具参数和结果等敏感内容，不宜在大批量采集中长期开启。使用 `actf` 或 `full` 时建议保留默认的 `--network host`，并确保模型配置提供可访问的绝对 `baseUrl`。详细文件说明见[轨迹产出文件指南](../traces/trajectory-outputs.md#32-session-历史不等于模型请求-context)。

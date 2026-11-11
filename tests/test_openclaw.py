@@ -600,6 +600,39 @@ class OpenClawHelpersTests(unittest.TestCase):
         self.assertEqual(usage["cache_read_tokens"], 3)
         self.assertEqual(usage["cache_write_tokens"], 1)
 
+    def _run_with_redaction_setting(self, returncode: int):
+        setting = ["openclaw", "config", "set", "logging.redactSensitive", "off"]
+
+        class Runtime(FakeDockerRuntime):
+            def run(self, args, timeout=None):
+                result = super().run(args, timeout)
+                if list(args)[-5:] == setting:
+                    return subprocess.CompletedProcess(args, returncode, "", "Unrecognized key")
+                return result
+
+        runtime = Runtime()
+        harness = OpenClawHarness(
+            OpenClawConfig(docker_image="test-image", set_image_model=False), 0, runtime=runtime,
+        )
+        request = RunRequest(0, Task("task", ("hi",), 0), "provider/model", 30)
+        with tempfile.TemporaryDirectory() as temporary:
+            result = harness.run(request, Path(temporary), attempt=1)
+        tails = [command[-5:] for command in runtime.commands]
+        gateway = next(i for i, c in enumerate(runtime.commands) if "openclaw gateway" in c[-1])
+        return result, tails.index(setting), gateway
+
+    def test_session_transcript_redaction_is_disabled_before_the_gateway_starts(self) -> None:
+        result, setting, gateway = self._run_with_redaction_setting(0)
+        self.assertEqual(result.status, "ok")
+        self.assertLess(setting, gateway)
+
+    def test_openclaw_without_the_redaction_setting_still_runs(self) -> None:
+        # Releases that retired logging.redactSensitive reject it.
+        with self.assertLogs("roller.harnesses.openclaw", "WARNING") as logs:
+            result, _, _ = self._run_with_redaction_setting(1)
+        self.assertEqual(result.status, "ok")
+        self.assertIn("logging.redactSensitive", logs.output[0])
+
     def test_harness_collects_raw_trace_and_sends_messages_without_shell_quoting(self) -> None:
         task = Task(
             id="task",
