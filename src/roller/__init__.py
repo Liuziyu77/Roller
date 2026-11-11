@@ -14,6 +14,7 @@ from roller.models import (
     UserSimulatorSpec,
 )
 
+
 __all__ = [
     "BundlePolicy",
     "CollectionConfig",

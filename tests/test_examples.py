@@ -7,8 +7,8 @@ import unittest
 from pathlib import Path
 
 from roller.bundles import TaskBundleStore
-from roller.harnesses.openclaw import load_model_config
 from roller.tasks import load_tasks
+from roller.harnesses.openclaw import load_model_config
 
 
 class ExampleFilesTests(unittest.TestCase):
