@@ -1,116 +1,131 @@
-<div align="center">
-  <img src="assets/roller-logo.png" alt="Roller logo" width="132">
-  <h1>Roller</h1>
-  <p><strong>面向多模型、多 Harness 的 Agent 轨迹采集框架</strong></p>
-  <p>
-    <img alt="Python 3.10+" src="https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white">
-    <img alt="OpenClaw, Codex, Claude Code, Hermes, OpenCode, DeepSeek, and Pi Harnesses" src="https://img.shields.io/badge/Harness-OpenClaw%20%7C%20Codex%20%7C%20Claude_Code%20%7C%20Hermes%20%7C%20OpenCode%20%7C%20DeepSeek-6F42C1">
-    <img alt="ACTF v1.0" src="https://img.shields.io/badge/Trace-ACTF__v1.0-00A67E">
-    <a href="LICENSE"><img alt="Apache 2.0 License" src="https://img.shields.io/badge/License-Apache--2.0-D22128"></a>
-  </p>
-</div>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/roller-logo-dark.png">
+    <img src="assets/roller-logo.png" alt="Roller" width="120">
+  </picture>
+</p>
+<h1 align="center">Roller</h1>
+<p align="center"><strong>Agent trajectory collection across models and Harnesses</strong></p>
+<p align="center">Roller runs tool-using agents in disposable Docker containers and stores, for every task and model combination, the native session, a unified trace, SFT training data and the generated files.</p>
 
-Roller 为每个 task 与模型的组合创建独立 rollout，在一次性 Docker 容器中运行 Agent。每次运行保存 Harness 原始轨迹、ACTF 分析轨迹、SFT 训练数据和任务生成的文件。
+<p align="center">
+  <a href="#harnesses"><img src="https://img.shields.io/badge/Harnesses-7-00866F?style=flat&amp;labelColor=1E232C" alt="7 Harnesses"></a>
+  <a href="#benchmarks"><img src="https://img.shields.io/badge/Benchmarks-4-00866F?style=flat&amp;labelColor=1E232C" alt="4 benchmark adapters"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-555555?style=flat&amp;labelColor=1E232C" alt="License: Apache 2.0"></a>
+  <a href="pyproject.toml"><img src="https://img.shields.io/badge/Python-3.10%2B-555555?style=flat&amp;logo=python&amp;logoColor=FFD43B&amp;labelColor=1E232C" alt="Python 3.10+"></a>
+</p>
 
-```text
-tasks.jsonl × models
-        │
-        ▼
-Docker 中的 Agent Harness
-        │
-        ├─ trace.jsonl       Harness 原始轨迹
-        ├─ trace_ACTF.json   统一分析与可视化格式
-        ├─ trace_SFT.json    单条标准训练样本
-        ├─ results/          Agent 生成的文件
-        └─ info.json         状态、usage 与运行来源
-```
+<p align="center">
+  <strong>English</strong> · <a href="README_zh-CN.md">简体中文</a><br>
+  <a href="docs/en/index.md">Documentation</a> · <a href="docs/en/start/getting-started.md">Getting started</a> · <a href="docs/en/start/cli-reference.md">CLI reference</a> · <a href="examples/README.md">Examples</a>
+</p>
 
-## 核心用途
+<p align="center">
+  <a href="#news">News</a> · <a href="#architecture">Architecture</a> · <a href="#highlights">Features</a> · <a href="#quick-start">Quick start</a> · <a href="#harnesses">Harnesses</a> · <a href="#outputs">Outputs</a> · <a href="#benchmarks">Benchmarks</a> · <a href="#documentation">Docs</a> · <a href="#contributing">Contributing</a>
+</p>
 
-- 批量采集单轮、多轮或工具型 Agent 轨迹；
-- 同一批 task 对比多个模型或 Harness；
-- 生成顶层为 `messages` 和 `tools`（含图片时追加 `images`）的 SFT JSONL；
-- 保存 reasoning、工具调用、工具结果与任务文件产物；
-- 用 run lock 检查运行配置，通过重试和 Resume 继续采集；
-- 在内置 Viewer 中逐步查看每个 task 的 reasoning 和工具操作。
+<a id="introduction"></a>
 
-## 选择 Harness
+## Introduction
 
-| Harness | 模型服务协议 | 适合场景 | 关键能力与限制 |
-| --- | --- | --- | --- |
-| OpenClaw（默认） | OpenAI Responses 或 Chat Completions | 自定义/开源模型、动态 User Simulator、多模态输入 | 模型通过 JSON 配置；保留原生 reasoning |
-| Codex | Responses | Codex CLI 工具轨迹、GPT 与兼容 Responses 服务 | 保留原生 reasoning；可作为 Task Agent 或 User Simulator |
-| Claude Code | Anthropic `/v1/messages` | Claude Code 工具轨迹与 native thinking | 保留原生 thinking；可作为 Task Agent 或 User Simulator |
-| Hermes | OpenAI Chat Completions | 原生请求与工具消息 → ACTF/SFT | 固定版本，容器内 terminal/file；可作为 Task Agent 或 User Simulator |
-| OpenCode | OpenAI Chat Completions | CLI session / tools → ACTF/SFT | 固定版本，文本与文件工具；支持 Agent / Simulator |
-| DeepSeek Harness | DeepSeek Chat Completions | 原生 SDK / 持久化 Bash → ACTF/SFT | 固定 sdk-minimal profile；支持 Agent / Simulator |
-| Pi Agent | OpenAI Chat Completions | 原生 AgentSession / 七种工具 → ACTF/SFT | 固定 SDK 版本；支持 Agent / Simulator |
+Roller is infrastructure for agent runtimes that provides agent rollout and evaluation services. Users supply tasks and custom environments; Roller runs the agent in an isolated Docker container, collects the complete agent trajectory and evaluates the task result. Roller currently supports seven mainstream Harnesses, including OpenClaw, Codex and Claude Code, and four benchmarks, including WildClawBench and SkillsBench.
 
-七种 Harness 使用相同的 Task、Sample、ACTF 和 SFT 格式，也共用 Viewer、重试和 Resume 流程。镜像、API 和 reasoning 参数不同，详见对应的 [Harness 指南](docs/README.md#按-harness-选择)。
+A Harness is the agent runtime that executes a task. A task can define its own environment: container image or image build definition, setup commands, environment variables, input files and Context. One execution of one task with one model is a rollout. Roller runs each rollout in its own disposable container and stores the result on the host as a sample. A sample contains the Harness-native session, a normalized trace, an SFT (supervised fine-tuning) record, the files produced by the agent and an `info.json` file with status, usage and provenance.
 
-## Reasoning 采集
+Roller provides the following capabilities:
 
-默认 `--keep-thinking` 保存服务实际返回的可见 reasoning。`--thinking` 控制原生推理档位。
-OpenClaw 各模型的可用档位、配置方式和限制见 [OpenClaw Harness 指南的 Thinking 配置](docs/zh/harnesses/openclaw-configuration.md#6-thinking-配置)。
+- **Benchmark integration.** One command converts benchmark tasks into Roller tasks, collects the trajectories and grades each sample in the container where it ran.
+- **Batch collection.** Rollouts run in parallel across tasks and models, with retries for failed attempts and Resume for interrupted runs.
+- **SFT data export.** Each successful rollout yields a `messages` + `tools` training record; rollouts with compacted context are exported as separate segment records.
+- **Multi-turn conversations and User Simulator.** User turns are predefined in the task or generated by a second model that acts as the user.
+- **Viewer.** A built-in read-only web interface for browsing tasks, comparing models and inspecting each step.
 
-| 模型类型 | ACTF/SFT 保存内容 |
-| --- | --- |
-| GPT reasoning 系列 | 服务返回的可见 summary/content |
-| Claude 系列 | 服务实际返回的可见 thinking/summary |
-| Qwen、GLM 等开源模型 | 服务实际返回的明文 reasoning |
+<p align="center">
+  <a href="assets/demo/viewer-trajectory.gif"><img src="assets/demo/viewer-trajectory.gif" alt="Step-by-step inspection of one rollout in Roller Viewer: task search, model selection, and the reasoning, tool calls and tool results of all six steps" width="32%"></a>
+  <a href="assets/demo/viewer-models.gif"><img src="assets/demo/viewer-models.gif" alt="One task compared across four models in Roller Viewer, with 3, 13, 27 and 53 steps" width="32%"></a>
+  <a href="assets/demo/viewer.png"><img src="assets/demo/viewer.png" alt="Roller Viewer with the four rollouts of one task on the left, step 3 expanded in the middle, and the Inspector on the right" width="32%"></a>
+</p>
+<p align="center"><sub>Recordings of the built-in Viewer. Left: step-by-step inspection of the reasoning, tool calls and tool results of one rollout. Middle: one task compared across four models. Right: the complete Viewer layout. Select an image to view it at full size.</sub></p>
 
-只返回 reasoning token 数或加密状态时，`reasoning_content` 可以为空。工具参数不会转换成 reasoning。
+<a id="news"></a>
 
-## 最小运行流程
+## News
 
-以下流程使用 OpenClaw 完成一次基础采集。镜像构建、Codex/Claude Code 配置和结果验收见 [快速上手](docs/zh/start/getting-started.md)。
+- **2026-11-11**: SFT export for compacted context. When the Task Agent compacts its context, each verified context window is exported as a separate SFT record under `sft_segments/`.
+- **2026-11-08**: QwenClawBench adapter: 100 tasks in 8 domains, with automated grading, hybrid grading and repeated runs per task.
+- **2026-11-05**: One-command evaluation for SkillsBench and PinchBench. SFT records support images.
+- **2026-11-01**: Hermes, OpenCode, DeepSeek Harness and Pi Agent added, for a total of seven Harnesses.
 
-### 1. 安装 Roller 与镜像
+<a id="architecture"></a>
 
-需要 Python 3.10+、Docker CLI 和可用的 Docker daemon。下面使用 Conda 创建独立环境。
+## Architecture
+
+Roller runs as a single host process. The Collector schedules rollouts in parallel and starts one Docker container per rollout. Inside the container, the Harness runtime executes the agent loop in a workspace that contains the declared inputs and Context. Depending on the Harness and the `--wire-trace` setting, model requests either pass through Roller's request proxy, which records them before forwarding, or go directly to the model API. After the last turn, Roller collects the native session and the output directory, and the trace converters write the sample to the run directory.
+
+<p align="center">
+  <a href="assets/diagrams/architecture-en-light.png"><picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/diagrams/architecture-en-dark.png">
+    <img src="assets/diagrams/architecture-en-light.png" alt="Roller architecture: the host process loads and snapshots tasks, the Collector starts one Docker container per rollout, model calls pass through the request proxy, and the trace converters write samples to the run directory" width="100%">
+  </picture></a>
+</p>
+<p align="center"><sub>Green arrows: model calls. Dashed elements: optional components and conditional paths.</sub></p>
+
+Each rollout follows the lifecycle below. The Collector first checks whether a valid sample already exists. Otherwise it starts the container, and the Harness executes the turns. With a User Simulator, each Task Agent reply is passed to the Simulator, which returns the next user message or ends the conversation. For bench runs, the grader runs before teardown. After teardown, Roller converts the native session to the normalized trace; the Collector then either retries a failed attempt (up to `--retries` times) or finalizes the sample.
+
+<p align="center">
+  <a href="assets/diagrams/lifecycle-en-light.png"><picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/diagrams/lifecycle-en-dark.png">
+    <img src="assets/diagrams/lifecycle-en-light.png" alt="Lifecycle of one rollout: Resume check, container start, turns with model calls and an optional User Simulator, optional bench grading, teardown, trace conversion, and retry or finalization" width="100%">
+  </picture></a>
+</p>
+
+<a id="highlights"></a>
+
+## Features
+
+- **Unified Harness interface.** OpenClaw, Codex, Claude Code, Hermes, OpenCode, DeepSeek Harness and Pi Agent read the same task format and are selected with `--harness`. Samples from every Harness use the same directory layout and the same normalized trace structure.
+- **Step-level traces.** Each step in the normalized trace records the visible reasoning, tool calls, tool results, token counts and timing. With `--wire-trace full`, Roller also stores every request body that its proxy forwards to the model API.
+- **Evaluation in the task container.** `roller collect --bench` exports the benchmark tasks, runs them and executes each grader in the container where the task ran, before teardown. Grading failures are recorded separately from zero scores, and `bench-report.json` aggregates the results.
+- **Reproducible batch collection.** Roller snapshots and hashes all inputs before a container starts, and `lock.json` records the settings that determine sample content. `--resume` skips completed samples and reruns the remaining ones; if a recorded setting has changed, it reports the difference and exits. `--retries N` allows up to N additional attempts for each failed rollout.
+- **Training data with images and compaction segments.** SFT records include an `images` field when the trace contains images. When the Task Agent compacts its context, each verified context window is exported to `sft_segments/` with a `target_start_index` that marks the supervised messages.
+- **Dynamic conversations.** The User Simulator runs in its own Harness, reads the conversation so far and either sends the next user message or ends the task. It can use a different Harness and model from the Task Agent.
+- **Local Viewer.** `roller view` reads an existing run directory without modifying it, requires no additional dependencies and listens on `127.0.0.1` by default.
+
+<a id="quick-start"></a>
+
+## Quick start
+
+The following procedure collects a first batch of trajectories with OpenClaw, the default Harness.
+
+### 1. Installation
+
+Requirements: Python 3.10 or later and a running Docker daemon.
 
 ```bash
+git clone https://github.com/Liuziyu77/Roller.git
+cd Roller
 conda create -n roller python=3.11 -y
 conda activate roller
-
 python -m pip install -e .
-roller --version
-docker version
 
 docker pull ghcr.io/openclaw/openclaw:2026.7.1-2
 ```
 
-在 macOS 上使用 Docker Desktop 时，需要在 **Settings → Resources → Network** 中打开 **Enable host networking**，然后重启 Docker Desktop。
+With Docker Desktop on macOS, enable **Enable host networking** under **Settings → Resources → Network** and restart Docker Desktop. To install the image offline from a `docker save` archive, run `docker load -i <archive>` instead of `docker pull`.
 
-已有 `docker save` 归档时可离线加载：
+### 2. Model configuration
 
-```bash
-docker load -i /path/to/openclaw-2026.7.1-2-linux-amd64.tar.gz
-```
-
-### 2. 配置 API
+Copy the environment template, set `MY_PROXY_BASE_URL` and `MY_PROXY_API_KEY`, and export the variables to the current shell. `examples/env/api.env` is excluded by `.gitignore`.
 
 ```bash
 cp examples/env/api.env.example examples/env/api.env
+# Edit examples/env/api.env, then export its variables:
+set -a; source examples/env/api.env; set +a
 ```
 
-编辑 `examples/env/api.env` 中的 `MY_PROXY_BASE_URL` 和 `MY_PROXY_API_KEY`，然后加载：
+In [`examples/config/openclaw/models.json`](examples/config/openclaw/models.json), set the model `id` to the model name used by the service. Commands reference a model as `<provider>/<id>`, where `<provider>` is the key under `providers`. With the example file, the model reference is `my-openai-proxy/my-model`. For services that support only `/chat/completions`, change `api` from `openai-responses` to `openai-completions`. Store API keys only in environment variables; do not include them in tasks, commands or version-controlled files.
 
-```bash
-set -a
-source examples/env/api.env
-set +a
-```
-
-再把 [`examples/config/openclaw/models.json`](examples/config/openclaw/models.json) 中的 model `id` 改成服务端真实模型名。配置文件中的 model `id` 与命令中 provider 后面的 model ID 必须完全一致。运行时 model ref 由 provider 名与 model id 组成：
-
-```text
-my-openai-proxy/my-model
-```
-
-只支持 `/chat/completions` 的服务应把配置中的 `api` 从 `openai-responses` 改为 `openai-completions`。API Key 使用环境变量占位符，不要写入 task、命令或仓库文件。
-
-### 3. 先检查，再采集
+### 3. Dry run and collection
 
 ```bash
 roller collect \
@@ -121,99 +136,238 @@ roller collect \
   --dry-run
 ```
 
-Dry-run 只解析 task、检查输入文件并打印执行计划，不启动 Docker。确认无误后移除 `--dry-run`：
+A dry run parses the tasks, validates the input files and prints the planned rollouts. It does not start containers or call the model API, so it does not detect a missing image or an invalid API key. After verifying the plan, remove `--dry-run`, set a run name and enable one retry per failed rollout:
 
 ```bash
 roller collect \
   --tasks examples/tasks/tasks.jsonl \
   --model my-openai-proxy/my-model \
   --model-config examples/config/openclaw/models.json \
-  --parallel 4 \
-  --timeout 600 \
-  --output runs \
-  --run-name quickstart
+  --parallel 4 --retries 1 --timeout 600 \
+  --output runs --run-name quickstart
 ```
 
-### 4. 查看轨迹
+To compare models, repeat `--model`; each task then runs once per model. To continue an interrupted run, rerun the same command with `--resume`. If a setting recorded in `lock.json` has changed, use a new `--run-name`.
+
+### 4. Viewer
 
 ```bash
 roller view runs/quickstart
 ```
 
-打开终端打印的 URL（默认 `http://127.0.0.1:17865`），按 task 查看 user、reasoning、工具调用、工具结果和最终回复。
+Open the URL printed in the terminal (default `http://127.0.0.1:17865`). The Viewer shows the messages, reasoning, tool calls, tool results and final reply of each task.
 
-## 输入与输出
+[Getting started guide →](docs/en/start/getting-started.md)
 
-最小 task 是一行 JSON：
+<a id="harnesses"></a>
 
-```json
-{"schema_version":"roller.task/v1","id":"hello","prompt":"计算 2+3，只回复数字。"}
+## Harnesses
+
+A Harness is the agent runtime inside the container. It starts the agent, provides its tools and calls the model API. Specify the Harness for all tasks with `--harness`, or for an individual task with the `harness` field.
+
+| Harness | Model API | Description |
+| --- | --- | --- |
+| OpenClaw (default) | OpenAI Responses or Chat Completions | Custom and open models; multimodal input |
+| Codex | Responses | Codex CLI with GPT or Responses-compatible services |
+| Claude Code | Anthropic `/v1/messages` | Claude Code with native thinking |
+| Hermes | OpenAI Chat Completions | Hermes Agent with terminal and file tools |
+| OpenCode | OpenAI Chat Completions | OpenCode CLI sessions with text and file tools |
+| DeepSeek Harness | DeepSeek Chat Completions | Official SDK with a single persistent Bash tool |
+| Pi Agent | OpenAI Chat Completions | Pi SDK with seven tools: `read`, `bash`, `edit`, `write`, `grep`, `find`, `ls` |
+
+OpenClaw reads model definitions from `--model-config`. The other six Harnesses use `--api-base` and `--api-key-env`. In runs that combine several Harnesses, each Harness takes its own prefixed pair, for example `--hermes-api-base` and `--hermes-api-key-env`.
+
+Every Harness can serve as the Task Agent or the User Simulator. Docker images, API settings and reasoning options differ per Harness and are described in the Harness guides: [OpenClaw](docs/en/harnesses/openclaw-configuration.md) · [Codex](docs/en/harnesses/codex-configuration.md) · [Claude Code](docs/en/harnesses/claude-code-configuration.md) · [Hermes](docs/en/harnesses/hermes-configuration.md) · [OpenCode](docs/en/harnesses/opencode-configuration.md) · [DeepSeek](docs/en/harnesses/deepseek-configuration.md) · [Pi Agent](docs/en/harnesses/pi-configuration.md).
+
+<a id="outputs"></a>
+
+## Outputs
+
+Each run is stored in one directory. Run-level files are at the top level, and each sample has its own directory under `samples/`:
+
+```text
+runs/quickstart/
+├── info.json            settings, progress and total usage
+├── lock.json            settings compared by --resume
+├── sft.jsonl            SFT records of successful, uncompacted samples
+└── samples/<model>/<index>_<task>/
+    ├── trace.jsonl      Harness-native session
+    ├── trace_ACTF.json  unified trace: reasoning, tool calls, results, tokens, timing
+    ├── trace_SFT.json   SFT record of this sample
+    ├── info.json        status, attempts, usage, versions and input digests
+    └── results/         files written to the task's output directory
 ```
 
-Task 清单支持 `.jsonl`、JSON 数组或 `{"tasks": [...]}`。每条 task 还可以设置：
+Use `sft.jsonl` for training and `trace_ACTF.json` for analysis. `trace.jsonl` retains the Harness-native events for debugging and re-conversion and is not cleaned for training.
 
-- `messages`：预定义多轮 user message；
-- `file_root` 与 `files.inputs`：需要复制进工作区的本地输入；
-- `files.context`：`AGENTS.md`、`USER.md`、`MEMORY.md`、skills 等 Context；
-- `files.output_dir`：Agent 可写且会被完整回收的目录；
-- `runtime`：环境变量、setup 命令和 task 级 thinking；
-- `harness`（或 `agent_harness` / `task_agent.harness`）：Task Agent 使用的 Harness；也可由 `--harness` 统一覆盖；
-- `user_simulator`：由独立 Harness 动态生成后续 user message，可单独设置 `harness` 和 `model`。
+The following figure shows how each file is produced. Dashed paths are enabled by the flag shown on the arrow.
 
-完整字段见 [Task 格式参考](docs/zh/tasks/task-format.md)。
+<p align="center">
+  <a href="assets/diagrams/pipeline-en-light.png"><picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/diagrams/pipeline-en-dark.png">
+    <img src="assets/diagrams/pipeline-en-light.png" alt="Trace data pipeline: the Harness session is copied to trace.jsonl and converted to trace_ACTF.json, which yields trace_SFT.json and sft.jsonl; --capture-calls enables compaction segments and --wire-trace full keeps request bodies in wire_trace.jsonl" width="100%">
+  </picture></a>
+</p>
 
-成功 sample 的轨迹产出如下；压缩或无法无损转换时，SFT 文件可能不同或缺失：
+The following files are produced only under specific conditions:
 
-| 文件 | 用途 |
+- `sft_segments/`: written when the Task Agent compacts its context. The rollout is then excluded from `sft.jsonl`, and each verified context window is exported as a separate record. Segment records are listed in the sample's `info.json` and aggregated in the run-level `sft_segments.jsonl`. `target_start_index` identifies the first supervised assistant message; training loaders must mask all preceding messages.
+- `wire_trace.jsonl`: written with `--wire-trace full`. It contains every request body that Roller's proxy forwarded to the model API. Its content can differ from the native session when a Harness compacts, truncates or rewrites context.
+- `conversation.json`: written for User Simulator tasks. It contains the dialogue visible to both participants.
+
+The [trajectory output guide](docs/en/traces/trajectory-outputs.md) specifies when each file is written or omitted.
+
+### Reasoning
+
+`--keep-thinking` is enabled by default and stores the visible reasoning returned by the model service. `--thinking` sets the requested reasoning level. The stored content depends on the model family:
+
+| Model family | Stored reasoning |
 | --- | --- |
-| `trace.jsonl` | 保留 Harness-native session，便于追溯与重新转换 |
-| `trace_ACTF.json` | 使用 `ACTF_v1.0` 统一 reasoning、工具调用和工具结果 |
-| `trace_SFT.json` | 未压缩且可导出 SFT 时的单条记录，顶层为 `messages` 与 `tools`，含图片时追加 `images` |
-| `sft_segments/` | 主 Agent 压缩上下文时的分段记录；路径列在 sample 的 `info.json` 中 |
-| `info.json` | 状态、耗时、usage、版本和输入来源 |
-| `results/` | task `output_dir` 中生成了文件时存在 |
+| GPT reasoning models | Visible summary or content returned by the service |
+| Claude | Visible thinking or summary returned by the service |
+| Open models such as Qwen and GLM | Plain-text reasoning returned by the service |
 
-Run 根目录的 `sft.jsonl` 按 request 顺序汇总符合条件的线性 SFT；压缩分段独立保存在各 sample 的 `sft_segments/`。需要审计 Harness 是否压缩、裁剪或改写了模型请求 context 时，使用 `--wire-trace full`；native session 不等同于模型实际收到的请求。详见 [轨迹产出文件指南](docs/zh/traces/trajectory-outputs.md)。
+When a service returns only reasoning token counts or encrypted state, `reasoning_content` is empty. `reasoning_content` contains only reasoning text returned by the service; tool arguments remain in `tool_calls`. The reasoning levels available for each OpenClaw model are listed in [Thinking configuration](docs/en/harnesses/openclaw-configuration.md#6-thinking-configuration).
 
-## 文档导航
+<a id="tasks"></a>
 
-阅读顺序：
+## Tasks
 
-1. [快速上手](docs/zh/start/getting-started.md)：从安装到采集、验收和查看轨迹。
-2. [Examples](examples/README.md)：OpenClaw、Codex、Claude Code、Hermes、OpenCode 和进阶案例命令。
-3. [Task 格式参考](docs/zh/tasks/task-format.md)：开始编写自己的 task。
-4. [轨迹产出文件指南](docs/zh/traces/trajectory-outputs.md)：理解 raw、ACTF、SFT、wire 和产出条件。
+A task is a JSON object. A minimal task contains a schema version, an ID and a prompt:
 
-按需查阅：
+```json
+{"schema_version":"roller.task/v1","id":"hello","prompt":"Compute 2+3. Reply with the number only."}
+```
 
-| 目标 | 文档 |
+A task list can be a `.jsonl` file, a JSON array or an object of the form `{"tasks": [...]}`. Optional fields define files, Context, conversation turns and runtime settings:
+
+| Field | Purpose |
 | --- | --- |
-| 选择并配置 Harness | [OpenClaw](docs/zh/harnesses/openclaw-configuration.md) · [Codex](docs/zh/harnesses/codex-configuration.md) · [Claude Code](docs/zh/harnesses/claude-code-configuration.md) · [Hermes](docs/zh/harnesses/hermes-configuration.md) · [OpenCode](docs/zh/harnesses/opencode-configuration.md) · [DeepSeek](docs/zh/harnesses/deepseek-configuration.md) · [Pi Agent](docs/zh/harnesses/pi-configuration.md) |
-| 查命令行参数与适用范围 | [CLI 参数参考](docs/zh/start/cli-reference.md) |
-| 管理输入、Context、输出和 Resume | [Task Bundle 与结果存储](docs/zh/tasks/task-bundle-and-storage.md) |
-| 跑评测 bench 或接入新 bench | [Bench 接入与评分](docs/zh/benches/bench-format.md) |
-| 制作训练数据 | [SFT 数据格式](docs/zh/traces/sft-format.md) |
-| 动态生成 user message | [User Simulator](docs/zh/tasks/user-simulator.md) |
-| 使用可视化页面 | [Viewer](docs/zh/traces/viewer.md) |
-| 浏览全部资料 | [Docs 首页](docs/README.md) |
-| 本地构建文档站 | `cd docs && make html`，见 [Docs 首页](docs/README.md#在线文档站) |
+| `messages` | Predefined user turns for a multi-turn conversation |
+| `file_root`, `files.inputs` | Local files copied into the workspace |
+| `files.context` | Context files such as `AGENTS.md`, `USER.md`, `MEMORY.md` and skills, which the Harness places where the agent discovers them automatically |
+| `files.output_dir` | Output directory of the agent; Roller collects its full contents |
+| `runtime` | Environment variables, setup commands and task-level thinking |
+| `harness` | Harness for this task (also `agent_harness` or `task_agent.harness`); overridden by `--harness` |
+| `user_simulator` | Harness and model that act as the user and generate user turns |
 
-## 安全边界
+`messages` and `user_simulator` are mutually exclusive. All fields are specified in the [task format reference](docs/en/tasks/task-format.md); dynamic conversations are described in the [User Simulator guide](docs/en/tasks/user-simulator.md).
 
-- 输入和 Context 在启动容器前校验路径、大小、符号链接和内容摘要；
-- API Key 只从宿主机环境或外部配置读取，不写入 run metadata；
-- 只回收 task `output_dir` 中的普通文件和目录；
-- `wire_trace.jsonl` 会保存完整请求文本，可能包含敏感 prompt、reasoning 和工具结果，应按敏感数据管理；
-- Viewer 默认只监听 `127.0.0.1`，远程访问建议使用 SSH 端口转发。
+<a id="benchmarks"></a>
 
-完整规则见 [Task Bundle 与结果存储](docs/zh/tasks/task-bundle-and-storage.md#8-安全与隐私边界)。
+## Benchmarks
 
-## 开发
+Bench adapters convert benchmark tasks into Roller tasks and grade each sample in the container where it ran.
 
-主要扩展点位于 `src/roller/harnesses/`、`src/roller/*_actf.py`、`src/roller/sft.py` 和 `src/roller/viewer/`。
+| Bench | Default Harness | Scope |
+| --- | --- | --- |
+| [WildClawBench](docs/en/benches/wildclawbench.md) | `openclaw` | 60 real-scenario tasks in 6 categories |
+| [SkillsBench](docs/en/benches/skillsbench.md) | `opencode` | One built environment per task; with-skill and no-skill runs scored by official verifiers |
+| [PinchBench](docs/en/benches/pinchbench.md) | `openclaw` | Automated, LLM-judge, hybrid and multi-session tasks |
+| [QwenClawBench](docs/en/benches/qwenclawbench.md) | `openclaw` | 100 tasks in 8 domains, with repeated runs per task |
+
+The following example runs WildClawBench. With the upstream repository checked out and its `.env` loaded, one command converts the tasks, collects trajectories, grades every sample and writes `tasks.jsonl` and `bench-report.json` to the run directory:
+
+```bash
+roller collect --bench wildclawbench --bench-root ~/WildClawBench \
+  --model <provider>/<model> --model-config <models.json> \
+  --harness openclaw --openclaw-image wildclawbench-ubuntu:v1.3 \
+  --parallel 4 --output runs --run-name wildclaw
+```
+
+Each bench guide lists the settings that must match the upstream configuration and the environment variables required by its graders. Scores are directly comparable only when these settings match upstream. To add a bench, see [Bench integration and scoring](docs/en/benches/bench-format.md#6-adding-a-new-bench).
+
+<a id="documentation"></a>
+
+## Documentation
+
+New users should start with [Getting started](docs/en/start/getting-started.md) and refer to [Task format](docs/en/tasks/task-format.md) when writing tasks. The complete handbook is in [`docs/en`](docs/en/index.md). To build it as a website, run `python -m pip install -r docs/requirements-docs.txt` followed by `cd docs && make html`.
+
+| Guide | Contents |
+| --- | --- |
+| [Introduction](docs/en/start/introduction.md) | Core concepts: task, Harness, rollout, run and trace |
+| [Getting started](docs/en/start/getting-started.md) | Installation, dry run, first collection and result verification |
+| [CLI reference](docs/en/start/cli-reference.md) | All flags, their defaults and the Harnesses they apply to |
+| [Docker builds and package mirrors](docs/en/start/docker-builds.md) | apt, npm and Python mirrors and proxies for image builds |
+| [Task format](docs/en/tasks/task-format.md) | Prompts, multi-turn messages, inputs, Context and output directories |
+| [Files, Task Bundles and result storage](docs/en/tasks/task-bundle-and-storage.md) | Input snapshots, run layout, retries and Resume |
+| [User Simulator](docs/en/tasks/user-simulator.md) | Dynamic conversations driven by a second model |
+| [Trajectory outputs](docs/en/traces/trajectory-outputs.md) | Output files and their conditions; comparison of raw, normalized, SFT and wire traces |
+| [SFT format](docs/en/traces/sft-format.md) | Record structure, images and compaction segments |
+| [Viewer](docs/en/traces/viewer.md) | Startup, ports and remote access |
+| [Bench integration and scoring](docs/en/benches/bench-format.md) | Bench runs, grading and new bench adapters |
+| [Examples](examples/README.md) (Chinese) | Runnable commands for each Harness |
+| [Coverage suite](examples/coverage/README.en.md) | 1,624 functional test tasks across all seven Harnesses |
+
+<a id="security"></a>
+
+## Security and privacy
+
+- Before a container starts, Roller rejects inputs and Context that contain symlinks or special files, escape their declared paths or exceed the size limits, and records a digest of every file.
+- API keys are read from the host environment or from external configuration and are not written to run metadata.
+- Only regular files and directories inside the task's `output_dir` are collected.
+- `wire_trace.jsonl` stores full request text, including prompts, reasoning and tool results. Treat it as sensitive data.
+- The Viewer listens on `127.0.0.1` by default. Use SSH port forwarding for remote access.
+
+The complete rules are specified in [Security and privacy boundaries](docs/en/tasks/task-bundle-and-storage.md#8-security-and-privacy-boundaries).
+
+<a id="contributing"></a>
+
+## Contributing
+
+Report defects through [Issues](https://github.com/Liuziyu77/Roller/issues). New Harnesses, new benches and documentation improvements are accepted as [Pull Requests](https://github.com/Liuziyu77/Roller/pulls). The code is organized as follows:
+
+| Area | Location |
+| --- | --- |
+| Harness adapters | `src/roller/harnesses/`, with trace converters in `src/roller/*_actf.py` |
+| Bench adapters | `src/roller/benches/` |
+| SFT export | `src/roller/sft.py`, `src/roller/compaction_sft.py` |
+| Viewer | `src/roller/viewer/` |
+
+Run the test suite before submitting a pull request:
 
 ```bash
 PYTHONPATH=src python3 -m unittest discover -s tests -v
 ```
 
-项目当前处于 Alpha 阶段，Task schema 为 `roller.task/v1`，统一轨迹格式为 `ACTF_v1.0`。许可证为 [Apache License 2.0](LICENSE)。
+### Contributors
+
+<table>
+  <tr>
+    <td align="center">
+      <a href="https://github.com/Liuziyu77"><img src="https://github.com/Liuziyu77.png?size=128" width="64" height="64" alt="Liuziyu77"><br><sub><b>Liuziyu77</b></sub></a>
+    </td>
+    <td align="center">
+      <a href="https://github.com/yph22"><img src="https://github.com/yph22.png?size=128" width="64" height="64" alt="yph22"><br><sub><b>yph22</b></sub></a>
+    </td>
+    <td align="center">
+      <a href="https://github.com/SYuan03"><img src="https://github.com/SYuan03.png?size=128" width="64" height="64" alt="SYuan03"><br><sub><b>SYuan03</b></sub></a>
+    </td>
+    <td align="center">
+      <a href="https://github.com/Dodojordi"><img src="https://github.com/Dodojordi.png?size=128" width="64" height="64" alt="Dodojordi"><br><sub><b>Dodojordi</b></sub></a>
+    </td>
+    <td align="center">
+      <a href="https://github.com/Nina-Hyn"><img src="https://github.com/Nina-Hyn.png?size=128" width="64" height="64" alt="Nina-Hyn"><br><sub><b>Nina-Hyn</b></sub></a>
+    </td>
+    <td align="center">
+      <a href="https://github.com/Credica"><img src="https://github.com/Credica.png?size=128" width="64" height="64" alt="Credica"><br><sub><b>Credica</b></sub></a>
+    </td>
+    <td align="center">
+      <a href="https://github.com/Orion-DH"><img src="https://github.com/Orion-DH.png?size=128" width="64" height="64" alt="Orion-DH"><br><sub><b>Orion-DH</b></sub></a>
+    </td>
+    <td align="center">
+      <a href="https://github.com/MqLeet"><img src="https://github.com/MqLeet.png?size=128" width="64" height="64" alt="MqLeet"><br><sub><b>MqLeet</b></sub></a>
+    </td>
+    <td align="center">
+      <a href="https://github.com/yuhangzang"><img src="https://github.com/yuhangzang.png?size=128" width="64" height="64" alt="yuhangzang"><br><sub><b>yuhangzang</b></sub></a>
+    </td>
+  </tr>
+</table>
+
+<a id="license-and-acknowledgements"></a>
+
+## License and acknowledgements
+
+Roller is licensed under the [Apache License 2.0](LICENSE).
+
+Roller invokes the following third-party agent runtimes and benchmarks: OpenClaw, Codex, Claude Code, Hermes Agent, OpenCode, DeepSeek Harness, Pi Agent, WildClawBench, SkillsBench, PinchBench and QwenClawBench. Their images, code and data are subject to their respective licenses. We thank the authors of these projects.
