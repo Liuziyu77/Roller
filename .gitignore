@@ -10,3 +10,4 @@ runs/
 examples/env/*.env
 docs/_build/
 .benchmarks/
+.codebuddy/
