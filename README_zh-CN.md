@@ -9,10 +9,10 @@
 <p align="center">Roller 在一次性 Docker 容器中运行可调用工具的 Agent，并为每个 task 与模型的组合保存原生 session、统一轨迹、SFT 训练数据和产物文件。</p>
 
 <p align="center">
-  <a href="#harnesses"><img src="https://img.shields.io/badge/Harnesses-7-00866F?style=flat&amp;labelColor=1E232C" alt="7 种 Harness"></a>
-  <a href="#benchmarks"><img src="https://img.shields.io/badge/Benchmarks-4-00866F?style=flat&amp;labelColor=1E232C" alt="4 个 Benchmark 适配器"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-555555?style=flat&amp;labelColor=1E232C" alt="许可证：Apache 2.0"></a>
-  <a href="pyproject.toml"><img src="https://img.shields.io/badge/Python-3.10%2B-555555?style=flat&amp;logo=python&amp;logoColor=FFD43B&amp;labelColor=1E232C" alt="Python 3.10+"></a>
+  <a href="#harnesses"><img src="https://img.shields.io/badge/Harnesses-7-00866F?style=flat&amp;labelColor=4B5563" alt="7 种 Harness"></a>
+  <a href="#benchmarks"><img src="https://img.shields.io/badge/Benchmarks-4-00866F?style=flat&amp;labelColor=4B5563" alt="4 个 Benchmark 适配器"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-6B7280?style=flat&amp;labelColor=4B5563" alt="许可证：Apache 2.0"></a>
+  <a href="pyproject.toml"><img src="https://img.shields.io/badge/Python-3.10%2B-6B7280?style=flat&amp;logo=python&amp;logoColor=FFD43B&amp;labelColor=4B5563" alt="Python 3.10+"></a>
 </p>
 
 <p align="center">

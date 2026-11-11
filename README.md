@@ -9,10 +9,10 @@
 <p align="center">Roller runs tool-using agents in disposable Docker containers and stores, for every task and model combination, the native session, a unified trace, SFT training data and the generated files.</p>
 
 <p align="center">
-  <a href="#harnesses"><img src="https://img.shields.io/badge/Harnesses-7-00866F?style=flat&amp;labelColor=1E232C" alt="7 Harnesses"></a>
-  <a href="#benchmarks"><img src="https://img.shields.io/badge/Benchmarks-4-00866F?style=flat&amp;labelColor=1E232C" alt="4 benchmark adapters"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-555555?style=flat&amp;labelColor=1E232C" alt="License: Apache 2.0"></a>
-  <a href="pyproject.toml"><img src="https://img.shields.io/badge/Python-3.10%2B-555555?style=flat&amp;logo=python&amp;logoColor=FFD43B&amp;labelColor=1E232C" alt="Python 3.10+"></a>
+  <a href="#harnesses"><img src="https://img.shields.io/badge/Harnesses-7-00866F?style=flat&amp;labelColor=4B5563" alt="7 Harnesses"></a>
+  <a href="#benchmarks"><img src="https://img.shields.io/badge/Benchmarks-4-00866F?style=flat&amp;labelColor=4B5563" alt="4 benchmark adapters"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-6B7280?style=flat&amp;labelColor=4B5563" alt="License: Apache 2.0"></a>
+  <a href="pyproject.toml"><img src="https://img.shields.io/badge/Python-3.10%2B-6B7280?style=flat&amp;logo=python&amp;logoColor=FFD43B&amp;labelColor=4B5563" alt="Python 3.10+"></a>
 </p>
 
 <p align="center">
