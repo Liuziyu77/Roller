@@ -30,8 +30,6 @@
 
 Roller is infrastructure for agent runtimes that provides agent rollout and evaluation services. Users supply tasks and custom environments; Roller runs the agent in an isolated Docker container, collects the complete agent trajectory and evaluates the task result. Roller currently supports seven mainstream Harnesses, including OpenClaw, Codex and Claude Code, and four benchmarks, including WildClawBench and SkillsBench.
 
-A Harness is the agent runtime that executes a task. A task can define its own environment: container image or image build definition, setup commands, environment variables, input files and Context. One execution of one task with one model is a rollout. Roller runs each rollout in its own disposable container and stores the result on the host as a sample. A sample contains the Harness-native session, a normalized trace, an SFT (supervised fine-tuning) record, the files produced by the agent and an `info.json` file with status, usage and provenance.
-
 Roller provides the following capabilities:
 
 - **Benchmark integration.** One command converts benchmark tasks into Roller tasks, collects the trajectories and grades each sample in the container where it ran.

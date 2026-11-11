@@ -30,8 +30,6 @@
 
 Roller 是一套服务于 Agent Runtime 的基础设施，提供 Agent 推理与评测服务。用户提供任务与自定义环境，Roller 在隔离的 Docker 容器中运行 Agent，采集完整的 Agent 轨迹，并对任务结果进行评测。目前 Roller 支持 OpenClaw、Codex、Claude Code 等 7 种主流 Harness，以及 WildClawBench、SkillsBench 等 4 个 Benchmark。
 
-Harness 是执行 task 的 Agent 运行时。task 可自定义运行环境，包括容器镜像或镜像构建定义、setup 命令、环境变量、输入文件和 Context。一个 task 与一个模型的单次执行称为 rollout。Roller 为每个 rollout 启动独立的一次性容器，并将结果以 sample 的形式保存到宿主机。sample 包含 Harness 原生 session、统一结构的轨迹、SFT（监督微调）记录、Agent 生成的文件，以及记录状态、用量和来源信息的 `info.json`。
-
 Roller 提供以下能力：
 
 - **Benchmark 集成。** 一条命令完成 Benchmark 任务转换、轨迹采集，并在各 sample 的运行容器内完成评分。
